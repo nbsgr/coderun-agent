@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeRun Agent</title>
+  <link rel="stylesheet" href="Dashboard.css">
+  <link rel="stylesheet" href="ChatSpace.css">
+  <base target="_blank">
+<base target="_blank">
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="MarkdownRenderer.js"></script>
+  <script src="Dashboard.js"></script>
+  <script src="ChatSpace.js"></script>
+  <script>
+    window.CODERUN_CONFIG = { provider: 'ollama', baseUrl: 'http://localhost:11434', model: '' };
+    window.WORKSPACE_FOLDER = '';
+    window.VSCODE = false;
+    window.onload = function() {
+      if (typeof renderDashboard === 'function') {
+        renderDashboard(document.getElementById('app'));
+      } else {
+        document.getElementById('app').innerHTML = '<div style="color:red;padding:20px;">Error: Dashboard not loaded</div>';
+      }
+    };
+  </script>
+</body>
+</html>

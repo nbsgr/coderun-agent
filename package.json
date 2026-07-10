@@ -1,0 +1,134 @@
+{
+  "name": "ai-agent",
+  "displayName": "AI-AGENT",
+  "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
+  "version": "1.0.0",
+  "publisher": "Bala-Siva-Ganesh",
+  "icon": "logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nbsgr/coderun-agent.git"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "type": "module",
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Chat"
+  ],
+  "activationEvents": [
+    "onView:coderun.chatView",
+    "onCommand:coderun.openSidebar",
+    "onCommand:coderun.openPanel"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "coderun.openSidebar",
+        "title": "CodeRun: Open Sidebar",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "coderun.openPanel",
+        "title": "CodeRun: Open Panel",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "coderun.newChat",
+        "title": "CodeRun: New Chat",
+        "icon": "$(add)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "coderunSidebar",
+          "title": "CodeRun",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "coderunSidebar": [
+        {
+          "type": "webview",
+          "id": "coderun.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "coderun.newChat",
+          "when": "view == coderun.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CodeRun Agent",
+      "properties": {
+        "coderun.provider": {
+          "type": "string",
+          "default": "ollama",
+          "enum": ["ollama", "openai", "anthropic", "gemini", "openrouter", "xai", "groq", "compatible"],
+          "description": "AI provider to use"
+        },
+        "coderun.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Provider base URL (Ollama, OpenAI-compatible, LM Studio, etc.)"
+        },
+        "coderun.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name to use"
+        },
+        "coderun.maxIterations": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum agent iterations per request"
+        },
+        "coderun.streaming": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable response streaming"
+        },
+        "coderun.showThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show thinking/reasoning tokens"
+        },
+        "coderun.autoScroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-scroll chat to bottom"
+        },
+        "coderun.confirmDangerous": {
+          "type": "boolean",
+          "default": true,
+          "description": "Confirm dangerous actions (delete, terminal, etc.)"
+        },
+        "coderun.organization": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Organization ID (OpenAI only)"
+        },
+        "coderun.project": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Project ID (OpenAI only)"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.9.2"
+  }
+}

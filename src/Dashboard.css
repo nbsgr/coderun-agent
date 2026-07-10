@@ -1,0 +1,572 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background, #181818);
+  color: var(--vscode-foreground, #cccccc);
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.cr-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.cr-header {
+  height: 36px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-sideBar-background, #181818);
+  flex-shrink: 0;
+}
+
+.cr-header-left,
+.cr-header-right,
+.cr-status {
+  display: flex;
+  align-items: center;
+}
+
+.cr-header-left {
+  gap: 8px;
+  min-width: 0;
+}
+
+.cr-header-right {
+  gap: 10px;
+}
+
+.cr-copilot-mark,
+.cr-empty-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2ea043;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cr-title {
+  color: var(--vscode-sideBarTitle-foreground, #cccccc);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cr-model-badge {
+  max-width: 220px;
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-status {
+  gap: 5px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-size: 11px;
+}
+
+.cr-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3fb950;
+}
+
+.cr-status-dot.offline {
+  background: #f85149;
+}
+
+.cr-status-dot.connecting {
+  background: #d29922;
+}
+
+.cr-icon-btn,
+.cr-mini-btn,
+.cr-rail-btn,
+.cr-refresh-btn,
+.cr-stop-gen-btn,
+.cr-term-clear {
+  border: 0;
+  color: var(--vscode-icon-foreground, #c5c5c5);
+  background: transparent;
+  cursor: pointer;
+}
+
+.cr-icon-btn,
+.cr-mini-btn,
+.cr-rail-btn,
+.cr-refresh-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.cr-icon-btn:hover,
+.cr-mini-btn:hover,
+.cr-rail-btn:hover,
+.cr-rail-btn.active,
+.cr-refresh-btn:hover,
+.cr-thread-item:hover,
+.cr-thread-item.active {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.cr-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.cr-rail {
+  width: 38px;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border-right: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-activityBar-background, #181818);
+  flex-shrink: 0;
+}
+
+.cr-viewport,
+.cr-panel,
+.cr-chat-layout,
+.cr-chat-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+.cr-viewport {
+  flex: 1;
+  display: flex;
+}
+
+.cr-panel {
+  display: none;
+  flex: 1;
+}
+
+.cr-panel.active {
+  display: flex;
+}
+
+.cr-chat-layout {
+  flex: 1;
+  display: flex;
+}
+
+.cr-sidebar {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-sideBar-background, #181818);
+  transition: width 140ms ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.cr-sidebar.closed {
+  width: 0;
+}
+
+.cr-sidebar-head {
+  height: 34px;
+  padding: 0 8px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--vscode-sideBarTitle-foreground, #cccccc);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.cr-thread-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 10px;
+}
+
+.cr-thread-item {
+  min-height: 30px;
+  padding: 5px 6px 5px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+}
+
+.cr-thread-item.active {
+  background: var(--vscode-list-activeSelectionBackground, #04395e);
+  color: var(--vscode-list-activeSelectionForeground, #ffffff);
+}
+
+.cr-thread-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-thread-actions {
+  display: none;
+  gap: 2px;
+}
+
+.cr-thread-item:hover .cr-thread-actions,
+.cr-thread-item.active .cr-thread-actions {
+  display: inline-flex;
+}
+
+.cr-thread-dots,
+.cr-thread-delete {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--vscode-icon-foreground, #c5c5c5);
+  background: transparent;
+  cursor: pointer;
+}
+
+.cr-thread-dots:hover,
+.cr-thread-delete:hover {
+  background: var(--vscode-toolbar-hoverBackground, #3a3d41);
+}
+
+.cr-thread-delete:hover {
+  color: #f85149;
+}
+
+.cr-rename-input {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 2px;
+  outline: none;
+  color: var(--vscode-input-foreground, #cccccc);
+  background: var(--vscode-input-background, #3c3c3c);
+}
+
+.cr-chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.cr-model-bar {
+  height: 38px;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-editor-background, #1e1e1e);
+  flex-shrink: 0;
+}
+
+.cr-model-bar label {
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-size: 12px;
+}
+
+#modelSelect,
+.cr-input-group input[type="text"],
+.cr-input-group input[type="password"],
+.cr-input-group input[type="number"],
+.cr-input-group select {
+  min-width: 0;
+  height: 26px;
+  padding: 2px 7px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 2px;
+  outline: none;
+  color: var(--vscode-input-foreground, #cccccc);
+  background: var(--vscode-input-background, #242424);
+}
+
+#modelSelect {
+  flex: 1;
+  max-width: 520px;
+}
+
+#modelSelect:focus,
+.cr-input-group input:focus,
+.cr-input-group select:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.cr-stop-gen-btn {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 3px;
+  color: #ffffff;
+  background: #a1260d;
+}
+
+#chat-area-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cr-empty,
+.cr-empty-chat {
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  text-align: center;
+}
+
+.cr-empty {
+  padding: 22px 10px;
+}
+
+.cr-empty-chat {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+}
+
+.cr-empty-chat .cr-empty-mark {
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+}
+
+.cr-empty-chat-title,
+.cr-empty-chat-sub {
+  margin: 0;
+}
+
+.cr-empty-chat-title {
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cr-empty-chat-sub {
+  max-width: 380px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cr-terminal {
+  display: none;
+  max-height: 180px;
+  overflow: auto;
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-terminal-background, #0c0c0c);
+  font-family: var(--vscode-editor-font-family, "Cascadia Code", Consolas, monospace);
+  flex-shrink: 0;
+}
+
+.cr-terminal.show {
+  display: block;
+}
+
+.cr-terminal-header {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  font-size: 11px;
+}
+
+.cr-term-clear {
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.cr-term-clear:hover {
+  background: var(--vscode-toolbar-hoverBackground, #3a3d41);
+}
+
+.cr-terminal-body {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cr-terminal-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cr-terminal-line.cmd {
+  color: #4ec9b0;
+}
+
+.cr-terminal-line.err {
+  color: #f85149;
+}
+
+.cr-view-header {
+  height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.cr-view-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cr-settings {
+  flex: 1;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.cr-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cr-input-group label {
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-size: 12px;
+}
+
+.cr-input-group.cr-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.cr-input-group.cr-checkbox input {
+  width: 14px;
+  height: 14px;
+}
+
+.cr-workspace-display {
+  min-height: 28px;
+  padding: 6px 7px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 2px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  background: var(--vscode-input-background, #242424);
+  font-family: var(--vscode-editor-font-family, "Cascadia Code", Consolas, monospace);
+  font-size: 12px;
+  word-break: break-all;
+  cursor: default;
+  opacity: 0.8;
+  user-select: all;
+}
+
+.cr-save-btn,
+.cr-danger-btn {
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.cr-save-btn {
+  border: 1px solid var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  background: var(--vscode-button-background, #0e639c);
+}
+
+.cr-save-btn:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.cr-danger-btn {
+  border: 1px solid #a1260d;
+  color: #f48771;
+  background: transparent;
+}
+
+.cr-danger-btn:hover {
+  background: rgba(161, 38, 13, 0.2);
+}
+
+/* ════════════════════════════════════════════════════
+   NEW: Inline Terminal Panel Styles
+   ════════════════════════════════════════════════════ */
+
+.cr-terminal.show {
+  display: block;
+}
+
+.cr-terminal-line.cmd {
+  color: #4ec9b0;
+}
+
+.cr-terminal-line.err {
+  color: #f85149;
+}
+
+@media (max-width: 760px) {
+  .cr-sidebar {
+    width: 210px;
+  }
+  .cr-title {
+    display: none;
+  }
+  .cr-model-badge {
+    max-width: 120px;
+  }
+}
