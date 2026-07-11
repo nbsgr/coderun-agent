@@ -140,9 +140,13 @@
         toolCallBlocks: {},
         iterationCount: 0,
         statusLines: [],
-        // NEW: Terminal streaming state
+        // Terminal streaming state
         terminalBlocks: {},
+        // Tool cards — uses _toolQueue for ordered tracking
         toolCards: {},
+        _toolQueue: [],
+        _toolIdCounter: 0,
+        _seenToolIds: {},  // Tracks tool call IDs to prevent duplicate cards
         timeline: null
       };
 
@@ -164,9 +168,12 @@
         S.toolCallBlocks = {};
         S.iterationCount = 0;
         clearStatusLines(S);
-        // NEW: Clear terminal and tool card state
+        // Clear terminal and tool card state
         S.terminalBlocks = {};
         S.toolCards = {};
+        S._toolQueue = [];
+        S._toolIdCounter = 0;
+        S._seenToolIds = {};
         S.timeline = null;
       }
 
@@ -210,7 +217,13 @@
 
       if (stopBtn) {
         stopBtn.addEventListener('click', function() {
+          // Local abort (for direct fetch path)
           if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+          // Cooperative stop signal (for the VS Code path) — backend agent loop
+          // checks this flag between iterations and halts gracefully.
+          if (window.VSCODE_API) {
+            try { window.VSCODE_API.postMessage({ type: 'stopChat' }); } catch (e) {}
+          }
           setStreaming(false);
           if (window.stopGeneration) window.stopGeneration();
         });
@@ -218,6 +231,9 @@
 
       window.stopCurrentChatStream = function() {
         if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+        if (window.VSCODE_API) {
+          try { window.VSCODE_API.postMessage({ type: 'stopChat' }); } catch (e) {}
+        }
         setStreaming(false);
         onStreamEnd();
       };
@@ -248,6 +264,7 @@
           if (!text || S.isStreaming) return;
 
           var currentModel = (window.getDashboardModel ? window.getDashboardModel() : '') || model;
+          var currentProvider = (window.getDashboardProvider ? window.getDashboardProvider() : '') || '';
           var currentWorkspace = (window.getDashboardWorkspace ? window.getDashboardWorkspace() : '') || workspace;
           var currentBaseUrl = (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : '') || baseUrl;
 
@@ -321,6 +338,7 @@
               type: "startChat",
               message: text,
               model: currentModel,
+              provider: currentProvider,
               history: history,
               workspaceFolder: currentWorkspace
             });
@@ -440,7 +458,10 @@
       function handleEvent(ev, S) {
         if (!ev) return;
 
-        if (ev.message) {
+        // LLM streaming messages come as { message: { role: 'assistant', content: '...' } }
+        // Tool events have { message: 'Writing file: ...' } which is a string.
+        // Only enter this branch when message is an OBJECT (LLM response).
+        if (ev.message && typeof ev.message === 'object' && !Array.isArray(ev.message)) {
           var msg = ev.message;
           if (msg.thinking) {
             removeTyping(S.botBody);
@@ -474,10 +495,21 @@
             msg.tool_calls.forEach(function(tc) {
               var toolName = (tc.function && tc.function.name) || tc.name || '';
               var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
-              var toolId = tc.id || 'tool_' + Date.now();
-              if (!S.toolCallBlocks[toolId]) {
-                S.toolCallBlocks[toolId] = appendToolCallBlock(S.botBody, toolName, toolArgs, toolId);
-              }
+              var toolId = tc.id || '';
+              var toolIndex = tc.index;
+              // Build stable dedup keys
+              var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+              var idKey = toolId || '';
+              // Check if we already have a card for this tool call by EITHER id or index
+              if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) return;
+              // Lock BOTH keys so later chunks with different key shapes still match
+              S._seenToolIds[indexKey] = true;
+              if (idKey) S._seenToolIds[idKey] = true;
+              // Generate a display id for the card
+              var displayId = toolId || 'tool_' + (++S._toolIdCounter);
+              var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
+              S.toolCards[cardKey] = appendToolCard(S.botBody, cardKey, toolName, toolArgs, 'running');
+              S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
             });
           }
           return;
@@ -526,46 +558,103 @@
               S.contentDiv.innerHTML = md(S.contentText);
               break;
             }
-            case 'tool_call': {
-              removeTyping(S.botBody);
-              var toolId = ev.id || 'tool_' + Date.now();
-              S.toolCallBlocks[toolId] = appendToolCallBlock(S.botBody, ev.tool, ev.args, ev.id);
-              S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
-              break;
-            }
             case 'requestPermission': {
               removeTyping(S.botBody);
-              appendPermissionRequestBlock(S.botBody, ev.tool, ev.arguments, ev.id);
+              if (ev.autoResolved) {
+                var autoLine = mk('div', 'cr-permission-auto');
+                var decisionLabel = ev.decision === 'allow' ? '✓ Auto-allowed' : '✗ Auto-denied';
+                var decisionCls = ev.decision === 'allow' ? 'allowed' : 'denied';
+                autoLine.innerHTML =
+                  '<span class="cr-permission-auto-icon">' + I.tool + '</span>' +
+                  '<span class="cr-permission-auto-text">' +
+                    esc(ev.tool) + ' — <span class="cr-permission-status ' + decisionCls + '">' + decisionLabel + '</span>' +
+                    ' <span class="cr-permission-auto-hint">(Always ' + (ev.decision === 'allow' ? 'Allow' : 'Deny') + ')</span>' +
+                  '</span>';
+                S.botBody.appendChild(autoLine);
+              } else {
+                appendPermissionRequestBlock(S.botBody, ev.tool, ev.arguments, ev.id);
+              }
+              break;
+            }
+            case 'tool_call': {
+              removeTyping(S.botBody);
+              var toolId = ev.id || 'tool_' + (++S._toolIdCounter);
+              var toolName = ev.tool || '';
+              var toolArgs = ev.args || {};
+              // Prevent duplicate cards — check if we already have a pending card
+              // for this tool name (from streaming ev.message.tool_calls). If so,
+              // just mark it with the backend's ID and skip creating a new one.
+              var existingCard = findPendingCardByToolName(S, toolName);
+              if (existingCard) {
+                // Card already exists from streaming — just update its ID tracking
+                S._seenToolIds[toolId] = true;
+                S._toolQueue.push({ key: existingCard.dataset.cardKey, toolName: toolName, id: toolId });
+                break;
+              }
+              if (S._seenToolIds[toolId]) { break; }
+              S._seenToolIds[toolId] = true;
+              // Create a unique key that preserves order for multiple calls of the same tool
+              var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
+              S.toolCallBlocks[ev.id || cardKey] = appendToolCard(S.botBody, cardKey, toolName, toolArgs, 'running');
+              // Track in ordered queue
+              S._toolQueue.push({ key: cardKey, toolName: toolName, id: ev.id });
+              S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
               break;
             }
             case 'action': {
               removeTyping(S.botBody);
               var action = ev.action;
-              // NEW: Use collapsible tool cards instead of plain action items
-              if (!S.toolCards[action]) {
-                S.toolCards[action] = appendToolCard(S.botBody, action, 'running', ev.message);
+              var actionMsg = ev.message || '';
+              // Find a pending card for this action/tool name
+              var pendingCard = getLastPendingCard(S);
+              if (!pendingCard) {
+                // No card yet — create one from the action itself
+                var actionKey = action + '_action_' + (++S._toolIdCounter);
+                S.toolCards[actionKey] = appendToolCard(S.botBody, actionKey, action, {}, 'running');
+                S._toolQueue.push({ key: actionKey, toolName: action, id: actionKey });
+                var createdCard = S.toolCards[actionKey];
+                if (createdCard) {
+                  appendToolAction(createdCard, action, actionMsg, 'started');
+                }
+              } else {
+                appendToolAction(pendingCard, action, actionMsg, 'started');
               }
               break;
             }
             case 'tool_result': {
               removeTyping(S.botBody);
-              var action = ev.tool;
-              var success = ev.success !== false;
-              var status = success ? 'success' : 'error';
-              // Update or create tool card
-              if (S.toolCards[action]) {
-                updateToolCard(S.toolCards[action], status, ev);
-              } else {
-                S.toolCards[action] = appendToolCard(S.botBody, action, status, null, ev);
+              var resTool = ev.tool;
+              var resSuccess = ev.success !== false;
+              var resStatus = resSuccess ? 'success' : 'error';
+              // Direct DOM approach: find any tool card inside S.botBody
+              // with matching dataset.toolName and update it.
+              // This is more reliable than relying on S.toolCards state.
+              var domCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
+              var updated = false;
+              for (var di = 0; di < domCards.length; di++) {
+                var dc = domCards[di];
+                if (dc && dc.dataset && dc.dataset.toolName === resTool) {
+                  updateToolCard(dc, resStatus, ev);
+                  updated = true;
+                  // Also update the tracked reference if it exists
+                  for (var ck in S.toolCards) {
+                    if (S.toolCards[ck] === dc) {
+                      S.toolCards[ck].dataset.status = resStatus;
+                    }
+                  }
+                }
               }
-              // Also append legacy tool result block for detailed view
-              appendToolResultBlock(S.botBody, action, ev);
+              if (!updated) {
+                // No card at all — create one
+                var fallbackKey = 'tr_' + Date.now();
+                appendToolCard(S.botBody, fallbackKey, resTool, {}, resStatus, ev);
+              }
               break;
             }
             case 'agent_status': {
               removeTyping(S.botBody);
               var statusMsg = ev.status === 'executing_tools' ? 'Executing ' + ev.count + ' tool call(s)...' : ev.status || '';
-              appendStatusLine(S.botBody, statusMsg);
+              if (statusMsg) appendStatusLine(S.botBody, statusMsg);
               break;
             }
             case 'agent_iteration': {
@@ -573,8 +662,10 @@
               S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
               S.contentDiv = null; S.contentText = '';
               clearStatusLines(S);
-              // Reset tool cards for new iteration
+              // Reset tool tracking for new iteration
               S.toolCards = {};
+              S._toolQueue = [];
+              S._toolIdCounter = 0;
               break;
             }
             case 'agent_done':
@@ -779,22 +870,6 @@
         return d;
       }
 
-      function appendToolCallBlock(body, tool, args, id) {
-        if (!body) return;
-        var d = mk('div', 'cr-tool-call');
-        var argsStr = '';
-        try { argsStr = JSON.stringify(args, null, 2); } catch (_) { argsStr = String(args || ''); }
-        d.innerHTML =
-          '<div class="cr-tool-call-head">' +
-            I.tool +
-            '<span class="cr-tool-name">' + esc(tool || 'tool') + '</span>' +
-            (id ? '<span class="cr-tool-id">#' + esc(String(id).substring(0, 8)) + '</span>' : '') +
-          '</div>' +
-          (argsStr ? '<pre class="cr-tool-args"><code>' + esc(argsStr) + '</code></pre>' : '');
-        body.appendChild(d);
-        return d;
-      }
-
       function appendPermissionRequestBlock(body, tool, args, id) {
         if (!body) return null;
         var d = mk('div', 'cr-permission-card');
@@ -804,29 +879,38 @@
           '<div class="cr-permission-head">' +
             I.tool +
             '<span class="cr-permission-title">Permission Requested</span>' +
+            '<button class="cr-permission-info" title="This tool can modify files or run commands. Choose how to handle future calls of this tool.">ⓘ</button>' +
           '</div>' +
           '<div class="cr-permission-body">' +
             '<p>The agent wants to execute tool <strong>' + esc(tool) + '</strong> with arguments:</p>' +
             '<pre class="cr-permission-args"><code>' + esc(argsStr) + '</code></pre>' +
           '</div>' +
           '<div class="cr-permission-actions" id="actions-' + id + '">' +
-            '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '">Allow</button>' +
-            '<button class="cr-btn cr-btn-deny" data-action="deny" data-id="' + id + '">Deny</button>' +
+            '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
+            '<button class="cr-btn cr-btn-deny" data-action="deny" data-id="' + id + '" title="Deny this single call">Deny</button>' +
+            '<span class="cr-permission-divider"></span>' +
+            '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + id + '" title="Allow this tool for the rest of the session, and remember the choice">Always Allow</button>' +
+            '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + id + '" title="Deny this tool for the rest of the session, and remember the choice">Always Deny</button>' +
           '</div>';
         body.appendChild(d);
         var actions = d.querySelector('#actions-' + id);
         actions.addEventListener('click', function(e) {
           var btn = e.target.closest('[data-action]');
           if (!btn) return;
-          var isAllow = btn.dataset.action === 'allow';
-          actions.innerHTML = '<span class="cr-permission-status ' + (isAllow ? 'allowed' : 'denied') + '">' +
-            (isAllow ? '✓ Allowed' : '✗ Denied') +
-          '</span>';
+          var act = btn.dataset.action;
+          var isAllow = act === 'allow' || act === 'always-allow';
+          var isAlways = act === 'always-allow' || act === 'always-deny';
+          var label = isAlways
+            ? (isAllow ? '✓ Always Allowed' : '✗ Always Denied')
+            : (isAllow ? '✓ Allowed' : '✗ Denied');
+          actions.innerHTML = '<span class="cr-permission-status ' + (isAllow ? 'allowed' : 'denied') + '">' + label + '</span>';
           if (window.VSCODE_API) {
             window.VSCODE_API.postMessage({
               type: 'permissionResponse',
               approved: isAllow,
-              toolCallId: id
+              toolCallId: id,
+              always: isAlways,
+              tool: tool
             });
           }
         });
@@ -1019,18 +1103,172 @@
       }
 
       // ═══════════════════════════════════════════════════
-      // NEW: Collapsible Tool Cards
+      // Tool Card Helpers
       // ═══════════════════════════════════════════════════
 
-      function appendToolCard(body, toolName, status, message, result) {
+      /**
+       * Get the most recent pending tool card from the queue.
+       */
+      function getLastPendingCard(S) {
+        if (!S._toolQueue || !S._toolQueue.length) return null;
+        for (var i = S._toolQueue.length - 1; i >= 0; i--) {
+          var entry = S._toolQueue[i];
+          var card = S.toolCards[entry.key];
+          if (card && card.dataset.status !== 'success' && card.dataset.status !== 'error') {
+            return card;
+          }
+        }
+        return null;
+      }
+
+      /**
+       * Find ANY pending card (not yet finalized) by tool name across all cards.
+       * Used to prevent duplicate cards when the same tool call arrives via
+       * both streaming ev.message.tool_calls and a direct ev.type === 'tool_call'.
+       */
+      function findPendingCardByToolName(S, toolName) {
+        for (var cardKey in S.toolCards) {
+          var card = S.toolCards[cardKey];
+          if (card && card.dataset && card.dataset.toolName === toolName &&
+              card.dataset.status !== 'success' && card.dataset.status !== 'error') {
+            return card;
+          }
+        }
+        return null;
+      }
+
+      /**
+       * Find ANY card (even finalized) by tool name.
+       * Last resort fallback for tool_result matching.
+       */
+      function findAnyCardByToolName(S, toolName) {
+        for (var cardKey in S.toolCards) {
+          var card = S.toolCards[cardKey];
+          if (card && card.dataset && card.dataset.toolName === toolName) {
+            return card;
+          }
+        }
+        return null;
+      }
+
+      /**
+       * Find the last pending card for a given tool name and finalize it.
+       * First searches the ordered queue, then falls back to scanning all
+       * tool cards by dataset.toolName (in case the queue entry was lost).
+       */
+      function findAndFinalizeCard(S, toolName, status, result) {
+        // Pass 1: search the ordered queue (backwards — most recent first)
+        for (var i = S._toolQueue.length - 1; i >= 0; i--) {
+          var entry = S._toolQueue[i];
+          if (entry.toolName === toolName) {
+            var card = S.toolCards[entry.key];
+            if (card) {
+              updateToolCard(card, status, result);
+              return card;
+            }
+          }
+        }
+        // Pass 2: fallback — scan ALL tool cards by dataset attribute
+        for (var cardKey in S.toolCards) {
+          var aCard = S.toolCards[cardKey];
+          if (aCard && aCard.dataset && aCard.dataset.toolName === toolName &&
+              aCard.dataset.status !== 'success' && aCard.dataset.status !== 'error') {
+            updateToolCard(aCard, status, result);
+            return aCard;
+          }
+        }
+        return null;
+      }
+
+      /**
+       * Calculate file diff stats for write_file and edit_file results.
+       * Returns { added, removed, isNewFile, summary } or null.
+       */
+      function calculateDiffStats(toolName, args, result) {
+        if (toolName === 'write_file') {
+          var content = (args && args.content) || '';
+          var lines = content.split('\n').filter(function(l) { return l.length > 0; });
+          var lineCount = content.split('\n').length;
+          return {
+            added: lineCount,
+            removed: 0,
+            isNewFile: true,
+            summary: lineCount + ' lines'
+          };
+        }
+        if (toolName === 'edit_file') {
+          var oldStr = (args && args.old_string) || '';
+          var newStr = (args && args.new_string) || '';
+          var oldLines = oldStr.split('\n').filter(function(l) { return l.length > 0; });
+          var newLines = newStr.split('\n').filter(function(l) { return l.length > 0; });
+          return {
+            added: newLines.length,
+            removed: oldLines.length,
+            isNewFile: false,
+            summary: '+' + newLines.length + ' -' + oldLines.length
+          };
+        }
+        return null;
+      }
+
+      /**
+       * Format a tool result into a readable text string.
+       */
+      function formatToolResultText(toolName, result) {
+        if (!result) return '';
+        var text = '';
+        if (result.content != null) text = result.content;
+        else if (result.output != null) text = result.output;
+        else if (result.message != null) text = result.message;
+        else if (result.entries) text = result.entries.map(function(e) { return '- [' + e.type.toUpperCase() + '] ' + e.name; }).join('\n');
+        else if (result.matches) text = result.matches.map(function(m) { return '- ' + m; }).join('\n');
+        else if (result.info) { try { text = JSON.stringify(result.info, null, 2); } catch(_) { text = String(result.info); } }
+        else if (result.datetime) text = 'Datetime: ' + result.datetime;
+        else if (result.command) text = 'Command: ' + result.command + '\nExit code: ' + (result.exit_code != null ? result.exit_code : '?') + '\n\n' + (result.output || '');
+        else { try { text = JSON.stringify(result, null, 2); } catch(_) { text = String(result); } }
+        return text;
+      }
+
+      // ═══════════════════════════════════════════════════
+      // NEW: Collapsible Copilot-style Tool Cards
+      // ═══════════════════════════════════════════════════
+
+      function appendToolCard(body, cardKey, toolName, args, status, result) {
         if (!body) return null;
+        status = status || 'running';
         var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
         card.open = true;
+        card.dataset.cardKey = cardKey;
         card.dataset.toolName = toolName;
+        card.dataset.status = status;
 
         var displayName = formatToolName(toolName);
         var iconHtml = getToolIcon(toolName);
-        var statusLabel = status === 'running' ? 'Running' : status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : 'Pending';
+
+        // Calculate diff stats if applicable
+        var diffStats = calculateDiffStats(toolName, args, result);
+        var statusLabel = status === 'running' ? 'Running…' : status === 'success' ? 'Completed' : 'Failed';
+        if (status === 'success' && diffStats) {
+          statusLabel = '+' + diffStats.added;
+          if (diffStats.removed > 0) statusLabel += ' -' + diffStats.removed;
+          statusLabel += ' lines';
+        }
+
+        // Build args summary (show first ~50 chars of file path or key args)
+        var argsSummary = '';
+        if (args) {
+          if (args.file_path) argsSummary = args.file_path;
+          else if (args.command) argsSummary = truncate(args.command, 60);
+          else if (args.folder_path) argsSummary = args.folder_path;
+          else if (args.pattern) argsSummary = args.pattern;
+          else {
+            try {
+              var argsStr = JSON.stringify(args);
+              argsSummary = truncate(argsStr, 60);
+            } catch(_) { argsSummary = ''; }
+          }
+        }
+
         var statusClass = 'cr-tool-card-status--' + status;
         var iconClass = 'cr-tool-card-icon--' + status;
 
@@ -1038,81 +1276,167 @@
         head.innerHTML =
           '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
           '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
-          '<span class="cr-tool-card-status ' + statusClass + '">' + statusLabel + '</span>' +
+          (argsSummary ? '<span class="cr-tool-card-args">' + esc(argsSummary) + '</span>' : '') +
+          '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
           '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
         card.appendChild(head);
 
+        // Body contains: args (collapsible) + actions (collapsible) + result
         var cardBody = mk('div', 'cr-tool-card-body');
-        if (message) {
-          cardBody.innerHTML = '<div>' + esc(message) + '</div>';
-        }
-        if (result) {
-          var resultText = '';
-          if (result.content != null) resultText = result.content;
-          else if (result.output != null) resultText = result.output;
-          else if (result.message != null) resultText = result.message;
-          else if (result.entries) resultText = result.entries.map(function(e) { return '- [' + e.type.toUpperCase() + '] ' + e.name; }).join('\n');
-          else if (result.matches) resultText = result.matches.map(function(m) { return '- ' + m; }).join('\n');
-          else if (result.info) { try { resultText = JSON.stringify(result.info, null, 2); } catch(_) { resultText = String(result.info); } }
-          else if (result.datetime) resultText = result.datetime;
-          else { try { resultText = JSON.stringify(result, null, 2); } catch(_) { resultText = String(result); } }
+        cardBody.style.display = 'block';
 
-          if (resultText) {
-            var pre = mk('pre', '');
-            pre.textContent = resultText;
-            cardBody.appendChild(pre);
+        // Arguments section (collapsible)
+        var argsStr = '';
+        try { argsStr = JSON.stringify(args, null, 2); } catch (_) { argsStr = String(args || ''); }
+        if (argsStr && argsStr !== '{}') {
+          var argsBlock = mk('details', 'cr-tool-card-args-block');
+          argsBlock.open = false;
+          argsBlock.innerHTML =
+            '<summary class="cr-tool-card-args-summary">Arguments</summary>' +
+            '<pre class="cr-tool-card-args-pre"><code>' + esc(argsStr) + '</code></pre>';
+          cardBody.appendChild(argsBlock);
+        }
+
+        // Actions container (for live action updates within this card)
+        var actionsContainer = mk('div', 'cr-tool-card-actions');
+        actionsContainer.style.display = 'none';
+        cardBody.appendChild(actionsContainer);
+
+        // Result container
+        var resultContainer = mk('div', 'cr-tool-card-result');
+        resultContainer.style.display = 'none';
+        if (result) {
+          var resText = formatToolResultText(toolName, result);
+          if (resText) {
+            resultContainer.style.display = 'block';
+            resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+          }
+          // If result has an error, show it
+          if (status === 'error') {
+            resultContainer.style.display = 'block';
+            resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result.message || result.error || 'Unknown error') + '</div>';
           }
         }
-        card.appendChild(cardBody);
+        cardBody.appendChild(resultContainer);
 
+        card.appendChild(cardBody);
         body.appendChild(card);
+
+        // Store reference
+        S.toolCards[cardKey] = card;
+
         scrollBottom(msgList);
         return card;
       }
 
       function updateToolCard(card, status, result) {
         if (!card) return;
+        var oldStatus = card.dataset.status;
         card.className = 'cr-tool-card cr-tool-card--' + status;
+        card.dataset.status = status;
 
+        var toolName = card.dataset.toolName;
+
+        // Update icon
         var iconEl = card.querySelector('.cr-tool-card-icon');
         if (iconEl) {
           iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + status;
-          iconEl.innerHTML = status === 'running' ? I.spin : getToolIcon(card.dataset.toolName);
+          iconEl.innerHTML = status === 'success' ? I.check : status === 'error' ? I.err : I.spin;
         }
 
+        // Update status label with diff stats
         var statusEl = card.querySelector('.cr-tool-card-status');
         if (statusEl) {
           statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + status;
-          statusEl.textContent = status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : status;
+          if (status === 'success' && result) {
+            var diffStats = calculateDiffStats(toolName, null, result);
+            if (diffStats) {
+              statusEl.textContent = '+' + diffStats.added + (diffStats.removed > 0 ? ' -' + diffStats.removed : '') + ' lines';
+            } else {
+              // Check if we can calculate from the card's args
+              statusEl.textContent = 'Completed';
+            }
+          } else {
+            statusEl.textContent = status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : status;
+          }
         }
 
         // Update body with result
         if (result) {
           var cardBody = card.querySelector('.cr-tool-card-body');
           if (cardBody) {
-            var resultText = '';
-            if (result.content != null) resultText = result.content;
-            else if (result.output != null) resultText = result.output;
-            else if (result.message != null) resultText = result.message;
-            else if (result.entries) resultText = result.entries.map(function(e) { return '- [' + e.type.toUpperCase() + '] ' + e.name; }).join('\n');
-            else if (result.matches) resultText = result.matches.map(function(m) { return '- ' + m; }).join('\n');
-            else if (result.info) { try { resultText = JSON.stringify(result.info, null, 2); } catch(_) { resultText = String(result.info); } }
-            else if (result.datetime) resultText = result.datetime;
-            else { try { resultText = JSON.stringify(result, null, 2); } catch(_) { resultText = String(result); } }
-
-            if (resultText) {
-              var existingPre = cardBody.querySelector('pre');
-              if (existingPre) {
-                existingPre.textContent = resultText;
-              } else {
-                var pre = mk('pre', '');
-                pre.textContent = resultText;
-                cardBody.appendChild(pre);
+            var resText = formatToolResultText(toolName, result);
+            var resultContainer = cardBody.querySelector('.cr-tool-card-result');
+            if (!resultContainer) {
+              resultContainer = mk('div', 'cr-tool-card-result');
+              cardBody.appendChild(resultContainer);
+            }
+            resultContainer.style.display = 'block';
+            if (status === 'error') {
+              resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result.message || result.error || 'Unknown error') + '</div>';
+              if (resText) {
+                resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
               }
+            } else if (resText) {
+              resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+            }
+
+            // Show diff if applicable
+            if (toolName === 'write_file' || toolName === 'edit_file') {
+              var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
+              if (argsBlock) argsBlock.open = true;
             }
           }
         }
+
         scrollBottom(msgList);
+      }
+
+      /**
+       * Append an action line inside a tool card (for live progress).
+       * Shows things like "Reading file: src/foo.js" or "Running: npm install"
+       */
+      function appendToolAction(card, action, message, actionStatus) {
+        if (!card) return;
+        var cardBody = card.querySelector('.cr-tool-card-body');
+        if (!cardBody) return;
+
+        var actionsContainer = cardBody.querySelector('.cr-tool-card-actions');
+        if (!actionsContainer) {
+          actionsContainer = mk('div', 'cr-tool-card-actions');
+          cardBody.insertBefore(actionsContainer, cardBody.querySelector('.cr-tool-card-result'));
+        }
+        actionsContainer.style.display = 'block';
+
+        // Don't duplicate — if last action is same message, skip
+        var lastAction = actionsContainer.lastChild;
+        if (lastAction && lastAction.textContent === (actionStatus === 'started' ? '▶ ' : '✓ ') + (message || action)) {
+          return;
+        }
+
+        var line = mk('div', 'cr-tool-card-action-line');
+        var icon = actionStatus === 'started' ? '▶' : '✓';
+        var color = actionStatus === 'started' ? '#d29922' : '#3fb950';
+        line.innerHTML = '<span style="color:' + color + ';margin-right:6px;">' + icon + '</span>' + esc(message || action);
+        actionsContainer.appendChild(line);
+        scrollBottom(msgList);
+      }
+
+      // ── Legacy function kept for backward compatibility ──
+      function appendToolCallBlock(body, tool, args, id) {
+        if (!body) return;
+        var d = mk('div', 'cr-tool-call');
+        var argsStr = '';
+        try { argsStr = JSON.stringify(args, null, 2); } catch (_) { argsStr = String(args || ''); }
+        d.innerHTML =
+          '<div class="cr-tool-call-head">' +
+            I.tool +
+            '<span class="cr-tool-name">' + esc(tool || 'tool') + '</span>' +
+            (id ? '<span class="cr-tool-id">#' + esc(String(id).substring(0, 8)) + '</span>' : '') +
+          '</div>' +
+          (argsStr ? '<pre class="cr-tool-args"><code>' + esc(argsStr) + '</code></pre>' : '');
+        body.appendChild(d);
+        return d;
       }
 
     } catch (e) {
@@ -1124,6 +1448,22 @@
     var message = event.data || {};
     if (message.type === "agentEvent" && window.activeChatStreamCallback) {
       window.activeChatStreamCallback(message.event);
+      // Mirror terminal events to the Dashboard inline terminal so the
+      // user sees a live log of every command the agent runs in BOTH
+      // places: as a per-tool block in the chat AND as a streaming
+      // line in the persistent terminal panel above the chat.
+      if (message.event) {
+        var ev = message.event;
+        if (ev.type === 'terminal_start' && window.forwardTerminalEvent) {
+          window.forwardTerminalEvent('start', ev);
+        } else if (ev.type === 'terminal_output' && window.forwardTerminalEvent) {
+          window.forwardTerminalEvent('output', ev);
+        } else if (ev.type === 'terminal_exit' && window.forwardTerminalEvent) {
+          window.forwardTerminalEvent('exit', ev);
+        } else if (ev.type === 'terminal_error' && window.forwardTerminalEvent) {
+          window.forwardTerminalEvent('error', ev);
+        }
+      }
     }
   });
 

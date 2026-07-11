@@ -11,7 +11,8 @@ import * as config from './config.js';
 import * as providerManager from './providerManager.js';
 import { getWorkspaceFolder } from './workspaceContext.js';
 import * as terminalManager from './terminalManager.js';
-import { cancelAllPermissions } from './permissions.js';
+import * as permissions from './permissions.js';
+import { PROVIDER_DEFAULTS } from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,7 @@ let statusBarItem;
 let currentWebview = null;
 let sidebarWebviewView = null;
 let extensionContext = null;
+let currentAbortController = null;
 
 // =====================================================
 // ACTIVATE
@@ -30,6 +32,9 @@ export function activate(context) {
 
   // Register all tools
   registerAllTools();
+
+  // Give the permission system access to extensionContext for "always" persistence
+  permissions.setExtensionContext(context);
 
   // Register terminal shell integration listeners
   terminalManager.registerTerminalListeners(context);
@@ -223,6 +228,9 @@ async function sendCurrentSettings(webview) {
     hasKey = false;
   }
 
+  // Include all saved provider configs so the frontend can show them
+  var providerConfigs = config.getAllProviderConfigs(extensionContext);
+
   webview.postMessage({
     type: 'currentSettings',
     settings: {
@@ -234,7 +242,8 @@ async function sendCurrentSettings(webview) {
       showThinking: cfg.showThinking,
       confirmDangerous: cfg.confirmDangerous,
       hasApiKey: hasKey
-    }
+    },
+    providerConfigs: providerConfigs
   });
 }
 
@@ -252,13 +261,22 @@ async function handleFrontendMessage(message, webview) {
       try {
         var stored = extensionContext?.globalState.get('coderun_conversations', '[]') || '[]';
         var selectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
-        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel });
+        var selectedProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
+        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
+        // Send the current "Always Allow / Always Deny" map so the UI can
+        // mark persistent decisions without needing an extra round-trip.
+        webview.postMessage({
+          type: 'permissionState',
+          decisions: permissions.listAlwaysDecisions()
+        });
       } catch (e) {
         console.error('[CODERUN] Failed to send initial data:', e);
       }
       // Send current VS Code settings to frontend so UI is in sync
       await sendCurrentSettings(webview);
+      // Check active provider health first, then refresh all saved providers
       await checkProviderHealth(webview);
+      await refreshAllProviderModels(webview);
       break;
     }
 
@@ -267,11 +285,20 @@ async function handleFrontendMessage(message, webview) {
       var history = message.history;
       var workspaceFolder = message.workspaceFolder;
 
-      // Read provider config from VS Code settings (single source of truth)
-      var providerConfig = await config.getProviderConfigWithKey(extensionContext);
+      // Determine which provider to use from the frontend
+      var providerName = message.provider || '';
+      var frontendModel = message.model || '';
 
-      // Frontend can override the model per-chat, but provider/baseUrl come from settings
-      var frontendModel = message.model;
+      // If frontend sent a provider, look up its saved config
+      var providerConfig;
+      if (providerName && PROVIDER_DEFAULTS[providerName]) {
+        providerConfig = await config.getProviderConfigByName(extensionContext, providerName);
+      } else {
+        // Fallback: read the currently active provider from VS Code settings
+        providerConfig = await config.getProviderConfigWithKey(extensionContext);
+      }
+
+      // Override model from frontend (most important — user selected it)
       if (frontendModel && frontendModel.trim()) {
         providerConfig.model = frontendModel.trim();
       }
@@ -298,36 +325,83 @@ async function handleFrontendMessage(message, webview) {
         webview.postMessage({ type: 'agentEvent', event: event });
       });
 
+      // Build a permission bridge: the agent calls askPermission(toolName, args, id);
+      // we ask the webview, the user clicks Allow/Deny/Always-*, and the webview
+      // calls back via 'permissionResponse' which routes into
+      // permissions.resolvePermission — which resolves the right Promise.
       var askPermission = function(toolName, args, id) {
-        return new Promise(function(resolve) {
-          webview.postMessage({
-            type: 'agentEvent',
-            event: { type: 'requestPermission', tool: toolName, arguments: args, id: id }
+        // Short-circuit: if a persistent "always" decision exists, requestPermission
+        // returns a resolved promise immediately and no UI prompt is needed.
+        var persistent = permissions.getAlwaysDecision(toolName);
+        if (persistent) {
+          sendEvent({
+            type: 'requestPermission',
+            tool: toolName,
+            arguments: args,
+            id: id,
+            autoResolved: true,
+            decision: persistent
           });
-          if (!globalThis._pendingPermissions) globalThis._pendingPermissions = {};
-          globalThis._pendingPermissions[id] = resolve;
+          return Promise.resolve(persistent === 'allow');
+        }
+        // Otherwise: ask the webview to render the 4-button permission card.
+        sendEvent({
+          type: 'requestPermission',
+          tool: toolName,
+          arguments: args,
+          id: id
         });
+        return permissions.requestPermission(toolName, args, id, null);
       };
 
       var sendEvent = function(event) {
         webview.postMessage({ type: 'agentEvent', event: event });
       };
 
+      // Cooperative stop: the frontend can fire 'stopChat' to set this flag,
+      // the agent loop checks it between iterations.
+      currentAbortController = { stopped: false };
+      var abortCtrl = currentAbortController;
+
       try {
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission);
-        webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end' } });
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission, { signal: abortCtrl });
+        webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
         console.error('[CODERUN] Agent error:', err);
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: err.message } });
+      } finally {
+        if (currentAbortController === abortCtrl) currentAbortController = null;
       }
       break;
     }
 
-    case 'permissionResponse': {
-      if (globalThis._pendingPermissions && globalThis._pendingPermissions[message.toolCallId]) {
-        globalThis._pendingPermissions[message.toolCallId](message.approved);
-        delete globalThis._pendingPermissions[message.toolCallId];
+    case 'stopChat': {
+      if (currentAbortController) {
+        currentAbortController.stopped = true;
       }
+      permissions.cancelAllPermissions();
+      break;
+    }
+
+    case 'permissionResponse': {
+      permissions.resolvePermission(
+        message.toolCallId,
+        !!message.approved,
+        { always: !!message.always, tool: message.tool }
+      );
+      break;
+    }
+
+    case 'clearPermissionDecision': {
+      if (message.tool) {
+        permissions.clearAlwaysDecision(message.tool);
+      } else {
+        permissions.clearAlwaysDecision();
+      }
+      webview.postMessage({
+        type: 'permissionState',
+        decisions: permissions.listAlwaysDecisions()
+      });
       break;
     }
 
@@ -392,6 +466,13 @@ async function handleFrontendMessage(message, webview) {
           console.error('[CODERUN] Failed to save model:', e);
         }
       }
+      if (message.provider !== undefined && extensionContext) {
+        try {
+          await extensionContext.globalState.update('coderun_selected_provider', message.provider);
+        } catch (e) {
+          console.error('[CODERUN] Failed to save provider:', e);
+        }
+      }
       break;
     }
 
@@ -414,6 +495,7 @@ async function handleFrontendMessage(message, webview) {
           console.log('[CODERUN] Settings saved successfully');
 
           // Save API key to secrets BEFORE health check
+          var resolvedApiKey = '';
           if (message.apiKey !== undefined && message.apiKey !== null) {
             if (message.apiKey === '') {
               console.log('[CODERUN] Deleting API key from secrets');
@@ -421,8 +503,21 @@ async function handleFrontendMessage(message, webview) {
             } else if (message.apiKey !== '••••••••') {
               console.log('[CODERUN] Saving API key to secrets');
               await config.setApiKey(extensionContext, message.apiKey);
+              resolvedApiKey = message.apiKey;
+            } else {
+              // Placeholder — get existing key
+              try { resolvedApiKey = await config.getApiKey(extensionContext) || ''; } catch (_) {}
             }
           }
+
+          // Also save per-provider config for multi-provider support
+          var savedProvider = message.settings.provider || config.getConfig().provider;
+          var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
+          await config.saveProviderConfig(extensionContext, savedProvider, {
+            baseUrl: savedBaseUrl,
+            apiKey: resolvedApiKey,
+            model: message.settings.model || ''
+          });
 
           var overrideCfg = await config.getProviderConfigWithKey(extensionContext);
           if (message.settings.provider) overrideCfg.provider = message.settings.provider;
@@ -431,6 +526,7 @@ async function handleFrontendMessage(message, webview) {
 
           await sendCurrentSettings(webview);
           await checkProviderHealth(webview, overrideCfg);
+          await refreshAllProviderModels(webview);
         } catch (e) {
           console.error('[CODERUN] Failed to save settings:', e);
           webview.postMessage({ type: 'showAlert', message: 'Failed to save settings: ' + e.message });
@@ -448,27 +544,44 @@ async function handleFrontendMessage(message, webview) {
         }
         await sendCurrentSettings(webview);
         await checkProviderHealth(webview);
+        await refreshAllProviderModels(webview);
+      }
+      break;
+    }
+
+    case 'removeProviderConfig': {
+      if (message.provider && extensionContext) {
+        console.log('[CODERUN] Removing saved config for provider:', message.provider);
+        await config.deleteProviderConfig(extensionContext, message.provider);
+        await sendCurrentSettings(webview);
+        await refreshAllProviderModels(webview);
       }
       break;
     }
 
     case 'requestConversations': {
       if (!extensionContext) {
-        webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '' });
+        webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '', selectedProvider: '' });
         return;
       }
       try {
         var stored = extensionContext.globalState.get('coderun_conversations', '[]');
         var selectedModel = extensionContext.globalState.get('coderun_selected_model', '');
-        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel });
+        var selectedProvider = extensionContext.globalState.get('coderun_selected_provider', '');
+        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
       } catch (e) {
-        webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '' });
+        webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '', selectedProvider: '' });
       }
       break;
     }
 
     case 'checkHealth': {
       await checkProviderHealth(webview);
+      break;
+    }
+
+    case 'refreshAllModels': {
+      await refreshAllProviderModels(webview);
       break;
     }
 
@@ -562,11 +675,34 @@ async function checkProviderHealth(webview, overrideConfig) {
   }
 }
 
+/**
+ * Refresh models from ALL saved provider configurations.
+ * Iterates over every saved provider and sends individual health status
+ * messages so the frontend accumulates all models in the dropdown.
+ */
+async function refreshAllProviderModels(webview) {
+  var allConfigs = config.getAllProviderConfigs(extensionContext);
+  var providerKeys = Object.keys(allConfigs);
+
+  if (!providerKeys.length) {
+    // No saved configs — fall back to the active provider
+    await checkProviderHealth(webview);
+    return;
+  }
+
+  for (var i = 0; i < providerKeys.length; i++) {
+    var provName = providerKeys[i];
+    var provCfg = await config.getProviderConfigByName(extensionContext, provName);
+    await checkProviderHealth(webview, provCfg);
+  }
+}
+
 // =====================================================
 // DEACTIVATE
 // =====================================================
 export function deactivate() {
   if (statusBarItem) statusBarItem.dispose();
   terminalManager.dispose();
-  cancelAllPermissions();
+  permissions.cancelAllPermissions();
+  currentAbortController = null;
 }

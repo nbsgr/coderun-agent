@@ -3,15 +3,18 @@
 
 import { runAgentLoop } from './agentLoop.js';
 
-export async function runAgent(message, model, workspace, history, config, sendEvent, askPermission) {
+export async function runAgent(message, model, workspace, history, config, sendEvent, askPermission, options) {
   console.log('[AGENT] Starting runner. Model: ' + model + ', Workspace: ' + workspace);
 
   var providerConfig = Object.assign({}, config, { model: model });
+  options = options || {};
+  var signal = options.signal || null;
 
   return await runAgentLoop(message, providerConfig, {
     workspace: workspace,
     history: history,
     sendEvent: sendEvent,
-    askPermission: askPermission
+    askPermission: askPermission,
+    signal: signal
   });
 }

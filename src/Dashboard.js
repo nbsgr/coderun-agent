@@ -22,6 +22,8 @@
     renamingId: null,
     renameValue: "",
     selectedModel: "",
+    selectedProvider: "",
+    savedProviderConfigs: {},
     workspaceFolder: vscodeState.workspaceFolder || window.WORKSPACE_FOLDER || "",
     models: [],
     modelsByProvider: {},
@@ -32,6 +34,10 @@
     apiKey: "",
     hasApiKey: false,
     settingsLoadedFromVscode: false,
+    // "Always Allow / Always Deny" decisions per tool. Populated from the
+    // extension host via the 'permissionState' message on webviewReady and
+    // after every change. ChatSpace can read it via getDashboardAlwaysDecisions.
+    alwaysDecisions: {},
     settings: {
       provider: "ollama",
       baseUrl: DEFAULT_BASE_URL,
@@ -53,6 +59,7 @@
           conversations: state.conversations,
           activeConversationId: state.activeConversationId,
           selectedModel: state.selectedModel,
+          selectedProvider: state.selectedProvider,
           workspaceFolder: state.workspaceFolder
         });
       } catch (e) {}
@@ -88,11 +95,11 @@
     saveStateToVscode();
     try { localStorage.setItem(MODEL_KEY, state.selectedModel); } catch (_) {}
     if (state.isVsCode && window.VSCODE_API) {
-      window.VSCODE_API.postMessage({ type: "saveSelectedModel", model: state.selectedModel });
+      window.VSCODE_API.postMessage({ type: "saveSelectedModel", model: state.selectedModel, provider: state.selectedProvider });
     }
   }
 
-  window.loadConversationsFromExtension = function(conversationsJson, selectedModel) {
+  window.loadConversationsFromExtension = function(conversationsJson, selectedModel, selectedProvider) {
     try {
       var extConvs = typeof conversationsJson === "string" ? JSON.parse(conversationsJson || "[]") : Array.isArray(conversationsJson) ? conversationsJson : [];
       if (extConvs && extConvs.length > 0) {
@@ -104,6 +111,9 @@
         state.selectedModel = selectedModel;
         saveStateToVscode();
         try { localStorage.setItem(MODEL_KEY, state.selectedModel); } catch (_) {}
+      }
+      if (selectedProvider) {
+        state.selectedProvider = selectedProvider;
       }
     } catch (_) {}
     renderSidebar();
@@ -178,6 +188,78 @@
     if (streamingEl) streamingEl.checked = state.settings.streaming;
     if (showThinkingEl) showThinkingEl.checked = state.settings.showThinking;
     if (confirmEl) confirmEl.checked = state.settings.confirmDangerous;
+  }
+
+  /**
+   * Render the list of saved provider configs in the settings panel.
+   */
+  function renderSavedProviders() {
+    var section = document.getElementById("savedProvidersSection");
+    if (!section) return;
+    var configs = state.savedProviderConfigs || {};
+    var keys = Object.keys(configs);
+    if (!keys.length) {
+      section.innerHTML = '';
+      return;
+    }
+    var html = '<div class="cr-saved-providers-heading">Saved Providers</div>';
+    for (var i = 0; i < keys.length; i++) {
+      var prov = keys[i];
+      var cfg = configs[prov] || {};
+      var label = prov.charAt(0).toUpperCase() + prov.slice(1);
+      var hasKey = cfg.apiKey ? '🔑' : '○';
+      var url = cfg.baseUrl ? cfg.baseUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
+      html += '<div class="cr-saved-provider-item" data-provider="' + esc(prov) + '">' +
+        '<span class="cr-saved-provider-name">' + hasKey + ' ' + esc(label) + '</span>' +
+        '<span class="cr-saved-provider-url" title="' + esc(cfg.baseUrl || '') + '">' + esc(url) + '</span>' +
+        '<button class="cr-saved-provider-load" title="Load this provider\'s settings">Load</button>' +
+        '<button class="cr-saved-provider-remove" title="Remove this provider config">✕</button>' +
+        '</div>';
+    }
+    section.innerHTML = html;
+
+    section.querySelectorAll('.cr-saved-provider-load').forEach(function(btn) {
+      btn.onclick = function(e) {
+        e.stopPropagation();
+        var item = btn.closest('.cr-saved-provider-item');
+        var prov = item ? item.dataset.provider : '';
+        if (prov && configs[prov]) {
+          loadProviderToForm(prov, configs[prov]);
+        }
+      };
+    });
+    section.querySelectorAll('.cr-saved-provider-remove').forEach(function(btn) {
+      btn.onclick = function(e) {
+        e.stopPropagation();
+        var item = btn.closest('.cr-saved-provider-item');
+        var prov = item ? item.dataset.provider : '';
+        if (prov) {
+          delete configs[prov];
+          state.savedProviderConfigs = configs;
+          renderSavedProviders();
+          if (state.isVsCode && window.VSCODE_API) {
+            window.VSCODE_API.postMessage({ type: 'removeProviderConfig', provider: prov });
+          }
+        }
+      };
+    });
+  }
+
+  /**
+   * Load a saved provider's config into the settings form fields.
+   */
+  function loadProviderToForm(provider, cfg) {
+    var providerEl = document.getElementById("cfgProvider");
+    var baseUrlEl = document.getElementById("cfgBaseUrl");
+    var apiKeyEl = document.getElementById("cfgApiKey");
+    var modelEl = document.getElementById("cfgModel");
+    if (providerEl) providerEl.value = provider;
+    if (baseUrlEl) baseUrlEl.value = cfg.baseUrl || '';
+    if (apiKeyEl) apiKeyEl.value = cfg.apiKey ? '••••••••' : '';
+    if (modelEl) modelEl.value = cfg.model || '';
+    state.settings.provider = provider;
+    state.settings.baseUrl = cfg.baseUrl || '';
+    state.hasApiKey = !!cfg.apiKey;
   }
 
   window.renderDashboard = function(container) {
@@ -280,7 +362,6 @@
               '</div>' +
             '</section>' +
             '<section id="panel-settings" class="cr-panel">' +
-              '<div class="cr-view-header"><h3>Settings</h3></div>' +
               '<div class="cr-settings">' +
                 '<div class="cr-input-group"><label>Provider</label><select id="cfgProvider"><option value="ollama">Ollama</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option><option value="compatible">OpenAI Compatible</option></select></div>' +
                 '<div class="cr-input-group"><label>Base URL</label><input type="text" id="cfgBaseUrl" value="' + esc(state.baseUrl) + '" placeholder="e.g., https://api.example.com/v1"></div>' +
@@ -293,6 +374,7 @@
                 '<div class="cr-input-group cr-checkbox"><label><input type="checkbox" id="cfgConfirmDangerous" checked> Confirm Dangerous Actions</label></div>' +
                 '<button id="saveSettingsBtn" class="cr-save-btn">Save Settings</button>' +
                 '<button id="clearAllConvBtn" class="cr-danger-btn">Clear All Conversations</button>' +
+                '<div id="savedProvidersSection" class="cr-saved-providers"></div>' +
               '</div>' +
             '</section>' +
           '</main>' +
@@ -313,6 +395,7 @@
     var modelSelect = document.getElementById("modelSelect");
     modelSelect.onchange = function() {
       state.selectedModel = modelSelect.value;
+      state.selectedProvider = modelSelect.options[modelSelect.selectedIndex]?.dataset?.provider || '';
       saveSelectedModel();
       updateModelBadge();
     };
@@ -359,6 +442,8 @@
 
       if (newModel) {
         state.selectedModel = newModel;
+        // Also set selectedProvider from the saved provider (the one being saved)
+        state.selectedProvider = newProvider;
       }
 
       if (state.isVsCode && window.VSCODE_API) {
@@ -495,6 +580,10 @@
   function loadModels() {
     var select = document.getElementById("modelSelect");
     if (select) select.innerHTML = '<option value="">Loading models...</option>';
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "refreshAllModels" });
+      return;
+    }
     checkHealth();
   }
 
@@ -524,6 +613,7 @@
         option.value = models[i];
         option.textContent = models[i];
         option.title = models[i];
+        option.dataset.provider = providerName;
         group.appendChild(option);
       }
       select.appendChild(group);
@@ -531,6 +621,7 @@
 
     if (!state.selectedModel || !optionExists(select, state.selectedModel)) {
       state.selectedModel = select.options[0] ? select.options[0].value : "";
+      state.selectedProvider = select.options[0] ? (select.options[0].dataset?.provider || '') : '';
       saveSelectedModel();
     }
     updateModelSelectValue();
@@ -735,6 +826,42 @@
     lines.scrollTop = lines.scrollHeight;
   };
 
+  /**
+   * Bridge from the agent event stream (ChatSpace) to the Dashboard inline
+   * terminal. Called by ChatSpace.js whenever a terminal_* event is
+   * received so the user sees a live log of every command the agent runs
+   * in BOTH the chat history and the persistent terminal panel.
+   *
+   *   phase: 'start' | 'output' | 'exit' | 'error'
+   *   ev:    { terminalId, command?, chunk?, exitCode?, duration?, fallback?, message? }
+   */
+  window.forwardTerminalEvent = function(phase, ev) {
+    if (!ev) return;
+    if (phase === 'start') {
+      if (ev.command) window.appendTerminalLine('$ ' + ev.command, 'cmd');
+    } else if (phase === 'output') {
+      if (ev.chunk) {
+        // Split on newlines so each line gets its own row for readability
+        var parts = String(ev.chunk).split(/\r?\n/);
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].length) window.appendTerminalLine(parts[i], 'out');
+        }
+      }
+    } else if (phase === 'exit') {
+      var code = ev.exitCode;
+      var ms = ev.duration;
+      if (ev.fallback) {
+        window.appendTerminalLine('[Sent to terminal · check panel]', 'out');
+      } else if (code === 0) {
+        window.appendTerminalLine('[Exit 0' + (ms != null ? ' · ' + ms + 'ms' : '') + ']', 'out');
+      } else {
+        window.appendTerminalLine('[Exit ' + (code == null ? '?' : code) + (ms != null ? ' · ' + ms + 'ms' : '') + ']', 'err');
+      }
+    } else if (phase === 'error') {
+      window.appendTerminalLine('[Error: ' + (ev.message || 'unknown') + ']', 'err');
+    }
+  };
+
   window.clearTerminal = function() {
     var terminal = document.getElementById("inlineTerminal");
     var lines = document.getElementById("terminalOutputLines");
@@ -747,8 +874,10 @@
   }
 
   window.getDashboardModel = function() { return state.selectedModel; };
+  window.getDashboardProvider = function() { return state.selectedProvider; };
   window.getDashboardWorkspace = function() { return state.workspaceFolder; };
   window.getDashboardBaseUrl = function() { return state.baseUrl; };
+  window.getDashboardAlwaysDecisions = function() { return state.alwaysDecisions || {}; };
 
   window.saveConversationMessage = function(convId, role, content, extra) {
     extra = extra || {};
@@ -816,31 +945,64 @@
     if (message.type === "currentSettings") {
       // Received current settings from VS Code backend
       window.applyVscodeSettings(message.settings);
+      // Store all saved provider configs for multi-provider support
+      if (message.providerConfigs) {
+        var newConfigs = message.providerConfigs;
+        // Clean up models from providers that are no longer saved
+        if (state.savedProviderConfigs) {
+          for (var oldProv in state.savedProviderConfigs) {
+            if (!newConfigs[oldProv] && state.modelsByProvider) {
+              delete state.modelsByProvider[oldProv];
+            }
+          }
+        }
+        state.modelsByProvider = state.modelsByProvider || {};
+        state.savedProviderConfigs = newConfigs;
+        renderSavedProviders();
+        // Rebuild flat model list
+        state.models = [];
+        for (var provKey in state.modelsByProvider) {
+          if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
+            state.models = state.models.concat(state.modelsByProvider[provKey]);
+          }
+        }
+        renderModelOptions();
+      }
     }
     if (message.type === "healthStatus") {
       state.isOnline = message.online;
       var dot = document.getElementById("status-dot");
       var text = document.getElementById("status-text");
-      if (message.online) {
+      if (message.online && message.models) {
         if (dot) dot.className = "cr-status-dot";
         if (text) text.textContent = "Online";
-        var allModels = message.models || [];
-        state.models = allModels;
-        state.modelsByProvider = {};
-        state.modelsByProvider[message.provider || "ollama"] = allModels;
+        // Accumulate models per provider — don't clear other providers' models
+        if (!state.modelsByProvider) state.modelsByProvider = {};
+        state.modelsByProvider[message.provider || "ollama"] = message.models;
+        // Flatten all provider models into state.models
+        state.models = [];
+        for (var provKey in state.modelsByProvider) {
+          if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
+            state.models = state.models.concat(state.modelsByProvider[provKey]);
+          }
+        }
         renderModelOptions();
       } else {
         if (dot) dot.className = "cr-status-dot offline";
         if (text) text.textContent = "Offline";
+        // Don't clear existing models — keep them for offline viewing
         var select = document.getElementById("modelSelect");
         var errorMsg = message.error || "Unable to load models";
-        // === FIX: Show error in status, not as dropdown option ===
-        if (select) {
+        if (select && (!state.models || !state.models.length)) {
           select.innerHTML = '<option value="">No models available</option>';
         }
-        // Also show error in console for debugging
         console.error("[CODERUN] Health check failed:", errorMsg, "Provider:", message.provider);
       }
+    }
+    if (message.type === "permissionState") {
+      // Backend pushed the current "Always Allow / Always Deny" map.
+      // Store it on state so ChatSpace can read it when it mounts.
+      state.alwaysDecisions = message.decisions || {};
     }
   });
 

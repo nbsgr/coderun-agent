@@ -221,12 +221,12 @@
   word-break: break-word;
 }
 
-/* ── Tool call block ─────────────────────────────────── */
+/* ── Tool call block (legacy, rarely used) ──────────── */
 .cr-tool-call {
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-left: 2px solid var(--vscode-textLink-foreground, #3794ff);
+  border: 1px solid #2d2d2d;
+  border-left: 2px solid #888;
   border-radius: 4px;
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: #1e1e1e;
   overflow: hidden;
   font-size: 12px;
   margin: 4px 0;
@@ -237,20 +237,20 @@
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
-  background: #212121;
-  color: #569cd6;
+  background: #1a1a1a;
+  color: #d4d4d4;
   font-weight: 500;
 }
 
 .cr-tool-name { font-family: 'Cascadia Code', 'Consolas', monospace; }
-.cr-tool-id   { color: #888; font-size: 11px; margin-left: auto; }
+.cr-tool-id   { color: #666; font-size: 11px; margin-left: auto; }
 
 .cr-tool-args {
   margin: 0;
   padding: 8px 12px;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 11.5px;
-  color: #9cdcfe;
+  color: #b4b4b4;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 200px;
@@ -260,12 +260,12 @@
 
 .cr-tool-args code { background: transparent; }
 
-/* ── Tool result block ───────────────────────────────── */
+/* ── Tool result block (legacy, rarely used) ────────── */
 .cr-tool-result-block {
-  border: 1px solid #3a3a3a;
-  border-left: 3px solid #4ec9b0;
+  border: 1px solid #2d2d2d;
+  border-left: 3px solid #888;
   border-radius: 6px;
-  background: #1c1c1c;
+  background: #1a1a1a;
   margin: 8px 0;
   overflow: hidden;
 }
@@ -275,8 +275,8 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #212121;
-  color: #4ec9b0;
+  background: #1a1a1a;
+  color: #d4d4d4;
   font-size: 12px;
   font-weight: 500;
 }
@@ -286,7 +286,7 @@
   padding: 10px 12px;
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 12px;
-  color: #d4d4d4;
+  color: #cccccc;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 300px;
@@ -664,10 +664,10 @@
 
 /* ── Permission Request Card ─────────────────────────── */
 .cr-permission-card {
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-left: 3px solid var(--vscode-statusBarItem-warningBackground, #d7ba7d);
+  border: 1px solid #2d2d2d;
+  border-left: 3px solid #888;
   border-radius: 6px;
-  background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.02));
+  background: #1a1a1a;
   margin: 10px 0;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -678,13 +678,13 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.15);
-  color: var(--vscode-statusBarItem-warningForeground, #d7ba7d);
+  background: #1a1a1a;
+  color: #b4b4b4;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #2d2d2d;
 }
 
 .cr-permission-title {
@@ -706,12 +706,12 @@
   padding: 8px;
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 11px;
-  color: #9cdcfe;
-  background: rgba(0, 0, 0, 0.2);
+  color: #b4b4b4;
+  background: #0c0c0c;
   border-radius: 4px;
   max-height: 150px;
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid #2d2d2d;
 }
 
 .cr-permission-actions {
@@ -767,6 +767,91 @@
   background: rgba(248, 81, 73, 0.1);
 }
 
+/* ── 4-button permission row ───────────────────────── */
+.cr-permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.cr-permission-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--vscode-input-border, #3c3c3c);
+  margin: 0 4px;
+  align-self: center;
+}
+
+.cr-permission-info {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: 13px;
+  cursor: help;
+  padding: 0 4px;
+}
+
+.cr-btn-always-allow {
+  background: transparent;
+  color: #4ec9b0;
+  border: 1px solid rgba(78, 201, 176, 0.35);
+}
+
+.cr-btn-always-allow:hover {
+  background: rgba(78, 201, 176, 0.12);
+  border-color: rgba(78, 201, 176, 0.55);
+}
+
+.cr-btn-always-deny {
+  background: transparent;
+  color: #f48771;
+  border: 1px solid rgba(244, 135, 113, 0.35);
+}
+
+.cr-btn-always-deny:hover {
+  background: rgba(244, 135, 113, 0.12);
+  border-color: rgba(244, 135, 113, 0.55);
+}
+
+/* ── Auto-resolved permission line (Always * decisions) ── */
+.cr-permission-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--vscode-input-border, #3c3c3c);
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground, #858585);
+  animation: cs-fadeIn 0.15s ease-in;
+}
+
+.cr-permission-auto-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
+.cr-permission-auto-text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cr-permission-auto-hint {
+  font-size: 11px;
+  color: #6a6a6a;
+  font-style: italic;
+}
+
 /* ════════════════════════════════════════════════════
    NEW: Terminal Streaming Block
    ════════════════════════════════════════════════════ */
@@ -785,6 +870,22 @@
 .cr-terminal-block--success { border-left-color: #3fb950; }
 .cr-terminal-block--error   { border-left-color: #f85149; }
 .cr-terminal-block--running { border-left-color: #d29922; }
+
+.cr-terminal-block--running .cr-terminal-header-icon::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #d29922;
+  border-radius: 50%;
+  margin-left: 6px;
+  animation: cs-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cs-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
 
 .cr-terminal-header {
   display: flex;
@@ -999,6 +1100,101 @@
   font-family: 'Cascadia Code', Consolas, monospace;
 }
 
+/* ── Tool card args badge ────────────────────────── */
+.cr-tool-card-args {
+  font-size: 10.5px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  flex-shrink: 1;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+/* ── Tool card collapsible args block ────────────── */
+.cr-tool-card-args-block {
+  margin: 4px 0;
+  border: 1px solid #2d2d2d;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cr-tool-card-args-summary {
+  font-size: 11px;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  cursor: pointer;
+  color: #888;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.cr-tool-card-args-summary:hover {
+  color: #d4d4d4;
+}
+
+.cr-tool-card-args-pre {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  background: #0c0c0c;
+  color: #9cdcfe;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid #2d2d2d;
+}
+
+/* ── Tool card action lines (live progress) ──────── */
+.cr-tool-card-actions {
+  margin: 4px 0;
+  padding: 4px 0;
+}
+
+.cr-tool-card-action-line {
+  font-size: 11px;
+  padding: 2px 4px;
+  color: #b4b4b4;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  animation: fadeIn 0.1s ease-in;
+}
+
+/* ── Tool card result section ────────────────────── */
+.cr-tool-card-result {
+  margin: 4px 0;
+}
+
+.cr-tool-card-result-pre {
+  margin: 0;
+  padding: 8px;
+  background: #0c0c0c;
+  border: 1px solid #2d2d2d;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  color: #cccccc;
+  line-height: 1.5;
+}
+
+.cr-tool-card-error-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+  border-radius: 4px;
+  color: #f48771;
+  font-size: 12px;
+}
+
 /* ════════════════════════════════════════════════════
    NEW: Status Timeline
    ════════════════════════════════════════════════════ */
@@ -1013,6 +1209,8 @@
 }
 
 .cr-timeline-item {
+  padding: 3px 0;
+}
   display: flex;
   align-items: center;
   gap: 8px;

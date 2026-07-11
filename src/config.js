@@ -2,7 +2,7 @@
 // All provider config (URL, API key, model name) is read from VS Code user settings.
 
 import * as vscode from 'vscode';
-import { PROVIDER_DEFAULTS } from './constants.js';
+import { PROVIDER_DEFAULTS, STORAGE_KEYS } from './constants.js';
 
 var _cached = null;
 
@@ -143,4 +143,81 @@ export function needsApiKey(provider) {
     compatible: true
   };
   return needs[provider] || false;
+}
+
+// ============================================================
+// MULTI-PROVIDER CONFIG STORAGE
+// Stores multiple provider configurations (baseUrl, apiKey, model)
+// in VS Code globalState under coderun_provider_configs.
+// ============================================================
+
+/**
+ * Get all saved provider configurations from globalState.
+ * Returns an object like { ollama: { baseUrl, apiKey, model }, groq: {...} }
+ */
+export function getAllProviderConfigs(context) {
+  if (!context) return {};
+  try {
+    var raw = context.globalState.get(STORAGE_KEYS.PROVIDER_CONFIGS, '{}');
+    return JSON.parse(raw) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/**
+ * Get a single provider's saved configuration.
+ */
+export function getSavedProviderConfig(context, provider) {
+  var all = getAllProviderConfigs(context);
+  return all[provider] || null;
+}
+
+/**
+ * Save a provider's configuration.
+ * config: { baseUrl, apiKey, model? }
+ */
+export async function saveProviderConfig(context, provider, config) {
+  if (!context || !provider) return;
+  var all = getAllProviderConfigs(context);
+  all[provider] = {
+    baseUrl: config.baseUrl || '',
+    apiKey: config.apiKey || '',
+    model: config.model || ''
+  };
+  await context.globalState.update(STORAGE_KEYS.PROVIDER_CONFIGS, JSON.stringify(all));
+}
+
+/**
+ * Delete a provider's saved configuration.
+ */
+export async function deleteProviderConfig(context, provider) {
+  if (!context || !provider) return;
+  var all = getAllProviderConfigs(context);
+  delete all[provider];
+  await context.globalState.update(STORAGE_KEYS.PROVIDER_CONFIGS, JSON.stringify(all));
+}
+
+/**
+ * Get the API key for a specific provider from its saved config.
+ */
+export function getProviderApiKey(context, provider) {
+  var saved = getSavedProviderConfig(context, provider);
+  return saved ? (saved.apiKey || '') : '';
+}
+
+/**
+ * Build a full provider config for API calls by merging the saved config
+ * with defaults. Used by extension.js when starting a chat with a specific provider.
+ */
+export async function getProviderConfigByName(context, providerName) {
+  var saved = getSavedProviderConfig(context, providerName) || {};
+  var defaults = PROVIDER_DEFAULTS[providerName] || PROVIDER_DEFAULTS.ollama;
+  return {
+    provider: providerName,
+    baseUrl: saved.baseUrl || defaults.baseUrl,
+    model: saved.model || '',
+    apiKey: saved.apiKey || '',
+    needsKey: defaults.needsKey
+  };
 }
