@@ -114,3 +114,11 @@ registerTool('get_current_datetime',
   {},
   []
 );
+
+registerTool('find_in_files',
+  "Search the contents of all project files for a text query. Returns matching file paths with context snippets. Use this when you need to find where something is used, defined, or referenced in code. Fast alternative to reading every file manually.",
+  {
+    query: { type: "string", description: "The text or keyword to search for in file contents, e.g. 'useEffect', 'function calculate', 'TODO'" }
+  },
+  ["query"]
+);

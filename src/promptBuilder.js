@@ -11,6 +11,7 @@ export function buildMessages(userPrompt, options) {
   var skills = options.skills || [];
   var memory = options.memory || [];
   var mcpContext = options.mcpContext || '';
+  var knowledge = options.knowledge || {};  // projectKnowledge context
 
   var messages = [];
 
@@ -29,6 +30,66 @@ export function buildMessages(userPrompt, options) {
   if (mcpContext) {
     systemContent += '\n\n## MCP CONTEXT\n' + mcpContext;
   }
+
+  // Inject project knowledge context if available
+  if (knowledge.projectMetadata) {
+    systemContent += '\n\n## PROJECT METADATA\n';
+    systemContent += '- Project: ' + (knowledge.projectMetadata.name || 'unknown') + '\n';
+    systemContent += '- Files: ' + (knowledge.projectMetadata.fileCount || 0) + '\n';
+  }
+  if (knowledge.projectMemory) {
+    systemContent += '\n\n' + knowledge.projectMemory;
+  }
+  if (knowledge.dependencyGraph) {
+    systemContent += '\n\n' + knowledge.dependencyGraph;
+  }
+  if (knowledge.timeline) {
+    systemContent += '\n\n' + knowledge.timeline;
+  }
+  if (knowledge.fileContext) {
+    systemContent += '\n\n## INDEXED FILE CONTEXT\nUse searchFiles(query) to find relevant files. The index contains ' +
+      (knowledge.fileCount || 0) + ' files.';
+  }
+
+  // Editor context (from ContextManager)
+  if (knowledge.editorContext) {
+    systemContent += '\n\n' + knowledge.editorContext;
+  }
+
+  // Existing plans (from Planning Engine)
+  if (knowledge.activePlans) {
+    systemContent += '\n\n' + knowledge.activePlans;
+  }
+
+  // Project learning (from Learning Engine)
+  if (knowledge.learningContext) {
+    systemContent += '\n\n' + knowledge.learningContext;
+  }
+
+  // Checkpoint / undo context (from Checkpoint Engine)
+  if (knowledge.checkpointContext) {
+    systemContent += '\n\n' + knowledge.checkpointContext;
+  }
+
+  // Intent context (from ContextManager)
+  if (knowledge.intentContext) {
+    systemContent += '\n\n' + knowledge.intentContext;
+  }
+
+  // Suggested tools (from ContextManager)
+  if (knowledge.suggestedTools) {
+    systemContent += '\n\n' + knowledge.suggestedTools;
+  }
+
+  // Relevant files (from ContextManager)
+  if (knowledge.relevantFiles && knowledge.relevantFiles.length) {
+    systemContent += '\n\n## RELEVANT FILES\n';
+    for (var rf = 0; rf < knowledge.relevantFiles.length; rf++) {
+      systemContent += '- ' + knowledge.relevantFiles[rf] + '\n';
+    }
+    systemContent += '\nThese files may be relevant to the user\'s request. Read them if needed.';
+  }
+
   messages.push({ role: 'system', content: systemContent });
 
   // 2. History (skip system messages)

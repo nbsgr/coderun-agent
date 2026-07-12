@@ -6,8 +6,39 @@ import { buildMessages } from './promptBuilder.js';
 import { createProvider } from './providerManager.js';
 import { getDefinitions } from './toolDefinitions.js';
 import * as toolRegistry from './toolRegistry.js';
-import { formatToolResult } from './toolExecutor.js';
+import { formatToolResult, formatExecutionReport } from './toolExecutor.js';
 import { requestPermission } from './permissions.js';
+import * as projectKnowledge from './projectKnowledge.js';
+import * as contextManager from './contextManager.js';
+import * as planningManager from './planningManager.js';
+import * as verificationManager from './verificationManager.js';
+import * as learningManager from './learningManager.js';
+import * as timelineManager from './timelineManager.js';
+import * as checkpointManager from './checkpointManager.js';
+
+// ── Deferred diff tracking ─────────────────────────────────
+// Maps diff IDs to their resolve functions so extension.js can
+// resolve them when the user accepts/rejects a proposed edit.
+var _pendingDiffs = {};
+
+/**
+ * Resolve a pending diff request. Called by extension.js when the
+ * user accepts or rejects a proposed file edit.
+ * @param {string} id - The diff request ID
+ * @param {boolean} accepted - Whether the user accepted the changes
+ */
+export function resolveDiff(id, accepted) {
+  if (_pendingDiffs[id]) {
+    _pendingDiffs[id]({ accepted: !!accepted });
+    delete _pendingDiffs[id];
+  }
+}
+
+/**
+ * The maximum number of times a tool execution will be retried
+ * after failing verification. Configurable via config.
+ */
+var MAX_RETRIES = 3;
 
 export async function runAgentLoop(userPrompt, config, options) {
   options = options || {};
@@ -19,9 +50,58 @@ export async function runAgentLoop(userPrompt, config, options) {
   var maxIterations = config.maxIterations || MAX_ITERATIONS;
 
   var provider = createProvider(config);
+
+  // Gather context via ContextManager
+  var contextResult = null;
+  try {
+    contextResult = await contextManager.gatherContext(userPrompt, workspace);
+  } catch (_) {}
+  var knowledge = contextResult ? contextResult.knowledge : {};
+
+  // Ensure knowledge has the minimum structure promptBuilder expects
+  if (!knowledge.projectMetadata) {
+    // Fallback: inline gathering if ContextManager fails
+    try {
+      if (projectKnowledge.getStats().ready) {
+        knowledge.projectMetadata = projectKnowledge.getProjectMetadata();
+        var stats2 = projectKnowledge.getStats();
+        knowledge.fileCount = stats2.tables && stats2.tables.files ? stats2.tables.files : 0;
+        knowledge.fileContext = true;
+      }
+    } catch (_) {}
+    if (!knowledge.projectMemory) knowledge.projectMemory = '';
+    if (!knowledge.dependencyGraph) knowledge.dependencyGraph = '';
+    if (!knowledge.timeline) knowledge.timeline = '';
+  }
+
+  // Record session start in timeline
+  try {
+    var sessionLabel = String(userPrompt || '').substring(0, 60);
+    timelineManager.addEvent('session:start', sessionLabel);
+  } catch (_) {}
+
+  // Create a plan for this request (Planning Engine — Phase 4)
+  var currentPlan = null;
+  try {
+    var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
+                                        : 'session_' + Date.now();
+    if (contextResult) {
+      currentPlan = await planningManager.createPlan(userPrompt, contextResult, sessionId);
+      if (currentPlan) {
+        // Inject plan context into knowledge so promptBuilder can render it
+        if (!knowledge.activePlans) {
+          try {
+            knowledge.activePlans = planningManager.getActivePlansContext();
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
+
   var messages = buildMessages(userPrompt, {
     workspace: workspace,
-    history: history
+    history: history,
+    knowledge: knowledge
   });
 
   var iteration = 0;
@@ -225,9 +305,30 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Execute tool
       console.log('[AGENT LOOP] Running tool: ' + toolName);
       var lastResult = null;
+      var checkpointsCreated = [];
+
+      // Create checkpoint BEFORE file modifications (captures original content)
+      try {
+        if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'delete_file') {
+          var cpFile = args.file_path || '';
+          if (cpFile) {
+            var cpLabel = (toolName === 'delete_file' ? 'Deleted' : (toolName === 'write_file' ? 'Created' : 'Edited')) + ': ' + cpFile;
+            var sessionId = 'session_' + Date.now();
+            var cpId = await checkpointManager.createCheckpoint(cpFile, workspace, sessionId, cpLabel);
+            if (cpId) {
+              checkpointsCreated.push({ id: cpId, filePath: cpFile, label: cpLabel });
+            }
+          }
+        }
+      } catch (_) {}
+
       try {
         var generator = toolRegistry.execute(toolName, args, workspace);
         for await (var event of generator) {
+          // Capture deferred resolve for diff review requests
+          if (event.type === 'request_diff' && event.id && event.deferred) {
+            _pendingDiffs[event.id] = event.deferred.resolve;
+          }
           sendEvent(event);
           if (event.type === 'tool_result') {
             lastResult = event;
@@ -236,12 +337,84 @@ export async function runAgentLoop(userPrompt, config, options) {
       } catch (err) {
         sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message });
         lastResult = { success: false, message: err.message };
+      } finally {
+        // Clean up any pending diffs for this tool call
+        for (var diffId in _pendingDiffs) {
+          if (diffId.startsWith('diff_' + tcId) || diffId.includes(tcId)) {
+            _pendingDiffs[diffId]({ accepted: false });
+            delete _pendingDiffs[diffId];
+          }
+        }
       }
 
       toolResults.push({
         tool_name: toolName,
         tool_call_id: tcId,
         formattedResult: formatToolResult(toolName, lastResult)
+      });
+
+      // Record tool usage for learning engine
+      try {
+        learningManager.recordToolUsage(toolName, args.command || args.file_path || args.pattern || '');
+      } catch (_) {}
+
+      // Record timeline event
+      try {
+        var tlSuccess = lastResult ? lastResult.success : undefined;
+        var tlMsg = lastResult ? (lastResult.message || lastResult.error || '') : '';
+        timelineManager.addToolEvent(toolName, args, tlSuccess, tlMsg);
+      } catch (_) {}
+
+      // Verify tool result (Phase 8 — Agentic Loop)
+      if (lastResult && lastResult.success !== false) {
+        try {
+          var stepArgs = { action: toolName, target: args.file_path || args.command || args.pattern || '', description: '' };
+          var stepResult = {
+            order: iteration,
+            action: toolName,
+            status: 'completed',
+            duration: 0,
+            output: lastResult.message || lastResult.content || '',
+            error: null
+          };
+          var verification = await verificationManager.verifyStep(stepResult, stepArgs, workspace);
+          if (!verification.verified) {
+            // Track retries for this tool execution
+            var retryKey = iteration + '_' + toolName;
+            var retryCount = Number(projectKnowledge.getSetting('retry_' + retryKey) || 0);
+            retryCount++;
+            projectKnowledge.setSetting('retry_' + retryKey, String(retryCount));
+            projectKnowledge.setSetting('retry_count_total', String(Number(projectKnowledge.getSetting('retry_count_total') || 0) + 1));
+
+            if (retryCount <= MAX_RETRIES) {
+              console.log('[AGENT LOOP] Verification failed for', toolName, '- retry', retryCount, '/', MAX_RETRIES);
+              sendEvent({
+                type: EVENT_TYPES.AGENT_STATUS,
+                status: 'verification_failed',
+                tool: toolName,
+                retry: retryCount,
+                maxRetries: MAX_RETRIES,
+                message: 'Verification: ' + verification.summary + ' — retrying (' + retryCount + '/' + MAX_RETRIES + ')'
+              });
+            } else {
+              console.log('[AGENT LOOP] Verification failed for', toolName, '- max retries reached');
+              sendEvent({
+                type: EVENT_TYPES.AGENT_STATUS,
+                status: 'verification_failed',
+                tool: toolName,
+                message: 'Verification: ' + verification.summary + ' — max retries reached'
+              });
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Emit any checkpoints created during this iteration
+    if (checkpointsCreated.length) {
+      sendEvent({
+        type: 'checkpoints_created',
+        checkpoints: checkpointsCreated
       });
     }
 

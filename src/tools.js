@@ -6,6 +6,7 @@ import { existsSync } from 'fs';
 import * as path from 'path';
 import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
+import * as searchManager from './searchManager.js';
 
 // =====================================================
 // HELPER: SAFE PATH
@@ -45,6 +46,41 @@ async function* write_file(args, workspace) {
   yield { type: 'action', action: 'write_file', message: 'Writing file: ' + filePath };
   try {
     var target = _safePath(workspace, filePath);
+
+    // Read original content if file exists (for diff preview)
+    var originalContent = '';
+    if (existsSync(target)) {
+      originalContent = await fs.readFile(target, 'utf-8');
+    }
+
+    // Create a deferred promise for diff review
+    // The agent loop captures deferred.resolve and extension.js calls
+    // agentLoop.resolveDiff(id, accepted) to resolve it.
+    var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    var deferred = {};
+    deferred.promise = new Promise(function(resolve) {
+      deferred.resolve = resolve;
+    });
+
+    yield {
+      type: 'request_diff',
+      id: diffId,
+      tool: 'write_file',
+      file_path: filePath,
+      original_content: originalContent,
+      new_content: content,
+      is_new_file: !originalContent,
+      deferred: deferred
+    };
+
+    // Wait for user to accept or reject in the diff editor
+    var diffResult = await deferred.promise;
+    if (!diffResult || !diffResult.accepted) {
+      yield { type: 'tool_result', tool: 'write_file', success: false, file_path: filePath, message: 'Write rejected by user.', rejected: true };
+      return;
+    }
+
+    // User accepted — write the file
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf-8');
     yield { type: 'tool_result', tool: 'write_file', success: true, file_path: filePath, message: 'File written: ' + filePath };
@@ -71,6 +107,33 @@ async function* edit_file(args, workspace) {
     }
     var idx = content.indexOf(oldString);
     var newContent = content.substring(0, idx) + newString + content.substring(idx + oldString.length);
+
+    // Create a deferred promise for diff review
+    var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    var deferred = {};
+    deferred.promise = new Promise(function(resolve) {
+      deferred.resolve = resolve;
+    });
+
+    yield {
+      type: 'request_diff',
+      id: diffId,
+      tool: 'edit_file',
+      file_path: filePath,
+      original_content: content,
+      new_content: newContent,
+      is_new_file: false,
+      deferred: deferred
+    };
+
+    // Wait for user to accept or reject
+    var diffResult = await deferred.promise;
+    if (!diffResult || !diffResult.accepted) {
+      yield { type: 'tool_result', tool: 'edit_file', success: false, file_path: filePath, message: 'Edit rejected by user.', rejected: true };
+      return;
+    }
+
+    // User accepted — write the file
     await fs.writeFile(target, newContent, 'utf-8');
     yield { type: 'tool_result', tool: 'edit_file', success: true, file_path: filePath, message: 'File edited: ' + filePath };
   } catch (e) {
@@ -149,31 +212,14 @@ async function* search_files(args, workspace) {
     var target = _safePath(workspace, folderPath);
     var matches = [];
 
-    function globToRegex(pat) {
-      var escaped = pat.replace(/[-[\]{}()+?.,\^$|#\s]/g, '\$&');
-      var wildcards = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
-      return new RegExp('^' + wildcards + '$', 'i');
+    // Use SearchManager which delegates to SQLite index or falls back to fs walk
+    try {
+      var results = await searchManager.searchFiles(pattern, workspace, folderPath === '.' ? '' : folderPath);
+      matches = results || [];
+    } catch (_) {
+      matches = [];
     }
 
-    var regex = globToRegex(pattern);
-
-    async function walk(dir) {
-      var list = await fs.readdir(dir, { withFileTypes: true });
-      for (var i = 0; i < list.length; i++) {
-        var item = list[i];
-        var fullPath = path.resolve(dir, item.name);
-        if (item.isDirectory()) {
-          if (item.name === 'node_modules' || item.name === '.git' || item.name === '.venv') continue;
-          await walk(fullPath);
-        } else {
-          if (regex.test(item.name)) {
-            matches.push(path.relative(target, fullPath));
-          }
-        }
-      }
-    }
-
-    if (existsSync(target)) await walk(target);
     yield { type: 'tool_result', tool: 'search_files', success: true, pattern: pattern, folder_path: folderPath, matches: matches };
   } catch (e) {
     yield { type: 'tool_result', tool: 'search_files', success: false, message: e.message };
@@ -277,6 +323,32 @@ async function* get_current_datetime(args, workspace) {
 }
 
 // =====================================================
+// FIND IN FILES — content search
+// =====================================================
+
+async function* find_in_files(args, workspace) {
+  var query = args.query || '';
+  yield { type: 'action', action: 'find_in_files', message: "Searching file contents for: '" + query + "'" };
+  if (!query) {
+    yield { type: 'tool_result', tool: 'find_in_files', success: false, message: 'No query provided.' };
+    return;
+  }
+  try {
+    var results = await searchManager.searchContent(query, workspace);
+    yield {
+      type: 'tool_result',
+      tool: 'find_in_files',
+      success: true,
+      query: query,
+      results: results || [],
+      message: results && results.length ? 'Found ' + results.length + ' file(s) with matches.' : 'No matches found.'
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'find_in_files', success: false, message: e.message };
+  }
+}
+
+// =====================================================
 // REGISTER ALL TOOLS
 // =====================================================
 
@@ -292,4 +364,5 @@ export function registerAllTools() {
   toolRegistry.register('get_file_info', get_file_info);
   toolRegistry.register('run_terminal', run_terminal);
   toolRegistry.register('get_current_datetime', get_current_datetime);
+  toolRegistry.register('find_in_files', find_in_files);
 }

@@ -635,6 +635,59 @@
   .cr-stop-btn { display: none; }
 }
 
+/* ── Undo button in composer footer ────────────────── */
+/* ── Actions Bar — per-response undo/actions ────────── */
+.cr-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cr-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #3e3e3e;
+  background: transparent;
+  color: #c5c5c5;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.cr-action-btn:hover:not(:disabled) {
+  background: rgba(63, 185, 80, 0.08);
+  border-color: #3fb950;
+  color: #d4d4d4;
+}
+
+.cr-action-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.cr-action-btn .cr-action-label {
+  color: #888;
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.cr-action-btn:hover:not(:disabled) .cr-action-label {
+  color: #aaa;
+}
+
+.cr-action-done {
+  color: #3fb950;
+  border-color: rgba(63, 185, 80, 0.3);
+  background: rgba(63, 185, 80, 0.06);
+}
+
 /* ── Status timeline progress lines ──────────────────── */
 .cr-status-line {
   display: flex;
@@ -1250,3 +1303,151 @@
   font-family: monospace;
   flex-shrink: 0;
 }
+
+/* ════════════════════════════════════════════════════
+   Inline Diff Card
+   ════════════════════════════════════════════════════ */
+
+.cr-diff-card {
+  border: 1px solid #2d2d2d;
+  border-left: 3px solid #569cd6;
+  border-radius: 6px;
+  background: #1a1a1a;
+  margin: 8px 0;
+  overflow: hidden;
+  animation: fadeIn 0.15s ease-in;
+}
+
+.cr-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.cr-diff-header-icon { font-size: 14px; }
+
+.cr-diff-header-file {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d4d4d4;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-diff-header-stats { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.cr-diff-add { color: #3fb950; }
+.cr-diff-del { color: #f85149; margin-left: 4px; }
+
+.cr-diff-details { border: 0; }
+
+.cr-diff-summary {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2d2d2d;
+  outline: none;
+  transition: color 0.15s;
+}
+
+.cr-diff-summary:hover { color: #d4d4d4; }
+
+.cr-diff-body {
+  padding: 0;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.cr-diff-body::-webkit-scrollbar { width: 4px; height: 4px; }
+.cr-diff-body::-webkit-scrollbar-track { background: transparent; }
+.cr-diff-body::-webkit-scrollbar-thumb { background: #3e3e3e; border-radius: 2px; }
+
+.cr-diff-line {
+  display: flex;
+  min-height: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.cr-diff-line-context { background: transparent; color: #b4b4b4; }
+.cr-diff-line-add { background: rgba(63, 185, 80, 0.12); color: #d4d4d4; }
+.cr-diff-line-del { background: rgba(248, 81, 73, 0.12); color: #d4d4d4; }
+
+.cr-diff-ln {
+  width: 48px;
+  min-width: 48px;
+  padding: 0 8px;
+  text-align: right;
+  color: #606060;
+  user-select: none;
+  border-right: 1px solid #2d2d2d;
+  flex-shrink: 0;
+}
+
+.cr-diff-code {
+  flex: 1;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cr-diff-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid #2d2d2d;
+  background: #1a1a1a;
+  align-items: center;
+}
+
+.cr-diff-accept,
+.cr-diff-reject {
+  padding: 4px 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s;
+}
+
+.cr-diff-accept { background: #0e639c; color: #fff; }
+.cr-diff-accept:hover { background: #1177bb; }
+
+.cr-diff-reject { background: transparent; color: #f48771; border-color: rgba(244, 135, 113, 0.35); }
+.cr-diff-reject:hover { background: rgba(244, 135, 113, 0.12); }
+
+.cr-diff-full-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid #3e3e3e;
+  color: #888;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.cr-diff-full-btn:hover { color: #d4d4d4; background: #2d2d2d; }
+
+.cr-diff-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.cr-diff-status--accepted { color: #3fb950; background: rgba(63, 185, 80, 0.1); }
+.cr-diff-status--rejected { color: #f85149; background: rgba(248, 81, 73, 0.1); }

@@ -142,6 +142,8 @@
         statusLines: [],
         // Terminal streaming state
         terminalBlocks: {},
+        // Checkpoints tracking for undo
+        _currentCheckpoints: [],
         // Tool cards — uses _toolQueue for ordered tracking
         toolCards: {},
         _toolQueue: [],
@@ -174,6 +176,7 @@
         S._toolQueue = [];
         S._toolIdCounter = 0;
         S._seenToolIds = {};
+        S._currentCheckpoints = [];
         S.timeline = null;
       }
 
@@ -320,6 +323,14 @@
                 setStreaming(false);
                 onStreamEnd();
                 saveBotResponse(S);
+                // Render action bar for checkpoints at stream end
+                if (S._currentCheckpoints && S._currentCheckpoints.length) {
+                  var lastRow = msgList.querySelector('.cr-row--bot:last-child');
+                  var lastBody = lastRow ? lastRow.querySelector('.cr-bot-body') : null;
+                  if (lastBody) {
+                    appendActionsBar(lastBody, S._currentCheckpoints);
+                  }
+                }
                 scrollBottom(msgList);
                 window.activeChatStreamCallback = null;
                 return;
@@ -680,6 +691,10 @@
                 S.sources = ev.sources;
                 appendSources(S.botBody, ev.sources);
               }
+              // Render action bar for checkpoints
+              if (S._currentCheckpoints && S._currentCheckpoints.length) {
+                appendActionsBar(S.botBody, S._currentCheckpoints);
+              }
               S.thinkBlock = null; S.thinkPre = null;
               clearStatusLines(S);
               break;
@@ -709,7 +724,34 @@
               break;
             }
             // ════════════════════════════════════════════
-            // NEW: Terminal streaming events
+            // CHECKPOINT events — track undo-able actions
+            // ════════════════════════════════════════════
+            case 'checkpoints_created': {
+              if (ev.checkpoints && ev.checkpoints.length) {
+                for (var cpi = 0; cpi < ev.checkpoints.length; cpi++) {
+                  var cp = ev.checkpoints[cpi];
+                  // Avoid duplicates
+                  var exists = false;
+                  for (var ce = 0; ce < S._currentCheckpoints.length; ce++) {
+                    if (S._currentCheckpoints[ce].id === cp.id) { exists = true; break; }
+                  }
+                  if (!exists) {
+                    S._currentCheckpoints.push(cp);
+                  }
+                }
+              }
+              break;
+            }
+            // ════════════════════════════════════════════
+            // DIFF REVIEW: Inline diff card
+            // ════════════════════════════════════════════
+            case 'request_diff': {
+              removeTyping(S.botBody);
+              appendDiffCard(S.botBody, ev);
+              break;
+            }
+            // ════════════════════════════════════════════
+            // Terminal streaming events
             // ════════════════════════════════════════════
             case 'terminal_start': {
               removeTyping(S.botBody);
@@ -1103,6 +1145,219 @@
       }
 
       // ═══════════════════════════════════════════════════
+      // Actions Bar — rendered below assistant responses
+      // Shows Undo for files that were modified by tools
+      // ═══════════════════════════════════════════════════
+
+      function appendActionsBar(body, checkpoints) {
+        if (!body || !checkpoints || !checkpoints.length) return;
+        var existing = body.querySelector('.cr-actions-bar');
+        if (existing) existing.remove();
+
+        var bar = mk('div', 'cr-actions-bar');
+        var seenFiles = {};
+        for (var ai = 0; ai < checkpoints.length; ai++) {
+          var cp = checkpoints[ai];
+          if (!cp.filePath || seenFiles[cp.filePath]) continue;
+          seenFiles[cp.filePath] = true;
+
+          var undoBtn = mk('button', 'cr-action-btn cr-action-undo');
+          undoBtn.dataset.cpId = cp.id;
+          undoBtn.dataset.filePath = cp.filePath;
+          undoBtn.innerHTML = '↩ Undo <span class="cr-action-label">' + esc(cp.label || cp.filePath) + '</span>';
+
+          undoBtn.addEventListener('click', function() {
+            var btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '↩ Undoing...';
+            if (window.VSCODE_API) {
+              window.VSCODE_API.postMessage({
+                type: 'undoCheckpoint',
+                filePath: btn.dataset.filePath,
+                checkpointId: btn.dataset.cpId
+              });
+            }
+          });
+
+          bar.appendChild(undoBtn);
+        }
+        body.appendChild(bar);
+      }
+
+      // Expose globally so the window message handler can update after undo
+      window.updateActionsBarStatus = function(filePath, statusText) {
+        var bars = document.querySelectorAll('.cr-actions-bar');
+        for (var bi = 0; bi < bars.length; bi++) {
+          var btns = bars[bi].querySelectorAll('.cr-action-undo');
+          for (var bj = 0; bj < btns.length; bj++) {
+            var btn = btns[bj];
+            if (btn.dataset.filePath === filePath) {
+              btn.disabled = true;
+              btn.innerHTML = '✓ ' + statusText;
+              btn.classList.add('cr-action-done');
+            }
+          }
+        }
+      };
+
+      // ═══════════════════════════════════════════════════
+      // Inline Diff Card (replaces temporary vscode.diff)
+      // ═══════════════════════════════════════════════════
+
+      function appendDiffCard(body, ev) {
+        if (!body) return;
+        var diffId = ev.id || 'diff_' + Date.now();
+        var filePath = ev.file_path || 'unknown';
+        var isNew = ev.is_new_file || false;
+        var originalText = ev.original_content || '';
+        var modifiedText = ev.new_content || '';
+        var toolName = ev.tool || 'edit';
+        var additions = 0;
+        var deletions = 0;
+
+        // Compute line diff
+        var origLines = originalText.split('\n');
+        var modLines = modifiedText.split('\n');
+        var maxLen = Math.max(origLines.length, modLines.length);
+        var diffLines = [];
+        for (var di = 0; di < maxLen; di++) {
+          var ol = origLines[di] || '';
+          var ml = modLines[di] || '';
+          if (ol === ml) {
+            diffLines.push({ type: 'context', oldLine: di + 1, newLine: di + 1, text: ol });
+          } else if (!ol && ml) {
+            additions++;
+            diffLines.push({ type: 'add', oldLine: null, newLine: di + 1, text: ml });
+          } else if (ol && !ml) {
+            deletions++;
+            diffLines.push({ type: 'del', oldLine: di + 1, newLine: null, text: ol });
+          } else {
+            additions++;
+            deletions++;
+            diffLines.push({ type: 'del', oldLine: di + 1, newLine: null, text: ol });
+            diffLines.push({ type: 'add', oldLine: null, newLine: di + 1, text: ml });
+          }
+        }
+
+        var card = mk('div', 'cr-diff-card');
+        card.dataset.diffId = diffId;
+        card.dataset.diffStatus = 'pending';
+
+        // Header
+        var header = mk('div', 'cr-diff-header');
+        var icon = isNew ? '📝' : '✏️';
+        header.innerHTML =
+          '<span class="cr-diff-header-icon">' + icon + '</span>' +
+          '<span class="cr-diff-header-file">' + esc(filePath) + '</span>' +
+          '<span class="cr-diff-header-stats">' +
+            '<span class="cr-diff-add">+' + additions + '</span> ' +
+            '<span class="cr-diff-del">-' + deletions + '</span>' +
+          '</span>';
+        card.appendChild(header);
+
+        // Diff body (collapsible)
+        var details = mk('details', 'cr-diff-details');
+        details.open = true;
+        var summary = mk('summary', 'cr-diff-summary');
+        summary.textContent = 'View Changes';
+        details.appendChild(summary);
+
+        var diffBody = mk('div', 'cr-diff-body');
+        diffBody.style.overflowX = 'auto';
+        diffBody.style.maxHeight = '400px';
+        diffBody.style.overflowY = 'auto';
+
+        // Build unified diff lines
+        var maxLineNum = Math.max(origLines.length, modLines.length);
+        var lineDigitWidth = String(maxLineNum).length;
+
+        for (var li = 0; li < diffLines.length; li++) {
+          var dl = diffLines[li];
+          var lineEl = mk('div', 'cr-diff-line');
+          var oldNum = dl.oldLine ? padNum(dl.oldLine, lineDigitWidth) : '';
+          var newNum = dl.newLine ? padNum(dl.newLine, lineDigitWidth) : '';
+
+          if (dl.type === 'context') {
+            lineEl.classList.add('cr-diff-line-context');
+            lineEl.innerHTML =
+              '<span class="cr-diff-ln">' + padNum(dl.oldLine, lineDigitWidth) + '</span>' +
+              '<span class="cr-diff-ln">' + padNum(dl.newLine, lineDigitWidth) + '</span>' +
+              '<span class="cr-diff-code">' + esc(dl.text) + '</span>';
+          } else if (dl.type === 'del') {
+            lineEl.classList.add('cr-diff-line-del');
+            lineEl.innerHTML =
+              '<span class="cr-diff-ln">' + oldNum + '</span>' +
+              '<span class="cr-diff-ln"></span>' +
+              '<span class="cr-diff-code">' + esc(dl.text) + '</span>';
+          } else if (dl.type === 'add') {
+            lineEl.classList.add('cr-diff-line-add');
+            lineEl.innerHTML =
+              '<span class="cr-diff-ln"></span>' +
+              '<span class="cr-diff-ln">' + newNum + '</span>' +
+              '<span class="cr-diff-code">' + esc(dl.text) + '</span>';
+          }
+          diffBody.appendChild(lineEl);
+        }
+
+        details.appendChild(diffBody);
+        card.appendChild(details);
+
+        // Actions
+        var actions = mk('div', 'cr-diff-actions');
+        actions.innerHTML =
+          '<button class="cr-btn cr-btn-allow cr-diff-accept" data-diff-id="' + esc(diffId) + '">Accept</button>' +
+          '<button class="cr-btn cr-btn-deny cr-diff-reject" data-diff-id="' + esc(diffId) + '">Reject</button>' +
+          '<button class="cr-diff-full-btn" data-diff-id="' + esc(diffId) + '" title="Open in VS Code diff editor">Open Full Diff</button>' +
+          '<span class="cr-diff-status" style="display:none"></span>';
+        card.appendChild(actions);
+
+        // Bind accept/reject
+        actions.querySelector('.cr-diff-accept').onclick = function() {
+          if (!window.VSCODE_API) return;
+          window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: diffId });
+          setDiffCardStatus(card, 'accepted');
+        };
+        actions.querySelector('.cr-diff-reject').onclick = function() {
+          if (!window.VSCODE_API) return;
+          window.VSCODE_API.postMessage({ type: 'rejectDiff', diffId: diffId });
+          setDiffCardStatus(card, 'rejected');
+        };
+        actions.querySelector('.cr-diff-full-btn').onclick = function() {
+          if (!window.VSCODE_API) return;
+          window.VSCODE_API.postMessage({ type: 'openDiffEditor', diffId: diffId });
+        };
+
+        body.appendChild(card);
+        scrollBottom(msgList);
+      }
+
+      function setDiffCardStatus(card, status) {
+        if (!card) return;
+        card.dataset.diffStatus = status;
+        var acceptBtn = card.querySelector('.cr-diff-accept');
+        var rejectBtn = card.querySelector('.cr-diff-reject');
+        var fullBtn = card.querySelector('.cr-diff-full-btn');
+        var statusEl = card.querySelector('.cr-diff-status');
+        if (acceptBtn) acceptBtn.style.display = 'none';
+        if (rejectBtn) rejectBtn.style.display = 'none';
+        if (fullBtn) fullBtn.style.display = 'none';
+        if (statusEl) {
+          statusEl.style.display = 'inline-block';
+          statusEl.textContent = status === 'accepted' ? '✓ Applied' : '✗ Rejected';
+          statusEl.className = 'cr-diff-status cr-diff-status--' + status;
+        }
+      }
+
+      // Expose globally so the window message handler can update diff cards
+      window.setDiffCardStatus = setDiffCardStatus;
+
+      function padNum(n, width) {
+        var s = String(n);
+        while (s.length < width) s = ' ' + s;
+        return s;
+      }
+
+      // ═══════════════════════════════════════════════════
       // Tool Card Helpers
       // ═══════════════════════════════════════════════════
 
@@ -1463,6 +1718,33 @@
         } else if (ev.type === 'terminal_error' && window.forwardTerminalEvent) {
           window.forwardTerminalEvent('error', ev);
         }
+      }
+    }
+
+    // Handle diff result responses
+    if (message.type === 'diffResult' && message.diffId) {
+      var card = document.querySelector('.cr-diff-card[data-diff-id="' + message.diffId + '"]');
+      if (card && typeof window.setDiffCardStatus === 'function') {
+        window.setDiffCardStatus(card, message.result && message.result.success ? 'accepted' : 'rejected');
+      }
+    }
+
+    if (message.type === 'diffAllResult' && message.results) {
+      for (var dr = 0; dr < message.results.length; dr++) {
+        var r = message.results[dr];
+        if (r.diffId) {
+          var card2 = document.querySelector('.cr-diff-card[data-diff-id="' + r.diffId + '"]');
+          if (card2 && typeof window.setDiffCardStatus === 'function') {
+            window.setDiffCardStatus(card2, r.success ? 'accepted' : 'rejected');
+          }
+        }
+      }
+    }
+
+    // Handle undo checkpoint result
+    if (message.type === 'undoCheckpointResult' && message.filePath) {
+      if (window.updateActionsBarStatus) {
+        window.updateActionsBarStatus(message.filePath, message.success ? 'Restored' : 'Failed');
       }
     }
   });

@@ -6,12 +6,16 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
+import * as agentLoop from './agentLoop.js';
 import { registerAllTools } from './tools.js';
 import * as config from './config.js';
 import * as providerManager from './providerManager.js';
 import { getWorkspaceFolder } from './workspaceContext.js';
 import * as terminalManager from './terminalManager.js';
 import * as permissions from './permissions.js';
+import * as projectKnowledge from './projectKnowledge.js';
+import * as checkpointManager from './checkpointManager.js';
+import * as diffManager from './diffManager.js';
 import { PROVIDER_DEFAULTS } from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +43,9 @@ export function activate(context) {
   // Register terminal shell integration listeners
   terminalManager.registerTerminalListeners(context);
 
+  // Initialize project knowledge base (SQLite, indexing, file watcher, memory)
+  projectKnowledge.initialize(context);
+
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'coderun.openSidebar';
@@ -64,6 +71,26 @@ export function activate(context) {
     vscode.commands.registerCommand('coderun.newChat', function() {
       if (currentWebview) {
         currentWebview.postMessage({ type: 'newChat' });
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('coderun.undoLastEdit', async function() {
+      var ws = getWorkspaceFolder();
+      if (!ws) {
+        vscode.window.showInformationMessage('No workspace folder open');
+        return;
+      }
+      var result = await checkpointManager.undoLast(ws, null);
+      if (result.success) {
+        vscode.window.showInformationMessage(result.message);
+        // Notify the webview to refresh
+        if (currentWebview) {
+          currentWebview.postMessage({ type: 'undoComplete', message: result.message });
+        }
+      } else {
+        vscode.window.showInformationMessage(result.message || 'Nothing to undo');
       }
     })
   );
@@ -356,6 +383,11 @@ async function handleFrontendMessage(message, webview) {
 
       var sendEvent = function(event) {
         webview.postMessage({ type: 'agentEvent', event: event });
+
+        // Handle diff review requests — store as pending patch
+        if (event.type === 'request_diff' && event.id) {
+          diffManager.storePatch(event);
+        }
       };
 
       // Cooperative stop: the frontend can fire 'stopChat' to set this flag,
@@ -380,6 +412,7 @@ async function handleFrontendMessage(message, webview) {
         currentAbortController.stopped = true;
       }
       permissions.cancelAllPermissions();
+      diffManager.cancelAll();
       break;
     }
 
@@ -598,6 +631,96 @@ async function handleFrontendMessage(message, webview) {
       break;
     }
 
+    case 'undoFile': {
+      var wsPath = getWorkspaceFolder();
+      var result;
+      if (message.path) {
+        result = await checkpointManager.undoFile(message.path, wsPath, null);
+      } else {
+        result = await checkpointManager.undoLast(wsPath, null);
+      }
+      if (result && result.success) {
+        vscode.window.showInformationMessage(result.message);
+        webview.postMessage({ type: 'undoComplete', message: result.message });
+      } else {
+        var errMsg = (result && result.message) || 'Nothing to undo';
+        vscode.window.showInformationMessage(errMsg);
+        webview.postMessage({ type: 'undoComplete', message: errMsg });
+      }
+      break;
+    }
+
+    case 'undoCheckpoint': {
+      if (message.filePath) {
+        var wsPath = getWorkspaceFolder();
+        var result = await checkpointManager.undoFile(message.filePath, wsPath, null);
+        webview.postMessage({
+          type: 'undoCheckpointResult',
+          filePath: message.filePath,
+          success: result ? result.success : false,
+          message: result ? result.message : 'Failed'
+        });
+        if (result && result.success) {
+          vscode.window.showInformationMessage(result.message);
+        }
+      }
+      break;
+    }
+
+    case 'acceptDiff': {
+      var wsPath = getWorkspaceFolder();
+      var result = await diffManager.applyPatch(message.diffId, wsPath);
+      // Resolve the deferred promise so tools.js generator continues
+      if (result.success) {
+        agentLoop.resolveDiff(message.diffId, true);
+      }
+      webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
+      break;
+    }
+
+    case 'acceptAllDiffs': {
+      var wsPath = getWorkspaceFolder();
+      var results = await diffManager.acceptAll(wsPath);
+      // Resolve all deferreds
+      for (var ri = 0; ri < results.length; ri++) {
+        var r = results[ri];
+        if (r.success) {
+          agentLoop.resolveDiff(r.diffId || r.message, true);
+        }
+      }
+      webview.postMessage({ type: 'diffAllResult', results: results });
+      break;
+    }
+
+    case 'rejectDiff': {
+      if (message.diffId) {
+        var result = diffManager.rejectPatch(message.diffId);
+        // Reject the deferred so tools.js generator continues
+        agentLoop.resolveDiff(message.diffId, false);
+        webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
+      }
+      break;
+    }
+
+    case 'rejectAllDiffs': {
+      var results = diffManager.rejectAll();
+      // Reject all deferreds
+      for (var ri = 0; ri < results.length; ri++) {
+        var r = results[ri];
+        agentLoop.resolveDiff(r.diffId, false);
+      }
+      webview.postMessage({ type: 'diffAllResult', results: results });
+      break;
+    }
+
+    case 'openDiffEditor': {
+      if (message.diffId) {
+        var wsPath = getWorkspaceFolder();
+        diffManager.openDiffEditor(message.diffId, wsPath);
+      }
+      break;
+    }
+
     default: {
       console.log('[CODERUN] Unknown message type:', msgType);
     }
@@ -704,5 +827,6 @@ export function deactivate() {
   if (statusBarItem) statusBarItem.dispose();
   terminalManager.dispose();
   permissions.cancelAllPermissions();
+  projectKnowledge.dispose();
   currentAbortController = null;
 }

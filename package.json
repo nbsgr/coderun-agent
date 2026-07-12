@@ -40,6 +40,10 @@
         "command": "coderun.newChat",
         "title": "CodeRun: New Chat",
         "icon": "$(add)"
+      },
+      {
+        "command": "coderun.undoLastEdit",
+        "title": "CodeRun: Undo Last Edit"
       }
     ],
     "viewsContainers": {
@@ -75,7 +79,16 @@
         "coderun.provider": {
           "type": "string",
           "default": "ollama",
-          "enum": ["ollama", "openai", "anthropic", "gemini", "openrouter", "xai", "groq", "compatible"],
+          "enum": [
+            "ollama",
+            "openai",
+            "anthropic",
+            "gemini",
+            "openrouter",
+            "xai",
+            "groq",
+            "compatible"
+          ],
           "description": "AI provider to use"
         },
         "coderun.baseUrl": {
@@ -116,12 +129,18 @@
           "description": "Confirm dangerous actions (delete, terminal, etc.)"
         },
         "coderun.organization": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "Organization ID (OpenAI only)"
         },
         "coderun.project": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "Project ID (OpenAI only)"
         }
@@ -130,5 +149,8 @@
   },
   "devDependencies": {
     "@vscode/vsce": "^3.9.2"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
   }
 }
