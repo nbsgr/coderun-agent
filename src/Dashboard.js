@@ -768,9 +768,43 @@
 
   function updateModelSelectValue() {
     var select = document.getElementById("modelSelect");
-    if (select && state.selectedModel && optionExists(select, state.selectedModel)) {
-      select.value = state.selectedModel;
+    if (!select || !state.selectedModel) return;
+
+    if (!optionExists(select, state.selectedModel)) {
+      var provider = state.selectedProvider || 'ollama';
+      
+      var displayLabel = provider;
+      if (provider.startsWith('compatible:')) {
+        displayLabel = provider.substring(11) + ' (Compatible)';
+      } else {
+        displayLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+      }
+      var groupLabel = displayLabel + " models";
+      
+      var optgroup = null;
+      var groups = select.getElementsByTagName("optgroup");
+      for (var i = 0; i < groups.length; i++) {
+        if (groups[i].label === groupLabel) {
+          optgroup = groups[i];
+          break;
+        }
+      }
+      
+      if (!optgroup) {
+        optgroup = document.createElement("optgroup");
+        optgroup.label = groupLabel;
+        select.appendChild(optgroup);
+      }
+      
+      var option = document.createElement("option");
+      option.value = state.selectedModel;
+      option.textContent = state.selectedModel;
+      option.title = state.selectedModel;
+      option.dataset.provider = provider;
+      optgroup.appendChild(option);
     }
+
+    select.value = state.selectedModel;
   }
 
   function updateModelBadge() {
@@ -1059,7 +1093,7 @@
   window.addEventListener("message", function(event) {
     var message = event.data || {};
     if (message.type === "loadConversations") {
-      window.loadConversationsFromExtension(message.conversations, message.selectedModel);
+      window.loadConversationsFromExtension(message.conversations, message.selectedModel, message.selectedProvider);
     }
     if (message.type === "workspaceFolder") {
       window.setDashboardWorkspace(message.path);
