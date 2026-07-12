@@ -246,11 +246,34 @@ function getNonce() {
 // SEND CURRENT SETTINGS TO WEBVIEW
 // =====================================================
 async function sendCurrentSettings(webview) {
-  var cfg = config.getConfig();
+  var activeProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
+  var cfg;
+  if (activeProvider) {
+    var saved = config.getSavedProviderConfig(extensionContext, activeProvider) || {};
+    var isCompatible = activeProvider.startsWith('compatible');
+    var defaults = isCompatible ? PROVIDER_DEFAULTS.compatible : (PROVIDER_DEFAULTS[activeProvider] || PROVIDER_DEFAULTS.ollama);
+    cfg = {
+      provider: activeProvider,
+      baseUrl: saved.baseUrl || defaults.baseUrl,
+      model: saved.model || '',
+      maxIterations: config.getConfig().maxIterations,
+      streaming: config.getConfig().streaming,
+      showThinking: config.getConfig().showThinking,
+      confirmDangerous: config.getConfig().confirmDangerous
+    };
+  } else {
+    cfg = config.getConfig();
+  }
+
   var hasKey = false;
   try {
-    var key = await config.getApiKey(extensionContext);
-    hasKey = !!key && key.length > 0;
+    if (activeProvider) {
+      var saved = config.getSavedProviderConfig(extensionContext, activeProvider);
+      hasKey = saved && !!saved.apiKey;
+    } else {
+      var key = await config.getApiKey(extensionContext);
+      hasKey = !!key && key.length > 0;
+    }
   } catch (e) {
     hasKey = false;
   }
@@ -318,7 +341,7 @@ async function handleFrontendMessage(message, webview) {
 
       // If frontend sent a provider, look up its saved config
       var providerConfig;
-      if (providerName && PROVIDER_DEFAULTS[providerName]) {
+      if (providerName && (PROVIDER_DEFAULTS[providerName] || providerName.startsWith('compatible:'))) {
         providerConfig = await config.getProviderConfigByName(extensionContext, providerName);
       } else {
         // Fallback: read the currently active provider from VS Code settings
@@ -506,6 +529,7 @@ async function handleFrontendMessage(message, webview) {
           console.error('[CODERUN] Failed to save provider:', e);
         }
       }
+      await sendCurrentSettings(webview);
       break;
     }
 
@@ -731,7 +755,15 @@ async function handleFrontendMessage(message, webview) {
 // HEALTH CHECK & MODEL FETCH
 // =====================================================
 async function checkProviderHealth(webview, overrideConfig) {
-  var cfg = overrideConfig || await config.getProviderConfigWithKey(extensionContext);
+  var cfg = overrideConfig;
+  if (!cfg) {
+    var activeProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
+    if (activeProvider) {
+      cfg = await config.getProviderConfigByName(extensionContext, activeProvider);
+    } else {
+      cfg = await config.getProviderConfigWithKey(extensionContext);
+    }
+  }
   console.log('[CODERUN] Checking health for provider:', cfg.provider, 'at', cfg.baseUrl, 'model:', cfg.model);
 
   if (!cfg.baseUrl) {

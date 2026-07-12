@@ -179,10 +179,76 @@
     var streamingEl = document.getElementById("cfgStreaming");
     var showThinkingEl = document.getElementById("cfgShowThinking");
     var confirmEl = document.getElementById("cfgConfirmDangerous");
+    var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
+    var compNameEl = document.getElementById("cfgCompatibleName");
 
-    if (providerEl) providerEl.value = state.settings.provider;
+    if (providerEl) {
+      // Re-populate dropdown dynamically
+      var configs = state.savedProviderConfigs || {};
+      var keys = Object.keys(configs);
+      
+      var html = 
+        '<option value="ollama">Ollama</option>' +
+        '<option value="openai">OpenAI</option>' +
+        '<option value="anthropic">Anthropic</option>' +
+        '<option value="gemini">Google Gemini</option>' +
+        '<option value="openrouter">OpenRouter</option>' +
+        '<option value="xai">xAI (Grok)</option>' +
+        '<option value="groq">Groq</option>';
+      
+      // Add custom compatible options
+      var hasCurrentAsCustom = false;
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        if (key.startsWith('compatible:')) {
+          var name = key.substring(11);
+          html += '<option value="' + esc(key) + '">' + esc(name) + ' (Compatible)</option>';
+          if (key === state.settings.provider) {
+            hasCurrentAsCustom = true;
+          }
+        }
+      }
+      
+      // If the current provider is compatible:XYZ but not saved yet
+      if (state.settings.provider && state.settings.provider.startsWith('compatible:') && !hasCurrentAsCustom) {
+        var name = state.settings.provider.substring(11);
+        html += '<option value="' + esc(state.settings.provider) + '">' + esc(name) + ' (Compatible)</option>';
+      }
+      
+      html += '<option value="compatible">OpenAI Compatible (New...)</option>';
+      providerEl.innerHTML = html;
+      providerEl.value = state.settings.provider || 'ollama';
+    }
+
+    var currentProvider = state.settings.provider || 'ollama';
+    var isCompatible = currentProvider === 'compatible' || currentProvider.startsWith('compatible:');
+
+    if (compNameGroup && compNameEl) {
+      if (isCompatible) {
+        compNameGroup.style.display = 'flex';
+        if (currentProvider.startsWith('compatible:')) {
+          compNameEl.value = currentProvider.substring(11);
+        } else {
+          compNameEl.value = '';
+        }
+      } else {
+        compNameGroup.style.display = 'none';
+        compNameEl.value = '';
+      }
+    }
+
     if (baseUrlEl) baseUrlEl.value = state.settings.baseUrl;
-    if (apiKeyEl) apiKeyEl.value = state.hasApiKey ? "••••••••" : "";
+
+    // Check if the current selected provider has a saved key, otherwise show empty
+    var configs = state.savedProviderConfigs || {};
+    var hasApiKeyForCurrent = false;
+    if (configs[currentProvider] && configs[currentProvider].apiKey) {
+      hasApiKeyForCurrent = true;
+    } else if (currentProvider === state.settings.provider && state.hasApiKey) {
+      hasApiKeyForCurrent = true;
+    }
+    if (apiKeyEl) apiKeyEl.value = hasApiKeyForCurrent ? "••••••••" : "";
+
     if (modelEl) modelEl.value = state.settings.model;
     if (maxIterEl) maxIterEl.value = state.settings.maxIterations;
     if (streamingEl) streamingEl.checked = state.settings.streaming;
@@ -206,7 +272,12 @@
     for (var i = 0; i < keys.length; i++) {
       var prov = keys[i];
       var cfg = configs[prov] || {};
-      var label = prov.charAt(0).toUpperCase() + prov.slice(1);
+      var label = prov;
+      if (prov.startsWith('compatible:')) {
+        label = prov.substring(11) + ' (Compatible)';
+      } else {
+        label = prov.charAt(0).toUpperCase() + prov.slice(1);
+      }
       var hasKey = cfg.apiKey ? '🔑' : '○';
       var url = cfg.baseUrl ? cfg.baseUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
       html += '<div class="cr-saved-provider-item" data-provider="' + esc(prov) + '">' +
@@ -364,6 +435,7 @@
             '<section id="panel-settings" class="cr-panel">' +
               '<div class="cr-settings">' +
                 '<div class="cr-input-group"><label>Provider</label><select id="cfgProvider"><option value="ollama">Ollama</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option><option value="compatible">OpenAI Compatible</option></select></div>' +
+                '<div class="cr-input-group" id="cfgCompatibleNameGroup" style="display:none"><label>Custom Provider Name</label><input type="text" id="cfgCompatibleName" placeholder="e.g. Bynara, LM Studio"></div>' +
                 '<div class="cr-input-group"><label>Base URL</label><input type="text" id="cfgBaseUrl" value="' + esc(state.baseUrl) + '" placeholder="e.g., https://api.example.com/v1"></div>' +
                 '<div class="cr-input-group"><label>API Key</label><input type="password" id="cfgApiKey" value="" placeholder="sk-..."></div>' +
                 '<div class="cr-input-group"><label>Model</label><input type="text" id="cfgModel" value="' + esc(state.settings.model) + '" placeholder="Model name (e.g., llama3, gpt-4)"></div>' +
@@ -403,6 +475,24 @@
     // Auto-fill base URL when provider changes
     document.getElementById("cfgProvider").onchange = function() {
       var provider = this.value;
+      var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
+      var compNameEl = document.getElementById("cfgCompatibleName");
+      
+      var isCompatible = provider === 'compatible' || provider.startsWith('compatible:');
+      if (compNameGroup && compNameEl) {
+        if (isCompatible) {
+          compNameGroup.style.display = 'flex';
+          if (provider.startsWith('compatible:')) {
+            compNameEl.value = provider.substring(11);
+          } else {
+            compNameEl.value = '';
+          }
+        } else {
+          compNameGroup.style.display = 'none';
+          compNameEl.value = '';
+        }
+      }
+
       var defaults = {
         ollama: "http://localhost:11434",
         openai: "https://api.openai.com/v1",
@@ -413,14 +503,54 @@
         groq: "https://api.groq.com/openai/v1",
         compatible: ""
       };
+      
       var baseUrlEl = document.getElementById("cfgBaseUrl");
-      if (baseUrlEl && defaults[provider]) {
-        baseUrlEl.value = defaults[provider];
+      if (baseUrlEl) {
+        if (provider.startsWith('compatible:')) {
+          var configs = state.savedProviderConfigs || {};
+          if (configs[provider] && configs[provider].baseUrl) {
+            baseUrlEl.value = configs[provider].baseUrl;
+          } else {
+            baseUrlEl.value = '';
+          }
+        } else if (defaults[provider] !== undefined) {
+          baseUrlEl.value = defaults[provider];
+        }
+      }
+
+      var apiKeyEl = document.getElementById("cfgApiKey");
+      if (apiKeyEl) {
+        if (provider.startsWith('compatible:')) {
+          var configs = state.savedProviderConfigs || {};
+          apiKeyEl.value = (configs[provider] && configs[provider].apiKey) ? "••••••••" : "";
+        } else {
+          apiKeyEl.value = "";
+        }
+      }
+
+      var modelEl = document.getElementById("cfgModel");
+      if (modelEl) {
+        if (provider.startsWith('compatible:')) {
+          var configs = state.savedProviderConfigs || {};
+          modelEl.value = (configs[provider] && configs[provider].model) ? configs[provider].model : "";
+        } else {
+          modelEl.value = "";
+        }
       }
     };
 
     document.getElementById("saveSettingsBtn").onclick = function() {
       var newProvider = document.getElementById("cfgProvider").value;
+      var compNameEl = document.getElementById("cfgCompatibleName");
+      if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
+        var customName = compNameEl ? compNameEl.value.trim() : '';
+        if (customName) {
+          newProvider = 'compatible:' + customName;
+        } else {
+          newProvider = 'compatible';
+        }
+      }
+
       var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
       var newApiKey = document.getElementById("cfgApiKey").value.trim();
       var newModel = document.getElementById("cfgModel").value.trim();
@@ -442,22 +572,17 @@
 
       if (newModel) {
         state.selectedModel = newModel;
-        // Also set selectedProvider from the saved provider (the one being saved)
         state.selectedProvider = newProvider;
       }
 
       if (state.isVsCode && window.VSCODE_API) {
-        // === FIX: Send API key as part of saveSettings to avoid race condition ===
-        // Determine what apiKey value to send:
-        // - If user entered a new key (not empty, not placeholder), send the actual key
-        // - If user cleared the field (empty string), send empty string to delete key
-        // - If field shows placeholder (user didn't change), send placeholder so backend knows not to change
         var apiKeyToSend = newApiKey;
-        if (state.hasApiKey && newApiKey === "") {
-          // User had a key but cleared the field — they want to delete it
+        var savedConfigs = state.savedProviderConfigs || {};
+        var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
+
+        if (hasExistingKey && newApiKey === "") {
           apiKeyToSend = "";
-        } else if (state.hasApiKey && newApiKey === "••••••••") {
-          // User didn't change the key — send placeholder
+        } else if (hasExistingKey && newApiKey === "••••••••") {
           apiKeyToSend = "••••••••";
         }
 
@@ -475,11 +600,9 @@
           apiKey: apiKeyToSend
         });
 
-        // Also send separate saveApiKey for backward compatibility (backend handles both)
         if (newApiKey && newApiKey !== "••••••••") {
           window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
-        } else if (newApiKey === "" && state.hasApiKey) {
-          // User cleared the key — send empty to delete
+        } else if (newApiKey === "" && hasExistingKey) {
           window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
         }
       } else {
@@ -607,7 +730,15 @@
       var models = state.modelsByProvider[providerName];
       if (!models || !models.length) continue;
       var group = document.createElement("optgroup");
-      group.label = providerName.charAt(0).toUpperCase() + providerName.slice(1) + " models";
+      
+      var displayLabel = providerName;
+      if (providerName.startsWith('compatible:')) {
+        displayLabel = providerName.substring(11) + ' (Compatible)';
+      } else {
+        displayLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+      }
+      group.label = displayLabel + " models";
+
       for (var i = 0; i < models.length; i++) {
         var option = document.createElement("option");
         option.value = models[i];

@@ -51,10 +51,16 @@ export async function listModels(config) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/models';
   var headers = {};
   if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
-  var res = await fetch(url, { headers: headers });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
-  return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+  try {
+    var res = await fetch(url, { headers: headers });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+  } catch (e) {
+    console.warn('[CODERUN] Failed to fetch models from compatible endpoint:', e.message);
+    // Fallback to currently configured model if available
+    return config.model ? [config.model] : [];
+  }
 }
 
 export async function embeddings(config, texts) {

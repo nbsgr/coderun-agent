@@ -13,6 +13,10 @@ import * as providerGroq from './providerGroq.js';
 export function createProvider(config) {
   var provider = config.provider || PROVIDERS.OLLAMA;
 
+  if (provider.startsWith('compatible')) {
+    return providerCompatible;
+  }
+
   switch (provider) {
     case PROVIDERS.OLLAMA:
       return providerOllama;
@@ -40,6 +44,9 @@ export function getProviderName(config) {
 }
 
 export function needsApiKey(provider) {
+  if (provider && provider.startsWith('compatible')) {
+    return true;
+  }
   var needs = {
     ollama: false,
     openai: true,

@@ -132,6 +132,9 @@ export async function updateSettings(settings, target) {
  * Check if a provider requires an API key.
  */
 export function needsApiKey(provider) {
+  if (provider && provider.startsWith('compatible')) {
+    return true;
+  }
   var needs = {
     ollama: false,
     openai: true,
@@ -212,7 +215,8 @@ export function getProviderApiKey(context, provider) {
  */
 export async function getProviderConfigByName(context, providerName) {
   var saved = getSavedProviderConfig(context, providerName) || {};
-  var defaults = PROVIDER_DEFAULTS[providerName] || PROVIDER_DEFAULTS.ollama;
+  var isCompatible = providerName.startsWith('compatible');
+  var defaults = isCompatible ? PROVIDER_DEFAULTS.compatible : (PROVIDER_DEFAULTS[providerName] || PROVIDER_DEFAULTS.ollama);
   return {
     provider: providerName,
     baseUrl: saved.baseUrl || defaults.baseUrl,
