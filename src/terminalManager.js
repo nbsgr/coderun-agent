@@ -122,10 +122,44 @@ async function readExecutionStream(execId, execution) {
  * Falls back to sendText if shell integration is not available.
  * Returns a promise that resolves when the command completes.
  */
-export async function executeCommand(command, timeout) {
+export async function executeCommand(command, timeout, background) {
   timeout = timeout || 30;
   var terminal = getTerminal();
   terminal.show(true);
+
+  if (background) {
+    console.log('[TERMINAL] Running command in background:', command);
+    terminal.sendText(command, true);
+
+    var execId = 'term_bg_' + (++executionCounter);
+    if (sendEventCallback) {
+      sendEventCallback({
+        type: 'terminal_start',
+        terminalId: execId,
+        command: command,
+        background: true
+      });
+      setTimeout(function() {
+        if (sendEventCallback) {
+          sendEventCallback({
+            type: 'terminal_exit',
+            terminalId: execId,
+            exitCode: null,
+            background: true,
+            message: 'Process started in the background.'
+          });
+        }
+      }, 1000);
+    }
+
+    return {
+      method: 'background',
+      terminal: terminal,
+      success: true,
+      output: '',
+      message: 'Command started in the background.'
+    };
+  }
 
   var shellIntegration = terminal.shellIntegration;
 
@@ -275,4 +309,45 @@ export function onTerminalClosed(terminal) {
  */
 export function hasShellIntegration() {
   return activeTerminal && activeTerminal.shellIntegration ? true : false;
+}
+
+/**
+ * Send text input directly to the active terminal.
+ */
+export function sendTerminalInput(text) {
+  var terminal = getTerminal();
+  terminal.show(true);
+  terminal.sendText(text, true); // send with newline so it submits the input
+
+  if (sendEventCallback) {
+    sendEventCallback({
+      type: 'terminal_output',
+      terminalId: 'term_input_' + Date.now(),
+      chunk: text + '\n'
+    });
+  }
+  return { success: true, message: 'Input sent to terminal: ' + text };
+}
+
+/**
+ * Send Ctrl+C to the active terminal using VS Code's sequence command.
+ */
+export async function stopTerminal() {
+  var terminal = getTerminal();
+  terminal.show(true);
+
+  console.log('[TERMINAL] Sending Ctrl+C interrupt');
+
+  // VS Code built-in command to send sequence (Ctrl+C is \u0003)
+  await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', { text: '\u0003' });
+
+  if (sendEventCallback) {
+    sendEventCallback({
+      type: 'terminal_output',
+      terminalId: 'term_stop_' + Date.now(),
+      chunk: '^C\n'
+    });
+  }
+
+  return { success: true, message: 'Sent Ctrl+C to stop running process.' };
 }

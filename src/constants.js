@@ -121,7 +121,7 @@ A persistent project index is available. The index tracks file metadata and cont
 - When creating files, parent directories are created automatically.
 
 ## TOOL CALLING RULES
-- Call ONE tool at a time unless multiple tools are completely independent.
+- You can call multiple tools in parallel when they are independent (e.g. writing multiple files, searching multiple patterns). This is faster and highly encouraged.
 - After receiving tool results, analyze them before deciding the next action.
 - If a tool fails, read the error message, understand why, and try a different approach.
 - You have a maximum of 20 tool iterations — use them wisely, do not waste calls.

@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
 import * as searchManager from './searchManager.js';
+import { parseSymbols } from './symbolParser.js';
 
 // =====================================================
 // HELPER: SAFE PATH
@@ -101,12 +102,43 @@ async function* edit_file(args, workspace) {
       return;
     }
     var content = await fs.readFile(target, 'utf-8');
-    if (!content.includes(oldString)) {
-      yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string not found in file.' };
-      return;
-    }
+    var newContent = '';
+
+    // First try an exact match (simplest, safest, preserves original behavior)
     var idx = content.indexOf(oldString);
-    var newContent = content.substring(0, idx) + newString + content.substring(idx + oldString.length);
+    if (idx !== -1) {
+      newContent = content.substring(0, idx) + newString + content.substring(idx + oldString.length);
+    } else {
+      // Fuzzy match: ignore differences in carriage returns, spaces, tabs, and newlines
+      var escapeRegExp = function(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      };
+
+      var tokens = oldString.trim().split(/\s+/);
+      if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
+        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string is empty.' };
+        return;
+      }
+
+      var regexParts = tokens.map(function(t) { return escapeRegExp(t); });
+      var pattern = regexParts.join('\\s+');
+      var regex = new RegExp(pattern, 'g');
+
+      var matches = [...content.matchAll(regex)];
+      if (matches.length === 0) {
+        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string not found in file (tried exact and fuzzy whitespace matching).' };
+        return;
+      }
+      if (matches.length > 1) {
+        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'Multiple fuzzy matches for old_string found in file. Please provide more surrounding context.' };
+        return;
+      }
+
+      var match = matches[0];
+      var matchIdx = match.index;
+      var matchLen = match[0].length;
+      newContent = content.substring(0, matchIdx) + newString + content.substring(matchIdx + matchLen);
+    }
 
     // Create a deferred promise for diff review
     var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -263,6 +295,7 @@ async function* get_file_info(args, workspace) {
 async function* run_terminal(args, workspace) {
   var command = args.command || '';
   var timeout = args.timeout || 30;
+  var background = args.background || false;
 
   if (!command) {
     yield { type: 'tool_result', tool: 'run_terminal', success: false, message: 'No command provided.' };
@@ -273,7 +306,7 @@ async function* run_terminal(args, workspace) {
 
   try {
     // Execute via terminalManager which uses VS Code Terminal API + Shell Integration
-    var result = await terminalManager.executeCommand(command, timeout);
+    var result = await terminalManager.executeCommand(command, timeout, background);
 
     // The terminalManager fires terminal_start, terminal_output, terminal_exit events
     // via its sendEventCallback. These are forwarded to the webview by extension.js.
@@ -348,6 +381,189 @@ async function* find_in_files(args, workspace) {
   }
 }
 
+// =═══════════════════════════════════════════════════
+// INTERACTIVE TERMINAL TOOLS
+// =═══════════════════════════════════════════════════
+
+async function* terminal_input(args, workspace) {
+  var text = args.text || '';
+  yield { type: 'action', action: 'terminal_input', message: 'Sending input to terminal: ' + text };
+  try {
+    var result = terminalManager.sendTerminalInput(text);
+    yield { type: 'tool_result', tool: 'terminal_input', success: true, message: result.message };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'terminal_input', success: false, message: e.message };
+  }
+}
+
+async function* stop_terminal(args, workspace) {
+  yield { type: 'action', action: 'stop_terminal', message: 'Stopping terminal process (Ctrl+C)' };
+  try {
+    var result = await terminalManager.stopTerminal();
+    yield { type: 'tool_result', tool: 'stop_terminal', success: true, message: result.message };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'stop_terminal', success: false, message: e.message };
+  }
+}
+
+// =═══════════════════════════════════════════════════
+// CODE NAVIGATION, DIFF PATCHING, & HTTP TOOLS
+// =═══════════════════════════════════════════════════
+
+async function* list_symbols(args, workspace) {
+  var filePath = args.file_path || '';
+  yield { type: 'action', action: 'list_symbols', message: 'Getting code outline for: ' + filePath };
+  try {
+    var target = _safePath(workspace, filePath);
+    if (!existsSync(target)) {
+      yield { type: 'tool_result', tool: 'list_symbols', success: false, message: 'File not found: ' + filePath };
+      return;
+    }
+    var content = await fs.readFile(target, 'utf-8');
+    var symbols = parseSymbols(content, filePath);
+    yield { type: 'tool_result', tool: 'list_symbols', success: true, file_path: filePath, entries: symbols };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'list_symbols', success: false, message: e.message };
+  }
+}
+
+async function* patch_file(args, workspace) {
+  var filePath = args.file_path || '';
+  var patches = args.patches || [];
+  yield { type: 'action', action: 'patch_file', message: 'Patching file: ' + filePath + ' (' + patches.length + ' blocks)' };
+  try {
+    var target = _safePath(workspace, filePath);
+    if (!existsSync(target)) {
+      yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'File not found: ' + filePath };
+      return;
+    }
+    var content = await fs.readFile(target, 'utf-8');
+    var newContent = content;
+
+    // Apply patches one by one
+    for (var i = 0; i < patches.length; i++) {
+      var p = patches[i];
+      var findStr = p.find || '';
+      var replaceStr = p.replace || '';
+      if (!findStr) continue;
+
+      var idx = newContent.indexOf(findStr);
+      if (idx !== -1) {
+        newContent = newContent.substring(0, idx) + replaceStr + newContent.substring(idx + findStr.length);
+      } else {
+        // Fuzzy whitespace match
+        var escapeRegExp = function(str) {
+          return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        };
+
+        var tokens = findStr.trim().split(/\s+/);
+        if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
+          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is empty.' };
+          return;
+        }
+
+        var regexParts = tokens.map(function(t) { return escapeRegExp(t); });
+        var pattern = regexParts.join('\\s+');
+        var regex = new RegExp(pattern, 'g');
+
+        var matches = [...newContent.matchAll(regex)];
+        if (matches.length === 0) {
+          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block not found in file (tried exact and fuzzy matching).' };
+          return;
+        }
+        if (matches.length > 1) {
+          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is ambiguous (multiple matches found in file). Please add more context.' };
+          return;
+        }
+
+        var match = matches[0];
+        var matchIdx = match.index;
+        var matchLen = match[0].length;
+        newContent = newContent.substring(0, matchIdx) + replaceStr + newContent.substring(matchIdx + matchLen);
+      }
+    }
+
+    // Create a deferred promise for diff review
+    var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    var deferred = {};
+    deferred.promise = new Promise(function(resolve) {
+      deferred.resolve = resolve;
+    });
+
+    yield {
+      type: 'request_diff',
+      id: diffId,
+      tool: 'patch_file',
+      file_path: filePath,
+      original_content: content,
+      new_content: newContent,
+      is_new_file: false,
+      deferred: deferred
+    };
+
+    // Wait for user to accept or reject
+    var diffResult = await deferred.promise;
+    if (!diffResult || !diffResult.accepted) {
+      yield { type: 'tool_result', tool: 'patch_file', success: false, file_path: filePath, message: 'Patch rejected by user.', rejected: true };
+      return;
+    }
+
+    // User accepted — write the file
+    await fs.writeFile(target, newContent, 'utf-8');
+    yield { type: 'tool_result', tool: 'patch_file', success: true, file_path: filePath, message: 'File patched successfully: ' + filePath };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'patch_file', success: false, message: e.message };
+  }
+}
+
+async function* web_request(args, workspace) {
+  var url = args.url || '';
+  var method = args.method || 'GET';
+  var headers = args.headers || {};
+  var body = args.body || null;
+
+  yield { type: 'action', action: 'web_request', message: 'HTTP Request: ' + method + ' ' + url };
+  try {
+    var options = {
+      method: method,
+      headers: headers
+    };
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      options.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+      if (!headers['Content-Type'] && !headers['content-type']) {
+        options.headers['Content-Type'] = 'application/json';
+      }
+    }
+
+    var res = await fetch(url, options);
+    var resText = await res.text();
+    var maxBodyLen = 8000;
+    var truncated = false;
+    if (resText.length > maxBodyLen) {
+      resText = resText.substring(0, maxBodyLen);
+      truncated = true;
+    }
+
+    var resHeaders = {};
+    res.headers.forEach(function(value, key) {
+      resHeaders[key] = value;
+    });
+
+    yield {
+      type: 'tool_result',
+      tool: 'web_request',
+      success: true,
+      url: url,
+      status: res.status,
+      status_text: res.statusText,
+      headers: resHeaders,
+      content: resText + (truncated ? '\n\n[Response body truncated for brevity]' : '')
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'web_request', success: false, message: e.message };
+  }
+}
+
 // =====================================================
 // REGISTER ALL TOOLS
 // =====================================================
@@ -363,6 +579,11 @@ export function registerAllTools() {
   toolRegistry.register('search_files', search_files);
   toolRegistry.register('get_file_info', get_file_info);
   toolRegistry.register('run_terminal', run_terminal);
+  toolRegistry.register('terminal_input', terminal_input);
+  toolRegistry.register('stop_terminal', stop_terminal);
+  toolRegistry.register('list_symbols', list_symbols);
+  toolRegistry.register('patch_file', patch_file);
+  toolRegistry.register('web_request', web_request);
   toolRegistry.register('get_current_datetime', get_current_datetime);
   toolRegistry.register('find_in_files', find_in_files);
 }

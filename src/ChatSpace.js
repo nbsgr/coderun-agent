@@ -505,6 +505,7 @@
             removeTyping(S.botBody);
             msg.tool_calls.forEach(function(tc) {
               var toolName = (tc.function && tc.function.name) || tc.name || '';
+              if (toolName === 'run_terminal' || toolName === 'terminal_input' || toolName === 'stop_terminal') return; // Skip terminal tools
               var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
               var toolId = tc.id || '';
               var toolIndex = tc.index;
@@ -591,6 +592,7 @@
               removeTyping(S.botBody);
               var toolId = ev.id || 'tool_' + (++S._toolIdCounter);
               var toolName = ev.tool || '';
+              if (toolName === 'run_terminal' || toolName === 'terminal_input' || toolName === 'stop_terminal') break; // Skip terminal tools
               var toolArgs = ev.args || {};
               // Prevent duplicate cards — check if we already have a pending card
               // for this tool name (from streaming ev.message.tool_calls). If so,
@@ -615,6 +617,7 @@
             case 'action': {
               removeTyping(S.botBody);
               var action = ev.action;
+              if (action === 'run_terminal' || action === 'terminal_input' || action === 'stop_terminal') break; // Skip terminal tools
               var actionMsg = ev.message || '';
               // Find a pending card for this action/tool name
               var pendingCard = getLastPendingCard(S);
@@ -635,6 +638,7 @@
             case 'tool_result': {
               removeTyping(S.botBody);
               var resTool = ev.tool;
+              if (resTool === 'run_terminal' || resTool === 'terminal_input' || resTool === 'stop_terminal') break; // Skip terminal tools
               var resSuccess = ev.success !== false;
               var resStatus = resSuccess ? 'success' : 'error';
               // Direct DOM approach: find any tool card inside S.botBody
@@ -694,6 +698,9 @@
               // Render action bar for checkpoints
               if (S._currentCheckpoints && S._currentCheckpoints.length) {
                 appendActionsBar(S.botBody, S._currentCheckpoints);
+              }
+              if (ev.reason === 'max_iterations') {
+                appendContinueButton(S.botBody);
               }
               S.thinkBlock = null; S.thinkPre = null;
               clearStatusLines(S);
@@ -914,27 +921,58 @@
 
       function appendPermissionRequestBlock(body, tool, args, id) {
         if (!body) return null;
-        var d = mk('div', 'cr-permission-card');
         var argsStr = '';
         try { argsStr = JSON.stringify(args, null, 2); } catch (_) { argsStr = String(args || ''); }
-        d.innerHTML =
-          '<div class="cr-permission-head">' +
-            I.tool +
-            '<span class="cr-permission-title">Permission Requested</span>' +
-            '<button class="cr-permission-info" title="This tool can modify files or run commands. Choose how to handle future calls of this tool.">ⓘ</button>' +
-          '</div>' +
-          '<div class="cr-permission-body">' +
-            '<p>The agent wants to execute tool <strong>' + esc(tool) + '</strong> with arguments:</p>' +
-            '<pre class="cr-permission-args"><code>' + esc(argsStr) + '</code></pre>' +
-          '</div>' +
-          '<div class="cr-permission-actions" id="actions-' + id + '">' +
-            '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
-            '<button class="cr-btn cr-btn-deny" data-action="deny" data-id="' + id + '" title="Deny this single call">Deny</button>' +
-            '<span class="cr-permission-divider"></span>' +
-            '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + id + '" title="Allow this tool for the rest of the session, and remember the choice">Always Allow</button>' +
-            '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + id + '" title="Deny this tool for the rest of the session, and remember the choice">Always Deny</button>' +
-          '</div>';
-        body.appendChild(d);
+
+        // Try to find the last pending tool card of the same name to embed inside it
+        var pendingCard = getLastPendingCard(S);
+        var targetParent = body;
+        var isEmbedded = false;
+
+        if (pendingCard && pendingCard.dataset.toolName === tool) {
+          var cardBody = pendingCard.querySelector('.cr-tool-card-body');
+          if (cardBody) {
+            targetParent = cardBody;
+            isEmbedded = true;
+          }
+        }
+
+        var d;
+        if (isEmbedded) {
+          d = mk('div', 'cr-permission-section');
+          d.innerHTML =
+            '<div class="cr-permission-prompt" style="font-size: 12px; color: #b4b4b4; margin-bottom: 6px; font-weight: 500;">' +
+              'Permission Requested: Allow execution?' +
+            '</div>' +
+            '<div class="cr-permission-actions" id="actions-' + id + '">' +
+              '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
+              '<button class="cr-btn cr-btn-deny" data-action="deny" data-id="' + id + '" title="Deny this single call">Deny</button>' +
+              '<span class="cr-permission-divider"></span>' +
+              '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + id + '" title="Allow this tool for the rest of the session, and remember the choice">Always Allow</button>' +
+              '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + id + '" title="Deny this tool for the rest of the session, and remember the choice">Always Deny</button>' +
+            '</div>';
+        } else {
+          d = mk('div', 'cr-permission-card');
+          d.innerHTML =
+            '<div class="cr-permission-head">' +
+              I.tool +
+              '<span class="cr-permission-title">Permission Requested</span>' +
+              '<button class="cr-permission-info" title="This tool can modify files or run commands. Choose how to handle future calls of this tool.">ⓘ</button>' +
+            '</div>' +
+            '<div class="cr-permission-body">' +
+              '<p>The agent wants to execute tool <strong>' + esc(tool) + '</strong> with arguments:</p>' +
+              '<pre class="cr-permission-args"><code>' + esc(argsStr) + '</code></pre>' +
+            '</div>' +
+            '<div class="cr-permission-actions" id="actions-' + id + '">' +
+              '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
+              '<button class="cr-btn cr-btn-deny" data-action="deny" data-id="' + id + '" title="Deny this single call">Deny</button>' +
+              '<span class="cr-permission-divider"></span>' +
+              '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + id + '" title="Allow this tool for the rest of the session, and remember the choice">Always Allow</button>' +
+              '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + id + '" title="Deny this tool for the rest of the session, and remember the choice">Always Deny</button>' +
+            '</div>';
+        }
+
+        targetParent.appendChild(d);
         var actions = d.querySelector('#actions-' + id);
         actions.addEventListener('click', function(e) {
           var btn = e.target.closest('[data-action]');
@@ -956,6 +994,7 @@
             });
           }
         });
+        scrollBottom(msgList);
         return d;
       }
 
@@ -1328,6 +1367,27 @@
         };
 
         body.appendChild(card);
+        scrollBottom(msgList);
+      }
+
+      function appendContinueButton(parent) {
+        if (!parent) return;
+        var btnContainer = mk('div', 'cr-continue-container');
+        btnContainer.style.padding = '8px 12px';
+        btnContainer.style.display = 'flex';
+        btnContainer.style.justifyContent = 'flex-start';
+
+        var btn = mk('button', 'cr-btn cr-btn-allow');
+        btn.textContent = 'Continue Task';
+
+        btn.addEventListener('click', function() {
+          btnContainer.remove();
+          input.value = "Continue building the project from where you left off";
+          doSend();
+        });
+
+        btnContainer.appendChild(btn);
+        parent.appendChild(btnContainer);
         scrollBottom(msgList);
       }
 

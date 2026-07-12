@@ -10,54 +10,58 @@ A professional multi-provider AI coding agent for VS Code. Supports Ollama, Open
 ## Features
 
 ### 🤖 Multi-Provider AI
-- **8 providers** — Ollama, OpenAI, Anthropic, Gemini, Groq, OpenRouter, xAI (Grok), OpenAI Compatible
-- **Per-provider config** — Save multiple provider configurations (API keys, base URLs, models) and switch seamlessly
-- **All models in one dropdown** — Models from all configured providers appear grouped in a single dropdown
-- **Auto SDK selection** — Correct SDK and API key used automatically based on model selection
+- **8 providers** — Ollama, OpenAI, Anthropic, Gemini, Groq, OpenRouter, xAI (Grok), OpenAI Compatible.
+- **Per-provider config** — Save multiple provider configurations (API keys, base URLs, models) and switch seamlessly.
+- **All models in one dropdown** — Models from all configured providers appear grouped in a single dropdown.
+- **Auto SDK selection** — Correct SDK and API key used automatically based on model selection.
 
-### 💬 Copilot-Style Chat UI
-- **Streaming responses** — Real-time thinking tokens, content, and tool calls
-- **Collapsible tool cards** — Expand/collapse tool execution details with live progress
-- **Inline diff review** — Accept/Reject file changes directly in the chat (no temporary editors)
-- **Permission cards** — Allow/Deny/Always Allow per tool with persistent decisions
-- **Terminal blocks** — Live terminal output streaming inside the chat
-- **Markdown rendering** — Syntax-highlighted code blocks, tables, images
+### 💬 Unified Chat & Command UI
+- **Streaming responses** — Real-time thinking tokens, content, and tool calls.
+- **Collapsible tool cards** — Expand/collapse tool execution details with live progress.
+- **Direct console blocks** — Suppresses redundant status cards for terminal commands to directly display a clean console terminal.
+- **Unified permission dropdowns** — Permission actions (Allow/Deny/Always) are embedded directly inside the active tool card as a section with horizontal scrolls instead of separate boxes.
+- **Inline diff review** — Accept/Reject file changes directly in the chat (no temporary editors).
+- **Task continuation** — A "Continue Task" button automatically renders when hitting execution limits to resume with one click.
 
 ### 🧠 Intelligent Agent Loop
-- **Think → Plan → Act → Verify** — Multi-iteration agentic loop with tool execution
-- **Context Manager** — Automatic intent detection, relevant file search, VS Code editor state
-- **Planning Engine** — Structured step-by-step plan generation per request
-- **Verification Engine** — Objective checks on every tool result (file exists, exit code, error patterns)
-- **Learning Engine** — Auto-detects framework, build system, conventions, architecture
-- **Timeline** — Chronological event log for session awareness
-- **Retry logic** — Automatic retry on verification failure (configurable)
+- **Think → Plan → Act → Verify** — Multi-iteration agentic loop with tool execution.
+- **Parallel Tool Execution** — Executes multiple independent tool calls concurrently using `Promise.all` for high performance.
+- **Fuzzy File Replacement** — Fuzzy whitespace matching in `edit_file` reduces failed model iterations.
+- **Multi-block Patching** — A dedicated `patch_file` tool to apply multiple search-and-replace blocks sequentially.
+- **Context Manager** — Automatic intent detection, relevant file search, VS Code editor state.
+- **Planning Engine** — Structured step-by-step plan generation per request.
+- **Verification Engine** — Objective checks on every tool result (file exists, exit code, error patterns, web health).
+- **Learning Engine** — Auto-detects framework, build system, conventions, architecture.
 
 ### 📁 Project Knowledge Base
-- **SQLite-powered** — Embedded SQLite database per project via `sql.js`
-- **Registry.db** — Cross-project workspace registry
-- **Incremental indexing** — Background file indexing with hash-based change detection
-- **File watcher** — Real-time updates on file create/change/delete
-- **Search** — Filename and content search backed by the index, with filesystem fallback
-- **Chunk storage** — Text chunks pre-segmented for future semantic embeddings
+- **SQLite-powered** — Embedded SQLite database per project via `sql.js`.
+- **Registry.db** — Cross-project workspace registry.
+- **Incremental indexing** — Background file indexing with hash-based change detection.
+- **File watcher** — Real-time updates on file create/change/delete.
+- **Search** — Filename and content search backed by the index, with filesystem fallback.
+- **Code Symbol Outlining** — A dedicated `list_symbols` tool extracts classes, methods, and functions with line numbers for large file exploration.
 
 ### ↩️ Undo & Checkpoints
-- **Automatic checkpoints** — Before every file write/edit/delete, original content is snapshotted to SQLite
-- **Per-response Undo** — Undo buttons appear below assistant responses that modified files
-- **Single-click restore** — Click Undo to restore the original file content instantly
-- **VS Code Command** — `CodeRun: Undo Last Edit` via Command Palette
+- **Automatic checkpoints** — Before every file write/edit/delete, original content is snapshotted to SQLite.
+- **Per-response Undo** — Undo buttons appear below assistant responses that modified files.
+- **Single-click restore** — Click Undo to restore the original file content instantly.
+- **VS Code Command** — `CodeRun: Undo Last Edit` via Command Palette.
 
-### 🖥️ Real Terminal Integration
-- **VS Code Integrated Terminal** — Real shell execution via Shell Integration API
-- **Live streaming** — stdout and exit codes stream into the chat in real time
-- **Fallback** — Graceful sendText fallback when Shell Integration is unavailable
+### 🖥️ Real Terminal & Verification Integration
+- **VS Code Integrated Terminal** — Real shell execution via Shell Integration API.
+- **Live streaming** — stdout and exit codes stream into the chat in real time.
+- **Background Tasks** — Run long-lived servers or dev tasks persistently (`background: true`).
+- **Interactive Inputs** — Send prompts and keyboard inputs (`terminal_input`) or interrupts/Ctrl+C (`stop_terminal`) to active tasks.
+- **Web request validation** — Use `web_request` to check if dev servers have booted successfully.
+- **Fallback** — Graceful sendText fallback when Shell Integration is unavailable.
 
 ### 🔒 Security & Privacy
-- **Workspace-safe paths** — All file operations restricted to workspace root
-- **Path traversal blocked** — Attempts outside workspace are rejected
-- **Dangerous tool permissions** — Allow/Deny/Always Allow for write, delete, terminal
-- **API keys in SecretStorage** — Encrypted at rest via VS Code's SecretStorage API
-- **No telemetry** — Zero data leaves your machine unless you use a cloud provider
-- **Offline-first** — Fully functional with local Ollama models
+- **Workspace-safe paths** — All file operations restricted to workspace root.
+- **Path traversal blocked** — Attempts outside workspace are rejected.
+- **Dangerous tool permissions** — Allow/Deny/Always Allow for write, delete, terminal.
+- **API keys in SecretStorage** — Encrypted at rest via VS Code's SecretStorage API.
+- **No telemetry** — Zero data leaves your machine unless you use a cloud provider.
+- **Offline-first** — Fully functional with local Ollama models.
 
 ## Supported Providers
 
@@ -230,13 +234,14 @@ src/
 │
 ├── projectKnowledge.js       ← Phase 1: SQLite registry + per-project index.db
 ├── searchManager.js          ← Phase 2: Index-backed search with filesystem fallback
+├── symbolParser.js           ← Phase 1 Outline: Regex-based code symbol extractor
 ├── memoryManager.js          ← In-memory conversation memory (simple array)
 │
 ├── terminalManager.js        ← Real VS Code Integrated Terminal via Shell Integration
 ├── permissions.js            ← Allow/Deny/Always Allow per tool
 ├── workspaceContext.js       ← Workspace folder detection
 │
-├── tools.js                  ← 12 async generators (file, dir, terminal, search)
+├── tools.js                  ← 15 async generators (file, patching, symbols, HTTP, terminal, search)
 ├── toolRegistry.js           ← Maps tool names to implementations
 ├── toolDefinitions.js        ← Tool schemas for LLM function calling
 ├── toolExecutor.js           ← Formats tool results for LLM context

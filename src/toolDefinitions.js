@@ -104,7 +104,8 @@ registerTool('run_terminal',
   "Execute a shell command in the workspace directory and return its stdout, stderr, and exit code. Use for: running builds, installing packages, running tests, git commands, listing processes, checking versions, etc. The command runs with the workspace as the current directory.",
   {
     command: { type: "string", description: "The shell command to execute, e.g. 'npm install', 'python main.py', 'git status'" },
-    timeout: { type: "integer", description: "Max seconds to wait. Default 30. Increase for long builds." }
+    timeout: { type: "integer", description: "Max seconds to wait. Default 30. Increase for long builds." },
+    background: { type: "boolean", description: "If true, run the command in the background without waiting for it to finish (useful for dev servers, watch processes, etc.). Default false." }
   },
   ["command"]
 );
@@ -121,4 +122,57 @@ registerTool('find_in_files',
     query: { type: "string", description: "The text or keyword to search for in file contents, e.g. 'useEffect', 'function calculate', 'TODO'" }
   },
   ["query"]
+);
+
+registerTool('terminal_input',
+  "Send text input (like keyboard inputs, pressing Enter, responding to prompts) to the active terminal running a command.",
+  {
+    text: { type: "string", description: "The text/keys to send to the terminal." }
+  },
+  ["text"]
+);
+
+registerTool('stop_terminal',
+  "Send a Ctrl+C signal (interrupt) to the active terminal to stop the currently running command or server.",
+  {},
+  []
+);
+
+registerTool('list_symbols',
+  "Extract and list all code symbols (classes, functions, methods, structs, interfaces) defined in a file. Returns symbols with their line numbers. Use this to quickly understand the structure/outline of a large file before editing.",
+  {
+    file_path: { type: "string", description: "Relative path to the file inside the workspace, e.g. 'src/app.js'" }
+  },
+  ["file_path"]
+);
+
+registerTool('patch_file',
+  "Apply multiple search-and-replace blocks to a single file at once. Parent directories must exist. Useful for making non-contiguous changes without rewriting the entire file. If any block find pattern fails to match, the tool fails.",
+  {
+    file_path: { type: "string", description: "Relative path to the file in the workspace." },
+    patches: {
+      type: "array",
+      description: "List of patch search-and-replace blocks to apply sequentially.",
+      items: {
+        type: "object",
+        properties: {
+          find: { type: "string", description: "The exact search block to replace in the file (supports exact and fuzzy whitespace matching)." },
+          replace: { type: "string", description: "The replacement content for the search block." }
+        },
+        required: ["find", "replace"]
+      }
+    }
+  },
+  ["file_path", "patches"]
+);
+
+registerTool('web_request',
+  "Perform an HTTP request to verify a running development server or fetch data from an API endpoint.",
+  {
+    url: { type: "string", description: "The URL of the request, e.g. 'http://localhost:3000/health'" },
+    method: { type: "string", description: "HTTP method, e.g. 'GET', 'POST', 'PUT', 'DELETE'. Defaults to 'GET'." },
+    headers: { type: "object", description: "HTTP headers object." },
+    body: { type: "string", description: "Optional request body." }
+  },
+  ["url"]
 );

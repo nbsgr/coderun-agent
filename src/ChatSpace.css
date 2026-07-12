@@ -726,6 +726,12 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.cr-permission-section {
+  border-top: 1px solid #2d2d2d;
+  padding: 10px 0 0 0;
+  margin-top: 8px;
+}
+
 .cr-permission-head {
   display: flex;
   align-items: center;
@@ -764,6 +770,8 @@
   border-radius: 4px;
   max-height: 150px;
   overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre;
   border: 1px solid #2d2d2d;
 }
 
@@ -1195,8 +1203,8 @@
   color: #9cdcfe;
   max-height: 150px;
   overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  overflow-x: auto;
+  white-space: pre;
   border-top: 1px solid #2d2d2d;
 }
 

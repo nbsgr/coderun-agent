@@ -2,7 +2,7 @@
   "name": "ai-agent",
   "displayName": "AI-AGENT",
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "Bala-Siva-Ganesh",
   "icon": "logo.png",
   "repository": {

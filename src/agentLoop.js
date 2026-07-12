@@ -286,20 +286,22 @@ export async function runAgentLoop(userPrompt, config, options) {
 
     // Execute tools
     sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
-    var toolResults = [];
-
-    for (var i = 0; i < completedToolCalls.length; i++) {
-      var tc = completedToolCalls[i];
+    
+    var toolPromises = completedToolCalls.map(async function(tc, index) {
       var toolName = tc.function?.name;
       var args = tc.function?.arguments || {};
-      var tcId = tc.id || 'call_' + iteration + '_' + i;
+      var tcId = tc.id || 'call_' + iteration + '_' + index;
 
       // Permission check
       var approved = await askPermission(toolName, args, tcId, sendEvent);
       if (!approved) {
         sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: 'Permission denied by user.' });
-        toolResults.push({ tool_name: toolName, tool_call_id: tcId, formattedResult: 'Permission denied.' });
-        continue;
+        return {
+          tool_name: toolName,
+          tool_call_id: tcId,
+          formattedResult: 'Permission denied.',
+          checkpoints: []
+        };
       }
 
       // Execute tool
@@ -346,12 +348,6 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
       }
-
-      toolResults.push({
-        tool_name: toolName,
-        tool_call_id: tcId,
-        formattedResult: formatToolResult(toolName, lastResult)
-      });
 
       // Record tool usage for learning engine
       try {
@@ -408,13 +404,34 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         } catch (_) {}
       }
+
+      return {
+        tool_name: toolName,
+        tool_call_id: tcId,
+        formattedResult: formatToolResult(toolName, lastResult),
+        checkpoints: checkpointsCreated
+      };
+    });
+
+    var results = await Promise.all(toolPromises);
+    var toolResults = [];
+    var allCheckpoints = [];
+    for (var ri = 0; ri < results.length; ri++) {
+      toolResults.push({
+        tool_name: results[ri].tool_name,
+        tool_call_id: results[ri].tool_call_id,
+        formattedResult: results[ri].formattedResult
+      });
+      if (results[ri].checkpoints && results[ri].checkpoints.length) {
+        allCheckpoints = allCheckpoints.concat(results[ri].checkpoints);
+      }
     }
 
     // Emit any checkpoints created during this iteration
-    if (checkpointsCreated.length) {
+    if (allCheckpoints.length) {
       sendEvent({
         type: 'checkpoints_created',
-        checkpoints: checkpointsCreated
+        checkpoints: allCheckpoints
       });
     }
 
