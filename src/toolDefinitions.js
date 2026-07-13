@@ -42,6 +42,12 @@ registerTool('read_file',
   ["file_path"]
 );
 
+registerTool('read',
+  "Read the full contents of a file at the given path inside the workspace. Alias for read_file.",
+  { file_path: { type: "string", description: "Relative path to the file inside the workspace, e.g. 'src/main.py' or 'README.md'" } },
+  ["file_path"]
+);
+
 registerTool('write_file',
   "Create a new file or completely overwrite an existing file with the provided content. Parent directories are created automatically. Use this to create new files or when you need to rewrite a file entirely.",
   {
@@ -51,8 +57,27 @@ registerTool('write_file',
   ["file_path", "content"]
 );
 
+registerTool('write',
+  "Create a new file or completely overwrite an existing file with the provided content. Alias for write_file.",
+  {
+    file_path: { type: "string", description: "Relative path to the file inside the workspace, e.g. 'src/app.js'" },
+    content: { type: "string", description: "The complete file content to write" }
+  },
+  ["file_path", "content"]
+);
+
 registerTool('edit_file',
   "Replace the first occurrence of an exact string in a file with a new string. Use this for small, precise edits without rewriting the whole file. The old_string must match exactly (including whitespace and indentation).",
+  {
+    file_path: { type: "string", description: "Relative path to the file inside the workspace" },
+    old_string: { type: "string", description: "The exact string to find (must match precisely including whitespace)" },
+    new_string: { type: "string", description: "The string to replace old_string with" }
+  },
+  ["file_path", "old_string", "new_string"]
+);
+
+registerTool('edit',
+  "Replace the first occurrence of an exact string in a file with a new string. Alias for edit_file.",
   {
     file_path: { type: "string", description: "Relative path to the file inside the workspace" },
     old_string: { type: "string", description: "The exact string to find (must match precisely including whitespace)" },
@@ -106,6 +131,22 @@ registerTool('run_terminal',
     command: { type: "string", description: "The shell command to execute, e.g. 'npm install', 'python main.py', 'git status'" },
     timeout: { type: "integer", description: "Max seconds to wait. Default 30. Increase for long builds." },
     background: { type: "boolean", description: "If true, run the command in the background without waiting for it to finish (useful for dev servers, watch processes, etc.). Default false." }
+  },
+  ["command"]
+);
+
+registerTool('bash',
+  "Execute a shell command in the terminal. Alias for run_terminal.",
+  {
+    command: { type: "string", description: "The shell command to execute, e.g. 'ls', 'npm run dev', 'git status'" }
+  },
+  ["command"]
+);
+
+registerTool('execute_command',
+  "Execute a shell command in the terminal. Alias for run_terminal.",
+  {
+    command: { type: "string", description: "The shell command to execute, e.g. 'ls', 'npm run dev', 'git status'" }
   },
   ["command"]
 );

@@ -50,10 +50,15 @@ export async function* chat(config, messages, tools) {
 
 export async function listModels(config) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/models?key=' + config.apiKey;
-  var res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
-  return data.models ? data.models.map(function(m) { return m.name.split('/').pop(); }) : [];
+  try {
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    return data.models ? data.models.map(function(m) { return m.name.split('/').pop(); }) : [];
+  } catch (e) {
+    console.warn('[CODERUN] Failed to fetch models from Gemini-Compatible endpoint:', e.message);
+    return config.model ? [config.model] : ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
+  }
 }
 
 export async function embeddings(config, texts) {
@@ -98,12 +103,20 @@ function parseChunk(data) {
   if (data.candidates && data.candidates[0]) {
     var candidate = data.candidates[0];
     if (candidate.content && candidate.content.parts) {
-      var text = candidate.content.parts.map(function(p) { return p.text || ''; }).join('');
-      if (text) result.content = text;
-    }
-    if (candidate.content && candidate.content.parts) {
+      var contentParts = [];
+      var thinkingParts = [];
       for (var i = 0; i < candidate.content.parts.length; i++) {
         var part = candidate.content.parts[i];
+        
+        var textVal = part.text || '';
+        var thoughtVal = typeof part.thought === 'string' ? part.thought : '';
+        
+        if (part.thought === true || thoughtVal) {
+          thinkingParts.push(textVal || thoughtVal);
+        } else {
+          contentParts.push(textVal);
+        }
+        
         if (part.functionCall) {
           result.tool_calls = result.tool_calls || [];
           result.tool_calls.push({
@@ -115,6 +128,10 @@ function parseChunk(data) {
           });
         }
       }
+      var contentText = contentParts.join('');
+      var thinkingText = thinkingParts.join('');
+      if (contentText) result.content = contentText;
+      if (thinkingText) result.thinking = thinkingText;
     }
   }
   return result;

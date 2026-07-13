@@ -573,7 +573,8 @@ async function handleFrontendMessage(message, webview) {
           await config.saveProviderConfig(extensionContext, savedProvider, {
             baseUrl: savedBaseUrl,
             apiKey: resolvedApiKey,
-            model: message.settings.model || ''
+            model: message.settings.model || '',
+            apiType: message.settings.apiType || 'openai'
           });
 
           var overrideCfg = await config.getProviderConfigWithKey(extensionContext);

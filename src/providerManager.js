@@ -14,7 +14,14 @@ export function createProvider(config) {
   var provider = config.provider || PROVIDERS.OLLAMA;
 
   if (provider.startsWith('compatible')) {
-    return providerCompatible;
+    var apiType = config.apiType || 'openai';
+    if (apiType === 'anthropic') {
+      return providerAnthropic;
+    } else if (apiType === 'gemini') {
+      return providerGemini;
+    } else {
+      return providerCompatible;
+    }
   }
 
   switch (provider) {

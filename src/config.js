@@ -186,7 +186,8 @@ export async function saveProviderConfig(context, provider, config) {
   all[provider] = {
     baseUrl: config.baseUrl || '',
     apiKey: config.apiKey || '',
-    model: config.model || ''
+    model: config.model || '',
+    apiType: config.apiType || 'openai'
   };
   await context.globalState.update(STORAGE_KEYS.PROVIDER_CONFIGS, JSON.stringify(all));
 }
@@ -222,6 +223,7 @@ export async function getProviderConfigByName(context, providerName) {
     baseUrl: saved.baseUrl || defaults.baseUrl,
     model: saved.model || '',
     apiKey: saved.apiKey || '',
-    needsKey: defaults.needsKey
+    needsKey: defaults.needsKey,
+    apiType: saved.apiType || 'openai'
   };
 }

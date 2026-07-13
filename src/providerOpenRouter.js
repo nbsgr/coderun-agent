@@ -85,6 +85,8 @@ function parseChunk(data) {
   if (!delta) return result;
   if (delta.content) result.content = delta.content;
   if (delta.thinking) result.thinking = delta.thinking;
+  if (delta.reasoning_content) result.thinking = delta.reasoning_content;
+  if (delta.reasoning) result.thinking = delta.reasoning;
   if (delta.tool_calls) result.tool_calls = delta.tool_calls;
   return result;
 }

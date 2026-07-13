@@ -570,8 +570,11 @@ async function* web_request(args, workspace) {
 
 export function registerAllTools() {
   toolRegistry.register('read_file', read_file);
+  toolRegistry.register('read', read_file);
   toolRegistry.register('write_file', write_file);
+  toolRegistry.register('write', write_file);
   toolRegistry.register('edit_file', edit_file);
+  toolRegistry.register('edit', edit_file);
   toolRegistry.register('delete_file', delete_file);
   toolRegistry.register('create_folder', create_folder);
   toolRegistry.register('delete_folder', delete_folder);
@@ -579,6 +582,8 @@ export function registerAllTools() {
   toolRegistry.register('search_files', search_files);
   toolRegistry.register('get_file_info', get_file_info);
   toolRegistry.register('run_terminal', run_terminal);
+  toolRegistry.register('bash', run_terminal);
+  toolRegistry.register('execute_command', run_terminal);
   toolRegistry.register('terminal_input', terminal_input);
   toolRegistry.register('stop_terminal', stop_terminal);
   toolRegistry.register('list_symbols', list_symbols);

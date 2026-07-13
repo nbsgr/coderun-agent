@@ -19,7 +19,28 @@ export function list() {
 }
 
 export function execute(name, args, workspace) {
-  var fn = get(name);
+  var lookupName = name;
+  var mappedArgs = args || {};
+  
+  var lowerName = (name || '').toLowerCase();
+  
+  // Alias execute_command and bash to run_terminal for model compatibility
+  if (lowerName === 'execute_command' || lowerName === 'bash') {
+    lookupName = 'run_terminal';
+    mappedArgs = {
+      command: args.command || args.text || args.code || args.commandLine || args.cmd || '',
+      timeout: args.timeout || 30,
+      background: args.background || false
+    };
+  } else if (lowerName === 'read') {
+    lookupName = 'read_file';
+  } else if (lowerName === 'write') {
+    lookupName = 'write_file';
+  } else if (lowerName === 'edit') {
+    lookupName = 'edit_file';
+  }
+
+  var fn = get(lookupName);
   if (!fn) {
     return (async function*() {
       yield {
@@ -30,7 +51,7 @@ export function execute(name, args, workspace) {
       };
     })();
   }
-  return fn(args, workspace);
+  return fn(mappedArgs, workspace);
 }
 
 export function clear() {

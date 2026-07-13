@@ -181,6 +181,8 @@
     var confirmEl = document.getElementById("cfgConfirmDangerous");
     var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
     var compNameEl = document.getElementById("cfgCompatibleName");
+    var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
+    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
 
     if (providerEl) {
       // Re-populate dropdown dynamically
@@ -202,7 +204,10 @@
         var key = keys[i];
         if (key.startsWith('compatible:')) {
           var name = key.substring(11);
-          html += '<option value="' + esc(key) + '">' + esc(name) + ' (Compatible)</option>';
+          var cfg = configs[key] || {};
+          var type = cfg.apiType || 'openai';
+          var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+          html += '<option value="' + esc(key) + '">' + esc(name) + ' (' + typeLabel + ')</option>';
           if (key === state.settings.provider) {
             hasCurrentAsCustom = true;
           }
@@ -212,10 +217,12 @@
       // If the current provider is compatible:XYZ but not saved yet
       if (state.settings.provider && state.settings.provider.startsWith('compatible:') && !hasCurrentAsCustom) {
         var name = state.settings.provider.substring(11);
-        html += '<option value="' + esc(state.settings.provider) + '">' + esc(name) + ' (Compatible)</option>';
+        var type = state.settings.apiType || 'openai';
+        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+        html += '<option value="' + esc(state.settings.provider) + '">' + esc(name) + ' (' + typeLabel + ')</option>';
       }
       
-      html += '<option value="compatible">OpenAI Compatible (New...)</option>';
+      html += '<option value="compatible">OpenAI/Anthropic/Gemini Compatible (New...)</option>';
       providerEl.innerHTML = html;
       providerEl.value = state.settings.provider || 'ollama';
     }
@@ -223,17 +230,23 @@
     var currentProvider = state.settings.provider || 'ollama';
     var isCompatible = currentProvider === 'compatible' || currentProvider.startsWith('compatible:');
 
-    if (compNameGroup && compNameEl) {
+    if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
       if (isCompatible) {
         compNameGroup.style.display = 'flex';
+        compApiTypeGroup.style.display = 'flex';
         if (currentProvider.startsWith('compatible:')) {
           compNameEl.value = currentProvider.substring(11);
+          var saved = (state.savedProviderConfigs || {})[currentProvider] || {};
+          compApiTypeEl.value = saved.apiType || 'openai';
         } else {
           compNameEl.value = '';
+          compApiTypeEl.value = 'openai';
         }
       } else {
         compNameGroup.style.display = 'none';
+        compApiTypeGroup.style.display = 'none';
         compNameEl.value = '';
+        compApiTypeEl.value = 'openai';
       }
     }
 
@@ -274,7 +287,10 @@
       var cfg = configs[prov] || {};
       var label = prov;
       if (prov.startsWith('compatible:')) {
-        label = prov.substring(11) + ' (Compatible)';
+        var name = prov.substring(11);
+        var type = cfg.apiType || 'openai';
+        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+        label = name + ' (' + typeLabel + ')';
       } else {
         label = prov.charAt(0).toUpperCase() + prov.slice(1);
       }
@@ -436,6 +452,7 @@
               '<div class="cr-settings">' +
                 '<div class="cr-input-group"><label>Provider</label><select id="cfgProvider"><option value="ollama">Ollama</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option><option value="compatible">OpenAI Compatible</option></select></div>' +
                 '<div class="cr-input-group" id="cfgCompatibleNameGroup" style="display:none"><label>Custom Provider Name</label><input type="text" id="cfgCompatibleName" placeholder="e.g. Bynara, LM Studio"></div>' +
+                '<div class="cr-input-group" id="cfgCompatibleApiTypeGroup" style="display:none"><label>API Type</label><select id="cfgCompatibleApiType"><option value="openai">OpenAI Compatible</option><option value="anthropic">Anthropic Compatible</option><option value="gemini">Google Gemini Compatible</option></select></div>' +
                 '<div class="cr-input-group"><label>Base URL</label><input type="text" id="cfgBaseUrl" value="' + esc(state.baseUrl) + '" placeholder="e.g., https://api.example.com/v1"></div>' +
                 '<div class="cr-input-group"><label>API Key</label><input type="password" id="cfgApiKey" value="" placeholder="sk-..."></div>' +
                 '<div class="cr-input-group"><label>Model</label><input type="text" id="cfgModel" value="' + esc(state.settings.model) + '" placeholder="Model name (e.g., llama3, gpt-4)"></div>' +
@@ -477,19 +494,27 @@
       var provider = this.value;
       var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
       var compNameEl = document.getElementById("cfgCompatibleName");
+      var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
+      var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
       
       var isCompatible = provider === 'compatible' || provider.startsWith('compatible:');
-      if (compNameGroup && compNameEl) {
+      if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
         if (isCompatible) {
           compNameGroup.style.display = 'flex';
+          compApiTypeGroup.style.display = 'flex';
           if (provider.startsWith('compatible:')) {
             compNameEl.value = provider.substring(11);
+            var saved = (state.savedProviderConfigs || {})[provider] || {};
+            compApiTypeEl.value = saved.apiType || 'openai';
           } else {
             compNameEl.value = '';
+            compApiTypeEl.value = 'openai';
           }
         } else {
           compNameGroup.style.display = 'none';
+          compApiTypeGroup.style.display = 'none';
           compNameEl.value = '';
+          compApiTypeEl.value = 'openai';
         }
       }
 
@@ -542,8 +567,11 @@
     document.getElementById("saveSettingsBtn").onclick = function() {
       var newProvider = document.getElementById("cfgProvider").value;
       var compNameEl = document.getElementById("cfgCompatibleName");
+      var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
+      var customApiType = 'openai';
       if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
         var customName = compNameEl ? compNameEl.value.trim() : '';
+        customApiType = compApiTypeEl ? compApiTypeEl.value : 'openai';
         if (customName) {
           newProvider = 'compatible:' + customName;
         } else {
@@ -569,6 +597,7 @@
       state.settings.streaming = newStreaming;
       state.settings.showThinking = newShowThinking;
       state.settings.confirmDangerous = newConfirm;
+      state.settings.apiType = customApiType;
 
       if (newModel) {
         state.selectedModel = newModel;
@@ -595,7 +624,8 @@
             maxIterations: newMaxIter,
             streaming: newStreaming,
             showThinking: newShowThinking,
-            confirmDangerous: newConfirm
+            confirmDangerous: newConfirm,
+            apiType: customApiType
           },
           apiKey: apiKeyToSend
         });
@@ -733,7 +763,11 @@
       
       var displayLabel = providerName;
       if (providerName.startsWith('compatible:')) {
-        displayLabel = providerName.substring(11) + ' (Compatible)';
+        var name = providerName.substring(11);
+        var saved = (state.savedProviderConfigs || {})[providerName] || {};
+        var type = saved.apiType || 'openai';
+        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+        displayLabel = name + ' (' + typeLabel + ')';
       } else {
         displayLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
       }
@@ -775,7 +809,11 @@
       
       var displayLabel = provider;
       if (provider.startsWith('compatible:')) {
-        displayLabel = provider.substring(11) + ' (Compatible)';
+        var name = provider.substring(11);
+        var saved = (state.savedProviderConfigs || {})[provider] || {};
+        var type = saved.apiType || 'openai';
+        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+        displayLabel = name + ' (' + typeLabel + ')';
       } else {
         displayLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
       }

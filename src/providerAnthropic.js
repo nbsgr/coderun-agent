@@ -61,6 +61,22 @@ export async function* chat(config, messages, tools) {
 }
 
 export async function listModels(config) {
+  if (config.provider && config.provider.startsWith('compatible')) {
+    var url = config.baseUrl.replace(/\/+$/, '') + '/models';
+    var headers = {};
+    if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
+    try {
+      var res = await fetch(url, { headers: headers });
+      if (res.ok) {
+        var data = await res.json();
+        return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+      }
+    } catch (e) {
+      console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint:', e.message);
+    }
+    // Fallback to currently configured model if available
+    return config.model ? [config.model] : [];
+  }
   // Anthropic does not have a public models endpoint; return known models
   return [
     'claude-3-5-sonnet-20241022',

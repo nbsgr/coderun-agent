@@ -48,9 +48,31 @@ export async function* chat(config, messages, tools) {
 }
 
 export async function listModels(config) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/models';
+  var baseUrl = config.baseUrl.replace(/\/+$/, '');
   var headers = {};
   if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
+
+  // Cloudflare Workers AI custom models endpoint handler
+  if (baseUrl.includes('cloudflare.com')) {
+    try {
+      var match = baseUrl.match(/\/accounts\/([^\/]+)/);
+      if (match && match[1]) {
+        var accountId = match[1];
+        var cfUrl = 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/models/search?per_page=300';
+        var res = await fetch(cfUrl, { headers: headers });
+        if (res.ok) {
+          var data = await res.json();
+          if (data.result && Array.isArray(data.result)) {
+            return data.result.map(function(m) { return m.name; });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[CODERUN] Failed to fetch models from Cloudflare Search API:', e.message);
+    }
+  }
+
+  var url = baseUrl + '/models';
   try {
     var res = await fetch(url, { headers: headers });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -86,6 +108,8 @@ function parseChunk(data) {
   if (!delta) return result;
   if (delta.content) result.content = delta.content;
   if (delta.thinking) result.thinking = delta.thinking;
+  if (delta.reasoning_content) result.thinking = delta.reasoning_content;
+  if (delta.reasoning) result.thinking = delta.reasoning;
   if (delta.tool_calls) result.tool_calls = delta.tool_calls;
   return result;
 }
