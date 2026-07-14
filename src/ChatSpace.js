@@ -236,32 +236,76 @@
       function updateAgentControlsPanel() {
         if (!controlsPanel) return;
         var pendingButtons = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
-        if (pendingButtons.length > 0) {
+        var pendingDiffs = msgList.querySelectorAll('.cr-diff-card[data-diff-status="pending"] .cr-diff-accept');
+        var totalPending = pendingButtons.length + pendingDiffs.length;
+
+        if (totalPending > 0) {
           controlsPanel.style.display = 'block';
-          controlsPanel.innerHTML =
-            '<div class="cr-controls-inner">' +
+          var html = '<div class="cr-controls-inner">';
+
+          if (pendingButtons.length > 0 && pendingDiffs.length > 0) {
+            html +=
+              '<span class="cr-controls-label">' + pendingButtons.length + ' permission(s) + ' + pendingDiffs.length + ' file change(s)</span>' +
+              '<div class="cr-controls-buttons">' +
+                '<button class="cr-btn cr-btn-continue-all" title="Allow all pending permissions">Allow</button>' +
+                '<button class="cr-btn cr-btn-quit-all" title="Deny all pending permissions">Deny</button>' +
+                '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
+                '<button class="cr-btn cr-btn-reject-all-diffs" title="Reject all pending file changes">Reject All</button>' +
+              '</div>';
+          } else if (pendingButtons.length > 0) {
+            html +=
               '<span class="cr-controls-label">' + pendingButtons.length + ' confirmation(s) required</span>' +
               '<div class="cr-controls-buttons">' +
                 '<button class="cr-btn cr-btn-continue-all" title="Allow all pending actions">Allow</button>' +
                 '<button class="cr-btn cr-btn-quit-all" title="Deny all pending actions">Deny</button>' +
-              '</div>' +
-            '</div>';
+              '</div>';
+          } else {
+            html +=
+              '<span class="cr-controls-label">' + pendingDiffs.length + ' file change(s) pending</span>' +
+              '<div class="cr-controls-buttons">' +
+                '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
+                '<button class="cr-btn cr-btn-reject-all-diffs" title="Reject all pending file changes">Reject All</button>' +
+              '</div>';
+          }
 
-          controlsPanel.querySelector('.cr-btn-continue-all').onclick = function() {
-            var allowBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
-            allowBtns.forEach(function(btn) {
-              btn.click();
-            });
-            updateAgentControlsPanel();
-          };
+          html += '</div>';
+          controlsPanel.innerHTML = html;
 
-          controlsPanel.querySelector('.cr-btn-quit-all').onclick = function() {
-            var denyBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="deny"]');
-            denyBtns.forEach(function(btn) {
-              btn.click();
-            });
-            updateAgentControlsPanel();
-          };
+          var allowAllBtn = controlsPanel.querySelector('.cr-btn-continue-all');
+          if (allowAllBtn) {
+            allowAllBtn.onclick = function() {
+              var allowBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+              allowBtns.forEach(function(btn) { btn.click(); });
+              updateAgentControlsPanel();
+            };
+          }
+
+          var denyAllBtn = controlsPanel.querySelector('.cr-btn-quit-all');
+          if (denyAllBtn) {
+            denyAllBtn.onclick = function() {
+              var denyBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="deny"]');
+              denyBtns.forEach(function(btn) { btn.click(); });
+              updateAgentControlsPanel();
+            };
+          }
+
+          var acceptAllDiffsBtn = controlsPanel.querySelector('.cr-btn-accept-all-diffs');
+          if (acceptAllDiffsBtn) {
+            acceptAllDiffsBtn.onclick = function() {
+              var acceptBtns = msgList.querySelectorAll('.cr-diff-card[data-diff-status="pending"] .cr-diff-accept');
+              acceptBtns.forEach(function(btn) { btn.click(); });
+              updateAgentControlsPanel();
+            };
+          }
+
+          var rejectAllDiffsBtn = controlsPanel.querySelector('.cr-btn-reject-all-diffs');
+          if (rejectAllDiffsBtn) {
+            rejectAllDiffsBtn.onclick = function() {
+              var rejectBtns = msgList.querySelectorAll('.cr-diff-card[data-diff-status="pending"] .cr-diff-reject');
+              rejectBtns.forEach(function(btn) { btn.click(); });
+              updateAgentControlsPanel();
+            };
+          }
         } else {
           controlsPanel.style.display = 'none';
         }
@@ -1552,11 +1596,13 @@
           if (!window.VSCODE_API) return;
           window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: diffId });
           setDiffCardStatus(card, 'accepted');
+          updateAgentControlsPanel();
         };
         actions.querySelector('.cr-diff-reject').onclick = function() {
           if (!window.VSCODE_API) return;
           window.VSCODE_API.postMessage({ type: 'rejectDiff', diffId: diffId });
           setDiffCardStatus(card, 'rejected');
+          updateAgentControlsPanel();
         };
         actions.querySelector('.cr-diff-full-btn').onclick = function() {
           if (!window.VSCODE_API) return;
@@ -1575,6 +1621,7 @@
         }
         targetParent.appendChild(card);
         scrollBottom(msgList);
+        updateAgentControlsPanel();
       }
 
       function appendContinueButton(parent) {

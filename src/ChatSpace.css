@@ -1603,6 +1603,37 @@
   border-color: rgba(248, 81, 73, 0.8) !important;
 }
 
+.cr-btn-accept-all-diffs {
+  background: #238636 !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+}
+
+.cr-btn-accept-all-diffs:hover {
+  background: #2ea043 !important;
+}
+
+.cr-btn-reject-all-diffs {
+  background: var(--vscode-input-background, #242424) !important;
+  color: #f85149 !important;
+  border: 1px solid rgba(248, 81, 73, 0.4) !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+}
+
+.cr-btn-reject-all-diffs:hover {
+  background: rgba(248, 81, 73, 0.1) !important;
+  border-color: rgba(248, 81, 73, 0.8) !important;
+}
+
 /* ── Clickable Files and Diffs ───────────────────────── */
 .cr-clickable-file {
   text-decoration: underline;
