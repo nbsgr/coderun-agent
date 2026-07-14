@@ -446,7 +446,7 @@ export function getSetting(key) {
  * Returns whether the index is ready and has been fully indexed at least once.
  */
 export function getIndexStatus() {
-  if (!_ready || !_db) return { ready: false, indexed: false };
+  if (!_ready || !_projectDb) return { ready: false, indexed: false };
   try {
     var stmt = _registryDb.exec("SELECT index_status FROM registry WHERE workspace_path = ?", { bind: [_workspace] });
     var status = 'pending';

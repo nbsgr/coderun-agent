@@ -335,12 +335,17 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
       } catch (_) {}
 
+      // Track which diff IDs are created during this tool call so we can
+      // clean them up properly in the finally block (diff IDs use a different
+      // format than tcId, so the old tcId-based matching never matched).
+      var _createdDiffIds = [];
       try {
         var generator = toolRegistry.execute(toolName, args, workspace);
         for await (var event of generator) {
           // Capture deferred resolve for diff review requests
           if (event.type === 'request_diff' && event.id && event.deferred) {
             _pendingDiffs[event.id] = event.deferred.resolve;
+            _createdDiffIds.push(event.id);
           }
           sendEvent(event);
           if (event.type === 'tool_result') {
@@ -351,9 +356,10 @@ export async function runAgentLoop(userPrompt, config, options) {
         sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message });
         lastResult = { success: false, message: err.message };
       } finally {
-        // Clean up any pending diffs for this tool call
-        for (var diffId in _pendingDiffs) {
-          if (diffId.startsWith('diff_' + tcId) || diffId.includes(tcId)) {
+        // Clean up only the diffs created during THIS tool call
+        for (var di = 0; di < _createdDiffIds.length; di++) {
+          var diffId = _createdDiffIds[di];
+          if (_pendingDiffs[diffId]) {
             _pendingDiffs[diffId]({ accepted: false });
             delete _pendingDiffs[diffId];
           }

@@ -259,7 +259,7 @@ function estimateToolCalls(intent, stepCount) {
 // INTERNAL: SQLite persistence
 // ========================================================
 
-async function storePlan(plan) {
+export async function storePlan(plan) {
   try {
     var stepsJson = JSON.stringify(plan.steps || []);
     var filesJson = JSON.stringify(plan.required_files || []);
