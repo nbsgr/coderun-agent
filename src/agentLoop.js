@@ -306,7 +306,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Permission check
       var approved = await askPermission(toolName, args, tcId, sendEvent);
       if (!approved) {
-        sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: 'Permission denied by user.' });
+        sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: 'Permission denied by user.', toolCallId: tcId });
         return {
           tool_name: toolName,
           tool_call_id: tcId,
@@ -342,6 +342,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       try {
         var generator = toolRegistry.execute(toolName, args, workspace);
         for await (var event of generator) {
+          // Attach tool call ID so the webview can link this event to the correct tool card
+          event.toolCallId = tcId;
+
           // Capture deferred resolve for diff review requests
           if (event.type === 'request_diff' && event.id && event.deferred) {
             _pendingDiffs[event.id] = event.deferred.resolve;
@@ -353,7 +356,7 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
       } catch (err) {
-        sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message });
+        sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message, toolCallId: tcId });
         lastResult = { success: false, message: err.message };
       } finally {
         // Clean up only the diffs created during THIS tool call

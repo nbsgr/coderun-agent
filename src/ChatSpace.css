@@ -41,6 +41,7 @@
   overflow-x: hidden;
   padding: 10px 14px 8px;
   scroll-behavior: smooth;
+  overflow-anchor: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
