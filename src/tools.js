@@ -564,6 +564,28 @@ async function* web_request(args, workspace) {
   }
 }
 
+async function* update_plan(args, workspace) {
+  yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
+  yield {
+    type: 'tool_result',
+    tool: 'update_plan',
+    success: true,
+    message: 'Plan updated successfully.',
+    steps: args.steps
+  };
+}
+
+async function* create_plan(args, workspace) {
+  yield { type: 'action', action: 'create_plan', message: 'Creating execution plan' };
+  yield {
+    type: 'tool_result',
+    tool: 'create_plan',
+    success: true,
+    message: 'Plan created successfully.',
+    steps: args.steps
+  };
+}
+
 // =====================================================
 // REGISTER ALL TOOLS
 // =====================================================
@@ -591,4 +613,6 @@ export function registerAllTools() {
   toolRegistry.register('web_request', web_request);
   toolRegistry.register('get_current_datetime', get_current_datetime);
   toolRegistry.register('find_in_files', find_in_files);
+  toolRegistry.register('update_plan', update_plan);
+  toolRegistry.register('create_plan', create_plan);
 }

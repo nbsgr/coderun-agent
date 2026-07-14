@@ -195,9 +195,13 @@
           todosPanel.style.display = 'none';
           return;
         }
-        todosPanel.style.display = 'block';
         var completedCount = plan.steps.filter(function(s) { return s.status === 'completed'; }).length;
         var totalCount = plan.steps.length;
+        if (completedCount === totalCount) {
+          todosPanel.style.display = 'none';
+          return;
+        }
+        todosPanel.style.display = 'block';
         var isCollapsed = todosPanel.dataset.collapsed === 'true';
 
         todosPanel.innerHTML =

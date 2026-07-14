@@ -217,3 +217,42 @@ registerTool('web_request',
   },
   ["url"]
 );
+
+registerTool('update_plan',
+  "Update the plan steps (todos checklist) shown to the user. Use this tool to mark steps as 'completed', 'active', or 'pending', or to add/update tasks in the plan as you make progress.",
+  {
+    steps: {
+      type: "array",
+      description: "Array of plan step updates to apply.",
+      items: {
+        type: "object",
+        properties: {
+          order: { type: "integer", description: "The step number to update (1-indexed)." },
+          status: { type: "string", description: "The new status for the step: 'pending', 'active', or 'completed'." },
+          description: { type: "string", description: "Optional new description for the step." }
+        },
+        required: ["order", "status"]
+      }
+    }
+  },
+  ["steps"]
+);
+
+registerTool('create_plan',
+  "Create a structured plan (checklist of todos) for resolving the user request. Call this tool at the start of execution if you need to create a plan.",
+  {
+    steps: {
+      type: "array",
+      description: "Array of plan steps to create.",
+      items: {
+        type: "object",
+        properties: {
+          order: { type: "integer", description: "The step number (1-indexed)." },
+          description: { type: "string", description: "Description of the task step." }
+        },
+        required: ["order", "description"]
+      }
+    }
+  },
+  ["steps"]
+);

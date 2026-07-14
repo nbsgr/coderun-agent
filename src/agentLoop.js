@@ -80,22 +80,18 @@ export async function runAgentLoop(userPrompt, config, options) {
     timelineManager.addEvent('session:start', sessionLabel);
   } catch (_) {}
 
-  // Create a plan for this request (Planning Engine — Phase 4)
+  // Retrieve existing plan for this request session if any (Planning Engine — Phase 4)
   var currentPlan = null;
   try {
     var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
                                         : 'session_' + Date.now();
-    if (contextResult) {
-      currentPlan = await planningManager.createPlan(userPrompt, contextResult, sessionId);
-      if (currentPlan) {
-        // Send plan_created event to webview
-        sendEvent({ type: 'plan_created', plan: currentPlan });
-        // Inject plan context into knowledge so promptBuilder can render it
-        if (!knowledge.activePlans) {
-          try {
-            knowledge.activePlans = planningManager.getActivePlansContext();
-          } catch (_) {}
-        }
+    var sessionPlans = planningManager.getSessionPlans(sessionId);
+    if (sessionPlans && sessionPlans.length) {
+      currentPlan = sessionPlans[sessionPlans.length - 1];
+      if (currentPlan && !knowledge.activePlans) {
+        try {
+          knowledge.activePlans = planningManager.getActivePlansContext();
+        } catch (_) {}
       }
     }
   } catch (_) {}
@@ -378,35 +374,85 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       // Verify tool result (Phase 8 — Agentic Loop)
       if (lastResult && lastResult.success !== false) {
-        if (currentPlan && currentPlan.steps) {
-          var stepToComplete = null;
-          for (var s = 0; s < currentPlan.steps.length; s++) {
-            var step = currentPlan.steps[s];
-            if (step.status !== 'completed') {
-              var actionMatch = false;
-              if (step.action === 'read' && (toolName === 'read_file' || toolName === 'read')) actionMatch = true;
-              else if (step.action === 'write' && (toolName === 'write_file' || toolName === 'write')) actionMatch = true;
-              else if (step.action === 'edit' && (toolName === 'edit_file' || toolName === 'edit' || toolName === 'patch_file')) actionMatch = true;
-              else if (step.action === 'search' && (toolName === 'search_files' || toolName === 'find_in_files' || toolName === 'list_directory')) actionMatch = true;
-              else if (step.action === 'terminal' && (toolName === 'run_terminal' || toolName === 'bash' || toolName === 'execute_command')) actionMatch = true;
-              else if (step.action === 'verify' && (toolName === 'run_terminal' || toolName === 'web_request')) actionMatch = true;
-
-              if (actionMatch) {
-                stepToComplete = step;
-                break;
-              }
+        if (toolName === 'create_plan' && lastResult.steps) {
+          try {
+            if (currentPlan) {
+              lastResult.steps.forEach(function(s) {
+                var step = currentPlan.steps.find(function(existing) { return existing.order === s.order; });
+                if (!step) {
+                  currentPlan.steps.push({
+                    order: s.order,
+                    action: s.action || 'custom',
+                    target: s.target || '',
+                    description: s.description || '',
+                    expected_output: s.expected_output || '',
+                    status: s.status || 'pending'
+                  });
+                }
+              });
+              sendEvent({
+                type: 'plan_updated',
+                plan: currentPlan
+              });
+            } else {
+              var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
+                                                  : 'session_' + Date.now();
+              currentPlan = {
+                id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                session_id: sessionId,
+                goal: userPrompt,
+                steps: lastResult.steps.map(function(s) {
+                  return {
+                    order: s.order,
+                    action: s.action || 'custom',
+                    target: s.target || '',
+                    description: s.description || '',
+                    expected_output: s.expected_output || '',
+                    status: s.status || 'pending'
+                  };
+                }),
+                status: 'draft',
+                created_at: Date.now()
+              };
+              sendEvent({
+                type: 'plan_created',
+                plan: currentPlan
+              });
             }
+            try {
+              planningManager.storePlan(currentPlan);
+            } catch (_) {}
+          } catch (_) {}
+        } else if (toolName === 'update_plan' && lastResult.steps) {
+          if (!currentPlan) {
+            var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
+                                                : 'session_' + Date.now();
+            currentPlan = {
+              id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+              session_id: sessionId,
+              goal: userPrompt,
+              steps: [],
+              status: 'draft',
+              created_at: Date.now()
+            };
           }
-          if (!stepToComplete) {
-            for (var s = 0; s < currentPlan.steps.length; s++) {
-              if (currentPlan.steps[s].status !== 'completed') {
-                stepToComplete = currentPlan.steps[s];
-                break;
+          if (currentPlan && currentPlan.steps) {
+            lastResult.steps.forEach(function(upd) {
+              var step = currentPlan.steps.find(function(s) { return s.order === upd.order; });
+              if (step) {
+                if (upd.status) step.status = upd.status;
+                if (upd.description) step.description = upd.description;
+              } else {
+                currentPlan.steps.push({
+                  order: upd.order,
+                  action: upd.action || 'custom',
+                  target: upd.target || '',
+                  description: upd.description || '',
+                  expected_output: upd.expected_output || '',
+                  status: upd.status || 'pending'
+                });
               }
-            }
-          }
-          if (stepToComplete) {
-            stepToComplete.status = 'completed';
+            });
             sendEvent({
               type: 'plan_updated',
               plan: currentPlan

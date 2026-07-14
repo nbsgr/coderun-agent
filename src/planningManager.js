@@ -32,9 +32,9 @@ import * as projectKnowledge from './projectKnowledge.js';
  * @returns {object} The created plan
  */
 export async function createPlan(goal, context, sessionId) {
-  var intent = context.intent || {};
-  var relevantFiles = context.relevantFiles || [];
-  var editor = context.editor || {};
+  var intent = (context && context.intent) || {};
+  var relevantFiles = (context && context.relevantFiles) || [];
+  var editor = (context && context.editor) || {};
   var planId = generateId();
 
   // Build ordered steps based on intent + context

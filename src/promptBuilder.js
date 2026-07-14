@@ -21,6 +21,12 @@ export function buildMessages(userPrompt, options) {
     systemContent += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
     systemContent += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
   }
+
+  systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
+    'You have access to planning tools (`create_plan` and `update_plan`) to plan your execution steps as a checklist of todos shown to the user.\n' +
+    '1. If a plan/todo list is required to solve the user prompt, you MUST call `create_plan` at the beginning of the execution (first tool call) to define the plan steps.\n' +
+    '2. As you make progress, you MUST call `update_plan` to mark steps as \'active\' or \'completed\' using the step `order` (1, 2, 3, etc.). Do not skip steps. Only mark a step completed when it is fully verified.\n' +
+    '3. You should work one step at a time: complete the current active step before starting the next one.';
   if (skills.length) {
     systemContent += '\n\n## SKILLS\n' + skills.join('\n');
   }
