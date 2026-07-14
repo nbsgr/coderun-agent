@@ -1459,3 +1459,157 @@
 
 .cr-diff-status--accepted { color: #3fb950; background: rgba(63, 185, 80, 0.1); }
 .cr-diff-status--rejected { color: #f85149; background: rgba(248, 81, 73, 0.1); }
+
+/* ── Todos Panel ─────────────────────────────────────── */
+.cr-todos-panel {
+  background: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-sideBar-border, #2d2d2d);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.cr-todos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
+.cr-todos-header:hover {
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.cr-todos-toggle {
+  margin-right: 6px;
+  font-size: 10px;
+  display: inline-block;
+  width: 12px;
+}
+
+.cr-todos-title {
+  flex: 1;
+}
+
+.cr-todos-icon {
+  display: flex;
+  align-items: center;
+  opacity: 0.6;
+}
+
+.cr-todos-icon .cr-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.cr-todos-list {
+  margin-top: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding-left: 4px;
+}
+
+.cr-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.cr-todo-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.cr-todo-status.completed {
+  color: #2ea043;
+}
+
+.cr-todo-status.pending .cr-todo-circle {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--vscode-descriptionForeground, #858585);
+  border-radius: 50%;
+}
+
+.cr-todo-text {
+  font-size: 12px;
+}
+
+/* ── Global Agent Controls Panel ───────────────────────── */
+.cr-agent-controls-panel {
+  background: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-sideBar-border, #2d2d2d);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.cr-controls-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cr-controls-label {
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
+.cr-controls-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.cr-btn-continue-all {
+  background: var(--vscode-button-background, #0e639c) !important;
+  color: var(--vscode-button-foreground, #ffffff) !important;
+  border: none !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+}
+
+.cr-btn-continue-all:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb) !important;
+}
+
+.cr-btn-quit-all {
+  background: var(--vscode-input-background, #242424) !important;
+  color: #f85149 !important;
+  border: 1px solid rgba(248, 81, 73, 0.4) !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+}
+
+.cr-btn-quit-all:hover {
+  background: rgba(248, 81, 73, 0.1) !important;
+  border-color: rgba(248, 81, 73, 0.8) !important;
+}
+
+/* ── Clickable Files and Diffs ───────────────────────── */
+.cr-clickable-file {
+  text-decoration: underline;
+  cursor: pointer;
+  color: #3794ff !important;
+}
+
+.cr-clickable-file:hover {
+  color: #58a6ff !important;
+}

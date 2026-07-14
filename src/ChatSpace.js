@@ -66,7 +66,12 @@
   }
 
   function scrollBottom(el) {
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    var hasPendingPermissions = el.querySelector('.cr-permission-actions button') !== null;
+    if (hasPendingPermissions) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
   }
 
   // ── Tool name formatter ──────────────────────────────
@@ -119,6 +124,8 @@
       var clearImg   = container.querySelector('.cr-clear-img-btn');
       var charCount  = container.querySelector('.cr-char-count');
       var stopBtn    = container.querySelector('.cr-stop-btn');
+      var todosPanel = container.querySelector('.cr-todos-panel');
+      var controlsPanel = container.querySelector('.cr-agent-controls-panel');
 
       var pendingImage = null;
       var abortCtrl = null;
@@ -178,33 +185,197 @@
         S._seenToolIds = {};
         S._currentCheckpoints = [];
         S.timeline = null;
+        if (todosPanel) todosPanel.style.display = 'none';
+        if (controlsPanel) controlsPanel.style.display = 'none';
+      }
+
+      function renderTodos(plan) {
+        if (!todosPanel) return;
+        if (!plan || !plan.steps || !plan.steps.length) {
+          todosPanel.style.display = 'none';
+          return;
+        }
+        todosPanel.style.display = 'block';
+        var completedCount = plan.steps.filter(function(s) { return s.status === 'completed'; }).length;
+        var totalCount = plan.steps.length;
+        var isCollapsed = todosPanel.dataset.collapsed === 'true';
+
+        todosPanel.innerHTML =
+          '<div class="cr-todos-header">' +
+            '<span class="cr-todos-toggle">' + (isCollapsed ? '▶' : '▼') + '</span>' +
+            '<span class="cr-todos-title">Todos (' + completedCount + '/' + totalCount + ')</span>' +
+            '<span class="cr-todos-icon"><svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>' +
+          '</div>' +
+          '<div class="cr-todos-list" style="display:' + (isCollapsed ? 'none' : 'block') + '">' +
+            plan.steps.map(function(s) {
+              var isComp = s.status === 'completed';
+              var statusIcon = isComp
+                ? '<span class="cr-todo-status completed">' + I.check + '</span>'
+                : '<span class="cr-todo-status pending"><span class="cr-todo-circle"></span></span>';
+              return (
+                '<div class="cr-todo-item">' +
+                  statusIcon +
+                  '<span class="cr-todo-text">' + esc(s.description) + '</span>' +
+                '</div>'
+              );
+            }).join('') +
+          '</div>';
+
+        var header = todosPanel.querySelector('.cr-todos-header');
+        header.onclick = function() {
+          var collapsed = todosPanel.dataset.collapsed === 'true';
+          todosPanel.dataset.collapsed = !collapsed;
+          renderTodos(plan);
+        };
+      }
+
+      function updateAgentControlsPanel() {
+        if (!controlsPanel) return;
+        var pendingButtons = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+        if (pendingButtons.length > 0) {
+          controlsPanel.style.display = 'block';
+          controlsPanel.innerHTML =
+            '<div class="cr-controls-inner">' +
+              '<span class="cr-controls-label">' + pendingButtons.length + ' confirmation(s) required</span>' +
+              '<div class="cr-controls-buttons">' +
+                '<button class="cr-btn cr-btn-continue-all" title="Allow all pending actions">Allow</button>' +
+                '<button class="cr-btn cr-btn-quit-all" title="Deny all pending actions">Deny</button>' +
+              '</div>' +
+            '</div>';
+
+          controlsPanel.querySelector('.cr-btn-continue-all').onclick = function() {
+            var allowBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+            allowBtns.forEach(function(btn) {
+              btn.click();
+            });
+            updateAgentControlsPanel();
+          };
+
+          controlsPanel.querySelector('.cr-btn-quit-all').onclick = function() {
+            var denyBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="deny"]');
+            denyBtns.forEach(function(btn) {
+              btn.click();
+            });
+            updateAgentControlsPanel();
+          };
+        } else {
+          controlsPanel.style.display = 'none';
+        }
+      }
+
+      function findMatchingToolResponse(messages, toolId, assistantMsgIndex, toolCallIndex) {
+        if (!messages) return null;
+        if (toolId) {
+          for (var i = 0; i < messages.length; i++) {
+            if (messages[i].role === 'tool' && messages[i].tool_call_id === toolId) {
+              return messages[i];
+            }
+          }
+        }
+        var toolMessageCount = 0;
+        for (var i = assistantMsgIndex + 1; i < messages.length; i++) {
+          var m = messages[i];
+          if (m.role === 'user' || m.role === 'assistant') {
+            break;
+          }
+          if (m.role === 'tool') {
+            if (toolMessageCount === toolCallIndex) {
+              return m;
+            }
+            toolMessageCount++;
+          }
+        }
+        return null;
       }
 
       function loadHistory(msgList, messages) {
         if (!msgList || !messages) return;
         msgList.innerHTML = '';
+
+        var turns = [];
+        var currentTurn = null;
+
         messages.forEach(function(m) {
           if (m.role === 'user') {
-            appendUserBubble(msgList, m.content, m.image || (m.images ? m.images[0] : null));
-          } else if (m.role === 'assistant') {
-            var body = appendBotWrapper(msgList);
-            if (m.thinking) {
-              var det = appendThinkBlock(body);
-              var pre = det.querySelector('.cr-think-pre');
-              if (pre) pre.textContent = m.thinking;
-              var lbl = det.querySelector('.cr-think-label');
-              if (lbl) lbl.textContent = 'Thought process';
-              det.open = false;
+            if (currentTurn) {
+              turns.push(currentTurn);
             }
-            if (m.content) {
-              var d = appendContentBlock(body);
-              d.innerHTML = md(m.content);
+            currentTurn = { user: m, botMessages: [] };
+          } else {
+            if (!currentTurn) {
+              currentTurn = { user: null, botMessages: [] };
             }
+            currentTurn.botMessages.push(m);
           }
         });
+        if (currentTurn) {
+          turns.push(currentTurn);
+        }
+
+        turns.forEach(function(turn) {
+          if (turn.user) {
+            appendUserBubble(msgList, turn.user.content, turn.user.image || (turn.user.images ? turn.user.images[0] : null));
+          }
+
+          if (turn.botMessages && turn.botMessages.length) {
+            var body = appendBotWrapper(msgList);
+            turn.botMessages.forEach(function(m, mIdx) {
+              if (m.role === 'assistant') {
+                if (m.thinking) {
+                  var det = appendThinkBlock(body);
+                  var pre = det.querySelector('.cr-think-pre');
+                  if (pre) pre.textContent = m.thinking;
+                  var lbl = det.querySelector('.cr-think-label');
+                  if (lbl) lbl.textContent = 'Thought process';
+                  det.open = false;
+                }
+                if (m.content) {
+                  var d = appendContentBlock(body);
+                  d.innerHTML = md(m.content);
+                }
+                if (m.tool_calls && m.tool_calls.length) {
+                  m.tool_calls.forEach(function(tc, tcIdx) {
+                    var toolName = (tc.function && tc.function.name) || tc.name || '';
+                    var toolArgs = {};
+                    var rawArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
+                    if (typeof rawArgs === 'string') {
+                      try { toolArgs = JSON.parse(rawArgs); } catch(_) { toolArgs = { raw: rawArgs }; }
+                    } else {
+                      toolArgs = rawArgs;
+                    }
+                    var toolId = tc.id || '';
+
+                    var matchingResultMsg = findMatchingToolResponse(turn.botMessages, toolId, mIdx, tcIdx);
+                    var status = 'success';
+                    var resultObj = null;
+                    if (matchingResultMsg) {
+                      var resContent = matchingResultMsg.content || '';
+                      if (resContent.startsWith('Error:') || resContent.includes('Permission denied') || resContent.includes('rejected by user')) {
+                        status = 'error';
+                      }
+                      resultObj = { content: resContent };
+                    } else {
+                      status = 'error';
+                      resultObj = { error: 'No result recorded' };
+                    }
+
+                    var cardKey = 'card_' + toolId + '_' + Date.now();
+                    appendToolCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                  });
+                }
+              }
+            });
+          }
+        });
+
         scrollBottom(msgList);
       }
 
+      if (conversation.plan) {
+        renderTodos(conversation.plan);
+      } else {
+        if (todosPanel) todosPanel.style.display = 'none';
+      }
       loadHistory(msgList, conversation.messages || []);
 
       input.addEventListener('input', function() {
@@ -529,6 +700,22 @@
 
         if (ev.type) {
           switch (ev.type) {
+            case 'plan_created':
+            case 'plan_updated': {
+              if (ev.plan) {
+                conversation.plan = ev.plan;
+                renderTodos(ev.plan);
+              }
+              break;
+            }
+            case 'chat_history_update': {
+              if (ev.messages && ev.messages.length) {
+                if (window.saveConversationMessageBatch) {
+                  window.saveConversationMessageBatch(convId, ev.messages, ev.plan);
+                }
+              }
+              break;
+            }
             case 'thinking': {
               removeTyping(S.botBody);
               if (!S.thinkBlock) {
@@ -585,6 +772,7 @@
                 S.botBody.appendChild(autoLine);
               } else {
                 appendPermissionRequestBlock(S.botBody, ev.tool, ev.arguments, ev.id);
+                updateAgentControlsPanel();
               }
               break;
             }
@@ -822,6 +1010,8 @@
             '</div>' +
             '<div class="cr-msg-list"></div>' +
             '<div class="cr-composer">' +
+              '<div class="cr-todos-panel" style="display:none"></div>' +
+              '<div class="cr-agent-controls-panel" style="display:none"></div>' +
               '<div class="cr-img-preview" style="display:none">' +
                 '<img class="cr-preview-img" src="" alt=""/>' +
                 '<button type="button" class="cr-clear-img-btn" title="Remove">' + I.close + '</button>' +
@@ -992,6 +1182,9 @@
               always: isAlways,
               tool: tool
             });
+          }
+          if (typeof updateAgentControlsPanel === 'function') {
+            setTimeout(updateAgentControlsPanel, 50);
           }
         });
         scrollBottom(msgList);
@@ -1366,7 +1559,17 @@
           window.VSCODE_API.postMessage({ type: 'openDiffEditor', diffId: diffId });
         };
 
-        body.appendChild(card);
+        var targetParent = body;
+        var pendingCard = findPendingCardByToolName(S, toolName) || getLastPendingCard(S);
+        if (pendingCard) {
+          var cardBody = pendingCard.querySelector('.cr-tool-card-body');
+          if (cardBody) {
+            targetParent = cardBody;
+            var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
+            if (argsBlock) argsBlock.style.display = 'none';
+          }
+        }
+        targetParent.appendChild(card);
         scrollBottom(msgList);
       }
 
@@ -1375,18 +1578,26 @@
         var btnContainer = mk('div', 'cr-continue-container');
         btnContainer.style.padding = '8px 12px';
         btnContainer.style.display = 'flex';
+        btnContainer.style.gap = '8px';
         btnContainer.style.justifyContent = 'flex-start';
 
-        var btn = mk('button', 'cr-btn cr-btn-allow');
-        btn.textContent = 'Continue Task';
-
-        btn.addEventListener('click', function() {
+        var btnContinue = mk('button', 'cr-btn cr-btn-continue-all');
+        btnContinue.textContent = 'Continue';
+        btnContinue.addEventListener('click', function() {
           btnContainer.remove();
           input.value = "Continue building the project from where you left off";
           doSend();
         });
 
-        btnContainer.appendChild(btn);
+        var btnQuit = mk('button', 'cr-btn cr-btn-quit-all');
+        btnQuit.textContent = 'Quit';
+        btnQuit.addEventListener('click', function() {
+          btnContainer.remove();
+          setStreaming(false);
+        });
+
+        btnContainer.appendChild(btnContinue);
+        btnContainer.appendChild(btnQuit);
         parent.appendChild(btnContainer);
         scrollBottom(msgList);
       }
@@ -1571,10 +1782,17 @@
 
         // Build args summary (show first ~50 chars of file path or key args)
         var argsSummary = '';
+        var isFile = false;
         if (args) {
-          if (args.file_path) argsSummary = args.file_path;
+          if (args.file_path) {
+            argsSummary = args.file_path;
+            isFile = true;
+          }
           else if (args.command) argsSummary = truncate(args.command, 60);
-          else if (args.folder_path) argsSummary = args.folder_path;
+          else if (args.folder_path) {
+            argsSummary = args.folder_path;
+            isFile = true;
+          }
           else if (args.pattern) argsSummary = args.pattern;
           else {
             try {
@@ -1591,10 +1809,22 @@
         head.innerHTML =
           '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
           '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
-          (argsSummary ? '<span class="cr-tool-card-args">' + esc(argsSummary) + '</span>' : '') +
+          (argsSummary ? (isFile ? '<span class="cr-tool-card-args cr-clickable-file" data-file-path="' + esc(argsSummary) + '" title="Open file in editor">' + esc(argsSummary) + '</span>' : '<span class="cr-tool-card-args">' + esc(argsSummary) + '</span>') : '') +
           '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
           '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
         card.appendChild(head);
+
+        var fileEl = head.querySelector('.cr-clickable-file');
+        if (fileEl) {
+          fileEl.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var fp = fileEl.dataset.filePath;
+            if (fp && window.VSCODE_API) {
+              window.VSCODE_API.postMessage({ type: 'openFile', path: fp });
+            }
+          });
+        }
 
         // Body contains: args (collapsible) + actions (collapsible) + result
         var cardBody = mk('div', 'cr-tool-card-body');

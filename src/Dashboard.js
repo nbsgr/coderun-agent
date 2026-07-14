@@ -1111,6 +1111,34 @@
     renderSidebar();
   };
 
+  window.saveConversationMessageBatch = function(convId, newMessages, plan) {
+    var conversation = state.conversations.find(function(item) { return item.id === convId; });
+    if (!conversation) return;
+    if (!conversation.messages) conversation.messages = [];
+
+    // Find the index of the last user message
+    var lastUserIdx = -1;
+    for (var i = conversation.messages.length - 1; i >= 0; i--) {
+      if (conversation.messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+
+    if (lastUserIdx !== -1) {
+      conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(newMessages);
+    } else {
+      conversation.messages = conversation.messages.concat(newMessages);
+    }
+
+    if (plan) {
+      conversation.plan = plan;
+    }
+
+    saveConversations();
+    renderSidebar();
+  };
+
   window.updateConversationTitle = function(convId, title) {
     var conversation = state.conversations.find(function(item) { return item.id === convId; });
     if (conversation && title) {

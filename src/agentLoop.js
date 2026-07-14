@@ -88,6 +88,8 @@ export async function runAgentLoop(userPrompt, config, options) {
     if (contextResult) {
       currentPlan = await planningManager.createPlan(userPrompt, contextResult, sessionId);
       if (currentPlan) {
+        // Send plan_created event to webview
+        sendEvent({ type: 'plan_created', plan: currentPlan });
         // Inject plan context into knowledge so promptBuilder can render it
         if (!knowledge.activePlans) {
           try {
@@ -104,11 +106,24 @@ export async function runAgentLoop(userPrompt, config, options) {
     knowledge: knowledge
   });
 
+  var initialLength = messages.length;
+  var sendHistoryUpdate = function() {
+    try {
+      var newMsgs = messages.slice(initialLength);
+      sendEvent({
+        type: 'chat_history_update',
+        messages: newMsgs,
+        plan: currentPlan
+      });
+    } catch (_) {}
+  };
+
   var iteration = 0;
   var fullThinking = '';
   var fullContent = '';
 
-  while (iteration < maxIterations) {
+  try {
+    while (iteration < maxIterations) {
     // Cooperative stop: the webview sets signal.stopped = true to halt the
     // agent between iterations. The current LLM stream / tool call is
     // allowed to finish naturally so we don't leave the workspace in a
@@ -363,6 +378,45 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       // Verify tool result (Phase 8 — Agentic Loop)
       if (lastResult && lastResult.success !== false) {
+        if (currentPlan && currentPlan.steps) {
+          var stepToComplete = null;
+          for (var s = 0; s < currentPlan.steps.length; s++) {
+            var step = currentPlan.steps[s];
+            if (step.status !== 'completed') {
+              var actionMatch = false;
+              if (step.action === 'read' && (toolName === 'read_file' || toolName === 'read')) actionMatch = true;
+              else if (step.action === 'write' && (toolName === 'write_file' || toolName === 'write')) actionMatch = true;
+              else if (step.action === 'edit' && (toolName === 'edit_file' || toolName === 'edit' || toolName === 'patch_file')) actionMatch = true;
+              else if (step.action === 'search' && (toolName === 'search_files' || toolName === 'find_in_files' || toolName === 'list_directory')) actionMatch = true;
+              else if (step.action === 'terminal' && (toolName === 'run_terminal' || toolName === 'bash' || toolName === 'execute_command')) actionMatch = true;
+              else if (step.action === 'verify' && (toolName === 'run_terminal' || toolName === 'web_request')) actionMatch = true;
+
+              if (actionMatch) {
+                stepToComplete = step;
+                break;
+              }
+            }
+          }
+          if (!stepToComplete) {
+            for (var s = 0; s < currentPlan.steps.length; s++) {
+              if (currentPlan.steps[s].status !== 'completed') {
+                stepToComplete = currentPlan.steps[s];
+                break;
+              }
+            }
+          }
+          if (stepToComplete) {
+            stepToComplete.status = 'completed';
+            sendEvent({
+              type: 'plan_updated',
+              plan: currentPlan
+            });
+            try {
+              planningManager.storePlan(currentPlan);
+            } catch (_) {}
+          }
+        }
+
         try {
           var stepArgs = { action: toolName, target: args.file_path || args.command || args.pattern || '', description: '' };
           var stepResult = {
@@ -484,6 +538,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
       messages.push(toolMsg);
     }
+  }
+  } finally {
+    sendHistoryUpdate();
   }
 
   // Max iterations reached
