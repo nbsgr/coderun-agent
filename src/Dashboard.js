@@ -440,10 +440,6 @@
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
                     '<button id="stopGenerationBtn" class="cr-stop-gen-btn" title="Stop generation" style="display:none">Stop</button>' +
                   '</div>' +
-                  '<div id="inlineTerminal" class="cr-terminal">' +
-                    '<div class="cr-terminal-header"><span>Terminal</span><span id="terminalCwd">~</span><button id="clearTerminalBtn" class="cr-term-clear">Clear</button></div>' +
-                    '<div id="terminalOutputLines" class="cr-terminal-body"></div>' +
-                  '</div>' +
                   '<div id="chat-area-container"></div>' +
                 '</section>' +
               '</div>' +
@@ -479,7 +475,8 @@
     document.getElementById("newChatBtn").onclick = createNewChat;
     document.getElementById("newChatHeaderBtn").onclick = createNewChat;
     document.getElementById("refreshModelsBtn").onclick = loadModels;
-    document.getElementById("clearTerminalBtn").onclick = clearTerminal;
+    var clearTermBtn = document.getElementById("clearTerminalBtn");
+    if (clearTermBtn) clearTermBtn.onclick = clearTerminal;
 
     var modelSelect = document.getElementById("modelSelect");
     modelSelect.onchange = function() {
@@ -1016,65 +1013,14 @@
   window.updateAgentTimeline = function() {};
   window.clearAgentTimeline = function() {};
 
-  window.appendTerminalLine = function(text, outputType) {
-    if (!text) return;
-    var terminal = document.getElementById("inlineTerminal");
-    var lines = document.getElementById("terminalOutputLines");
-    if (!terminal || !lines) return;
-    terminal.classList.add("show");
-    var line = document.createElement("div");
-    line.className = "cr-terminal-line " + (outputType === "stderr" || outputType === "err" ? "err" : outputType === "cmd" ? "cmd" : "out");
-    line.textContent = text;
-    lines.appendChild(line);
-    lines.scrollTop = lines.scrollHeight;
-  };
-
-  /**
-   * Bridge from the agent event stream (ChatSpace) to the Dashboard inline
-   * terminal. Called by ChatSpace.js whenever a terminal_* event is
-   * received so the user sees a live log of every command the agent runs
-   * in BOTH the chat history and the persistent terminal panel.
-   *
-   *   phase: 'start' | 'output' | 'exit' | 'error'
-   *   ev:    { terminalId, command?, chunk?, exitCode?, duration?, fallback?, message? }
-   */
-  window.forwardTerminalEvent = function(phase, ev) {
-    if (!ev) return;
-    if (phase === 'start') {
-      if (ev.command) window.appendTerminalLine('$ ' + ev.command, 'cmd');
-    } else if (phase === 'output') {
-      if (ev.chunk) {
-        // Split on newlines so each line gets its own row for readability
-        var parts = String(ev.chunk).split(/\r?\n/);
-        for (var i = 0; i < parts.length; i++) {
-          if (parts[i].length) window.appendTerminalLine(parts[i], 'out');
-        }
-      }
-    } else if (phase === 'exit') {
-      var code = ev.exitCode;
-      var ms = ev.duration;
-      if (ev.fallback) {
-        window.appendTerminalLine('[Sent to terminal · check panel]', 'out');
-      } else if (code === 0) {
-        window.appendTerminalLine('[Exit 0' + (ms != null ? ' · ' + ms + 'ms' : '') + ']', 'out');
-      } else {
-        window.appendTerminalLine('[Exit ' + (code == null ? '?' : code) + (ms != null ? ' · ' + ms + 'ms' : '') + ']', 'err');
-      }
-    } else if (phase === 'error') {
-      window.appendTerminalLine('[Error: ' + (ev.message || 'unknown') + ']', 'err');
-    }
-  };
-
-  window.clearTerminal = function() {
-    var terminal = document.getElementById("inlineTerminal");
-    var lines = document.getElementById("terminalOutputLines");
-    if (lines) lines.innerHTML = "";
-    if (terminal) terminal.classList.remove("show");
-  };
-
-  function clearTerminal() {
-    window.clearTerminal();
-  }
+  // ── Terminal output is now rendered ONLY via inline tool cards ────
+  //    inside each assistant message. The fixed terminal panel is no
+  //    longer used. These stubs prevent errors if any code still calls
+  //    them.
+  window.appendTerminalLine = function() {};
+  window.forwardTerminalEvent = function() {};
+  window.clearTerminal = function() {};
+  function clearTerminal() {}
 
   window.getDashboardModel = function() { return state.selectedModel; };
   window.getDashboardProvider = function() { return state.selectedProvider; };

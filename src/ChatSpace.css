@@ -1599,6 +1599,169 @@
   font-weight: 500 !important;
 }
 
+/* ════════════════════════════════════════════════════
+   Inline Terminal Cards (per-execution, in chat)
+   ════════════════════════════════════════════════════ */
+
+/* Terminal card variant of tool card */
+.cr-terminal-card {
+  margin: 4px 0;
+}
+
+.cr-terminal-card .cr-tool-card-head {
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.cr-terminal-card .cr-tool-card-body {
+  padding: 0;
+  border-top: none;
+}
+
+/* Duration badge in terminal card header summary line */
+.cr-terminal-card-duration-summary {
+  font-size: 10px;
+  color: #888;
+  font-family: monospace;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+/* Shell badge in terminal card header */
+.cr-terminal-shell-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(86, 156, 214, 0.15);
+  color: #569cd6;
+  border: 1px solid rgba(86, 156, 214, 0.2);
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, monospace);
+}
+
+.cr-tool-card--success .cr-terminal-shell-badge {
+  background: rgba(63, 185, 80, 0.12);
+  color: #3fb950;
+  border-color: rgba(63, 185, 80, 0.2);
+}
+
+.cr-tool-card--error .cr-terminal-shell-badge {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+  border-color: rgba(248, 81, 73, 0.2);
+}
+
+/* Terminal output area inside card */
+.cr-terminal-card-output {
+  background: #0d0d0d;
+  padding: 6px 10px;
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Metadata row (shell + platform) */
+.cr-terminal-card-meta {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: #666;
+}
+
+.cr-terminal-card-shell {
+  color: #888;
+}
+
+.cr-terminal-card-platform {
+  color: #666;
+  font-style: italic;
+}
+
+/* Command line */
+.cr-terminal-card-cmd {
+  color: #569cd6;
+  font-weight: 500;
+  padding: 2px 0 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Streamed output lines — adaptive scroll:
+   - Small output: no internal scrollbar, grows naturally
+   - Large output: max-height with scrollbar */
+.cr-terminal-card-stream {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cr-terminal-card-stream:empty {
+  max-height: none;
+}
+
+.cr-terminal-card-stream::-webkit-scrollbar { width: 4px; height: 4px; }
+.cr-terminal-card-stream::-webkit-scrollbar-track { background: transparent; }
+.cr-terminal-card-stream::-webkit-scrollbar-thumb { background: #3e3e3e; border-radius: 2px; }
+
+.cr-terminal-card-line {
+  padding: 0;
+  color: #cccccc;
+  min-height: 16px;
+  animation: fadeIn 0.03s ease-in;
+}
+
+/* Stderr lines */
+.cr-terminal-card-stderr {
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 2px solid #f85149;
+  border-radius: 2px;
+  color: #f48771;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Footer with duration + exit code */
+.cr-terminal-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #888;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.cr-terminal-card-duration {
+  color: #3fb950;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cr-terminal-card-exitcode {
+  color: #888;
+  font-family: monospace;
+}
+
+.cr-terminal-card-error-msg {
+  color: #f48771;
+  font-size: 10px;
+  flex-basis: 100%;
+}
+
 .cr-btn-quit-all:hover {
   background: rgba(248, 81, 73, 0.1) !important;
   border-color: rgba(248, 81, 73, 0.8) !important;

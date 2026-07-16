@@ -65,6 +65,24 @@
     return 'Executing action <span class="cr-action-name">' + esc(action) + '</span>';
   }
 
+  // ── ANSI escape sequence cleaner (client-side belt & suspenders) ───
+  function stripAnsi(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/\x1B\]\d+(?:;[^\x1B]*)*(?:\x1B\\)/g, '')
+      .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\x1B\][^\x1B]*[\x07\x1B]/g, '')
+      .replace(/\x07/g, '')
+      .replace(/\x1B[\x5D\x5B][^\x1B]*[\x07\x5C]/g, '')
+      .replace(/\x1B[\[\]()][0-9;]*[~A-Za-z]/g, '')
+      .replace(/\x1B[\[\]()]/g, '')
+      .replace(/\x1B[^\[\]()\s]/g, '')
+      .replace(/\]633;/g, '')
+      .replace(/\]133;/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+  }
+
   function scrollBottom(el) {
     if (!el) return;
     var hasPendingPermissions = el.querySelector('.cr-permission-actions button') !== null;
@@ -182,7 +200,9 @@
         iterationCount: 0,
         statusLines: [],
         // Terminal streaming state
-        terminalBlocks: {},
+        _terminalCards: {},        // Maps terminalId → card element for inline terminal cards
+        _activeTerminalId: null,   // Current active terminal execution ID
+        _terminalCardOrder: [],    // Ordered list of terminal IDs for auto-collapse
         // Checkpoints tracking for undo
         _currentCheckpoints: [],
         // Tool cards — uses _toolQueue for ordered tracking
@@ -215,7 +235,9 @@
         S.iterationCount = 0;
         clearStatusLines(S);
         // Clear terminal and tool card state
-        S.terminalBlocks = {};
+        S._terminalCards = {};
+        S._activeTerminalId = null;
+        S._terminalCardOrder = [];
         S.toolCards = {};
         S._toolQueue = [];
         S._toolIdCounter = 0;
@@ -445,7 +467,11 @@
                     }
 
                     var cardKey = 'card_' + toolId + '_' + Date.now();
-                    appendToolCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                    if (toolName === 'run_terminal') {
+                      appendTerminalCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                    } else {
+                      appendToolCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                    }
                   });
                 }
               }
@@ -542,7 +568,7 @@
           input.value = '';
           input.style.height = 'auto';
           if (charCount) charCount.textContent = '0';
-          if (window.clearTerminal) window.clearTerminal();
+          // Terminal is rendered inline — no fixed panel to clear
 
           if (!conversation.messages) conversation.messages = [];
           if (window.saveConversationMessage) {
@@ -761,7 +787,34 @@
             removeTyping(S.botBody);
             msg.tool_calls.forEach(function(tc) {
               var toolName = (tc.function && tc.function.name) || tc.name || '';
-              if (toolName === 'run_terminal' || toolName === 'terminal_input' || toolName === 'stop_terminal') return; // Skip terminal tools
+              // Terminal tools are handled by the terminal event system with custom cards
+              if (toolName === 'terminal_input' || toolName === 'stop_terminal') return;
+              if (toolName === 'run_terminal') {
+                var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
+                var toolId = tc.id || '';
+                var toolIndex = tc.index;
+                var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+                var idKey = toolId || '';
+                if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) return;
+                S._seenToolIds[indexKey] = true;
+                if (idKey) S._seenToolIds[idKey] = true;
+                var displayId = toolId || 'term_' + (++S._toolIdCounter);
+                var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
+                // Auto-collapse previous terminal cards
+                for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
+                  var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
+                  if (prevCard) prevCard.open = false;
+                }
+                // Create card in 'pending' state — awaiting user approval.
+                // The status changes to 'running' only when terminal_start fires.
+                var cardElement = appendTerminalCard(S.botBody, cardKey, toolName, toolArgs, 'pending', null);
+                if (toolId) cardElement.dataset.toolCallId = toolId;
+                cardElement.dataset.terminalId = '';
+                S.toolCards[cardKey] = cardElement;
+                S.toolCards[displayId] = cardElement;
+                S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
+                return;
+              }
               var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
               var toolId = tc.id || '';
               var toolIndex = tc.index;
@@ -872,8 +925,35 @@
               removeTyping(S.botBody);
               var toolId = ev.id || 'tool_' + (++S._toolIdCounter);
               var toolName = ev.tool || '';
-              if (toolName === 'run_terminal' || toolName === 'terminal_input' || toolName === 'stop_terminal') break; // Skip terminal tools
+              if (toolName === 'terminal_input' || toolName === 'stop_terminal') break;
               var toolArgs = ev.args || {};
+              // Terminal tools get rendered as inline terminal cards
+              if (toolName === 'run_terminal') {
+                var existingCard = findPendingCardByToolName(S, toolName);
+                if (existingCard) {
+                  S._seenToolIds[toolId] = true;
+                  S._toolQueue.push({ key: existingCard.dataset.cardKey, toolName: toolName, id: toolId });
+                  existingCard.dataset.toolCallId = toolId;
+                  S.toolCards[toolId] = existingCard;
+                  break;
+                }
+                if (S._seenToolIds[toolId]) { break; }
+                S._seenToolIds[toolId] = true;
+                var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
+                // Auto-collapse previous terminal cards
+                for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
+                  var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
+                  if (prevCard) prevCard.open = false;
+                }
+                // Card starts in 'pending' state, awaiting permission approval
+                var newCard = appendTerminalCard(S.botBody, cardKey, toolName, toolArgs, 'pending', null);
+                newCard.dataset.toolCallId = toolId;
+                newCard.dataset.terminalId = '';
+                S.toolCards[toolId] = newCard;
+                S._toolQueue.push({ key: cardKey, toolName: toolName, id: toolId });
+                S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+                break;
+              }
               // Prevent duplicate cards — check if we already have a pending card
               // for this tool name (from streaming ev.message.tool_calls). If so,
               // just mark it with the backend's ID and skip creating a new one.
@@ -902,7 +982,16 @@
             case 'action': {
               removeTyping(S.botBody);
               var action = ev.action;
-              if (action === 'run_terminal' || action === 'terminal_input' || action === 'stop_terminal') break; // Skip terminal tools
+              if (action === 'terminal_input' || action === 'stop_terminal') break;
+              // For run_terminal, actions update the terminal card status
+              if (action === 'run_terminal') {
+                var termCard = getLastPendingCard(S);
+                if (termCard) {
+                  var statusEl = termCard.querySelector('.cr-tool-card-status');
+                  if (statusEl) statusEl.textContent = 'Running…';
+                }
+                break;
+              }
               var actionMsg = ev.message || '';
               // Try to find the exact card using toolCallId
               var pendingCard = null;
@@ -929,9 +1018,30 @@
             case 'tool_result': {
               removeTyping(S.botBody);
               var resTool = ev.tool;
-              if (resTool === 'run_terminal' || resTool === 'terminal_input' || resTool === 'stop_terminal') break; // Skip terminal tools
+              if (resTool === 'terminal_input' || resTool === 'stop_terminal') break;
               var resSuccess = ev.success !== false;
               var resStatus = resSuccess ? 'success' : 'error';
+              
+              // For terminal tools: the card is already finalized by terminal_exit.
+              // tool_result should only fill in any missing output data without
+              // changing the canonical status set by terminal_exit/terminal_error.
+              if (resTool === 'run_terminal') {
+                var termCardToUpdate = null;
+                if (ev.toolCallId && S.toolCards[ev.toolCallId]) {
+                  termCardToUpdate = S.toolCards[ev.toolCallId];
+                }
+                if (!termCardToUpdate) {
+                  var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card.cr-terminal-card') : [];
+                  if (termCards.length > 0) {
+                    termCardToUpdate = termCards[termCards.length - 1];
+                  }
+                }
+                if (termCardToUpdate) {
+                  // Only fill data — don't change status (already set by terminal_exit)
+                  updateTerminalCardResult(termCardToUpdate, resStatus, ev);
+                }
+                break;
+              }
               
               var cardToUpdate = null;
               if (ev.toolCallId && S.toolCards[ev.toolCallId]) {
@@ -957,7 +1067,6 @@
                 }
               }
               if (!updated) {
-                // No card at all — create one
                 var fallbackKey = 'tr_' + Date.now();
                 appendToolCard(S.botBody, fallbackKey, resTool, {}, resStatus, ev);
               }
@@ -1055,38 +1164,121 @@
               break;
             }
             // ════════════════════════════════════════════
-            // Terminal streaming events
+            // Terminal streaming events — rendered as inline cards
             // ════════════════════════════════════════════
             case 'terminal_start': {
               removeTyping(S.botBody);
               var termId = ev.terminalId || 'term_' + Date.now();
-              if (!S.terminalBlocks[termId]) {
-                S.terminalBlocks[termId] = appendTerminalBlock(S.botBody, termId, ev.command, ev.fallback);
+              S._activeTerminalId = termId;
+              // Find the existing card created by tool_calls/tool_call streaming.
+              // We search by tool name and add terminalId to it.
+              var termCard = null;
+              // Try last pending card first
+              var lastPending = getLastPendingCard(S);
+              if (lastPending && lastPending.dataset.toolName === 'run_terminal') {
+                termCard = lastPending;
+              }
+              if (!termCard) {
+                // Try from terminal card order
+                if (S._terminalCardOrder.length > 0) {
+                  var lastTermKey = S._terminalCardOrder[S._terminalCardOrder.length - 1];
+                  termCard = S._terminalCards[lastTermKey];
+                }
+              }
+              if (!termCard) {
+                // Still not found — search DOM
+                var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card.cr-terminal-card') : [];
+                if (termCards.length > 0) {
+                  termCard = termCards[termCards.length - 1];
+                }
+              }
+              if (termCard) {
+                // Found card — change status from 'pending' to 'running'
+                termCard.dataset.terminalId = termId;
+                termCard.dataset.status = 'running';
+                termCard.className = 'cr-tool-card cr-tool-card--running cr-terminal-card';
+                var iconEl = termCard.querySelector('.cr-tool-card-icon');
+                if (iconEl) { iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--running'; iconEl.innerHTML = I.spin; }
+                var statusEl = termCard.querySelector('.cr-tool-card-status');
+                if (statusEl) { statusEl.className = 'cr-tool-card-status cr-tool-card-status--running'; statusEl.textContent = 'Running…'; }
+                // Add terminal output area to the card body if not already present
+                var cardBody = termCard.querySelector('.cr-tool-card-body');
+                if (cardBody && !cardBody.querySelector('.cr-terminal-card-output')) {
+                  var shellBadge = ev.shell || 'terminal';
+                  var platformLabel = ev.platform || '';
+                  var cmdText = ev.command || '';
+                  var outputArea = mk('div', 'cr-terminal-card-output');
+                  outputArea.innerHTML =
+                    '<div class="cr-terminal-card-cmd">$ ' + esc(cmdText) + '</div>' +
+                    '<div class="cr-terminal-card-stream"></div>';
+                  var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
+                  if (argsBlock) argsBlock.style.display = 'none';
+                  var resultContainer = cardBody.querySelector('.cr-tool-card-result');
+                  if (resultContainer) resultContainer.style.display = 'none';
+                  cardBody.appendChild(outputArea);
+                }
+                S._terminalCards[termId] = termCard;
+              } else {
+                // No existing card at all — create one (should not normally happen,
+                // but handles edge cases where terminal fires before streaming)
+                var emergencyKey = 'run_terminal_term_' + (++S._toolIdCounter) + '_' + Date.now();
+                termCard = appendTerminalCard(S.botBody, emergencyKey, 'run_terminal',
+                  { command: ev.command || '', shell: ev.shell || '', platform: ev.platform || '' },
+                  'running', null);
+                termCard.dataset.terminalId = termId;
+                S.toolCards[emergencyKey] = termCard;
+                S._toolQueue.push({ key: emergencyKey, toolName: 'run_terminal', id: emergencyKey });
+                S._terminalCards[termId] = termCard;
+              }
+              // Track terminal card order for auto-collapse
+              if (termId && S._terminalCardOrder.indexOf(termId) === -1) {
+                S._terminalCardOrder.push(termId);
+              }
+              // Auto-collapse previous terminal cards
+              for (var tci = 0; tci < S._terminalCardOrder.length - 1; tci++) {
+                var oldCard = S._terminalCards[S._terminalCardOrder[tci]];
+                if (oldCard) oldCard.open = false;
               }
               break;
             }
             case 'terminal_output': {
               var termId = ev.terminalId;
-              if (S.terminalBlocks[termId]) {
-                appendTerminalOutput(S.terminalBlocks[termId], ev.chunk);
+              var cleanChunk = stripAnsi(ev.chunk || '');
+              if (!cleanChunk) break;
+              // Update tool card
+              if (termId && S._terminalCards[termId]) {
+                appendTerminalCardOutput(S._terminalCards[termId], cleanChunk);
               }
               break;
             }
             case 'terminal_exit': {
               var termId = ev.terminalId;
-              if (S.terminalBlocks[termId]) {
-                finalizeTerminalBlock(S.terminalBlocks[termId], ev.exitCode, ev.duration, ev.fallback);
+              var exitCode = ev.exitCode;
+              var duration = ev.duration;
+              // Determine canonical status using the single source of truth
+              var execStatus = determineExecStatus(exitCode, duration, ev);
+              // Update tool card — only setTerminalCardStatus changes status
+              if (termId && S._terminalCards[termId]) {
+                setTerminalCardStatus(S._terminalCards[termId], execStatus, exitCode, duration, ev);
+                // Collapse completed terminal cards
+                S._terminalCards[termId].open = false;
               }
+              S._activeTerminalId = null;
               break;
             }
             case 'terminal_error': {
               var termId = ev.terminalId;
-              if (S.terminalBlocks[termId]) {
-                setTerminalError(S.terminalBlocks[termId], ev.message);
+              var errMsg = ev.message || 'Unknown error';
+              var execStatus = 'error';
+              // Update tool card if available
+              if (termId && S._terminalCards[termId]) {
+                setTerminalCardStatus(S._terminalCards[termId], execStatus, -1, null, { message: errMsg });
               } else {
-                // Create error block if not exists
-                var errBlock = appendTerminalBlock(S.botBody, termId, '', false);
-                setTerminalError(errBlock, ev.message);
+                // Fallback: find any pending terminal card
+                var pendingTermCard = getLastPendingCard(S);
+                if (pendingTermCard && pendingTermCard.dataset.toolName === 'run_terminal') {
+                  setTerminalCardStatus(pendingTermCard, execStatus, -1, null, { message: errMsg });
+                }
               }
               break;
             }
@@ -1392,99 +1584,273 @@
       }
 
       // ═══════════════════════════════════════════════════
-      // NEW: Terminal Streaming UI
+      // NEW: Inline Terminal Cards (collapsible, per-execution)
       // ═══════════════════════════════════════════════════
 
-      function appendTerminalBlock(body, termId, command, isFallback) {
+      /**
+       * Create a collapsible terminal card for a terminal execution.
+       * Each terminal execution gets its own independent card in the chat.
+       */
+      function appendTerminalCard(body, cardKey, toolName, args, status, result) {
         if (!body) return null;
-        var block = mk('div', 'cr-terminal-block cr-terminal-block--running');
-        block.dataset.terminalId = termId;
+        status = status || 'pending';
 
-        var header = mk('div', 'cr-terminal-header');
-        header.innerHTML =
-          '<span class="cr-terminal-header-icon">' + I.terminal + '</span>' +
-          '<span class="cr-terminal-command">$ ' + esc(truncate(command || '', 80)) + '</span>' +
-          '<span class="cr-terminal-exit-code cr-terminal-exit-code--success" style="display:none"></span>';
-        block.appendChild(header);
+        var card = mk('details', 'cr-tool-card cr-tool-card--' + status + ' cr-terminal-card');
+        card.open = true;
+        card.dataset.cardKey = cardKey;
+        card.dataset.toolName = 'run_terminal';
+        card.dataset.status = status;
 
-        var bodyEl = mk('div', 'cr-terminal-body');
-        bodyEl.innerHTML = '<div class="cr-terminal-line cr-terminal-line--prompt">$ ' + esc(command || '') + '</div>';
-        block.appendChild(bodyEl);
+        var command = (args && args.command) || '';
+        var shellName = (args && args.shell) || '';
+        var statusLabel = status === 'running' ? 'Running…' : status === 'pending' ? 'Awaiting approval…' : status === 'success' ? 'Completed' : 'Failed';
 
-        if (isFallback) {
-          var fallbackMsg = mk('div', 'cr-terminal-line cr-terminal-line--err');
-          fallbackMsg.textContent = '[Shell integration unavailable. Check the VS Code terminal panel for output.]';
-          bodyEl.appendChild(fallbackMsg);
+        var head = mk('summary', 'cr-tool-card-head');
+        head.innerHTML =
+          '<span class="cr-tool-card-icon cr-tool-card-icon--' + status + '">' +
+            (status === 'running' ? I.spin : I.terminal) +
+          '</span>' +
+          '<span class="cr-tool-card-title">' + I.terminal + ' Terminal</span>' +
+          (shellName ? '<span class="cr-terminal-shell-badge">' + esc(shellName) + '</span>' : '') +
+          (command ? '<span class="cr-tool-card-args">$ ' + esc(truncate(command, 60)) + '</span>' : '') +
+          '<span class="cr-terminal-card-duration-summary" style="display:none"></span>' +
+          '<span class="cr-tool-card-status cr-tool-card-status--' + status + '">' + esc(statusLabel) + '</span>' +
+          '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
+        card.appendChild(head);
+
+        // Card body with terminal output area
+        var cardBody = mk('div', 'cr-tool-card-body');
+        cardBody.style.display = 'block';
+
+        // Terminal output container (streamed content goes here)
+        var outputArea = mk('div', 'cr-terminal-card-output');
+        outputArea.innerHTML =
+          '<div class="cr-terminal-card-cmd">$ ' + esc(command) + '</div>' +
+          '<div class="cr-terminal-card-stream"></div>';
+        cardBody.appendChild(outputArea);
+
+        // Result container (shown on completion)
+        var resultContainer = mk('div', 'cr-tool-card-result');
+        resultContainer.style.display = 'none';
+        if (result) {
+          // History replay: fill data and set canonical status
+          var exitCode = result.exit_code != null ? result.exit_code : result.exitCode;
+          var duration = result.duration_ms || result.durationMs;
+          updateTerminalCardResult(card, status, result);
+          setTerminalCardStatus(card, status, exitCode, duration, result);
         }
+        cardBody.appendChild(resultContainer);
 
-        body.appendChild(block);
-        scrollBottom(msgList);
-        return block;
-      }
+        card.appendChild(cardBody);
+        body.appendChild(card);
 
-      function appendTerminalOutput(block, chunk) {
-        if (!block) return;
-        var bodyEl = block.querySelector('.cr-terminal-body');
-        if (!bodyEl) return;
-
-        // Split chunk into lines and append each
-        var lines = chunk.split('\n');
-        lines.forEach(function(line) {
-          if (line.trim() === '') return;
-          var div = mk('div', 'cr-terminal-line cr-terminal-line--out');
-          div.textContent = line;
-          bodyEl.appendChild(div);
-        });
-        scrollBottom(msgList);
-      }
-
-      function finalizeTerminalBlock(block, exitCode, duration, isFallback) {
-        if (!block) return;
-        block.classList.remove('cr-terminal-block--running');
-        var isSuccess = isFallback || exitCode === 0;
-        block.classList.add(isSuccess ? 'cr-terminal-block--success' : 'cr-terminal-block--error');
-
-        var exitCodeEl = block.querySelector('.cr-terminal-exit-code');
-        if (exitCodeEl) {
-          exitCodeEl.style.display = 'inline-block';
-          exitCodeEl.className = 'cr-terminal-exit-code ' + (isSuccess ? 'cr-terminal-exit-code--success' : 'cr-terminal-exit-code--error');
-          exitCodeEl.textContent = isFallback ? 'Sent' : 'Exit: ' + (exitCode != null ? exitCode : '?');
-        }
-
-        var bodyEl = block.querySelector('.cr-terminal-body');
-        if (bodyEl && duration != null) {
-          var timeLine = mk('div', 'cr-terminal-line');
-          timeLine.style.color = '#666';
-          timeLine.style.fontSize = '10px';
-          timeLine.style.marginTop = '4px';
-          timeLine.textContent = '[Completed in ' + duration + 'ms]';
-          bodyEl.appendChild(timeLine);
-        }
-
-        if (isFallback) {
-          var fallbackLine = mk('div', 'cr-terminal-line');
-          fallbackLine.style.color = '#888';
-          fallbackLine.style.fontSize = '10px';
-          fallbackLine.style.marginTop = '4px';
-          fallbackLine.textContent = '[Fallback mode: shell integration not available]';
-          bodyEl.appendChild(fallbackLine);
+        // Track in terminal card state
+        var termId = card.dataset.terminalId || 'card_' + Date.now();
+        S._terminalCards[termId] = card;
+        if (S._terminalCardOrder.indexOf(termId) === -1) {
+          S._terminalCardOrder.push(termId);
         }
 
         scrollBottom(msgList);
+        return card;
       }
 
-      function setTerminalError(block, message) {
-        if (!block) return;
-        block.classList.remove('cr-terminal-block--running');
-        block.classList.add('cr-terminal-block--error');
-        var bodyEl = block.querySelector('.cr-terminal-body');
-        if (bodyEl) {
-          var errLine = mk('div', 'cr-terminal-line cr-terminal-line--err');
-          errLine.textContent = '[Error: ' + message + ']';
-          bodyEl.appendChild(errLine);
+      /**
+       * Append a streamed output chunk to a terminal card.
+       * Output is appended incrementally (not replaced).
+       */
+      function appendTerminalCardOutput(card, cleanChunk) {
+        if (!card) return;
+        var streamEl = card.querySelector('.cr-terminal-card-stream');
+        if (!streamEl) return;
+
+        // Split chunk into lines and append each as a separate div
+        var lines = cleanChunk.split('\n');
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li];
+          // Skip empty lines at the end (partial line from streaming)
+          if (li === lines.length - 1 && line === '') break;
+          var lineEl = mk('div', 'cr-terminal-card-line');
+          lineEl.textContent = line;
+          streamEl.appendChild(lineEl);
         }
+
         scrollBottom(msgList);
       }
+
+      /**
+       * Sole source of truth for terminal card status.
+       * Updates ALL visual elements from one canonical `execStatus`:
+       *   'pending'    — Awaiting user approval
+       *   'running'    — Command is executing
+       *   'success'    — Command completed successfully
+       *   'error'      — Command failed
+       *   'timeout'    — Command timed out
+       *   'cancelled'  — Command was cancelled
+       *
+       * Every terminal UI element (header icon, status label, card class,
+       * footer) derives from this one status value.
+       */
+      function setTerminalCardStatus(card, execStatus, exitCode, duration, extra) {
+        if (!card) return;
+        card.dataset.status = execStatus;
+        card.className = 'cr-tool-card cr-tool-card--' + execStatus + ' cr-terminal-card';
+
+        var iconEl = card.querySelector('.cr-tool-card-icon');
+        if (iconEl) {
+          iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + execStatus;
+          if (execStatus === 'running') iconEl.innerHTML = I.spin;
+          else if (execStatus === 'success') iconEl.innerHTML = I.check;
+          else if (execStatus === 'error') iconEl.innerHTML = I.err;
+          else if (execStatus === 'timeout') iconEl.innerHTML = I.err;
+          else if (execStatus === 'cancelled') iconEl.innerHTML = I.close;
+          else iconEl.innerHTML = I.terminal;
+        }
+
+        // Update status label in header summary
+        var statusEl = card.querySelector('.cr-tool-card-status');
+        if (statusEl) {
+          statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + execStatus;
+          if (execStatus === 'pending') statusEl.textContent = 'Awaiting approval…';
+          else if (execStatus === 'running') statusEl.textContent = 'Running…';
+          else if (execStatus === 'success') {
+            statusEl.textContent = exitCode != null ? 'Exit code ' + exitCode : 'Exit code 0';
+          } else if (execStatus === 'error') {
+            statusEl.textContent = exitCode != null ? 'Exit code ' + exitCode : 'Failed';
+          } else if (execStatus === 'timeout') statusEl.textContent = 'Timed out';
+          else if (execStatus === 'cancelled') statusEl.textContent = 'Cancelled';
+        }
+
+        // Update duration display in summary header
+        var durationEl = card.querySelector('.cr-terminal-card-duration-summary');
+        if (durationEl) {
+          if (duration != null) {
+            var label = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
+            durationEl.textContent = label;
+            durationEl.style.display = 'inline';
+          } else {
+            durationEl.style.display = 'none';
+          }
+        }
+
+        // Update footer inside terminal-card-output
+        var outputArea = card.querySelector('.cr-terminal-card-output');
+        if (outputArea) {
+          var oldFooter = outputArea.querySelector('.cr-terminal-card-footer');
+          if (oldFooter) oldFooter.remove();
+
+          // Only show footer for terminal states (not pending)
+          if (execStatus !== 'pending' && execStatus !== 'running') {
+            var footer = mk('div', 'cr-terminal-card-footer');
+            var isPositive = execStatus === 'success';
+            var statusText = execStatus === 'success' ? 'Completed' : (execStatus === 'timeout' ? 'Timed out' : execStatus === 'cancelled' ? 'Cancelled' : 'Failed');
+            var iconHtml = isPositive ? I.check : I.err;
+            if (duration != null) {
+              var durationLabel = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
+              footer.innerHTML += '<span class="cr-terminal-card-footer-status">' + iconHtml + ' ' + statusText + ' in ' + durationLabel + '</span>';
+            } else {
+              footer.innerHTML += '<span class="cr-terminal-card-footer-status">' + iconHtml + ' ' + statusText + '</span>';
+            }
+            if (exitCode != null) {
+              footer.innerHTML += '<span class="cr-terminal-card-exitcode">Exit code: ' + exitCode + '</span>';
+            } else if (execStatus === 'error' || execStatus === 'timeout') {
+              footer.innerHTML += '<span class="cr-terminal-card-exitcode">Exit code unavailable</span>';
+            }
+            if (extra && extra.message && execStatus !== 'success') {
+              footer.innerHTML += '<span class="cr-terminal-card-error-msg">' + esc(extra.message) + '</span>';
+            }
+            outputArea.appendChild(footer);
+          }
+        }
+      }
+
+      /**
+       * Determine canonical execution status from terminal exit info.
+       */
+      function determineExecStatus(exitCode, duration, ev) {
+        // If execution threw or error flag set
+        if (ev && ev.error) return 'error';
+        // If explicit timeout
+        if (ev && ev.timedOut) return 'timeout';
+        // If cancelled
+        if (ev && ev.cancelled) return 'cancelled';
+        // exitCode is a number
+        if (exitCode != null) {
+          if (exitCode === 0) return 'success';
+          return 'error';
+        }
+        // No exit code — check for error indicators
+        if (ev && ev.message && (
+          ev.message.toLowerCase().includes('error') ||
+          ev.message.toLowerCase().includes('fail') ||
+          ev.message.toLowerCase().includes('timed out')
+        )) return 'error';
+        // No exit code but no errors — assume success if we got this far
+        return 'success';
+      }
+
+      /**
+       * Fill a terminal card with output data (stdout, stderr, shell).
+       * Does NOT change the execution status — only `terminal_exit` or
+       * `terminal_error` events should change status via setTerminalCardStatus.
+       */
+      function updateTerminalCardResult(card, status, result) {
+        if (!card) return;
+        var exitCode = result.exit_code != null ? result.exit_code : result.exitCode;
+        var duration = result.duration_ms || result.durationMs;
+        var stdout = result.stdout || result.output || '';
+        var stderr = result.stderr || '';
+        var shell = result.shell || '';
+
+        // Update shell badge in header
+        if (shell) {
+          var shellBadge = card.querySelector('.cr-terminal-shell-badge');
+          if (!shellBadge && card.querySelector('.cr-tool-card-head')) {
+            var argsEl = card.querySelector('.cr-tool-card-args');
+            var newBadge = mk('span', 'cr-terminal-shell-badge');
+            newBadge.textContent = shell;
+            if (argsEl) {
+              card.querySelector('.cr-tool-card-head').insertBefore(newBadge, argsEl);
+            }
+          } else if (shellBadge) {
+            shellBadge.textContent = shell;
+          }
+        }
+
+        // Populate output with stdout
+        var streamEl = card.querySelector('.cr-terminal-card-stream');
+        if (streamEl && stdout) {
+          streamEl.innerHTML = '';
+          var outLines = stdout.split('\n');
+          for (var oi = 0; oi < outLines.length; oi++) {
+            if (oi === outLines.length - 1 && outLines[oi] === '') break;
+            var lineEl = mk('div', 'cr-terminal-card-line');
+            lineEl.textContent = outLines[oi];
+            streamEl.appendChild(lineEl);
+          }
+        }
+
+        // Add stderr if present
+        if (stderr) {
+          var outputArea = card.querySelector('.cr-terminal-card-output');
+          if (outputArea && streamEl) {
+            var errDiv = mk('div', 'cr-terminal-card-stderr');
+            errDiv.textContent = stderr;
+            outputArea.appendChild(errDiv);
+          }
+        }
+
+        // Update duration in summary header
+        var durationEl = card.querySelector('.cr-terminal-card-duration-summary');
+        if (durationEl && duration != null) {
+          var label = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
+          durationEl.textContent = label;
+          durationEl.style.display = 'inline';
+        }
+      }
+
+      // ── No legacy terminal functions — all terminal output
+      //    is rendered via inline tool cards only ─────────
 
       // ═══════════════════════════════════════════════════
       // Actions Bar — rendered below assistant responses
@@ -1862,6 +2228,20 @@
        */
       function formatToolResultText(toolName, result) {
         if (!result) return '';
+        // Structured terminal result
+        if (toolName === 'run_terminal') {
+          var parts = [];
+          parts.push('Shell: ' + (result.shell || 'unknown'));
+          parts.push('Platform: ' + (result.platform || 'unknown'));
+          parts.push('Command: ' + (result.command || ''));
+          parts.push('Exit code: ' + (result.exit_code != null ? result.exit_code : result.exitCode != null ? result.exitCode : '?'));
+          parts.push('Duration: ' + (result.duration_ms || result.durationMs || 0) + 'ms');
+          var stdout = result.stdout || result.output || '';
+          if (stdout) parts.push('\n--- stdout ---\n' + stdout);
+          var stderr = result.stderr || '';
+          if (stderr) parts.push('\n--- stderr ---\n' + stderr);
+          return parts.join('\n');
+        }
         var text = '';
         if (result.content != null) text = result.content;
         else if (result.output != null) text = result.output;
@@ -2113,22 +2493,8 @@
     var message = event.data || {};
     if (message.type === "agentEvent" && window.activeChatStreamCallback) {
       window.activeChatStreamCallback(message.event);
-      // Mirror terminal events to the Dashboard inline terminal so the
-      // user sees a live log of every command the agent runs in BOTH
-      // places: as a per-tool block in the chat AND as a streaming
-      // line in the persistent terminal panel above the chat.
-      if (message.event) {
-        var ev = message.event;
-        if (ev.type === 'terminal_start' && window.forwardTerminalEvent) {
-          window.forwardTerminalEvent('start', ev);
-        } else if (ev.type === 'terminal_output' && window.forwardTerminalEvent) {
-          window.forwardTerminalEvent('output', ev);
-        } else if (ev.type === 'terminal_exit' && window.forwardTerminalEvent) {
-          window.forwardTerminalEvent('exit', ev);
-        } else if (ev.type === 'terminal_error' && window.forwardTerminalEvent) {
-          window.forwardTerminalEvent('error', ev);
-        }
-      }
+      // Terminal events are rendered ONLY as inline tool cards inside
+      // the assistant message. No forwarding to a separate terminal panel.
     }
 
     // Handle diff result responses

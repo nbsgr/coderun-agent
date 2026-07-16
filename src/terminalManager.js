@@ -3,6 +3,9 @@
 // output live to the chat UI via shell integration events.
 
 import * as vscode from 'vscode';
+import * as os from 'os';
+import * as path from 'path';
+import { execFile } from 'child_process';
 
 var activeTerminal = null;
 var terminalListeners = [];
@@ -10,12 +13,118 @@ var pendingExecutions = {};
 var executionCounter = 0;
 var sendEventCallback = null;
 
+// ── Shell detection ────────────────────────────────────────
+// Auto-detect the shell name from VS Code's terminal API.
+function detectShellName(terminal) {
+  if (!terminal) return guessShellFromEnv();
+  // VS Code exposes shell path via creationOptions if available
+  try {
+    var creationOptions = terminal.creationOptions;
+    if (creationOptions) {
+      var shellPath = creationOptions.shellPath || '';
+      if (shellPath) {
+        var shellName = path.basename(shellPath).toLowerCase();
+        if (shellName.includes('powershell')) return 'powershell';
+        if (shellName.includes('pwsh')) return 'powershell';
+        if (shellName.includes('cmd')) return 'cmd';
+        if (shellName.includes('bash')) return 'bash';
+        if (shellName.includes('zsh')) return 'zsh';
+        if (shellName.includes('fish')) return 'fish';
+        if (shellName.includes('wsl')) return 'wsl';
+        return shellName.replace(/\.exe$/, '');
+      }
+    }
+  } catch (_) {}
+  return guessShellFromEnv();
+}
+
+function guessShellFromEnv() {
+  var platform = process.platform;
+  if (platform === 'win32') {
+    // Check for common Windows shells
+    if (process.env.SHELL) {
+      var sh = path.basename(process.env.SHELL).toLowerCase();
+      if (sh.includes('bash')) return 'bash (Git Bash)';
+      if (sh.includes('zsh')) return 'zsh';
+    }
+    // Detect PowerShell vs cmd via parent process
+    try {
+      var comspec = process.env.COMSPEC || '';
+      if (comspec.toLowerCase().includes('cmd')) return 'cmd';
+    } catch (_) {}
+    // Default: check if PowerShell is available
+    try {
+      if (process.env.PSModulePath) return 'powershell';
+    } catch (_) {}
+    return 'powershell';
+  }
+  if (platform === 'darwin') {
+    return process.env.SHELL ? path.basename(process.env.SHELL) : 'zsh';
+  }
+  // Linux / WSL
+  if (process.env.WSL_DISTRO_NAME) return 'wsl';
+  return process.env.SHELL ? path.basename(process.env.SHELL) : 'bash';
+}
+
+function getPlatform() {
+  var p = process.platform;
+  if (p === 'win32') return 'windows';
+  if (p === 'darwin') return 'macos';
+  return 'linux';
+}
+
+// ── ANSI escape sequence cleaner ────────────────────────────
+// Removes all ANSI escape sequences, OSC sequences, shell integration
+// markers, cursor control sequences, and color codes.
+function stripAnsi(text) {
+  if (!text) return '';
+  var cleaned = text
+    // Remove OSC sequences like ]633;C ]633;D ]0;... ]1;... etc.
+    .replace(/\x1B\]\d+(?:;[^\x1B]*)*(?:\x1B\\)/g, '')
+    // Remove standard ANSI escape sequences (colors, cursor movement, etc.)
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+    // Remove remaining OSC sequences without ST
+    .replace(/\x1B\][^\x1B]*[\x07\x1B]/g, '')
+    // Remove orphan BEL characters from OSC
+    .replace(/\x07/g, '')
+    // Remove VT100 window title sequences
+    .replace(/\x1B[\x5D\x5B][^\x1B]*[\x07\x5C]/g, '')
+    // Remove any remaining escape sequences (sweep)
+    .replace(/\x1B[\[\]()][0-9;]*[~A-Za-z]/g, '')
+    .replace(/\x1B[\[\]()]/g, '')
+    .replace(/\x1B[^\[\]()\s]/g, '')
+    // Remove VS Code shell integration markers specifically
+    .replace(/\]633;/g, '')
+    .replace(/\]133;/g, '')
+    .replace(/\]633;d;([^\x07\x1B]+)/g, '')
+    // Normalize CRLF -> LF
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  return cleaned;
+}
+
 /**
  * Set the callback used to forward terminal events to the webview.
  * Called by extension.js when a chat starts.
  */
 export function setSendEventCallback(callback) {
   sendEventCallback = callback;
+}
+
+/**
+ * Get the detected shell name.
+ * Public wrapper so tools.js and ChatSpace can access it.
+ */
+export function getShellName() {
+  var term = getTerminal();
+  return detectShellName(term);
+}
+
+/**
+ * Get platform identifier.
+ */
+export function getPlatformName() {
+  return getPlatform();
 }
 
 /**
@@ -127,6 +236,11 @@ export async function executeCommand(command, timeout, background) {
   var terminal = getTerminal();
   terminal.show(true);
 
+  var shellName = detectShellName(terminal);
+  var platformName = getPlatform();
+  var cwd = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || '';
+  var startedAt = Date.now();
+
   if (background) {
     console.log('[TERMINAL] Running command in background:', command);
     terminal.sendText(command, true);
@@ -137,6 +251,9 @@ export async function executeCommand(command, timeout, background) {
         type: 'terminal_start',
         terminalId: execId,
         command: command,
+        shell: shellName,
+        platform: platformName,
+        cwd: cwd,
         background: true
       });
       setTimeout(function() {
@@ -145,6 +262,10 @@ export async function executeCommand(command, timeout, background) {
             type: 'terminal_exit',
             terminalId: execId,
             exitCode: null,
+            duration: Date.now() - startedAt,
+            shell: shellName,
+            platform: platformName,
+            cwd: cwd,
             background: true,
             message: 'Process started in the background.'
           });
@@ -153,10 +274,16 @@ export async function executeCommand(command, timeout, background) {
     }
 
     return {
-      method: 'background',
-      terminal: terminal,
+      shell: shellName,
+      platform: platformName,
+      command: command,
+      stdout: '',
+      stderr: '',
+      exitCode: null,
+      durationMs: Date.now() - startedAt,
       success: true,
-      output: '',
+      workingDirectory: cwd,
+      method: 'background',
       message: 'Command started in the background.'
     };
   }
@@ -169,15 +296,18 @@ export async function executeCommand(command, timeout, background) {
     try {
       var execId = 'term_direct_' + (++executionCounter);
       var execution = shellIntegration.executeCommand(command);
-      var output = '';
-      var startedAt = Date.now();
+      var stdout = '';
+      var stderr = '';
       var timeoutAt = startedAt + timeout * 1000;
 
       if (sendEventCallback) {
         sendEventCallback({
           type: 'terminal_start',
           terminalId: execId,
-          command: command
+          command: command,
+          shell: shellName,
+          platform: platformName,
+          cwd: cwd
         });
       }
 
@@ -187,12 +317,14 @@ export async function executeCommand(command, timeout, background) {
 
       for await (var chunk of execution.read()) {
         var text = String(chunk || '');
-        output += text;
-        if (sendEventCallback && text) {
+        // Strip ANSI sequences before accumulation and forwarding
+        var cleanChunk = stripAnsi(text);
+        stdout += cleanChunk;
+        if (sendEventCallback && cleanChunk) {
           sendEventCallback({
             type: 'terminal_output',
             terminalId: execId,
-            chunk: text
+            chunk: cleanChunk
           });
         }
         if (Date.now() > timeoutAt) {
@@ -201,21 +333,31 @@ export async function executeCommand(command, timeout, background) {
       }
 
       var exitCode = await execution.exitCode;
+      var durationMs = Date.now() - startedAt;
       if (sendEventCallback) {
         sendEventCallback({
           type: 'terminal_exit',
           terminalId: execId,
           exitCode: exitCode,
-          duration: Date.now() - startedAt
+          duration: durationMs,
+          shell: shellName,
+          platform: platformName,
+          cwd: cwd,
+          command: command
         });
       }
 
       return {
-        method: 'shell_integration',
-        terminal: terminal,
-        success: exitCode === 0,
+        shell: shellName,
+        platform: platformName,
+        command: command,
+        stdout: stdout,
+        stderr: stderr,
         exitCode: exitCode,
-        output: output
+        durationMs: durationMs,
+        success: exitCode === 0,
+        workingDirectory: cwd,
+        method: 'shell_integration'
       };
     } catch (err) {
       console.error('[TERMINAL] Shell integration executeCommand failed:', err);
@@ -223,35 +365,167 @@ export async function executeCommand(command, timeout, background) {
         sendEventCallback({
           type: 'terminal_error',
           terminalId: 'term_error_' + executionCounter,
-          message: err.message
+          message: err.message,
+          shell: shellName,
+          platform: platformName
         });
       }
       // Fall through to fallback
     }
   }
 
-  // Fallback: use sendText (no shell integration available)
-  console.log('[TERMINAL] Falling back to sendText:', command);
+  // Fallback: shell integration unavailable — use child_process to
+  // execute the command directly and capture real stdout/stderr/exitCode.
+  // The command is ALSO sent to the visible terminal for user visibility.
+  console.log('[TERMINAL] Shell integration unavailable — using child_process fallback:', command);
   terminal.sendText(command, true);
 
+  var execId = 'term_fallback_' + (++executionCounter);
   if (sendEventCallback) {
-    var execId = 'term_fallback_' + (++executionCounter);
     sendEventCallback({
       type: 'terminal_start',
       terminalId: execId,
       command: command,
+      shell: shellName,
+      platform: platformName,
+      cwd: cwd,
       fallback: true
-    });
-    sendEventCallback({
-      type: 'terminal_exit',
-      terminalId: execId,
-      exitCode: null,
-      fallback: true,
-      message: 'Command sent to terminal (shell integration unavailable). Check the terminal panel for output.'
     });
   }
 
-  return { method: 'sendText', terminal: terminal, success: true, output: '' };
+  // Determine shell executable and argument syntax for direct execution
+  var shellExe = '';
+  var shellArg = '';
+  var lowerShell = shellName.toLowerCase();
+
+  if (lowerShell.includes('powershell') || lowerShell.includes('pwsh')) {
+    // Try pwsh first, then powershell
+    shellExe = process.env.PWSH_EXE || 'powershell.exe';
+    shellArg = '-NoProfile -NonInteractive -Command';
+  } else if (lowerShell.includes('cmd')) {
+    shellExe = process.env.COMSPEC || 'cmd.exe';
+    shellArg = '/c';
+  } else if (lowerShell.includes('wsl')) {
+    shellExe = 'wsl.exe';
+    shellArg = '--';
+  } else {
+    // bash, zsh, fish, git bash
+    shellExe = process.env.SHELL || 'bash';
+    shellArg = '-c';
+  }
+
+  try {
+    var stdout = '';
+    var stderr = '';
+    var cpExitCode = null;
+
+    // Build the full command: shell + arg + quoted command
+    var fullArgs = shellArg.split(' ').concat([command]);
+
+    var cpResult = await new Promise(function(resolve, reject) {
+      var child = execFile(shellExe, fullArgs, {
+        cwd: cwd || undefined,
+        timeout: (timeout || 30) * 1000,
+        maxBuffer: 1024 * 1024, // 1MB
+        windowsHide: true
+      }, function(error, cpStdout, cpStderr) {
+        if (error) {
+          // error.code is the exit code for execFile
+          resolve({
+            stdout: cpStdout || '',
+            stderr: cpStderr || '',
+            exitCode: error.code != null ? error.code : (error.killed ? -1 : 1)
+          });
+        } else {
+          resolve({
+            stdout: cpStdout || '',
+            stderr: cpStderr || '',
+            exitCode: 0
+          });
+        }
+      });
+    });
+
+    stdout = cpResult.stdout;
+    stderr = cpResult.stderr;
+    cpExitCode = cpResult.exitCode;
+    var durationMs = Date.now() - startedAt;
+
+    // Clean ANSI from captured output
+    stdout = stripAnsi(stdout);
+    stderr = stripAnsi(stderr);
+
+    // Stream captured output to the UI
+    if (sendEventCallback && stdout) {
+      sendEventCallback({
+        type: 'terminal_output',
+        terminalId: execId,
+        chunk: stdout
+      });
+    }
+    if (sendEventCallback && stderr) {
+      sendEventCallback({
+        type: 'terminal_output',
+        terminalId: execId,
+        chunk: stderr
+      });
+    }
+
+    if (sendEventCallback) {
+      sendEventCallback({
+        type: 'terminal_exit',
+        terminalId: execId,
+        exitCode: cpExitCode,
+        duration: durationMs,
+        shell: shellName,
+        platform: platformName,
+        cwd: cwd,
+        command: command,
+        fallback: true
+      });
+    }
+
+    return {
+      shell: shellName,
+      platform: platformName,
+      command: command,
+      stdout: stdout,
+      stderr: stderr,
+      exitCode: cpExitCode,
+      durationMs: durationMs,
+      success: cpExitCode === 0,
+      workingDirectory: cwd,
+      method: 'sendText'
+    };
+  } catch (cpErr) {
+    // Last resort: child_process also failed — return what we have
+    console.error('[TERMINAL] child_process fallback also failed:', cpErr.message);
+    var fallbackDuration = Date.now() - startedAt;
+
+    if (sendEventCallback) {
+      sendEventCallback({
+        type: 'terminal_error',
+        terminalId: execId,
+        message: cpErr.message,
+        shell: shellName,
+        platform: platformName
+      });
+    }
+
+    return {
+      shell: shellName,
+      platform: platformName,
+      command: command,
+      stdout: '',
+      stderr: cpErr.message,
+      exitCode: -1,
+      durationMs: fallbackDuration,
+      success: false,
+      workingDirectory: cwd,
+      method: 'sendText',
+      error: cpErr.message
+    };
+  }
 }
 
 /**

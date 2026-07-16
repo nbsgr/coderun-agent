@@ -291,6 +291,7 @@ async function* get_file_info(args, workspace) {
  * Execute a command in the VS Code Integrated Terminal using shell integration.
  * Streams output live to the chat UI via terminal events.
  * The terminalManager handles the actual execution and event forwarding.
+ * Returns a structured result with shell, command, stdout, stderr, exitCode, etc.
  */
 async function* run_terminal(args, workspace) {
   var command = args.command || '';
@@ -312,32 +313,61 @@ async function* run_terminal(args, workspace) {
     // via its sendEventCallback. These are forwarded to the webview by extension.js.
     // We yield a result here for the agent loop, but the actual output streaming
     // happens through the event system.
+    //
+    // The result now includes structured fields: shell, platform, command,
+    // stdout, stderr, exitCode, durationMs, success, workingDirectory
 
-    if (result.method === 'shell_integration') {
-      // Shell integration is active — output streams via events
-      yield {
-        type: 'tool_result',
-        tool: 'run_terminal',
-        success: result.success !== false,
-        command: command,
-        exit_code: result.exitCode,
-        output: result.output || '',
-        message: 'Command completed in VS Code terminal.',
-        shell_integration: true
-      };
-    } else {
-      // Fallback mode
-      yield {
-        type: 'tool_result',
-        tool: 'run_terminal',
-        success: true,
-        command: command,
-        message: 'Command sent to VS Code terminal (shell integration unavailable). Check the terminal panel for output.',
-        fallback: true
-      };
-    }
+    // Determine success: exitCode === 0 → success.
+    // If exitCode is null (fallback where it couldn't be determined),
+    // use result.success if present, otherwise assume success if
+    // stderr is empty and no error was thrown.
+    var toolSuccess = result.exitCode === 0 || (result.exitCode == null && result.success !== false);
+    var toolExitCode = result.exitCode;
+    var toolStderr = result.stderr || '';
+    var toolStdout = result.stdout || '';
+
+    yield {
+      type: 'tool_result',
+      tool: 'run_terminal',
+      success: toolSuccess,
+      // Structured terminal result for the LLM — accurate, no fabrication
+      shell: result.shell || terminalManager.getShellName(),
+      platform: result.platform || terminalManager.getPlatformName(),
+      command: command,
+      stdout: toolStdout,
+      stderr: toolStderr,
+      exit_code: toolExitCode,
+      duration_ms: result.durationMs || 0,
+      working_directory: result.workingDirectory || workspace,
+      // Human-readable message based on actual output
+      message: toolSuccess
+        ? (toolStdout || toolStderr
+            ? 'Command completed successfully.'
+            : 'Command completed (no output).')
+        : 'Command failed' +
+          (toolExitCode != null ? ' with exit code ' + toolExitCode : '') +
+          (toolStderr ? ': ' + toolStderr.trim().substring(0, 500) : '.'),
+      // Backward-compat fields
+      output: toolStdout,
+      exitCode: toolExitCode
+    };
   } catch (e) {
-    yield { type: 'tool_result', tool: 'run_terminal', success: false, command: command, message: e.message };
+    yield {
+      type: 'tool_result',
+      tool: 'run_terminal',
+      success: false,
+      command: command,
+      stdout: '',
+      stderr: e.message,
+      exit_code: null,
+      duration_ms: 0,
+      shell: terminalManager.getShellName(),
+      platform: terminalManager.getPlatformName(),
+      working_directory: workspace,
+      message: 'Execution error: ' + e.message,
+      output: '',
+      exitCode: null
+    };
   }
 }
 
