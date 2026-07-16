@@ -837,6 +837,9 @@
               if (displayId) {
                 S.toolCards[displayId] = cardElement;
               }
+              // Also store under index-based key so tool_result can find
+              // the card even if the LLM didn't emit a tool call ID.
+              S.toolCards[indexKey] = cardElement;
               S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
             });
           }
@@ -974,6 +977,8 @@
               newCard.dataset.toolCallId = toolId;
               S.toolCallBlocks[ev.id || cardKey] = newCard;
               S.toolCards[toolId] = newCard;
+              // Also store under index key for provider compatibility
+              S.toolCards[toolName + '_idx_' + (ev.index != null ? ev.index : '?')] = newCard;
               // Track in ordered queue
               S._toolQueue.push({ key: cardKey, toolName: toolName, id: ev.id });
               S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
@@ -989,6 +994,8 @@
                 if (termCard) {
                   var statusEl = termCard.querySelector('.cr-tool-card-status');
                   if (statusEl) statusEl.textContent = 'Running…';
+                  // Link card so tool_result can find it
+                  if (ev.toolCallId) S.toolCards[ev.toolCallId] = termCard;
                 }
                 break;
               }
@@ -1000,6 +1007,11 @@
               }
               if (!pendingCard) {
                 pendingCard = getLastPendingCard(S);
+                // If found by fallback, link it by toolCallId so the
+                // subsequent tool_result can find it directly.
+                if (pendingCard && ev.toolCallId) {
+                  S.toolCards[ev.toolCallId] = pendingCard;
+                }
               }
               if (!pendingCard) {
                 // No card yet — create one from the action itself
@@ -1009,6 +1021,8 @@
                 var createdCard = S.toolCards[actionKey];
                 if (createdCard) {
                   appendToolAction(createdCard, action, actionMsg, 'started');
+                  // Link by toolCallId too
+                  if (ev.toolCallId) S.toolCards[ev.toolCallId] = createdCard;
                 }
               } else {
                 appendToolAction(pendingCard, action, actionMsg, 'started');
@@ -1044,8 +1058,17 @@
               }
               
               var cardToUpdate = null;
+              // Pass 1: try exact toolCallId key
               if (ev.toolCallId && S.toolCards[ev.toolCallId]) {
                 cardToUpdate = S.toolCards[ev.toolCallId];
+              }
+              // Pass 2: try toolName-based index key (handles providers that
+              // don't send tool call IDs — Ollama, etc.)
+              if (!cardToUpdate && ev.toolCallId) {
+                var idxKey = resTool + '_toolCall_' + ev.toolCallId;
+                if (S.toolCards[idxKey]) {
+                  cardToUpdate = S.toolCards[idxKey];
+                }
               }
               
               var updated = false;
@@ -1054,9 +1077,10 @@
                 cardToUpdate.dataset.status = resStatus;
                 updated = true;
               } else {
-                // Fallback to searching DOM
+                // Pass 3: DOM fallback — search BACKWARDS for the
+                // LAST (most recently created) card with this toolName.
                 var domCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
-                for (var di = 0; di < domCards.length; di++) {
+                for (var di = domCards.length - 1; di >= 0; di--) {
                   var dc = domCards[di];
                   if (dc && dc.dataset && dc.dataset.toolName === resTool) {
                     updateToolCard(dc, resStatus, ev);
