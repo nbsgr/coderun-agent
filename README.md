@@ -45,6 +45,22 @@ Whether you are running completely offline with local models (Ollama), leveragin
 *   **Incremental Indexing:** Runs in the background, updating only changed files detected by file watchers.
 *   **Fallback Search:** `find_in_files` and `search_files` query the SQLite database for instant matches and fall back to filesystem scans if the database is indexing.
 
+### 🖥️ Enhanced Terminal Execution
+*   **Inline Collapsible Terminal Cards:** Every terminal execution appears as its own independent collapsible card inside the conversation timeline — no more fixed terminal panel at the top of the chat.
+*   **True Streaming Output:** stdout/stderr is streamed incrementally (appended, not replaced) with live updates as the command runs.
+*   **Automatic Shell Detection:** The tool auto-detects PowerShell, Command Prompt (cmd), Git Bash, WSL, Bash, Zsh, and Fish — providing shell metadata directly to the LLM so it generates correct command syntax.
+*   **ANSI Escape Cleaning:** All ANSI escape sequences, OSC sequences, VS Code shell integration markers (`]633;C`, `]133;`), color codes (`[0m`, `[91m`), and cursor control sequences are stripped before rendering — only human-readable output is shown.
+*   **Reliable Fallback Execution:** When VS Code shell integration is unavailable, commands are executed directly via `child_process.execFile` with real stdout, stderr, exit code, and duration capture — no more "check the terminal panel" messages.
+*   **Structured Tool Results:** The terminal tool returns a structured object `{ shell, command, stdout, stderr, exitCode, durationMs, success, workingDirectory }` for both the LLM and the UI.
+*   **Canonical Execution Status:** Every terminal card derives all UI elements from a single canonical status enum: `pending` → `running` → `success` / `error` / `timeout` / `cancelled`. No contradictory displays (e.g., FAILED + ✓ Completed).
+*   **Accurate Success Detection:** Exit code 0 → SUCCESS. Exit code non-zero → FAILED. No exit code but no errors → SUCCESS (shows "Exit code unavailable"). Never displays "Exit code ?".
+*   **Adaptive Scrolling:** Small outputs grow naturally with no internal scrollbar. Large outputs get a scrollbar with a 320px max-height.
+
+### 🔄 Tool Lifecycle State Sync
+*   **Reliable Lifecycle Transitions:** Every tool follows the exact lifecycle: PENDING → WAITING_FOR_PERMISSION → RUNNING → COMPLETED/FAILED/CANCELLED. No tool card remains stuck in RUNNING.
+*   **Provider-Compatible Card Linking:** Cards are stored under multiple key aliases (toolCallId, index key, toolName key), ensuring `tool_result` events find the correct card regardless of whether the LLM provider emits tool call IDs or not.
+*   **Backwards DOM Fallback:** When lookup keys fail, the DOM search iterates backwards to find the most recently created card — fixing issues where multiple calls of the same tool (e.g., two `update_plan` invocations) would update the wrong card.
+
 ---
 
 ## 🛠️ Supported Providers
@@ -95,7 +111,7 @@ npm install
 
 ## 📖 Deep Dive: CodeRun Architecture
 
-CodeRun's engine is split into isolated manager modules that govern the lifecycle of a task execution:
+CodeRun's engine is split into isolated manager modules that govern the lifecycle of a task execution. The **terminal execution pipeline** has been significantly enhanced with inline collapsible cards, automatic shell detection, ANSI cleaning, structured results, and a canonical execution status enum ensuring consistent SUCCESS/FAILED/CANCELLED/TIMEOUT states across all UI elements. The **tool lifecycle** has been hardened so every tool reliably transitions through PENDING → RUNNING → COMPLETED/FAILED — no cards remain stuck.
 
 ```
 src/
@@ -112,15 +128,25 @@ src/
 ├── checkpointManager.js      ← Manages file backups, snapshot comparison, and rollback operations
 ├── diffManager.js            ← Stores diff patches for inline rendering in the webview
 │
+├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
+│                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
+│                                ANSI escape stripping, child_process fallback execution,
+│                                and live output streaming through shell integration events
+│
 ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
 ├── toolRegistry.js           ← Maps tool calls to implementations and aliases custom proxy commands
-├── tools.js                  ← 17 async generators that run actions (file IO, terminal, HTTP request)
+├── tools.js                  ← 18 async generators: file I/O (read/write/edit/delete),
+│                                directory (list/create/delete), search (files/content/symbols),
+│                                terminal (run_terminal + aliases bash/execute_command),
+│                                utility (datetime, web_request), planning (create/update_plan)
 │
 ├── providerManager.js        ← Factory to instantiate the correct provider SDK
 ├── providerOllama.js / OpenAI.js / Anthropic.js / Gemini.js / Compatible.js ...
 │
 ├── Dashboard.js / .css       ← Webview interface manager (sidebar, settings, model list)
-├── ChatSpace.js / .css       ← Chat message space, collapsible cards, console, diff actions
+├── ChatSpace.js / .css       ← Chat message space: collapsible tool cards, inline terminal
+│                                cards with live streaming, permission dialogs, diff reviews,
+│                                thought process blocks, and task continuation buttons
 └── MarkdownRenderer.js       ← Client-side markdown processor with custom syntax highlighting
 ```
 
