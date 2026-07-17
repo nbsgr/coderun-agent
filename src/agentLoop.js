@@ -15,6 +15,7 @@ import * as verificationManager from './verificationManager.js';
 import * as learningManager from './learningManager.js';
 import * as timelineManager from './timelineManager.js';
 import * as checkpointManager from './checkpointManager.js';
+import * as terminalManager from './terminalManager.js';
 
 // ── Deferred diff tracking ─────────────────────────────────
 // Maps diff IDs to their resolve functions so extension.js can
@@ -99,7 +100,9 @@ export async function runAgentLoop(userPrompt, config, options) {
   var messages = buildMessages(userPrompt, {
     workspace: workspace,
     history: history,
-    knowledge: knowledge
+    knowledge: knowledge,
+    shellName: terminalManager.getShellName(),
+    platformName: terminalManager.getPlatformName()
   });
 
   var initialLength = messages.length;

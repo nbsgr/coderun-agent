@@ -126,13 +126,13 @@ registerTool('get_file_info',
 );
 
 registerTool('run_terminal',
-  "Execute a shell command in the workspace directory and return its stdout, stderr, and exit code. Use for: running builds, installing packages, running tests, git commands, listing processes, checking versions, etc. The command runs with the workspace as the current directory.",
+  "Execute a shell command in the workspace directory and return its stdout, stderr, and exit code. Use for: running builds, installing packages, running tests, git commands, listing processes, checking versions, etc. The command runs with the workspace as the current directory. If the command is empty, checks the current terminal session output (use after terminal_input to see updated output).",
   {
-    command: { type: "string", description: "The shell command to execute, e.g. 'npm install', 'python main.py', 'git status'" },
+    command: { type: "string", description: "The shell command to execute, e.g. 'npm install', 'python main.py', 'git status'. Pass empty string to check current terminal session output." },
     timeout: { type: "integer", description: "Max seconds to wait. Default 30. Increase for long builds." },
     background: { type: "boolean", description: "If true, run the command in the background without waiting for it to finish (useful for dev servers, watch processes, etc.). Default false." }
   },
-  ["command"]
+  []
 );
 
 registerTool('bash',

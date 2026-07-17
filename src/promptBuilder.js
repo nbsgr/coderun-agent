@@ -21,6 +21,22 @@ export function buildMessages(userPrompt, options) {
     systemContent += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
     systemContent += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
   }
+  // Shell/platform awareness for terminal command syntax
+  var shellName = options.shellName || '';
+  var platformName = options.platformName || '';
+  if (shellName) {
+    systemContent += '\nDetected Shell: ' + shellName;
+    if (shellName.toLowerCase().includes('powershell') || shellName.toLowerCase().includes('pwsh')) {
+      systemContent += '\nPOWERSHELL RULES: Use `cd dir; command` (semicolon) NOT `cd dir && command` (&& is invalid in PowerShell).';
+    } else if (shellName.toLowerCase().includes('cmd')) {
+      systemContent += '\nCMD RULES: Use `cd dir && command` for sequential commands.';
+    } else {
+      systemContent += '\nUse `cd dir && command` for sequential commands.';
+    }
+  }
+  if (platformName) {
+    systemContent += '\nPlatform: ' + platformName;
+  }
 
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
     'You have access to planning tools (`create_plan` and `update_plan`) to plan your execution steps as a checklist of todos shown to the user.\n' +

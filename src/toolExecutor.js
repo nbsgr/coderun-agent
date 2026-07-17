@@ -5,15 +5,24 @@ export function formatToolResult(toolName, result) {
   var parts = ['Tool: ' + toolName];
   parts.push('Success: ' + (res.success !== false));
 
-  if (res.content !== undefined) parts.push('Content:' + res.content);
-  else if (res.output !== undefined) parts.push('Output:' + res.output);
-  else if (res.message !== undefined) parts.push('Message: ' + res.message);
-  else if (res.entries !== undefined) parts.push('Entries: ' + JSON.stringify(res.entries));
-  else if (res.matches !== undefined) parts.push('Matches: ' + JSON.stringify(res.matches));
-  else if (res.info !== undefined) parts.push('Info: ' + JSON.stringify(res.info));
-  else if (res.datetime !== undefined) parts.push('Datetime: ' + res.datetime);
-  else parts.push('Raw result: ' + JSON.stringify(res));
+  // Terminal-specific state: include status/interactive fields for the LLM
+  if (res.status !== undefined && res.status !== 'completed' && res.status !== 'failed') {
+    parts.push('Status: ' + res.status);
+  }
+  if (res.waiting_for_input === true || res.interactive === true) {
+    parts.push('Interactive: ' + (res.interactive === true));
+    parts.push('Waiting For Input: ' + (res.waiting_for_input === true));
+    if (res.prompt_detected === true) parts.push('Prompt Detected: true');
+  }
 
+  if (res.content !== undefined) parts.push('Content:' + res.content);
+  if (res.stdout !== undefined && res.stdout) parts.push('Stdout:\n' + res.stdout);
+  if (res.output !== undefined) parts.push('Output:' + res.output);
+  if (res.message !== undefined) parts.push('Message: ' + res.message);
+  if (res.entries !== undefined) parts.push('Entries: ' + JSON.stringify(res.entries));
+  if (res.matches !== undefined) parts.push('Matches: ' + JSON.stringify(res.matches));
+  if (res.info !== undefined) parts.push('Info: ' + JSON.stringify(res.info));
+  if (res.datetime !== undefined) parts.push('Datetime: ' + res.datetime);
   return parts.join('');
 }
 

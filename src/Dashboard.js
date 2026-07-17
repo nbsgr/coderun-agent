@@ -1039,12 +1039,15 @@
     if (extra.sources) message.sources = extra.sources;
     if (extra.image) message.image = extra.image;
     if (extra.images) message.images = extra.images;
+    if (extra.tool_calls) message.tool_calls = extra.tool_calls;
+    if (extra.tool_call_id) message.tool_call_id = extra.tool_call_id;
 
     var last = conversation.messages[conversation.messages.length - 1];
     if (last && last.role === role) {
       if (content) last.content = content;
       if (message.thinking) last.thinking = message.thinking;
       if (message.sources) last.sources = message.sources;
+      if (message.tool_calls) last.tool_calls = message.tool_calls;
     } else {
       conversation.messages.push(message);
     }

@@ -299,7 +299,28 @@ async function* run_terminal(args, workspace) {
   var background = args.background || false;
 
   if (!command) {
-    yield { type: 'tool_result', tool: 'run_terminal', success: false, message: 'No command provided.' };
+    // Empty command = check current terminal output (continuation after terminal_input).
+    // Wait briefly for any new output, then return whatever the terminal has.
+    yield { type: 'action', action: 'run_terminal', message: 'Checking terminal output...' };
+    var checkResult = await terminalManager.checkTerminalOutput();
+    yield {
+      type: 'tool_result',
+      tool: 'run_terminal',
+      success: true,
+      status: checkResult.status || 'checking',
+      stdout: checkResult.stdout || '',
+      stderr: checkResult.stderr || '',
+      output: checkResult.stdout || '',
+      interactive: checkResult.interactive === true,
+      prompt_detected: checkResult.promptDetected === true,
+      waiting_for_input: checkResult.waitingForInput === true,
+      shell: checkResult.shell || terminalManager.getShellName(),
+      platform: checkResult.platform || terminalManager.getPlatformName(),
+      working_directory: workspace,
+      exit_code: checkResult.exitCode,
+      duration_ms: checkResult.durationMs || 0,
+      message: 'Terminal session is active. Current output:\n' + (checkResult.stdout || '(no new output)')
+    };
     return;
   }
 
@@ -327,12 +348,19 @@ async function* run_terminal(args, workspace) {
     var toolExitCode = result.exitCode;
     var toolStderr = result.stderr || '';
     var toolStdout = result.stdout || '';
-    console.log('[TOOLS] run_terminal: yielding tool_result. exitCode:', toolExitCode, 'success:', toolSuccess, 'stdout length:', toolStdout.length);
+    var waitingForInput = result.waitingForInput === true;
+    var interactive = result.interactive === true;
+    var promptDetected = result.promptDetected === true;
+    var status = result.status || (toolSuccess ? 'completed' : 'failed');
+    console.log('[TOOLS] run_terminal: yielding tool_result. exitCode:', toolExitCode, 'success:', toolSuccess, 'waitingForInput:', waitingForInput, 'interactive:', interactive, 'promptDetected:', promptDetected, 'stdout length:', toolStdout.length);
 
     yield {
       type: 'tool_result',
       tool: 'run_terminal',
       success: toolSuccess,
+      status: status,
+      interactive: interactive,
+      prompt_detected: promptDetected,
       // Structured terminal result for the LLM — accurate, no fabrication
       shell: result.shell || terminalManager.getShellName(),
       platform: result.platform || terminalManager.getPlatformName(),
@@ -342,14 +370,19 @@ async function* run_terminal(args, workspace) {
       exit_code: toolExitCode,
       duration_ms: result.durationMs || 0,
       working_directory: result.workingDirectory || workspace,
+      waiting_for_input: waitingForInput,
       // Human-readable message based on actual output
-      message: toolSuccess
-        ? (toolStdout || toolStderr
-            ? 'Command completed successfully.'
-            : 'Command completed (no output).')
-        : 'Command failed' +
-          (toolExitCode != null ? ' with exit code ' + toolExitCode : '') +
-          (toolStderr ? ': ' + toolStderr.trim().substring(0, 500) : '.'),
+      message: waitingForInput
+        ? ('The command is waiting for your input:\n' + (toolStdout || '(no output yet)') + '\n\nStatus: ' + status +
+           ' | Interactive: ' + interactive + ' | Prompt detected: ' + promptDetected +
+           '\n\nUse `terminal_input` to respond to the prompt.')
+        : (toolSuccess
+            ? (toolStdout || toolStderr
+                ? 'Command completed successfully.'
+                : 'Command completed (no output).')
+            : 'Command failed' +
+              (toolExitCode != null ? ' with exit code ' + toolExitCode : '') +
+              (toolStderr ? ': ' + toolStderr.trim().substring(0, 500) : '.')),
       // Backward-compat fields
       output: toolStdout,
       exitCode: toolExitCode
@@ -599,23 +632,27 @@ async function* web_request(args, workspace) {
 
 async function* update_plan(args, workspace) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
+  var steps = args.steps;
+  if (steps && !Array.isArray(steps)) steps = [steps];
   yield {
     type: 'tool_result',
     tool: 'update_plan',
     success: true,
     message: 'Plan updated successfully.',
-    steps: args.steps
+    steps: steps
   };
 }
 
 async function* create_plan(args, workspace) {
   yield { type: 'action', action: 'create_plan', message: 'Creating execution plan' };
+  var steps = args.steps;
+  if (steps && !Array.isArray(steps)) steps = [steps];
   yield {
     type: 'tool_result',
     tool: 'create_plan',
     success: true,
     message: 'Plan created successfully.',
-    steps: args.steps
+    steps: steps
   };
 }
 

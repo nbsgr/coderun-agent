@@ -12,6 +12,8 @@ var terminalListeners = [];
 var pendingExecutions = {};
 var executionCounter = 0;
 var sendEventCallback = null;
+var _lastSessionOutput = '';  // Holds stdout from the last/most recent terminal execution
+var _lastSessionActive = false; // Whether the session is still active
 
 // ── Shell detection ────────────────────────────────────────
 // Auto-detect the shell name from VS Code's terminal API.
@@ -153,6 +155,28 @@ export function getTerminal() {
 }
 
 /**
+ * Wait up to `ms` milliseconds for shell integration to become available
+ * on the active terminal. Fresh terminals take a moment to initialize it.
+ */
+export async function waitForShellIntegration(ms) {
+  ms = ms || 5000;
+  if (!activeTerminal) return false;
+  if (activeTerminal.shellIntegration) return true;
+  return new Promise(function(resolve) {
+    var disposable = vscode.window.onDidChangeTerminalShellIntegration(function(event) {
+      if (event.terminal === activeTerminal && event.shellIntegration) {
+        disposable.dispose();
+        resolve(true);
+      }
+    });
+    setTimeout(function() {
+      disposable.dispose();
+      resolve(!!activeTerminal.shellIntegration);
+    }, ms);
+  });
+}
+
+/**
  * Register global terminal shell integration listeners.
  * Call once from extension activate().
  */
@@ -226,6 +250,63 @@ async function readExecutionStream(execId, execution) {
   }
 }
 
+// ── Interactive prompt detection ────────────────────────────
+// Heuristic: scan text for common interactive patterns.
+// Returns { interactive: bool, promptDetected: bool }.
+function detectPrompt(text) {
+  if (!text) return { interactive: false, promptDetected: false };
+  var lines = text.split('\n');
+  var interactive = false;
+  var promptDetected = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+
+    // Radio/checkbox menu characters (npm create vite, etc.)
+    if (/[○●◉◎⦿⊙⊚]/.test(line)) {
+      interactive = true;
+      promptDetected = true;
+    }
+
+    // Arrow key navigation hints (↑/↓)
+    if (/[↑↓←→]/.test(line)) {
+      interactive = true;
+      promptDetected = true;
+    }
+
+    // Lines that end with colon — typical prompt form (e.g. "Select framework:")
+    if (/[:：]\s*$/.test(line) && line.length < 120) {
+      interactive = true;
+      promptDetected = true;
+    }
+
+    // (y/N) (Y/n) (Y/N) [y/N] patterns
+    if (/\([yYnN]\/[yYnN]\)|\[[yYnN]\/[yYnN]\]/.test(line)) {
+      interactive = true;
+      promptDetected = true;
+    }
+
+    // Bracketed choice: [1] [2] [3] or (1) (2) (3)
+    if (/\[ ?\d+ ?\]|\( ?\d+ ?\)/.test(line) && lines.length - i < 30) {
+      interactive = true;
+    }
+
+    // "Select", "Choose", "Pick" at line start
+    if (/^(Select|Choose|Pick)\b/i.test(line)) {
+      interactive = true;
+      promptDetected = true;
+    }
+
+    // Line ends with "?" — direct question prompt
+    if (/\?\s*$/.test(line) && line.length < 150) {
+      interactive = true;
+      promptDetected = true;
+    }
+  }
+
+  return { interactive: interactive, promptDetected: promptDetected };
+}
+
 /**
  * Execute a command in the VS Code terminal using shell integration.
  * Falls back to sendText if shell integration is not available.
@@ -289,6 +370,11 @@ export async function executeCommand(command, timeout, background) {
   }
 
   var shellIntegration = terminal.shellIntegration;
+  if (!shellIntegration) {
+    // Fresh terminals need time for shell integration to initialize
+    await waitForShellIntegration(3000);
+    shellIntegration = terminal.shellIntegration;
+  }
 
   if (shellIntegration) {
     // Use shell integration executeCommand for reliable tracking
@@ -314,11 +400,49 @@ export async function executeCommand(command, timeout, background) {
       if (!execution || typeof execution.read !== 'function') {
         throw new Error('Shell integration did not return a readable execution stream.');
       }
+      // Verify read() returns an async iterable (not a raw stream)
+      var iterable = execution.read();
+      if (!iterable || typeof iterable[Symbol.asyncIterator] !== 'function') {
+        throw new Error('Shell integration read() did not return an async iterable.');
+      }
 
       console.log('[TERMINAL] Entering for-await loop for', execId);
+      var reader = iterable[Symbol.asyncIterator]();
       var chunkCount = 0;
+      var idleDetected = false;
+
       try {
-        for await (var chunk of execution.read()) {
+        var IDLE_TIMEOUT_MS = 3000;
+
+        while (true) {
+          // Race between next chunk from the process and an idle timeout.
+          // If no output arrives within IDLE_TIMEOUT_MS, the process is
+          // likely waiting for stdin (interactive prompt).
+          var nextPromise = reader.next();
+          var timeoutId = null;
+          var raceResult = await Promise.race([
+            nextPromise.then(function(r) {
+              if (timeoutId) clearTimeout(timeoutId);
+              timeoutId = null;
+              return r;
+            }),
+            new Promise(function(resolve) {
+              timeoutId = setTimeout(function() {
+                resolve({ done: true, value: undefined, _idleTimeout: true });
+              }, IDLE_TIMEOUT_MS);
+            })
+          ]);
+
+          // If idle timeout fired, the process is waiting for input
+          if (raceResult._idleTimeout) {
+            idleDetected = true;
+            break;
+          }
+
+          // Stream ended normally (process exited)
+          if (raceResult.done) break;
+
+          var chunk = raceResult.value;
           chunkCount++;
           console.log('[TERMINAL] Chunk #' + chunkCount + ' for', execId, 'length:', String(chunk || '').length);
           var text = String(chunk || '');
@@ -332,16 +456,62 @@ export async function executeCommand(command, timeout, background) {
               chunk: cleanChunk
             });
           }
+
+          // Total wall-clock timeout check (in case process runs forever)
           if (Date.now() > timeoutAt) {
             throw new Error('Command timed out after ' + timeout + ' seconds.');
           }
         }
+        // Share the accumulated stdout for checkTerminalOutput
+        _lastSessionOutput = stdout;
+        _lastSessionActive = (idleDetected === true);
       } catch (streamErr) {
         console.log('[TERMINAL] for-await loop threw for', execId, ':', streamErr.message, 'chunks received:', chunkCount);
         throw streamErr;
       }
-      console.log('[TERMINAL] for-await loop COMPLETED for', execId, 'chunks:', chunkCount);
 
+      if (idleDetected) {
+        // Process is still running, waiting for input — don't await exitCode
+        // (it would hang forever since the process hasn't exited).
+        console.log('[TERMINAL] Idle timeout for', execId, '- process waiting for input');
+        var durationMs2 = Date.now() - startedAt;
+        // Analyze output for interactive prompt patterns
+        var promptCheck = detectPrompt(stdout);
+        if (sendEventCallback) {
+          sendEventCallback({
+            type: 'terminal_exit',
+            terminalId: execId,
+            exitCode: null,
+            duration: durationMs2,
+            shell: shellName,
+            platform: platformName,
+            cwd: cwd,
+            command: command,
+            waitingForInput: true,
+            interactive: promptCheck.interactive,
+            promptDetected: promptCheck.promptDetected
+          });
+        }
+        console.log('[TERMINAL] Returning partial result for', execId, '(waiting for input)');
+        return {
+          shell: shellName,
+          platform: platformName,
+          command: command,
+          stdout: stdout,
+          stderr: stderr,
+          exitCode: null,
+          durationMs: durationMs2,
+          success: true,
+          workingDirectory: cwd,
+          method: 'shell_integration',
+          waitingForInput: true,
+          interactive: promptCheck.interactive,
+          promptDetected: promptCheck.promptDetected,
+          status: 'waiting_for_input'
+        };
+      }
+
+      console.log('[TERMINAL] for-await loop COMPLETED for', execId, 'chunks:', chunkCount);
       console.log('[TERMINAL] Awaiting exitCode for', execId);
       var exitCode = await execution.exitCode;
       console.log('[TERMINAL] exitCode received for', execId, ':', exitCode);
@@ -361,6 +531,7 @@ export async function executeCommand(command, timeout, background) {
       }
 
       console.log('[TERMINAL] Returning result for', execId);
+      var promptCheck = detectPrompt(stdout);
       return {
         shell: shellName,
         platform: platformName,
@@ -371,10 +542,15 @@ export async function executeCommand(command, timeout, background) {
         durationMs: durationMs,
         success: exitCode === 0,
         workingDirectory: cwd,
-        method: 'shell_integration'
+        method: 'shell_integration',
+        interactive: promptCheck.interactive,
+        promptDetected: promptCheck.promptDetected,
+        status: exitCode != null ? (exitCode === 0 ? 'completed' : 'failed') : 'completed'
       };
     } catch (err) {
       console.error('[TERMINAL] Shell integration executeCommand failed:', err);
+      _lastSessionOutput = stdout;
+      _lastSessionActive = false;
       if (sendEventCallback) {
         sendEventCallback({
           type: 'terminal_error',
@@ -499,6 +675,7 @@ export async function executeCommand(command, timeout, background) {
       });
     }
 
+    var promptCheck = detectPrompt(stdout);
     return {
       shell: shellName,
       platform: platformName,
@@ -509,7 +686,10 @@ export async function executeCommand(command, timeout, background) {
       durationMs: durationMs,
       success: cpExitCode === 0,
       workingDirectory: cwd,
-      method: 'sendText'
+      method: 'sendText',
+      interactive: promptCheck.interactive,
+      promptDetected: promptCheck.promptDetected,
+      status: cpExitCode != null ? (cpExitCode === 0 ? 'completed' : 'failed') : 'completed'
     };
   } catch (cpErr) {
     // Last resort: child_process also failed — return what we have
@@ -593,6 +773,18 @@ export function onTerminalClosed(terminal) {
 }
 
 /**
+ * Dispose the current terminal so a fresh one is created on next use.
+ */
+export function resetTerminal() {
+  if (activeTerminal) {
+    try { activeTerminal.dispose(); } catch (_) {}
+    activeTerminal = null;
+  }
+  _lastSessionOutput = '';
+  _lastSessionActive = false;
+}
+
+/**
  * Check if shell integration is available on the active terminal.
  */
 export function hasShellIntegration() {
@@ -615,6 +807,39 @@ export function sendTerminalInput(text) {
     });
   }
   return { success: true, message: 'Input sent to terminal: ' + text };
+}
+
+/**
+ * Check current terminal output.
+ * Returns the most recently captured stdout from the last shell integration
+ * execution, plus prompt detection analysis.
+ * Used by run_terminal with empty command for continuation after terminal_input.
+ */
+export async function checkTerminalOutput() {
+  var stdout = _lastSessionOutput || '';
+  var stderr = '';
+  var shellName = activeTerminal ? detectShellName(activeTerminal) : 'unknown';
+  var platformName = getPlatform();
+  var startedAt = Date.now();
+
+  // Check whether there's an active running execution
+  var isWaiting = _lastSessionActive;
+  var exitCode = null;
+
+  var promptCheck = detectPrompt(stdout);
+  return {
+    shell: shellName,
+    platform: platformName,
+    stdout: stdout,
+    stderr: stderr,
+    exitCode: exitCode,
+    durationMs: Date.now() - startedAt,
+    success: true,
+    status: isWaiting ? 'waiting_for_input' : 'active',
+    waitingForInput: isWaiting,
+    interactive: promptCheck.interactive,
+    promptDetected: promptCheck.promptDetected
+  };
 }
 
 /**

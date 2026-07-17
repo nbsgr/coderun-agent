@@ -208,6 +208,7 @@
         // Tool cards — uses _toolQueue for ordered tracking
         toolCards: {},
         _toolQueue: [],
+        _toolCalls: [],    // Accumulated tool call objects for this turn
         _toolIdCounter: 0,
         _seenToolIds: {},  // Tracks tool call IDs to prevent duplicate cards
         timeline: null
@@ -244,6 +245,7 @@
         S._seenToolIds = {};
         S._currentCheckpoints = [];
         S.timeline = null;
+        S._toolCalls = [];
         if (todosPanel) todosPanel.style.display = 'none';
         if (controlsPanel) controlsPanel.style.display = 'none';
       }
@@ -722,17 +724,27 @@
       }
 
       function saveBotResponse(S) {
-        if (S.fullResponse || S.fullThinking) {
+        if (S.fullResponse || S.fullThinking || (S._toolCalls && S._toolCalls.length)) {
           var extra = {};
           if (S.sources && S.sources.length) extra.sources = S.sources;
           if (S.fullThinking) extra.thinking = S.fullThinking;
+          if (S._toolCalls && S._toolCalls.length) extra.tool_calls = S._toolCalls;
+          // Prevent duplicate: if the last saved message is already the same assistant content, skip
+          var lastMsg = conversation.messages[conversation.messages.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === (S.fullResponse || '')) {
+            // Already persisted by chat_history_update — just update missing fields
+            if (S.fullThinking && !lastMsg.thinking) lastMsg.thinking = S.fullThinking;
+            if (S._toolCalls && S._toolCalls.length && !lastMsg.tool_calls) lastMsg.tool_calls = S._toolCalls;
+            return;
+          }
           if (window.saveConversationMessage) {
-            window.saveConversationMessage(convId, 'assistant', S.fullResponse, extra);
+            window.saveConversationMessage(convId, 'assistant', S.fullResponse || '', extra);
           } else {
             conversation.messages.push({
               role: 'assistant',
-              content: S.fullResponse,
+              content: S.fullResponse || '',
               thinking: S.fullThinking,
+              tool_calls: S._toolCalls,
               timestamp: Date.now()
             });
           }
@@ -789,6 +801,23 @@
           }
           if (msg.tool_calls && msg.tool_calls.length) {
             removeTyping(S.botBody);
+            // Accumulate finalized tool_calls for conversation persistence
+            msg.tool_calls.forEach(function(tc) {
+              // Only store complete tool calls with a function name
+              var fnName = (tc.function && tc.function.name) || tc.name || '';
+              var fnArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
+              if (fnName) {
+                var existing = S._toolCalls.find(function(e) { return e.index === tc.index || e.id === tc.id; });
+                if (!existing) {
+                  S._toolCalls.push({
+                    index: tc.index,
+                    id: tc.id || fnName + '_' + Date.now(),
+                    type: tc.type || 'function',
+                    function: { name: fnName, arguments: typeof fnArgs === 'string' ? fnArgs : JSON.stringify(fnArgs) }
+                  });
+                }
+              }
+            });
             msg.tool_calls.forEach(function(tc) {
               var toolName = (tc.function && tc.function.name) || tc.name || '';
               // Terminal tools are handled by the terminal event system with custom cards
@@ -1288,8 +1317,10 @@
               // Update tool card — only setTerminalCardStatus changes status
               if (termId && S._terminalCards[termId]) {
                 setTerminalCardStatus(S._terminalCards[termId], execStatus, exitCode, duration, ev);
-                // Collapse completed terminal cards
-                S._terminalCards[termId].open = false;
+                // Collapse completed terminal cards (but not waiting-for-input ones)
+                if (execStatus !== 'waiting') {
+                  S._terminalCards[termId].open = false;
+                }
               }
               S._activeTerminalId = null;
               break;
@@ -1631,7 +1662,7 @@
 
         var command = (args && args.command) || '';
         var shellName = (args && args.shell) || '';
-        var statusLabel = status === 'running' ? 'Running…' : status === 'pending' ? 'Awaiting approval…' : status === 'success' ? 'Completed' : 'Failed';
+        var statusLabel = status === 'running' ? 'Running…' : status === 'pending' ? 'Awaiting approval…' : status === 'waiting' ? 'Waiting for input…' : status === 'success' ? 'Completed' : 'Failed';
 
         var head = mk('summary', 'cr-tool-card-head');
         head.innerHTML =
@@ -1640,7 +1671,7 @@
           '</span>' +
           '<span class="cr-tool-card-title">' + I.terminal + ' Terminal</span>' +
           (shellName ? '<span class="cr-terminal-shell-badge">' + esc(shellName) + '</span>' : '') +
-          (command ? '<span class="cr-tool-card-args">$ ' + esc(truncate(command, 60)) + '</span>' : '') +
+          (command ? '<span class="cr-tool-card-args">$ ' + esc(truncate(command, 150)) + '</span>' : '') +
           '<span class="cr-terminal-card-duration-summary" style="display:none"></span>' +
           '<span class="cr-tool-card-status cr-tool-card-status--' + status + '">' + esc(statusLabel) + '</span>' +
           '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
@@ -1720,6 +1751,8 @@
        * footer) derives from this one status value.
        */
       function setTerminalCardStatus(card, execStatus, exitCode, duration, extra) {
+        // Normalize 'waiting' to show consistently in UI
+        var isWaiting = execStatus === 'waiting';
         if (!card) return;
         card.dataset.status = execStatus;
         card.className = 'cr-tool-card cr-tool-card--' + execStatus + ' cr-terminal-card';
@@ -1727,7 +1760,7 @@
         var iconEl = card.querySelector('.cr-tool-card-icon');
         if (iconEl) {
           iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + execStatus;
-          if (execStatus === 'running') iconEl.innerHTML = I.spin;
+          if (execStatus === 'running' || isWaiting) iconEl.innerHTML = I.spin;
           else if (execStatus === 'success') iconEl.innerHTML = I.check;
           else if (execStatus === 'error') iconEl.innerHTML = I.err;
           else if (execStatus === 'timeout') iconEl.innerHTML = I.err;
@@ -1741,6 +1774,7 @@
           statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + execStatus;
           if (execStatus === 'pending') statusEl.textContent = 'Awaiting approval…';
           else if (execStatus === 'running') statusEl.textContent = 'Running…';
+          else if (isWaiting) statusEl.textContent = 'Waiting for input…';
           else if (execStatus === 'success') {
             statusEl.textContent = exitCode != null ? 'Exit code ' + exitCode : 'Exit code 0';
           } else if (execStatus === 'error') {
@@ -1767,8 +1801,11 @@
           var oldFooter = outputArea.querySelector('.cr-terminal-card-footer');
           if (oldFooter) oldFooter.remove();
 
+          // Keep the card open when waiting for input so the user can see the prompt
+          if (isWaiting) card.open = true;
+
           // Only show footer for terminal states (not pending)
-          if (execStatus !== 'pending' && execStatus !== 'running') {
+          if (execStatus !== 'pending' && execStatus !== 'running' && !isWaiting) {
             var footer = mk('div', 'cr-terminal-card-footer');
             var isPositive = execStatus === 'success';
             var statusText = execStatus === 'success' ? 'Completed' : (execStatus === 'timeout' ? 'Timed out' : execStatus === 'cancelled' ? 'Cancelled' : 'Failed');
@@ -1802,6 +1839,8 @@
         if (ev && ev.timedOut) return 'timeout';
         // If cancelled
         if (ev && ev.cancelled) return 'cancelled';
+        // Process waiting for input (idle timeout, no exit code yet)
+        if (ev && ev.waitingForInput) return 'waiting';
         // exitCode is a number
         if (exitCode != null) {
           if (exitCode === 0) return 'success';
