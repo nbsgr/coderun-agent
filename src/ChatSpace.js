@@ -600,6 +600,9 @@
           if (window.VSCODE && window.VSCODE_API) {
             onStreamStart();
             window.activeChatStreamCallback = function(ev) {
+              if (ev && ev.message && ev.message.content) {
+                console.log('[CHATSPACE] Received content event:', ev.message.content.substring(0, 100));
+              }
               if (ev.type === 'stream_end') {
                 finishStream(S);
                 setStreaming(false);
@@ -750,6 +753,7 @@
       // ═══════════════════════════════════════════════════
       function handleEvent(ev, S) {
         if (!ev) return;
+        console.log('[CHATSPACE] CHAT EVENT =', JSON.stringify(ev).substring(0, 500));
 
         // LLM streaming messages come as { message: { role: 'assistant', content: '...' } }
         // Tool events have { message: 'Writing file: ...' } which is a string.

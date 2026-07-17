@@ -306,8 +306,10 @@ async function* run_terminal(args, workspace) {
   yield { type: 'action', action: 'run_terminal', message: 'Running command: ' + command };
 
   try {
+    console.log('[TOOLS] run_terminal: calling terminalManager.executeCommand');
     // Execute via terminalManager which uses VS Code Terminal API + Shell Integration
     var result = await terminalManager.executeCommand(command, timeout, background);
+    console.log('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
     // The terminalManager fires terminal_start, terminal_output, terminal_exit events
     // via its sendEventCallback. These are forwarded to the webview by extension.js.
@@ -325,6 +327,7 @@ async function* run_terminal(args, workspace) {
     var toolExitCode = result.exitCode;
     var toolStderr = result.stderr || '';
     var toolStdout = result.stdout || '';
+    console.log('[TOOLS] run_terminal: yielding tool_result. exitCode:', toolExitCode, 'success:', toolSuccess, 'stdout length:', toolStdout.length);
 
     yield {
       type: 'tool_result',

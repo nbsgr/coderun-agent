@@ -419,12 +419,15 @@ async function handleFrontendMessage(message, webview) {
       var abortCtrl = currentAbortController;
 
       try {
+        console.log('[EXTENSION] Calling runAgent...');
         await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission, { signal: abortCtrl });
+        console.log('[EXTENSION] runAgent completed');
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
-        console.error('[CODERUN] Agent error:', err);
+        console.error('[EXTENSION] Agent error:', err);
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: err.message } });
       } finally {
+        console.log('[EXTENSION] runAgent finally block');
         if (currentAbortController === abortCtrl) currentAbortController = null;
       }
       break;

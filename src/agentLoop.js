@@ -149,6 +149,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     try {
       var stream = provider.chat(config, messages, getDefinitions());
       for await (var chunk of stream) {
+        console.log('[AGENT LOOP] AGENT RECEIVED =', JSON.stringify(chunk).substring(0, 500));
         // Handle thinking tokens
         if (chunk.thinking) {
           iterationThinking += chunk.thinking;
@@ -168,6 +169,7 @@ export async function runAgentLoop(userPrompt, config, options) {
           if (parsed.content) {
             iterationContent += parsed.content;
             fullContent += parsed.content;
+            console.log('[AGENT LOOP] sendEvent content:', parsed.content.substring(0, 100));
             sendEvent({ message: { role: 'assistant', content: parsed.content } });
           }
         }
@@ -340,8 +342,13 @@ export async function runAgentLoop(userPrompt, config, options) {
       // format than tcId, so the old tcId-based matching never matched).
       var _createdDiffIds = [];
       try {
+        console.log('[AGENT LOOP] Calling toolRegistry.execute for', toolName);
         var generator = toolRegistry.execute(toolName, args, workspace);
+        console.log('[AGENT LOOP] toolRegistry.execute returned generator');
+        var eventCount = 0;
         for await (var event of generator) {
+          eventCount++;
+          console.log('[AGENT LOOP] Generator event #' + eventCount + ' for', toolName, 'type:', event.type, 'success:', event.success);
           // Attach tool call ID so the webview can link this event to the correct tool card
           event.toolCallId = tcId;
 
@@ -356,9 +363,11 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
       } catch (err) {
+        console.log('[AGENT LOOP] Generator threw for', toolName, ':', err.message);
         sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message, toolCallId: tcId });
         lastResult = { success: false, message: err.message };
       } finally {
+        console.log('[AGENT LOOP] Generator finally block for', toolName, 'eventCount:', eventCount, 'lastResult:', lastResult ? (lastResult.success !== false ? 'success' : 'fail') : 'null');
         // Clean up only the diffs created during THIS tool call
         for (var di = 0; di < _createdDiffIds.length; di++) {
           var diffId = _createdDiffIds[di];
@@ -522,7 +531,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       };
     });
 
+    console.log('[AGENT LOOP] Promise.all(toolPromises) RESOLVED. Count:', toolPromises.length);
     var results = await Promise.all(toolPromises);
+    console.log('[AGENT LOOP] All tool promises completed. Results:', results.length);
     var toolResults = [];
     var allCheckpoints = [];
     for (var ri = 0; ri < results.length; ri++) {
@@ -581,6 +592,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     // Ollama expects `tool_name` in addition to `tool_call_id` on the
     // tool result message; OpenAI-style providers only need tool_call_id.
     // We include both so it works for every provider.
+    console.log('[AGENT LOOP] Messages updated. Total messages:', messages.length, 'Tool results count:', toolResults.length);
     var isOllama2 = (config.provider === 'ollama');
     for (var j = 0; j < toolResults.length; j++) {
       var toolMsg = {
@@ -593,8 +605,10 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
       messages.push(toolMsg);
     }
+    console.log('[AGENT LOOP] End of iteration', iteration, '- next iteration starting...');
   }
   } finally {
+    console.log('[AGENT LOOP] While loop exited. finally block.');
     sendHistoryUpdate();
   }
 

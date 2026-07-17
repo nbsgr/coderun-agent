@@ -315,25 +315,38 @@ export async function executeCommand(command, timeout, background) {
         throw new Error('Shell integration did not return a readable execution stream.');
       }
 
-      for await (var chunk of execution.read()) {
-        var text = String(chunk || '');
-        // Strip ANSI sequences before accumulation and forwarding
-        var cleanChunk = stripAnsi(text);
-        stdout += cleanChunk;
-        if (sendEventCallback && cleanChunk) {
-          sendEventCallback({
-            type: 'terminal_output',
-            terminalId: execId,
-            chunk: cleanChunk
-          });
+      console.log('[TERMINAL] Entering for-await loop for', execId);
+      var chunkCount = 0;
+      try {
+        for await (var chunk of execution.read()) {
+          chunkCount++;
+          console.log('[TERMINAL] Chunk #' + chunkCount + ' for', execId, 'length:', String(chunk || '').length);
+          var text = String(chunk || '');
+          // Strip ANSI sequences before accumulation and forwarding
+          var cleanChunk = stripAnsi(text);
+          stdout += cleanChunk;
+          if (sendEventCallback && cleanChunk) {
+            sendEventCallback({
+              type: 'terminal_output',
+              terminalId: execId,
+              chunk: cleanChunk
+            });
+          }
+          if (Date.now() > timeoutAt) {
+            throw new Error('Command timed out after ' + timeout + ' seconds.');
+          }
         }
-        if (Date.now() > timeoutAt) {
-          throw new Error('Command timed out after ' + timeout + ' seconds.');
-        }
+      } catch (streamErr) {
+        console.log('[TERMINAL] for-await loop threw for', execId, ':', streamErr.message, 'chunks received:', chunkCount);
+        throw streamErr;
       }
+      console.log('[TERMINAL] for-await loop COMPLETED for', execId, 'chunks:', chunkCount);
 
+      console.log('[TERMINAL] Awaiting exitCode for', execId);
       var exitCode = await execution.exitCode;
+      console.log('[TERMINAL] exitCode received for', execId, ':', exitCode);
       var durationMs = Date.now() - startedAt;
+      console.log('[TERMINAL] Sending terminal_exit for', execId, 'exitCode:', exitCode, 'duration:', durationMs);
       if (sendEventCallback) {
         sendEventCallback({
           type: 'terminal_exit',
@@ -347,6 +360,7 @@ export async function executeCommand(command, timeout, background) {
         });
       }
 
+      console.log('[TERMINAL] Returning result for', execId);
       return {
         shell: shellName,
         platform: platformName,
