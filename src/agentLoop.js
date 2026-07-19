@@ -101,6 +101,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     workspace: workspace,
     history: history,
     knowledge: knowledge,
+    images: options.images || [],
     shellName: terminalManager.getShellName(),
     platformName: terminalManager.getPlatformName()
   });

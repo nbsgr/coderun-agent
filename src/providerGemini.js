@@ -159,16 +159,36 @@ function convertMessages(messages) {
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
     if (m.role === 'system') {
-      contents.push({ role: 'user', parts: [{ text: 'System: ' + m.content }] });
+      contents.push({ role: 'user', parts: [{ text: 'System: ' + (m.content || '') }] });
       continue;
     }
     var role = m.role === 'assistant' ? 'model' : 'user';
     if (m.role === 'tool') {
-      role = 'user';
-      contents.push({ role: role, parts: [{ text: 'Tool result (' + m.tool_call_id + '): ' + m.content }] });
-    } else {
-      contents.push({ role: role, parts: [{ text: m.content }] });
+      contents.push({ role: 'user', parts: [{ text: 'Tool result (' + m.tool_call_id + '): ' + (m.content || '') }] });
+      continue;
     }
+
+    var parts = [];
+    if (m.content) parts.push({ text: m.content });
+
+    var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && rawImages.length) {
+      rawImages.forEach(function(img) {
+        var cleanB64 = String(img).replace(/^data:[^;]+;base64,/, '');
+        var mimeType = 'image/png';
+        var match = String(img).match(/^data:([^;]+);base64,/);
+        if (match && match[1]) mimeType = match[1];
+        parts.push({
+          inline_data: {
+            mime_type: mimeType,
+            data: cleanB64
+          }
+        });
+      });
+    }
+
+    if (!parts.length) parts.push({ text: '' });
+    contents.push({ role: role, parts: parts });
   }
   return contents;
 }

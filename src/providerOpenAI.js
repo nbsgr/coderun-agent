@@ -90,9 +90,19 @@ export async function images(config, prompt) {
 
 function convertMessages(messages) {
   return messages.map(function(m) {
-    var msg = { role: m.role, content: m.content };
+    var msg = { role: m.role, content: m.content || '' };
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && rawImages.length) {
+      var parts = [];
+      if (m.content) parts.push({ type: 'text', text: m.content });
+      rawImages.forEach(function(img) {
+        var dataUri = String(img).startsWith('data:') ? img : 'data:image/png;base64,' + img;
+        parts.push({ type: 'image_url', image_url: { url: dataUri } });
+      });
+      msg.content = parts;
+    }
     return msg;
   });
 }

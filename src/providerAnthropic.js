@@ -97,11 +97,39 @@ export async function images(config, prompt) {
 
 function convertMessages(messages) {
   return messages.map(function(m) {
-    var msg = { role: m.role === 'tool' ? 'user' : m.role, content: m.content };
+    var role = m.role === 'tool' ? 'user' : m.role;
+    var rawImages = m.images || (m.image ? [m.image] : null);
+
     if (m.role === 'tool') {
-      msg.content = [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }];
+      return {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }]
+      };
     }
-    return msg;
+
+    if (rawImages && rawImages.length) {
+      var contentBlocks = [];
+      if (m.content) {
+        contentBlocks.push({ type: 'text', text: m.content });
+      }
+      rawImages.forEach(function(img) {
+        var cleanB64 = String(img).replace(/^data:[^;]+;base64,/, '');
+        var mediaType = 'image/png';
+        var match = String(img).match(/^data:([^;]+);base64,/);
+        if (match && match[1]) mediaType = match[1];
+        contentBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mediaType,
+            data: cleanB64
+          }
+        });
+      });
+      return { role: role, content: contentBlocks };
+    }
+
+    return { role: role, content: m.content || '' };
   });
 }
 

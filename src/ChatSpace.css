@@ -83,10 +83,13 @@
 
 .cr-user-text  { color: var(--vscode-foreground, #cccccc); white-space: pre-wrap; }
 .cr-attach-thumb {
-  max-width: 200px;
-  max-height: 140px;
+  max-width: 280px;
+  max-height: 200px;
   border-radius: 8px;
-  object-fit: cover;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: block;
 }
 
 .cr-msg-time {

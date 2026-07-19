@@ -525,6 +525,26 @@
         onStreamEnd();
       };
 
+      input.addEventListener('paste', function(e) {
+        var items = (e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData)) ? (e.clipboardData || e.originalEvent.clipboardData).items : null;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].type && items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            var blob = items[i].getAsFile();
+            if (!blob) continue;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+              pendingImage = ev.target.result.replace(/^data:[^;]+;base64,/, '');
+              if (previewImg) previewImg.src = ev.target.result;
+              if (previewBox) previewBox.style.display = 'flex';
+            };
+            reader.readAsDataURL(blob);
+            break;
+          }
+        }
+      });
+
       attachBtn.addEventListener('click', function() { fileInput.click(); });
       fileInput.addEventListener('change', function() {
         var f = fileInput.files[0];
@@ -548,7 +568,7 @@
       function doSend() {
         try {
           var text = input.value.trim();
-          if (!text || S.isStreaming) return;
+          if ((!text && !pendingImage) || S.isStreaming) return;
 
           var currentModel = (window.getDashboardModel ? window.getDashboardModel() : '') || model;
           var currentProvider = (window.getDashboardProvider ? window.getDashboardProvider() : '') || '';
@@ -635,6 +655,7 @@
             window.VSCODE_API.postMessage({
               type: "startChat",
               message: text,
+              image: imgB64,
               model: currentModel,
               provider: currentProvider,
               history: history,
@@ -1398,7 +1419,7 @@
         var bub = mk('div', 'cr-user-bubble');
         if (imgB64) {
           var img = mk('img', 'cr-attach-thumb');
-          img.src = 'data:image/png;base64,' + imgB64;
+          img.src = String(imgB64).startsWith('data:') ? imgB64 : 'data:image/png;base64,' + imgB64;
           img.alt = 'attachment';
           bub.appendChild(img);
         }

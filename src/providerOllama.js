@@ -4,7 +4,7 @@ export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
   var body = {
     model: config.model,
-    messages: messages,
+    messages: convertMessages(messages),
     stream: true
   };
   if (tools && tools.length) body.tools = tools;
@@ -80,4 +80,20 @@ function parseChunk(data) {
   }
   if (data.done) result.done = true;
   return result;
+}
+
+function convertMessages(messages) {
+  return messages.map(function(m) {
+    var msg = { role: m.role, content: m.content || '' };
+    if (m.thinking) msg.thinking = m.thinking;
+    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && rawImages.length) {
+      msg.images = rawImages.map(function(img) {
+        return String(img).replace(/^data:[^;]+;base64,/, '');
+      });
+    }
+    return msg;
+  });
 }

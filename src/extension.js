@@ -332,6 +332,7 @@ async function handleFrontendMessage(message, webview) {
 
     case 'startChat': {
       var userPrompt = message.message;
+      var userImage = message.image || null;
       var history = message.history;
       var workspaceFolder = message.workspaceFolder;
       // Start with a fresh terminal for each chat session
@@ -422,7 +423,7 @@ async function handleFrontendMessage(message, webview) {
 
       try {
         console.log('[EXTENSION] Calling runAgent...');
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission, { signal: abortCtrl });
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission, { signal: abortCtrl, image: userImage });
         console.log('[EXTENSION] runAgent completed');
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
