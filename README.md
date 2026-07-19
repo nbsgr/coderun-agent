@@ -1,5 +1,9 @@
 # CodeRun AI Agent 🚀
 
+<p align="center">
+  <img src="./logo.png" width="160" alt="CodeRun Logo"/>
+</p>
+
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue?logo=visual-studio-code)](https://github.com/nbsgr/coderun-agent.git)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
@@ -20,7 +24,18 @@ Whether you are running completely offline with local models (Ollama), leveragin
 *   **API Type Selection:** Custom compatible providers support setting the underlying **API Type** (**OpenAI Compatible**, **Anthropic Compatible**, or **Google Gemini Compatible**) to correctly format request bodies, endpoint paths, and API headers.
 *   **Cloudflare Workers AI Support:** Dynamically parses Cloudflare base URLs to extract your Account ID and retrieve model lists using Cloudflare's search API, before cleanly returning to standard completions.
 
+### 🖼️ Multimodal Vision & Image Support
+*   **Drag, Pick & Clipboard Paste:** Attach images via the attachment button or paste directly into the chat input box (`Ctrl+V`). Previews render instantly with Base64 encoding.
+*   **Responsive Chat Window Sizing:** Images in user chat bubbles display with responsive CSS sizing (`max-width: 280px`, `max-height: 200px`, `object-fit: contain`).
+*   **Multi-Provider Vision Schemas:** Automatically formats images into each provider's native API schema:
+    *   **Ollama:** Base64 string array (`images: ["base64..."]`).
+    *   **OpenAI / OpenRouter / Groq / Compatible:** OpenAI `image_url` content blocks.
+    *   **Anthropic Claude:** `image` source blocks (`media_type`, `base64`).
+    *   **Google Gemini:** `inline_data` parts (`mime_type`, `data`).
+*   **Persistent Storage:** Images are saved in `localStorage` and VS Code's `globalState`, preserving full conversation history.
+
 ### 💬 Streamlined Chat & Agent UI
+*   **Sidebar Navigation:** Clean UTF-8 sidebar navigation icons (`☰` Toggle Threads, `💬` Chat Window, `⚙` Settings) for crisp cross-platform rendering.
 *   **Streaming Content & Thinking:** Real-time stream processing for thinking process blocks, final content, and tool execution.
 *   **Interactive Collapsible Tool Cards:** Status messages, step durations, and arguments expand and collapse cleanly in real time as the agent progresses.
 *   **Direct Console Blocks:** Suppresses redundant cards for shell integration to stream terminal outputs directly inside a dark console terminal box.
@@ -65,16 +80,16 @@ Whether you are running completely offline with local models (Ollama), leveragin
 
 ## 🛠️ Supported Providers
 
-| Provider | Default Base URL | Keys Required | Common Models |
-| :--- | :--- | :--- | :--- |
-| **Ollama** | `http://localhost:11434` | No | `llama3`, `mistral`, `deepseek-coder` |
-| **OpenAI** | `https://api.openai.com/v1` | Yes | `gpt-4o`, `gpt-4o-mini`, `o3-mini` |
-| **Anthropic** | `https://api.anthropic.com/v1` | Yes | `claude-3-5-sonnet`, `claude-3-opus` |
-| **Google Gemini** | `https://generativelanguage.googleapis.com/v1beta` | Yes | `gemini-2.5-flash`, `gemma-4-31b-it` |
-| **Groq** | `https://api.groq.com/openai/v1` | Yes | `llama-3.3-70b-versatile` |
-| **OpenRouter** | `https://openrouter.ai/api/v1` | Yes | 200+ models across providers |
-| **xAI (Grok)** | `https://api.x.ai/v1` | Yes | `grok-2-1212` |
-| **OpenAI Compatible** | Custom | Optional | LM Studio, vLLM, LocalAI |
+| Provider | Default Base URL | Keys Required | Vision Support | Common Models |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ollama** | `http://localhost:11434` | No | ✅ `images` Array | `llava`, `llama3.2-vision`, `llama3` |
+| **OpenAI** | `https://api.openai.com/v1` | Yes | ✅ `image_url` Blocks | `gpt-4o`, `gpt-4o-mini`, `o3-mini` |
+| **Anthropic** | `https://api.anthropic.com/v1` | Yes | ✅ `image` Source Blocks | `claude-3-5-sonnet`, `claude-3-opus` |
+| **Google Gemini** | `https://generativelanguage.googleapis.com/v1beta` | Yes | ✅ `inline_data` Parts | `gemini-2.5-flash`, `gemini-1.5-pro` |
+| **Groq** | `https://api.groq.com/openai/v1` | Yes | ✅ `image_url` Blocks | `llama-3.2-90b-vision-preview`, `llama-3.3-70b` |
+| **OpenRouter** | `https://openrouter.ai/api/v1` | Yes | ✅ `image_url` Blocks | 200+ vision & text models |
+| **xAI (Grok)** | `https://api.x.ai/v1` | Yes | ✅ `image_url` Blocks | `grok-2-vision-1212` |
+| **OpenAI Compatible** | Custom | Optional | ✅ `image_url` Blocks | LM Studio, vLLM, LocalAI |
 
 ---
 
