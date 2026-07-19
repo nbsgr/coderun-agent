@@ -423,7 +423,7 @@
         '<div class="cr-body">' +
           '<nav class="cr-rail">' +
             '<button id="rail-toggle" class="cr-rail-btn" title="Toggle chats">☰</button>' +
-            '<button id="rail-chat" class="cr-rail-btn active" title="Chat">⌁</button>' +
+            '<button id="rail-chat" class="cr-rail-btn active" title="Chat">💬</button>' +
             '<button id="rail-settings" class="cr-rail-btn" title="Settings">⚙</button>' +
           '</nav>' +
           '<main class="cr-viewport">' +
