@@ -86,8 +86,35 @@ function convertMessages(messages) {
   return messages.map(function(m) {
     var msg = { role: m.role, content: m.content || '' };
     if (m.thinking) msg.thinking = m.thinking;
-    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    
+    // For Ollama tool role, name is required
+    if (m.role === 'tool') {
+      msg.name = m.tool_name || m.name || '';
+    }
+    
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    
+    if (m.tool_calls) {
+      msg.tool_calls = m.tool_calls.map(function(tc) {
+        var args = tc.function?.arguments || tc.arguments || {};
+        if (typeof args === 'string') {
+          try {
+            args = JSON.parse(args);
+          } catch (_) {
+            console.error('[OLLAMA] Failed to parse tool call arguments:', args);
+          }
+        }
+        return {
+          id: tc.id,
+          type: tc.type || 'function',
+          function: {
+            name: tc.function?.name || tc.name,
+            arguments: args
+          }
+        };
+      });
+    }
+    
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && rawImages.length) {
       msg.images = rawImages.map(function(img) {

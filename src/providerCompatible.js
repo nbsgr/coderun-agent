@@ -117,8 +117,30 @@ function parseChunk(data) {
 function convertMessages(messages) {
   return messages.map(function(m) {
     var msg = { role: m.role, content: m.content || '' };
-    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    
+    if (m.tool_calls) {
+      msg.tool_calls = m.tool_calls.map(function(tc) {
+        var args = tc.function?.arguments || tc.arguments || {};
+        if (typeof args !== 'string') {
+          try {
+            args = JSON.stringify(args);
+          } catch (_) {
+            args = '{}';
+          }
+        }
+        return {
+          id: tc.id,
+          type: tc.type || 'function',
+          function: {
+            name: tc.function?.name || tc.name,
+            arguments: args
+          }
+        };
+      });
+    }
+    
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && rawImages.length) {
       var parts = [];

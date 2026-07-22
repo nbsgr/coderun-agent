@@ -23,7 +23,7 @@ export function formatToolResult(toolName, result) {
   if (res.matches !== undefined) parts.push('Matches: ' + JSON.stringify(res.matches));
   if (res.info !== undefined) parts.push('Info: ' + JSON.stringify(res.info));
   if (res.datetime !== undefined) parts.push('Datetime: ' + res.datetime);
-  return parts.join('');
+  return parts.join('\n');
 }
 
 export function formatToolCallsForHistory(toolCalls) {

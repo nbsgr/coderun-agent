@@ -297,6 +297,11 @@ export async function runAgentLoop(userPrompt, config, options) {
 
     // No tool calls = we're done
     if (completedToolCalls.length === 0) {
+      var assistantMsg = { role: 'assistant', content: iterationContent || '' };
+      if (iterationThinking) {
+        assistantMsg.content = '\uE000' + iterationThinking + '\uE001\n' + (assistantMsg.content || '');
+      }
+      messages.push(assistantMsg);
       sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'direct_answer', content: fullContent, thinking: fullThinking });
       return { content: fullContent, thinking: fullThinking, done: true };
     }
@@ -531,7 +536,8 @@ export async function runAgentLoop(userPrompt, config, options) {
         tool_name: toolName,
         tool_call_id: tcId,
         formattedResult: formatToolResult(toolName, lastResult),
-        checkpoints: checkpointsCreated
+        checkpoints: checkpointsCreated,
+        result: lastResult
       };
     });
 
@@ -544,7 +550,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       toolResults.push({
         tool_name: results[ri].tool_name,
         tool_call_id: results[ri].tool_call_id,
-        formattedResult: results[ri].formattedResult
+        formattedResult: results[ri].formattedResult,
+        result: results[ri].result
       });
       if (results[ri].checkpoints && results[ri].checkpoints.length) {
         allCheckpoints = allCheckpoints.concat(results[ri].checkpoints);
@@ -602,7 +609,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       var toolMsg = {
         role: 'tool',
         tool_call_id: toolResults[j].tool_call_id,
-        content: toolResults[j].formattedResult
+        content: toolResults[j].formattedResult,
+        tool_name: toolResults[j].tool_name,
+        result: toolResults[j].result
       };
       if (isOllama2 && toolResults[j].tool_name) {
         toolMsg.tool_name = toolResults[j].tool_name;

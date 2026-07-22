@@ -921,35 +921,76 @@
    NEW: Terminal Streaming Block
    ════════════════════════════════════════════════════ */
 
-.cr-terminal-block {
+.cr-terminal-details {
+  margin: 6px 0;
+  display: block;
+}
+
+.cr-terminal-summary-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11.5px;
+  color: #858585;
+  padding: 4px 0;
+  list-style: none; /* Hide default triangle */
+}
+
+.cr-terminal-summary-trigger::-webkit-details-marker {
+  display: none; /* Hide default triangle */
+}
+
+.cr-terminal-trigger-cmd {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 10.5px;
+  background: #252526;
+  color: #cccccc;
+  padding: 2px 6px;
+  border-radius: 4px;
   border: 1px solid #2d2d2d;
-  border-left: 3px solid #d29922;
+}
+
+.cr-terminal-summary-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  color: #666;
+  transition: transform 0.2s ease;
+}
+
+.cr-terminal-summary-chevron svg {
+  width: 8px;
+  height: 8px;
+}
+
+.cr-terminal-details[open] .cr-terminal-summary-chevron {
+  transform: rotate(90deg);
+}
+
+.cr-terminal-container {
+  border: 1px solid #2d2d2d;
   border-radius: 6px;
-  background: #0c0c0c;
-  margin: 8px 0;
+  background: #0f0f0f;
+  margin-top: 4px;
   overflow: hidden;
   font-family: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, monospace);
-  animation: fadeIn 0.2s ease-in;
+  animation: fadeIn 0.15s ease-in;
 }
 
-.cr-terminal-block--success { border-left-color: #3fb950; }
-.cr-terminal-block--error   { border-left-color: #f85149; }
-.cr-terminal-block--running { border-left-color: #d29922; }
-
-.cr-terminal-block--running .cr-terminal-header-icon::after {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: #d29922;
-  border-radius: 50%;
-  margin-left: 6px;
-  animation: cs-pulse 1.2s ease-in-out infinite;
+.cr-terminal-container--success {
+  border-color: #2a2a2a;
 }
 
-@keyframes cs-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.7); }
+.cr-terminal-container--error {
+  border-color: #3d1c1c;
+}
+
+.cr-terminal-container--running {
+  border-color: #332616;
 }
 
 .cr-terminal-header {
@@ -957,59 +998,71 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #2d2d2d;
-  font-size: 11px;
-  color: #888;
-  font-weight: 500;
+  background: #141414;
+  border-bottom: 1px solid #222222;
 }
 
-.cr-terminal-header-icon {
-  color: #d29922;
-  display: flex;
-  align-items: center;
+.cr-terminal-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6; /* Blue dot from Copilot */
+  flex-shrink: 0;
+  display: inline-block;
 }
 
-.cr-terminal-block--success .cr-terminal-header-icon { color: #3fb950; }
-.cr-terminal-block--error .cr-terminal-header-icon   { color: #f85149; }
+.cr-terminal-container--running .cr-terminal-status-dot {
+  background: #cca700;
+  animation: cs-pulse 1.2s ease-in-out infinite;
+}
 
-.cr-terminal-command {
-  color: #d4d4d4;
+.cr-terminal-container--error .cr-terminal-status-dot {
+  background: #f85149;
+}
+
+.cr-terminal-container--success .cr-terminal-status-dot {
+  background: #3b82f6; /* Standard Copilot blue dot on complete */
+}
+
+@keyframes cs-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.cr-terminal-header-title {
+  color: #cca700; /* Yellow command color */
   font-family: 'Cascadia Code', Consolas, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cr-terminal-exit-code {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  font-family: monospace;
+.cr-terminal-header-icon {
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
 }
 
-.cr-terminal-exit-code--success {
-  color: #3fb950;
-  background: rgba(63, 185, 80, 0.12);
-}
-
-.cr-terminal-exit-code--error {
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.12);
+.cr-terminal-header-icon svg {
+  width: 12px;
+  height: 12px;
 }
 
 .cr-terminal-body {
   padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.45;
   color: #cccccc;
-  max-height: 240px;
+  max-height: 250px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  background: #0f0f0f;
 }
 
 .cr-terminal-body::-webkit-scrollbar { width: 4px; }
@@ -1019,6 +1072,7 @@
 .cr-terminal-line {
   padding: 1px 0;
   animation: fadeIn 0.05s ease-in;
+  font-family: 'Cascadia Code', Consolas, monospace;
 }
 
 .cr-terminal-line--cmd {
@@ -1043,44 +1097,44 @@
    ════════════════════════════════════════════════════ */
 
 .cr-tool-card {
-  border: 1px solid #2d2d2d;
-  border-radius: 6px;
-  background: #1a1a1a;
-  margin: 6px 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  background: #141414;
+  margin: 4px 0;
   overflow: hidden;
   animation: fadeIn 0.15s ease-in;
 }
 
-.cr-tool-card--success { border-left: 3px solid #3fb950; }
-.cr-tool-card--error   { border-left: 3px solid #f85149; }
-.cr-tool-card--running { border-left: 3px solid #d29922; }
-.cr-tool-card--pending { border-left: 3px solid #569cd6; }
+.cr-tool-card--success { border: 1px solid #222222; }
+.cr-tool-card--error   { border: 1px solid #3d1c1c; }
+.cr-tool-card--running { border: 1px solid #332616; }
+.cr-tool-card--pending { border: 1px solid #1a2a3a; }
 
 .cr-tool-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  background: #212121;
+  padding: 6px 8px;
+  background: #181818;
   cursor: pointer;
   user-select: none;
   transition: background 0.15s;
 }
 
-.cr-tool-card-head:hover { background: #2a2a2a; }
+.cr-tool-card-head:hover { background: #202020; }
 
 .cr-tool-card-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 
 .cr-tool-card-icon--running {
   animation: cs-rotate 0.8s linear infinite;
-  color: #d29922;
+  color: #cca700;
 }
 
 .cr-tool-card-icon--success { color: #3fb950; }
@@ -1089,17 +1143,17 @@
 
 .cr-tool-card-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
-  color: #d4d4d4;
+  color: #cccccc;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cr-tool-card-status {
-  font-size: 10px;
-  padding: 2px 6px;
+  font-size: 9.5px;
+  padding: 1px 5px;
   border-radius: 3px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1107,57 +1161,59 @@
 }
 
 .cr-tool-card-status--running {
-  color: #d29922;
-  background: rgba(210, 153, 34, 0.12);
+  color: #cca700;
+  background: rgba(204, 167, 0, 0.1);
 }
 
 .cr-tool-card-status--success {
   color: #3fb950;
-  background: rgba(63, 185, 80, 0.12);
+  background: rgba(63, 185, 80, 0.08);
 }
 
 .cr-tool-card-status--error {
   color: #f85149;
-  background: rgba(248, 81, 73, 0.12);
+  background: rgba(248, 81, 73, 0.08);
 }
 
 .cr-tool-card-status--pending {
   color: #569cd6;
-  background: rgba(86, 156, 214, 0.12);
+  background: rgba(86, 156, 214, 0.08);
 }
 
 .cr-tool-card-chevron {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.2s ease;
-  color: #888;
+  color: #777;
 }
 
-.cr-tool-card-chevron::before { content: '▶'; font-size: 8px; }
+.cr-tool-card-chevron::before { content: '▶'; font-size: 7px; }
 .cr-tool-card[open] .cr-tool-card-chevron { transform: rotate(90deg); }
 
 .cr-tool-card-body {
-  padding: 8px 10px;
-  border-top: 1px solid #2d2d2d;
-  font-size: 12px;
+  padding: 6px 8px;
+  border-top: 1px solid #222222;
+  font-size: 11px;
   color: #9cdcfe;
+  background: #0f0f0f;
 }
 
 .cr-tool-card-body pre {
   margin: 0;
-  padding: 6px 8px;
-  background: #0c0c0c;
-  border-radius: 4px;
+  padding: 5px 6px;
+  background: #070707;
+  border-radius: 3px;
   font-family: 'Cascadia Code', Consolas, monospace;
-  font-size: 11px;
+  font-size: 10.5px;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
-  color: #cccccc;
+  color: #bbbbbb;
+  border: 1px solid #1a1a1a;
 }
 
 .cr-tool-card-body code {
@@ -1167,49 +1223,48 @@
 
 /* ── Tool card args badge ────────────────────────── */
 .cr-tool-card-args {
-  font-size: 10.5px;
-  color: #888;
+  font-size: 10px;
+  color: #777;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  max-width: 180px;
   flex-shrink: 1;
   font-family: 'Cascadia Code', Consolas, monospace;
 }
 
 /* ── Tool card collapsible args block ────────────── */
 .cr-tool-card-args-block {
-  margin: 4px 0;
-  border: 1px solid #2d2d2d;
-  border-radius: 4px;
+  margin: 2px 0;
+  border: 1px solid #1c1c1c;
+  border-radius: 3px;
   overflow: hidden;
 }
 
 .cr-tool-card-args-summary {
-  font-size: 11px;
-  padding: 4px 8px;
-  background: #1a1a1a;
+  font-size: 10.5px;
+  padding: 3px 6px;
+  background: #121212;
   cursor: pointer;
-  color: #888;
+  color: #777;
   user-select: none;
-  transition: color 0.15s;
 }
 
 .cr-tool-card-args-summary:hover {
-  color: #d4d4d4;
+  color: #bbbbbb;
 }
 
 .cr-tool-card-args-pre {
   margin: 0;
-  padding: 6px 8px;
-  font-size: 11px;
-  background: #0c0c0c;
+  padding: 5px 6px;
+  font-size: 10px;
+  background: #070707;
   color: #9cdcfe;
-  max-height: 150px;
+  max-height: 120px;
   overflow-y: auto;
   overflow-x: auto;
   white-space: pre;
-  border-top: 1px solid #2d2d2d;
+  border-top: 1px solid #1a1a1a;
 }
 
 /* ── Tool card action lines (live progress) ──────── */
@@ -1228,23 +1283,23 @@
 
 /* ── Tool card result section ────────────────────── */
 .cr-tool-card-result {
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 .cr-tool-card-result-pre {
   margin: 0;
-  padding: 8px;
-  background: #0c0c0c;
-  border: 1px solid #2d2d2d;
-  border-radius: 4px;
+  padding: 6px;
+  background: #070707;
+  border: 1px solid #1a1a1a;
+  border-radius: 3px;
   font-family: 'Cascadia Code', Consolas, monospace;
-  font-size: 11px;
+  font-size: 10.5px;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 300px;
+  max-height: 250px;
   overflow-y: auto;
-  color: #cccccc;
-  line-height: 1.5;
+  color: #bbbbbb;
+  line-height: 1.4;
 }
 
 .cr-tool-card-error-msg {

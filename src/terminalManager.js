@@ -14,10 +14,28 @@ var executionCounter = 0;
 var sendEventCallback = null;
 var _lastSessionOutput = '';  // Holds stdout from the last/most recent terminal execution
 var _lastSessionActive = false; // Whether the session is still active
+var activeExecId = null; // Tracks the currently running terminal execution ID for interactive routing
+var _pendingInteractiveReader = null; // Stores the async iterator reader when process is waiting for input
+var _pendingInteractiveExecution = null; // Stores the execution object for exit code retrieval
 
 // ── Shell detection ────────────────────────────────────────
 // Auto-detect the shell name from VS Code's terminal API.
 function detectShellName(terminal) {
+  // 1. Try vscode.env.shell first (most accurate for active user config)
+  try {
+    var vscodeShell = vscode.env.shell || '';
+    if (vscodeShell) {
+      var shellName = path.basename(vscodeShell).toLowerCase();
+      if (shellName.includes('powershell')) return 'powershell';
+      if (shellName.includes('pwsh')) return 'powershell';
+      if (shellName.includes('cmd')) return 'cmd';
+      if (shellName.includes('bash')) return 'bash';
+      if (shellName.includes('zsh')) return 'zsh';
+      if (shellName.includes('fish')) return 'fish';
+      if (shellName.includes('wsl')) return 'wsl';
+    }
+  } catch (_) {}
+
   if (!terminal) return guessShellFromEnv();
   // VS Code exposes shell path via creationOptions if available
   try {
@@ -43,6 +61,11 @@ function detectShellName(terminal) {
 function guessShellFromEnv() {
   var platform = process.platform;
   if (platform === 'win32') {
+    // Check PSModulePath first because it's specific to PowerShell
+    try {
+      if (process.env.PSModulePath) return 'powershell';
+    } catch (_) {}
+
     // Check for common Windows shells
     if (process.env.SHELL) {
       var sh = path.basename(process.env.SHELL).toLowerCase();
@@ -53,10 +76,6 @@ function guessShellFromEnv() {
     try {
       var comspec = process.env.COMSPEC || '';
       if (comspec.toLowerCase().includes('cmd')) return 'cmd';
-    } catch (_) {}
-    // Default: check if PowerShell is available
-    try {
-      if (process.env.PSModulePath) return 'powershell';
     } catch (_) {}
     return 'powershell';
   }
@@ -250,6 +269,186 @@ async function readExecutionStream(execId, execution) {
   }
 }
 
+/**
+ * Continue reading from the shell integration stream in the background
+ * after the initial executeCommand returns with waitingForInput.
+ * This ensures that output produced by terminal_input (e.g. "Hello, Alice!")
+ * is captured into _lastSessionOutput and forwarded to the chat UI.
+ *
+ * @param {string} execId - The terminal execution ID
+ * @param {AsyncIterator} reader - The async iterator from execution.read()
+ * @param {object} execution - The shell integration execution object
+ * @param {string} shellName - Detected shell name
+ * @param {string} platformName - Platform name
+ * @param {string} cwd - Working directory
+ * @param {string} command - The original command
+ * @param {number} startedAt - Timestamp when execution started
+ * @param {Promise} orphanedNextPromise - The pending reader.next() promise
+ *   from the main loop that was created but never awaited because the idle
+ *   timeout won the race. We must process this first or its chunk is lost.
+ */
+async function continueReadingInBackground(execId, reader, execution, shellName, platformName, cwd, command, startedAt, orphanedNextPromise) {
+  console.log('[TERMINAL] Starting background reader for interactive session:', execId);
+  _pendingInteractiveReader = reader;
+  _pendingInteractiveExecution = execution;
+
+  /**
+   * Helper: process a single chunk result from the iterator.
+   * Returns true if the stream has ended (done), false otherwise.
+   */
+  function processChunk(result) {
+    if (!result || result.done) return true;
+    var chunk = result.value;
+    if (chunk) {
+      var cleanChunk = stripAnsi(String(chunk));
+      if (cleanChunk) {
+        _lastSessionOutput += cleanChunk;
+        console.log('[TERMINAL] Background reader: new output for', execId, 'length:', cleanChunk.length);
+        if (sendEventCallback) {
+          sendEventCallback({
+            type: 'terminal_output',
+            terminalId: execId,
+            chunk: cleanChunk
+          });
+        }
+      }
+    }
+    return false;
+  }
+
+  try {
+    // STEP 1: Process the orphaned nextPromise from the main loop.
+    // When the idle timeout won the race in the main loop, reader.next() was
+    // already called but its promise was never awaited. That promise will
+    // resolve with the first chunk after terminal_input sends text. If we
+    // don't await it here, that chunk is silently consumed and lost.
+    if (orphanedNextPromise) {
+      console.log('[TERMINAL] Background reader: awaiting orphaned nextPromise for', execId);
+      var firstResult = await Promise.race([
+        orphanedNextPromise,
+        new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve({ done: false, value: undefined, _bgTimeout: true });
+          }, 60000);
+        })
+      ]);
+
+      if (firstResult._bgTimeout) {
+        if (!_lastSessionActive) {
+          console.log('[TERMINAL] Background reader: session cancelled during orphan wait, stopping');
+          _pendingInteractiveReader = null;
+          _pendingInteractiveExecution = null;
+          return;
+        }
+        // Timeout but session still active — fall through to the regular loop
+      } else {
+        var streamEnded = processChunk(firstResult);
+        if (streamEnded) {
+          // Process already exited before any more input was sent
+          console.log('[TERMINAL] Background reader: stream ended on orphaned promise for', execId);
+          // Fall through to exit handling below the loop
+          _lastSessionActive = false;
+          activeExecId = null;
+          _pendingInteractiveReader = null;
+          _pendingInteractiveExecution = null;
+
+          var exitCode = null;
+          try {
+            exitCode = await Promise.race([
+              execution.exitCode,
+              new Promise(function(resolve) { setTimeout(function() { resolve(null); }, 5000); })
+            ]);
+          } catch (_) {}
+
+          var durationMs = Date.now() - startedAt;
+          console.log('[TERMINAL] Background reader: process exited for', execId, 'exitCode:', exitCode);
+          if (sendEventCallback) {
+            sendEventCallback({
+              type: 'terminal_exit',
+              terminalId: execId,
+              exitCode: exitCode,
+              duration: durationMs,
+              shell: shellName,
+              platform: platformName,
+              cwd: cwd,
+              command: command
+            });
+          }
+          return;
+        }
+      }
+    }
+
+    // STEP 2: Continue reading new chunks from the iterator.
+    while (true) {
+      if (!_lastSessionActive) {
+        console.log('[TERMINAL] Background reader: session no longer active, stopping loop for', execId);
+        break;
+      }
+      // Wait up to 60 seconds for each chunk. Interactive sessions can be slow.
+      var raceResult = await Promise.race([
+        reader.next(),
+        new Promise(function(resolve) {
+          setTimeout(function() {
+            resolve({ done: false, value: undefined, _bgTimeout: true });
+          }, 60000);
+        })
+      ]);
+
+      // 60s timeout — process still alive, just idle. Loop again.
+      if (raceResult._bgTimeout) {
+        // Check if the session was cancelled/stopped
+        if (!_lastSessionActive) {
+          console.log('[TERMINAL] Background reader: session no longer active, stopping');
+          break;
+        }
+        continue;
+      }
+
+      // Process the chunk
+      var streamEnded = processChunk(raceResult);
+      if (streamEnded) break;
+    }
+
+    // Process has exited — get the final exit code
+    console.log('[TERMINAL] Background reader: stream ended for', execId, '— awaiting exitCode');
+    var exitCode = null;
+    try {
+      exitCode = await Promise.race([
+        execution.exitCode,
+        new Promise(function(resolve) { setTimeout(function() { resolve(null); }, 5000); })
+      ]);
+    } catch (_) {}
+
+    _lastSessionActive = false;
+    activeExecId = null;
+    _pendingInteractiveReader = null;
+    _pendingInteractiveExecution = null;
+
+    var durationMs = Date.now() - startedAt;
+    console.log('[TERMINAL] Background reader: process exited for', execId, 'exitCode:', exitCode);
+
+    if (sendEventCallback) {
+      sendEventCallback({
+        type: 'terminal_exit',
+        terminalId: execId,
+        exitCode: exitCode,
+        duration: durationMs,
+        shell: shellName,
+        platform: platformName,
+        cwd: cwd,
+        command: command
+      });
+    }
+  } catch (err) {
+    console.error('[TERMINAL] Background reader error for', execId, ':', err.message);
+    _lastSessionActive = false;
+    activeExecId = null;
+    _pendingInteractiveReader = null;
+    _pendingInteractiveExecution = null;
+  }
+}
+
 // ── Interactive prompt detection ────────────────────────────
 // Heuristic: scan text for common interactive patterns.
 // Returns { interactive: bool, promptDetected: bool }.
@@ -381,6 +580,7 @@ export async function executeCommand(command, timeout, background) {
     console.log('[TERMINAL] Executing via shell integration:', command);
     try {
       var execId = 'term_direct_' + (++executionCounter);
+      activeExecId = execId;
       var execution = shellIntegration.executeCommand(command);
       var stdout = '';
       var stderr = '';
@@ -477,6 +677,16 @@ export async function executeCommand(command, timeout, background) {
         var durationMs2 = Date.now() - startedAt;
         // Analyze output for interactive prompt patterns
         var promptCheck = detectPrompt(stdout);
+
+        // Fire-and-forget: keep reading the stream in the background so that
+        // output produced by subsequent terminal_input calls is captured into
+        // _lastSessionOutput and forwarded to the chat UI as terminal_output events.
+        // IMPORTANT: pass the orphaned nextPromise from the main loop — it was
+        // created by reader.next() but never awaited because the idle timeout won
+        // the race. If we don't process it first, the first chunk after
+        // terminal_input is consumed by the orphaned promise and lost.
+        continueReadingInBackground(execId, reader, execution, shellName, platformName, cwd, command, startedAt, nextPromise);
+
         if (sendEventCallback) {
           sendEventCallback({
             type: 'terminal_exit',
@@ -532,6 +742,7 @@ export async function executeCommand(command, timeout, background) {
 
       console.log('[TERMINAL] Returning result for', execId);
       var promptCheck = detectPrompt(stdout);
+      activeExecId = null;
       return {
         shell: shellName,
         platform: platformName,
@@ -540,7 +751,7 @@ export async function executeCommand(command, timeout, background) {
         stderr: stderr,
         exitCode: exitCode,
         durationMs: durationMs,
-        success: exitCode === 0,
+        success: exitCode != null ? (exitCode === 0) : true,
         workingDirectory: cwd,
         method: 'shell_integration',
         interactive: promptCheck.interactive,
@@ -549,6 +760,7 @@ export async function executeCommand(command, timeout, background) {
       };
     } catch (err) {
       console.error('[TERMINAL] Shell integration executeCommand failed:', err);
+      activeExecId = null;
       _lastSessionOutput = stdout;
       _lastSessionActive = false;
       if (sendEventCallback) {
@@ -571,6 +783,7 @@ export async function executeCommand(command, timeout, background) {
   terminal.sendText(command, true);
 
   var execId = 'term_fallback_' + (++executionCounter);
+  activeExecId = execId;
   if (sendEventCallback) {
     sendEventCallback({
       type: 'terminal_start',
@@ -676,6 +889,7 @@ export async function executeCommand(command, timeout, background) {
     }
 
     var promptCheck = detectPrompt(stdout);
+    activeExecId = null;
     return {
       shell: shellName,
       platform: platformName,
@@ -694,6 +908,7 @@ export async function executeCommand(command, timeout, background) {
   } catch (cpErr) {
     // Last resort: child_process also failed — return what we have
     console.error('[TERMINAL] child_process fallback also failed:', cpErr.message);
+    activeExecId = null;
     var fallbackDuration = Date.now() - startedAt;
 
     if (sendEventCallback) {
@@ -802,7 +1017,7 @@ export function sendTerminalInput(text) {
   if (sendEventCallback) {
     sendEventCallback({
       type: 'terminal_output',
-      terminalId: 'term_input_' + Date.now(),
+      terminalId: activeExecId || ('term_input_' + Date.now()),
       chunk: text + '\n'
     });
   }
@@ -814,8 +1029,17 @@ export function sendTerminalInput(text) {
  * Returns the most recently captured stdout from the last shell integration
  * execution, plus prompt detection analysis.
  * Used by run_terminal with empty command for continuation after terminal_input.
+ *
+ * Waits briefly for the background reader to capture any new output
+ * that arrived after the most recent terminal_input.
  */
 export async function checkTerminalOutput() {
+  // Give the background reader a moment to capture new output
+  // (shell integration stream chunks arrive asynchronously)
+  if (_pendingInteractiveReader && _lastSessionActive) {
+    await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+  }
+
   var stdout = _lastSessionOutput || '';
   var stderr = '';
   var shellName = activeTerminal ? detectShellName(activeTerminal) : 'unknown';
@@ -857,10 +1081,16 @@ export async function stopTerminal() {
   if (sendEventCallback) {
     sendEventCallback({
       type: 'terminal_output',
-      terminalId: 'term_stop_' + Date.now(),
+      terminalId: activeExecId || ('term_stop_' + Date.now()),
       chunk: '^C\n'
     });
   }
+
+  // Clean up interactive session state
+  _lastSessionActive = false;
+  activeExecId = null;
+  _pendingInteractiveReader = null;
+  _pendingInteractiveExecution = null;
 
   return { success: true, message: 'Sent Ctrl+C to stop running process.' };
 }

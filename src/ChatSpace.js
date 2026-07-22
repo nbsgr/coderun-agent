@@ -430,17 +430,27 @@
             var body = appendBotWrapper(msgList);
             turn.botMessages.forEach(function(m, mIdx) {
               if (m.role === 'assistant') {
-                if (m.thinking) {
+                var content = m.content || '';
+                var thinking = m.thinking || null;
+                var startIdx = content.indexOf('\uE000');
+                var endIdx = content.indexOf('\uE001');
+                if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                  thinking = content.substring(startIdx + 1, endIdx);
+                  content = content.substring(0, startIdx) + content.substring(endIdx + 1);
+                  content = content.replace(/^\n+/, '');
+                }
+
+                if (thinking) {
                   var det = appendThinkBlock(body);
                   var pre = det.querySelector('.cr-think-pre');
-                  if (pre) pre.textContent = m.thinking;
+                  if (pre) pre.textContent = thinking;
                   var lbl = det.querySelector('.cr-think-label');
                   if (lbl) lbl.textContent = 'Thought process';
                   det.open = false;
                 }
-                if (m.content) {
+                if (content) {
                   var d = appendContentBlock(body);
-                  d.innerHTML = md(m.content);
+                  d.innerHTML = md(content);
                 }
                 if (m.tool_calls && m.tool_calls.length) {
                   m.tool_calls.forEach(function(tc, tcIdx) {
@@ -462,7 +472,16 @@
                       if (resContent.startsWith('Error:') || resContent.includes('Permission denied') || resContent.includes('rejected by user')) {
                         status = 'error';
                       }
-                      resultObj = { content: resContent };
+                      if (matchingResultMsg.result) {
+                        resultObj = matchingResultMsg.result;
+                        if (resultObj.success === false) {
+                          status = 'error';
+                        } else if (resultObj.exit_code != null && resultObj.exit_code !== 0) {
+                          status = 'error';
+                        }
+                      } else {
+                        resultObj = { content: resContent };
+                      }
                     } else {
                       status = 'error';
                       resultObj = { error: 'No result recorded' };
@@ -470,7 +489,8 @@
 
                     var cardKey = 'card_' + toolId + '_' + Date.now();
                     if (toolName === 'run_terminal') {
-                      appendTerminalCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                      var termCard = appendTerminalCard(body, cardKey, toolName, toolArgs, status, resultObj);
+                      if (termCard) termCard.open = false;
                     } else {
                       appendToolCard(body, cardKey, toolName, toolArgs, status, resultObj);
                     }
@@ -745,6 +765,14 @@
       }
 
       function saveBotResponse(S) {
+        // In the VS Code environment, the agent loop's chat_history_update event
+        // already handles detailed chronological saving of sequential assistant
+        // and tool messages. Overwriting the last message here would flatten the turn,
+        // corrupting the display order of tools and final responses upon reload.
+        if (window.VSCODE_API) {
+          return;
+        }
+
         if (S.fullResponse || S.fullThinking || (S._toolCalls && S._toolCalls.length)) {
           var extra = {};
           if (S.sources && S.sources.length) extra.sources = S.sources;
@@ -841,60 +869,20 @@
             });
             msg.tool_calls.forEach(function(tc) {
               var toolName = (tc.function && tc.function.name) || tc.name || '';
+              if (!toolName) return;
               // Terminal tools are handled by the terminal event system with custom cards
               if (toolName === 'terminal_input' || toolName === 'stop_terminal') return;
               if (toolName === 'run_terminal') {
                 var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
                 var toolId = tc.id || '';
                 var toolIndex = tc.index;
-                var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
-                var idKey = toolId || '';
-                if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) return;
-                S._seenToolIds[indexKey] = true;
-                if (idKey) S._seenToolIds[idKey] = true;
-                var displayId = toolId || 'term_' + (++S._toolIdCounter);
-                var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
-                // Auto-collapse previous terminal cards
-                for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
-                  var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
-                  if (prevCard) prevCard.open = false;
-                }
-                // Create card in 'pending' state — awaiting user approval.
-                // The status changes to 'running' only when terminal_start fires.
-                var cardElement = appendTerminalCard(S.botBody, cardKey, toolName, toolArgs, 'pending', null);
-                if (toolId) cardElement.dataset.toolCallId = toolId;
-                cardElement.dataset.terminalId = '';
-                S.toolCards[cardKey] = cardElement;
-                S.toolCards[displayId] = cardElement;
-                S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
+                reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
                 return;
               }
               var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
               var toolId = tc.id || '';
               var toolIndex = tc.index;
-              // Build stable dedup keys
-              var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
-              var idKey = toolId || '';
-              // Check if we already have a card for this tool call by EITHER id or index
-              if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) return;
-              // Lock BOTH keys so later chunks with different key shapes still match
-              S._seenToolIds[indexKey] = true;
-              if (idKey) S._seenToolIds[idKey] = true;
-              // Generate a display id for the card
-              var displayId = toolId || 'tool_' + (++S._toolIdCounter);
-              var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
-              var cardElement = appendToolCard(S.botBody, cardKey, toolName, toolArgs, 'running');
-              if (toolId) {
-                cardElement.dataset.toolCallId = toolId;
-              }
-              S.toolCards[cardKey] = cardElement;
-              if (displayId) {
-                S.toolCards[displayId] = cardElement;
-              }
-              // Also store under index-based key so tool_result can find
-              // the card even if the LLM didn't emit a tool call ID.
-              S.toolCards[indexKey] = cardElement;
-              S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
+              reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
             });
           }
           return;
@@ -935,7 +923,7 @@
             }
             case 'thinking_complete': {
               if (S.thinkBlock) {
-                var fullThink = ev.full_thinking || ev.full_content || S.thinkText;
+                var fullThink = ev.thinking || ev.full_thinking || ev.content || ev.full_content || S.thinkText;
                 if (fullThink) {
                   if (S.iterationThinking && S.fullThinking.endsWith(S.iterationThinking)) {
                     S.fullThinking = S.fullThinking.slice(0, -S.iterationThinking.length) + fullThink;
@@ -984,58 +972,18 @@
               var toolName = ev.tool || '';
               if (toolName === 'terminal_input' || toolName === 'stop_terminal') break;
               var toolArgs = ev.args || {};
-              // Terminal tools get rendered as inline terminal cards
+              var toolIndex = ev.index;
+
               if (toolName === 'run_terminal') {
-                var existingCard = findPendingCardByToolName(S, toolName);
-                if (existingCard) {
-                  S._seenToolIds[toolId] = true;
-                  S._toolQueue.push({ key: existingCard.dataset.cardKey, toolName: toolName, id: toolId });
-                  existingCard.dataset.toolCallId = toolId;
-                  S.toolCards[toolId] = existingCard;
-                  break;
-                }
-                if (S._seenToolIds[toolId]) { break; }
-                S._seenToolIds[toolId] = true;
-                var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
-                // Auto-collapse previous terminal cards
-                for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
-                  var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
-                  if (prevCard) prevCard.open = false;
-                }
-                // Card starts in 'pending' state, awaiting permission approval
-                var newCard = appendTerminalCard(S.botBody, cardKey, toolName, toolArgs, 'pending', null);
-                newCard.dataset.toolCallId = toolId;
-                newCard.dataset.terminalId = '';
-                S.toolCards[toolId] = newCard;
-                S._toolQueue.push({ key: cardKey, toolName: toolName, id: toolId });
+                reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
                 S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
-                break;
+              } else {
+                var card = reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
+                if (card) {
+                  S.toolCallBlocks[ev.id || card.dataset.cardKey || ('tool_' + S._toolIdCounter)] = card;
+                }
+                S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
               }
-              // Prevent duplicate cards — check if we already have a pending card
-              // for this tool name (from streaming ev.message.tool_calls). If so,
-              // just mark it with the backend's ID and skip creating a new one.
-              var existingCard = findPendingCardByToolName(S, toolName);
-              if (existingCard) {
-                // Card already exists from streaming — just update its ID tracking
-                S._seenToolIds[toolId] = true;
-                S._toolQueue.push({ key: existingCard.dataset.cardKey, toolName: toolName, id: toolId });
-                existingCard.dataset.toolCallId = toolId;
-                S.toolCards[toolId] = existingCard;
-                break;
-              }
-              if (S._seenToolIds[toolId]) { break; }
-              S._seenToolIds[toolId] = true;
-              // Create a unique key that preserves order for multiple calls of the same tool
-              var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
-              var newCard = appendToolCard(S.botBody, cardKey, toolName, toolArgs, 'running');
-              newCard.dataset.toolCallId = toolId;
-              S.toolCallBlocks[ev.id || cardKey] = newCard;
-              S.toolCards[toolId] = newCard;
-              // Also store under index key for provider compatibility
-              S.toolCards[toolName + '_idx_' + (ev.index != null ? ev.index : '?')] = newCard;
-              // Track in ordered queue
-              S._toolQueue.push({ key: cardKey, toolName: toolName, id: ev.id });
-              S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
               break;
             }
             case 'action': {
@@ -1060,7 +1008,10 @@
                 pendingCard = S.toolCards[ev.toolCallId];
               }
               if (!pendingCard) {
-                pendingCard = getLastPendingCard(S);
+                pendingCard = findPendingCardByToolName(S, action, ev.toolCallId) || findPendingCardByToolName(S, action);
+                if (!pendingCard) {
+                  pendingCard = getLastPendingCard(S);
+                }
                 // If found by fallback, link it by toolCallId so the
                 // subsequent tool_result can find it directly.
                 if (pendingCard && ev.toolCallId) {
@@ -1099,7 +1050,7 @@
                   termCardToUpdate = S.toolCards[ev.toolCallId];
                 }
                 if (!termCardToUpdate) {
-                  var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card.cr-terminal-card') : [];
+                  var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-terminal-details') : [];
                   if (termCards.length > 0) {
                     termCardToUpdate = termCards[termCards.length - 1];
                   }
@@ -1115,6 +1066,13 @@
               // Pass 1: try exact toolCallId key
               if (ev.toolCallId && S.toolCards[ev.toolCallId]) {
                 cardToUpdate = S.toolCards[ev.toolCallId];
+              }
+              // Pass 1.5: try matching a pending card of the same tool name
+              if (!cardToUpdate) {
+                cardToUpdate = findPendingCardByToolName(S, resTool, ev.toolCallId) || findPendingCardByToolName(S, resTool);
+                if (cardToUpdate && ev.toolCallId) {
+                  S.toolCards[ev.toolCallId] = cardToUpdate;
+                }
               }
               // Pass 2: try toolName-based index key (handles providers that
               // don't send tool call IDs — Ollama, etc.)
@@ -1170,10 +1128,11 @@
             case 'agent_done':
             case 'done': {
               removeTyping(S.botBody);
-              if (ev.full_content && !S.contentDiv) {
+              var finalContent = ev.content || ev.full_content;
+              if (finalContent && !S.contentDiv) {
                 S.contentDiv = appendContentBlock(S.botBody);
-                S.contentDiv.innerHTML = md(ev.full_content);
-                S.fullResponse = ev.full_content;
+                S.contentDiv.innerHTML = md(finalContent);
+                S.fullResponse = finalContent;
               }
               if (ev.sources && ev.sources.length) {
                 S.sources = ev.sources;
@@ -1248,57 +1207,31 @@
               removeTyping(S.botBody);
               var termId = ev.terminalId || 'term_' + Date.now();
               S._activeTerminalId = termId;
+
               // Find the existing card created by tool_calls/tool_call streaming.
-              // We search by tool name and add terminalId to it.
               var termCard = null;
-              // Try last pending card first
               var lastPending = getLastPendingCard(S);
               if (lastPending && lastPending.dataset.toolName === 'run_terminal') {
                 termCard = lastPending;
               }
               if (!termCard) {
-                // Try from terminal card order
                 if (S._terminalCardOrder.length > 0) {
                   var lastTermKey = S._terminalCardOrder[S._terminalCardOrder.length - 1];
                   termCard = S._terminalCards[lastTermKey];
                 }
               }
               if (!termCard) {
-                // Still not found — search DOM
-                var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card.cr-terminal-card') : [];
+                var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-terminal-details') : [];
                 if (termCards.length > 0) {
                   termCard = termCards[termCards.length - 1];
                 }
               }
+
               if (termCard) {
-                // Found card — change status from 'pending' to 'running'
                 termCard.dataset.terminalId = termId;
-                termCard.dataset.status = 'running';
-                termCard.className = 'cr-tool-card cr-tool-card--running cr-terminal-card';
-                var iconEl = termCard.querySelector('.cr-tool-card-icon');
-                if (iconEl) { iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--running'; iconEl.innerHTML = I.spin; }
-                var statusEl = termCard.querySelector('.cr-tool-card-status');
-                if (statusEl) { statusEl.className = 'cr-tool-card-status cr-tool-card-status--running'; statusEl.textContent = 'Running…'; }
-                // Add terminal output area to the card body if not already present
-                var cardBody = termCard.querySelector('.cr-tool-card-body');
-                if (cardBody && !cardBody.querySelector('.cr-terminal-card-output')) {
-                  var shellBadge = ev.shell || 'terminal';
-                  var platformLabel = ev.platform || '';
-                  var cmdText = ev.command || '';
-                  var outputArea = mk('div', 'cr-terminal-card-output');
-                  outputArea.innerHTML =
-                    '<div class="cr-terminal-card-cmd">$ ' + esc(cmdText) + '</div>' +
-                    '<div class="cr-terminal-card-stream"></div>';
-                  var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
-                  if (argsBlock) argsBlock.style.display = 'none';
-                  var resultContainer = cardBody.querySelector('.cr-tool-card-result');
-                  if (resultContainer) resultContainer.style.display = 'none';
-                  cardBody.appendChild(outputArea);
-                }
+                setTerminalCardStatus(termCard, 'running');
                 S._terminalCards[termId] = termCard;
               } else {
-                // No existing card at all — create one (should not normally happen,
-                // but handles edge cases where terminal fires before streaming)
                 var emergencyKey = 'run_terminal_term_' + (++S._toolIdCounter) + '_' + Date.now();
                 termCard = appendTerminalCard(S.botBody, emergencyKey, 'run_terminal',
                   { command: ev.command || '', shell: ev.shell || '', platform: ev.platform || '' },
@@ -1308,7 +1241,6 @@
                 S._toolQueue.push({ key: emergencyKey, toolName: 'run_terminal', id: emergencyKey });
                 S._terminalCards[termId] = termCard;
               }
-              // Track terminal card order for auto-collapse
               if (termId && S._terminalCardOrder.indexOf(termId) === -1) {
                 S._terminalCardOrder.push(termId);
               }
@@ -1497,15 +1429,53 @@
         try { argsStr = JSON.stringify(args, null, 2); } catch (_) { argsStr = String(args || ''); }
 
         // Try to find the last pending tool card of the same name to embed inside it
-        var pendingCard = getLastPendingCard(S);
+        var pendingCard = findPendingCardByToolName(S, tool, id);
+
+        // If not found, pre-emptively create it so we can embed the permission request inside it!
+        if (!pendingCard) {
+          var cardKey = tool + '_' + (++S._toolIdCounter) + '_' + Date.now();
+          if (tool === 'run_terminal') {
+            pendingCard = appendTerminalCard(S.botBody, cardKey, tool, args, 'pending', null);
+            pendingCard.dataset.toolCallId = id;
+            pendingCard.dataset.terminalId = '';
+            S.toolCards[cardKey] = pendingCard;
+            S.toolCards[id] = pendingCard;
+            S._toolQueue.push({ key: cardKey, toolName: tool, id: id });
+          } else {
+            pendingCard = appendToolCard(S.botBody, cardKey, tool, args, 'running', null);
+            pendingCard.dataset.toolCallId = id;
+            S.toolCallBlocks[id || cardKey] = pendingCard;
+            S.toolCards[cardKey] = pendingCard;
+            S.toolCards[id] = pendingCard;
+            S.toolCards[tool + '_idx_' + S._toolIdCounter] = pendingCard;
+            S._toolQueue.push({ key: cardKey, toolName: tool, id: id });
+          }
+        } else {
+          // If found, update its ID tracking so that subsequent action/result events find it
+          if (id) {
+            pendingCard.dataset.toolCallId = id;
+            S.toolCards[id] = pendingCard;
+          }
+        }
+
         var targetParent = body;
         var isEmbedded = false;
 
-        if (pendingCard && pendingCard.dataset.toolName === tool) {
-          var cardBody = pendingCard.querySelector('.cr-tool-card-body');
+        var isMatch = false;
+        if (pendingCard) {
+          if (pendingCard.dataset.toolName === tool) {
+            isMatch = true;
+          } else if ((tool === 'terminal_input' || tool === 'stop_terminal') && pendingCard.dataset.toolName === 'run_terminal') {
+            isMatch = true;
+          }
+        }
+
+        if (isMatch) {
+          var cardBody = pendingCard.querySelector('.cr-tool-card-body') || pendingCard.querySelector('.cr-terminal-container');
           if (cardBody) {
             targetParent = cardBody;
             isEmbedded = true;
+            pendingCard.open = true; // Always expand the card to show the permission request!
           }
         }
 
@@ -1513,7 +1483,7 @@
         if (isEmbedded) {
           d = mk('div', 'cr-permission-section');
           d.innerHTML =
-            '<div class="cr-permission-prompt" style="font-size: 12px; color: #b4b4b4; margin-bottom: 6px; font-weight: 500;">' +
+            '<div class="cr-permission-prompt" style="font-size: 11.5px; color: #b4b4b4; margin-bottom: 6px; font-weight: 500; padding: 0 10px;">' +
               'Permission Requested: Allow execution?' +
             '</div>' +
             '<div class="cr-permission-actions" id="actions-' + id + '">' +
@@ -1663,10 +1633,6 @@
         return d;
       }
 
-      // ═══════════════════════════════════════════════════
-      // NEW: Inline Terminal Cards (collapsible, per-execution)
-      // ═══════════════════════════════════════════════════
-
       /**
        * Create a collapsible terminal card for a terminal execution.
        * Each terminal execution gets its own independent card in the chat.
@@ -1675,58 +1641,47 @@
         if (!body) return null;
         status = status || 'pending';
 
-        var card = mk('details', 'cr-tool-card cr-tool-card--' + status + ' cr-terminal-card');
+        var card = mk('details', 'cr-terminal-details');
         card.open = true;
         card.dataset.cardKey = cardKey;
         card.dataset.toolName = 'run_terminal';
         card.dataset.status = status;
 
         var command = (args && args.command) || '';
-        var shellName = (args && args.shell) || '';
-        var statusLabel = status === 'running' ? 'Running…' : status === 'pending' ? 'Awaiting approval…' : status === 'waiting' ? 'Waiting for input…' : status === 'success' ? 'Completed' : 'Failed';
+        var shortCommand = command.split(' ')[0] || 'Terminal';
 
-        var head = mk('summary', 'cr-tool-card-head');
+        var summary = mk('summary', 'cr-terminal-summary-trigger');
+        summary.innerHTML =
+          'Ran <span class="cr-terminal-trigger-cmd">' + esc(shortCommand) + '</span>' +
+          '<span class="cr-terminal-summary-chevron">' + I.chevron + '</span>';
+        card.appendChild(summary);
+
+        // Terminal Container (the box)
+        var container = mk('div', 'cr-terminal-container cr-terminal-container--' + status);
+        
+        var head = mk('div', 'cr-terminal-header');
         head.innerHTML =
-          '<span class="cr-tool-card-icon cr-tool-card-icon--' + status + '">' +
-            (status === 'running' ? I.spin : I.terminal) +
-          '</span>' +
-          '<span class="cr-tool-card-title">' + I.terminal + ' Terminal</span>' +
-          (shellName ? '<span class="cr-terminal-shell-badge">' + esc(shellName) + '</span>' : '') +
-          (command ? '<span class="cr-tool-card-args">$ ' + esc(truncate(command, 150)) + '</span>' : '') +
-          '<span class="cr-terminal-card-duration-summary" style="display:none"></span>' +
-          '<span class="cr-tool-card-status cr-tool-card-status--' + status + '">' + esc(statusLabel) + '</span>' +
-          '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
-        card.appendChild(head);
+          '<span class="cr-terminal-status-dot"></span>' +
+          '<span class="cr-terminal-header-title">' + esc(command) + '</span>' +
+          '<span class="cr-terminal-header-icon">' + I.terminal + '</span>';
+        container.appendChild(head);
 
-        // Card body with terminal output area
-        var cardBody = mk('div', 'cr-tool-card-body');
-        cardBody.style.display = 'block';
+        var cardBody = mk('div', 'cr-terminal-body');
+        container.appendChild(cardBody);
+        card.appendChild(container);
+        body.appendChild(card);
 
-        // Terminal output container (streamed content goes here)
-        var outputArea = mk('div', 'cr-terminal-card-output');
-        outputArea.innerHTML =
-          '<div class="cr-terminal-card-cmd">$ ' + esc(command) + '</div>' +
-          '<div class="cr-terminal-card-stream"></div>';
-        cardBody.appendChild(outputArea);
-
-        // Result container (shown on completion)
-        var resultContainer = mk('div', 'cr-tool-card-result');
-        resultContainer.style.display = 'none';
         if (result) {
-          // History replay: fill data and set canonical status
           var exitCode = result.exit_code != null ? result.exit_code : result.exitCode;
           var duration = result.duration_ms || result.durationMs;
           updateTerminalCardResult(card, status, result);
           setTerminalCardStatus(card, status, exitCode, duration, result);
         }
-        cardBody.appendChild(resultContainer);
-
-        card.appendChild(cardBody);
-        body.appendChild(card);
 
         // Track in terminal card state
         var termId = card.dataset.terminalId || 'card_' + Date.now();
         S._terminalCards[termId] = card;
+        S.toolCards[cardKey] = card;
         if (S._terminalCardOrder.indexOf(termId) === -1) {
           S._terminalCardOrder.push(termId);
         }
@@ -1741,8 +1696,8 @@
        */
       function appendTerminalCardOutput(card, cleanChunk) {
         if (!card) return;
-        var streamEl = card.querySelector('.cr-terminal-card-stream');
-        if (!streamEl) return;
+        var bodyEl = card.querySelector('.cr-terminal-body');
+        if (!bodyEl) return;
 
         // Split chunk into lines and append each as a separate div
         var lines = cleanChunk.split('\n');
@@ -1750,9 +1705,14 @@
           var line = lines[li];
           // Skip empty lines at the end (partial line from streaming)
           if (li === lines.length - 1 && line === '') break;
-          var lineEl = mk('div', 'cr-terminal-card-line');
+          var lineEl = mk('div', 'cr-terminal-line cr-terminal-line--out');
+          if (line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')) {
+            lineEl.className = 'cr-terminal-line cr-terminal-line--err';
+          } else if (line.includes('?') || line.includes('(y/N)')) {
+            lineEl.className = 'cr-terminal-line cr-terminal-line--prompt';
+          }
           lineEl.textContent = line;
-          streamEl.appendChild(lineEl);
+          bodyEl.appendChild(lineEl);
         }
 
         scrollBottom(msgList);
@@ -1767,85 +1727,22 @@
        *   'error'      — Command failed
        *   'timeout'    — Command timed out
        *   'cancelled'  — Command was cancelled
-       *
-       * Every terminal UI element (header icon, status label, card class,
-       * footer) derives from this one status value.
        */
       function setTerminalCardStatus(card, execStatus, exitCode, duration, extra) {
-        // Normalize 'waiting' to show consistently in UI
-        var isWaiting = execStatus === 'waiting';
         if (!card) return;
         card.dataset.status = execStatus;
-        card.className = 'cr-tool-card cr-tool-card--' + execStatus + ' cr-terminal-card';
-
-        var iconEl = card.querySelector('.cr-tool-card-icon');
-        if (iconEl) {
-          iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + execStatus;
-          if (execStatus === 'running' || isWaiting) iconEl.innerHTML = I.spin;
-          else if (execStatus === 'success') iconEl.innerHTML = I.check;
-          else if (execStatus === 'error') iconEl.innerHTML = I.err;
-          else if (execStatus === 'timeout') iconEl.innerHTML = I.err;
-          else if (execStatus === 'cancelled') iconEl.innerHTML = I.close;
-          else iconEl.innerHTML = I.terminal;
+        
+        var container = card.querySelector('.cr-terminal-container');
+        if (container) {
+          container.className = 'cr-terminal-container cr-terminal-container--' + execStatus;
         }
 
-        // Update status label in header summary
-        var statusEl = card.querySelector('.cr-tool-card-status');
-        if (statusEl) {
-          statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + execStatus;
-          if (execStatus === 'pending') statusEl.textContent = 'Awaiting approval…';
-          else if (execStatus === 'running') statusEl.textContent = 'Running…';
-          else if (isWaiting) statusEl.textContent = 'Waiting for input…';
-          else if (execStatus === 'success') {
-            statusEl.textContent = exitCode != null ? 'Exit code ' + exitCode : 'Exit code 0';
-          } else if (execStatus === 'error') {
-            statusEl.textContent = exitCode != null ? 'Exit code ' + exitCode : 'Failed';
-          } else if (execStatus === 'timeout') statusEl.textContent = 'Timed out';
-          else if (execStatus === 'cancelled') statusEl.textContent = 'Cancelled';
-        }
-
-        // Update duration display in summary header
-        var durationEl = card.querySelector('.cr-terminal-card-duration-summary');
-        if (durationEl) {
-          if (duration != null) {
-            var label = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
-            durationEl.textContent = label;
-            durationEl.style.display = 'inline';
+        // Collapse card if finished successfully, but keep open for errors or waiting
+        if (execStatus !== 'running' && execStatus !== 'waiting' && execStatus !== 'pending') {
+          if (execStatus === 'success') {
+            card.open = false;
           } else {
-            durationEl.style.display = 'none';
-          }
-        }
-
-        // Update footer inside terminal-card-output
-        var outputArea = card.querySelector('.cr-terminal-card-output');
-        if (outputArea) {
-          var oldFooter = outputArea.querySelector('.cr-terminal-card-footer');
-          if (oldFooter) oldFooter.remove();
-
-          // Keep the card open when waiting for input so the user can see the prompt
-          if (isWaiting) card.open = true;
-
-          // Only show footer for terminal states (not pending)
-          if (execStatus !== 'pending' && execStatus !== 'running' && !isWaiting) {
-            var footer = mk('div', 'cr-terminal-card-footer');
-            var isPositive = execStatus === 'success';
-            var statusText = execStatus === 'success' ? 'Completed' : (execStatus === 'timeout' ? 'Timed out' : execStatus === 'cancelled' ? 'Cancelled' : 'Failed');
-            var iconHtml = isPositive ? I.check : I.err;
-            if (duration != null) {
-              var durationLabel = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
-              footer.innerHTML += '<span class="cr-terminal-card-footer-status">' + iconHtml + ' ' + statusText + ' in ' + durationLabel + '</span>';
-            } else {
-              footer.innerHTML += '<span class="cr-terminal-card-footer-status">' + iconHtml + ' ' + statusText + '</span>';
-            }
-            if (exitCode != null) {
-              footer.innerHTML += '<span class="cr-terminal-card-exitcode">Exit code: ' + exitCode + '</span>';
-            } else if (execStatus === 'error' || execStatus === 'timeout') {
-              footer.innerHTML += '<span class="cr-terminal-card-exitcode">Exit code unavailable</span>';
-            }
-            if (extra && extra.message && execStatus !== 'success') {
-              footer.innerHTML += '<span class="cr-terminal-card-error-msg">' + esc(extra.message) + '</span>';
-            }
-            outputArea.appendChild(footer);
+            card.open = true;
           }
         }
       }
@@ -1854,88 +1751,62 @@
        * Determine canonical execution status from terminal exit info.
        */
       function determineExecStatus(exitCode, duration, ev) {
-        // If execution threw or error flag set
         if (ev && ev.error) return 'error';
-        // If explicit timeout
         if (ev && ev.timedOut) return 'timeout';
-        // If cancelled
         if (ev && ev.cancelled) return 'cancelled';
-        // Process waiting for input (idle timeout, no exit code yet)
         if (ev && ev.waitingForInput) return 'waiting';
-        // exitCode is a number
         if (exitCode != null) {
           if (exitCode === 0) return 'success';
           return 'error';
         }
-        // No exit code — check for error indicators
         if (ev && ev.message && (
           ev.message.toLowerCase().includes('error') ||
           ev.message.toLowerCase().includes('fail') ||
           ev.message.toLowerCase().includes('timed out')
         )) return 'error';
-        // No exit code but no errors — assume success if we got this far
         return 'success';
       }
 
       /**
        * Fill a terminal card with output data (stdout, stderr, shell).
-       * Does NOT change the execution status — only `terminal_exit` or
-       * `terminal_error` events should change status via setTerminalCardStatus.
        */
       function updateTerminalCardResult(card, status, result) {
         if (!card) return;
-        var exitCode = result.exit_code != null ? result.exit_code : result.exitCode;
-        var duration = result.duration_ms || result.durationMs;
+        var bodyEl = card.querySelector('.cr-terminal-body');
+        if (!bodyEl) return;
+
         var stdout = result.stdout || result.output || '';
         var stderr = result.stderr || '';
-        var shell = result.shell || '';
 
-        // Update shell badge in header
-        if (shell) {
-          var shellBadge = card.querySelector('.cr-terminal-shell-badge');
-          if (!shellBadge && card.querySelector('.cr-tool-card-head')) {
-            var argsEl = card.querySelector('.cr-tool-card-args');
-            var newBadge = mk('span', 'cr-terminal-shell-badge');
-            newBadge.textContent = shell;
-            if (argsEl) {
-              card.querySelector('.cr-tool-card-head').insertBefore(newBadge, argsEl);
-            }
-          } else if (shellBadge) {
-            shellBadge.textContent = shell;
-          }
-        }
+        // Clear existing lines
+        bodyEl.innerHTML = '';
 
-        // Populate output with stdout
-        var streamEl = card.querySelector('.cr-terminal-card-stream');
-        if (streamEl && stdout) {
-          streamEl.innerHTML = '';
+        if (stdout) {
           var outLines = stdout.split('\n');
           for (var oi = 0; oi < outLines.length; oi++) {
             if (oi === outLines.length - 1 && outLines[oi] === '') break;
-            var lineEl = mk('div', 'cr-terminal-card-line');
-            lineEl.textContent = outLines[oi];
-            streamEl.appendChild(lineEl);
+            var lineEl = mk('div', 'cr-terminal-line cr-terminal-line--out');
+            var lineText = outLines[oi];
+            if (lineText.toLowerCase().includes('error') || lineText.toLowerCase().includes('fail')) {
+              lineEl.className = 'cr-terminal-line cr-terminal-line--err';
+            }
+            lineEl.textContent = lineText;
+            bodyEl.appendChild(lineEl);
           }
         }
 
-        // Add stderr if present
         if (stderr) {
-          var outputArea = card.querySelector('.cr-terminal-card-output');
-          if (outputArea && streamEl) {
-            var errDiv = mk('div', 'cr-terminal-card-stderr');
-            errDiv.textContent = stderr;
-            outputArea.appendChild(errDiv);
+          var errLines = stderr.split('\n');
+          for (var ei = 0; ei < errLines.length; ei++) {
+            if (ei === errLines.length - 1 && errLines[ei] === '') break;
+            var lineEl = mk('div', 'cr-terminal-line cr-terminal-line--err');
+            lineEl.textContent = errLines[ei];
+            bodyEl.appendChild(lineEl);
           }
-        }
-
-        // Update duration in summary header
-        var durationEl = card.querySelector('.cr-terminal-card-duration-summary');
-        if (durationEl && duration != null) {
-          var label = duration < 1000 ? duration + ' ms' : (duration / 1000).toFixed(2) + ' s';
-          durationEl.textContent = label;
-          durationEl.style.display = 'inline';
         }
       }
+
+
 
       // ── No legacy terminal functions — all terminal output
       //    is rendered via inline tool cards only ─────────
@@ -2225,16 +2096,115 @@
        * Used to prevent duplicate cards when the same tool call arrives via
        * both streaming ev.message.tool_calls and a direct ev.type === 'tool_call'.
        */
-      function findPendingCardByToolName(S, toolName) {
+      function findPendingCardByToolName(S, toolName, toolId) {
+        if (toolName === 'terminal_input' || toolName === 'stop_terminal') {
+          var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-terminal-details') : [];
+          if (termCards.length > 0) {
+            return termCards[termCards.length - 1];
+          }
+        }
+
         for (var cardKey in S.toolCards) {
           var card = S.toolCards[cardKey];
           if (card && card.dataset && card.dataset.toolName === toolName &&
-              !card.dataset.toolCallId &&
               card.dataset.status !== 'success' && card.dataset.status !== 'error') {
-            return card;
+            var cid = card.dataset.toolCallId;
+            var isTemp = cid && (cid.indexOf('tool_') === 0 || cid.indexOf('term_') === 0);
+            if (!cid || isTemp || (toolId && cid === toolId)) {
+              return card;
+            }
           }
         }
         return null;
+      }
+
+      function reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex) {
+        var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+        var idKey = toolId || '';
+        if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) {
+          var card = S.toolCards[idKey] || S.toolCards[indexKey];
+          if (card && idKey) {
+            S._seenToolIds[idKey] = true;
+            card.dataset.toolCallId = idKey;
+            S.toolCards[idKey] = card;
+          }
+          return card;
+        }
+
+        var existingCard = findPendingCardByToolName(S, toolName, toolId) || (toolId && S.toolCards[toolId]);
+        if (existingCard) {
+          S._seenToolIds[indexKey] = true;
+          if (idKey) S._seenToolIds[idKey] = true;
+          if (toolId) existingCard.dataset.toolCallId = toolId;
+          S.toolCards[indexKey] = existingCard;
+          if (idKey) S.toolCards[idKey] = existingCard;
+          return existingCard;
+        }
+
+        S._seenToolIds[indexKey] = true;
+        if (idKey) S._seenToolIds[idKey] = true;
+
+        S.contentDiv = null;
+        S.contentText = '';
+
+        var displayId = toolId || 'term_' + (++S._toolIdCounter);
+        var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
+        for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
+          var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
+          if (prevCard) prevCard.open = false;
+        }
+
+        var cardElement = appendTerminalCard(S.botBody, cardKey, toolName, toolArgs, 'pending', null);
+        if (toolId) cardElement.dataset.toolCallId = toolId;
+        cardElement.dataset.terminalId = '';
+        S.toolCards[cardKey] = cardElement;
+        S.toolCards[displayId] = cardElement;
+        S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
+        return cardElement;
+      }
+
+      function reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex) {
+        var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+        var idKey = toolId || '';
+        if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) {
+          var card = S.toolCards[idKey] || S.toolCards[indexKey];
+          if (card && idKey) {
+            S._seenToolIds[idKey] = true;
+            card.dataset.toolCallId = idKey;
+            S.toolCards[idKey] = card;
+          }
+          return card;
+        }
+
+        var existingCard = findPendingCardByToolName(S, toolName, toolId) || (toolId && S.toolCards[toolId]);
+        if (existingCard) {
+          S._seenToolIds[indexKey] = true;
+          if (idKey) S._seenToolIds[idKey] = true;
+          if (toolId) existingCard.dataset.toolCallId = toolId;
+          S.toolCards[indexKey] = existingCard;
+          if (idKey) S.toolCards[idKey] = existingCard;
+          return existingCard;
+        }
+
+        S._seenToolIds[indexKey] = true;
+        if (idKey) S._seenToolIds[idKey] = true;
+
+        S.contentDiv = null;
+        S.contentText = '';
+
+        var displayId = toolId || 'tool_' + (++S._toolIdCounter);
+        var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
+        var cardElement = appendToolCard(S.botBody, cardKey, toolName, toolArgs, 'running');
+        if (toolId) {
+          cardElement.dataset.toolCallId = toolId;
+        }
+        S.toolCards[cardKey] = cardElement;
+        if (displayId) {
+          S.toolCards[displayId] = cardElement;
+        }
+        S.toolCards[indexKey] = cardElement;
+        S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
+        return cardElement;
       }
 
       /**
@@ -2351,7 +2321,7 @@
         if (!body) return null;
         status = status || 'running';
         var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
-        card.open = true;
+        card.open = (status !== 'success');
         card.dataset.cardKey = cardKey;
         card.dataset.toolName = toolName;
         card.dataset.status = status;
@@ -2467,6 +2437,7 @@
         var oldStatus = card.dataset.status;
         card.className = 'cr-tool-card cr-tool-card--' + status;
         card.dataset.status = status;
+        card.open = (status !== 'success');
 
         var toolName = card.dataset.toolName;
 

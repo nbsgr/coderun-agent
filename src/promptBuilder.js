@@ -27,7 +27,7 @@ export function buildMessages(userPrompt, options) {
   if (shellName) {
     systemContent += '\nDetected Shell: ' + shellName;
     if (shellName.toLowerCase().includes('powershell') || shellName.toLowerCase().includes('pwsh')) {
-      systemContent += '\nPOWERSHELL RULES: Use `cd dir; command` (semicolon) NOT `cd dir && command` (&& is invalid in PowerShell).';
+      systemContent += '\nPOWERSHELL RULES:\n- DO NOT use `&&` to chain commands (it is invalid in Windows PowerShell and will fail with a ParserError).\n- To chain commands, use `;` (semicolon) instead, e.g. `cd folder; npm run dev`.\n- Make sure commands are compatible with PowerShell syntax.';
     } else if (shellName.toLowerCase().includes('cmd')) {
       systemContent += '\nCMD RULES: Use `cd dir && command` for sequential commands.';
     } else {
@@ -37,6 +37,8 @@ export function buildMessages(userPrompt, options) {
   if (platformName) {
     systemContent += '\nPlatform: ' + platformName;
   }
+
+  systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
 
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
     'You have access to planning tools (`create_plan` and `update_plan`) to plan your execution steps as a checklist of todos shown to the user.\n' +

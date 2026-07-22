@@ -1041,6 +1041,8 @@
     if (extra.images) message.images = extra.images;
     if (extra.tool_calls) message.tool_calls = extra.tool_calls;
     if (extra.tool_call_id) message.tool_call_id = extra.tool_call_id;
+    if (extra.tool_name) message.tool_name = extra.tool_name;
+    if (extra.result) message.result = extra.result;
 
     var last = conversation.messages[conversation.messages.length - 1];
     if (last && last.role === role) {
@@ -1048,6 +1050,8 @@
       if (message.thinking) last.thinking = message.thinking;
       if (message.sources) last.sources = message.sources;
       if (message.tool_calls) last.tool_calls = message.tool_calls;
+      if (message.tool_name) last.tool_name = message.tool_name;
+      if (message.result) last.result = message.result;
     } else {
       conversation.messages.push(message);
     }

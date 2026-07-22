@@ -335,8 +335,10 @@ async function handleFrontendMessage(message, webview) {
       var userImage = message.image || null;
       var history = message.history;
       var workspaceFolder = message.workspaceFolder;
-      // Start with a fresh terminal for each chat session
-      terminalManager.resetTerminal();
+      // Start with a fresh terminal only if this is the first message in a new chat session
+      if (!history || history.length === 0) {
+        terminalManager.resetTerminal();
+      }
 
       // Determine which provider to use from the frontend
       var providerName = message.provider || '';
