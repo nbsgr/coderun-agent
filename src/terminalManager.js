@@ -14,6 +14,7 @@ var executionCounter = 0;
 var sendEventCallback = null;
 var _lastSessionOutput = '';  // Holds stdout from the last/most recent terminal execution
 var _lastSessionActive = false; // Whether the session is still active
+var _lastCheckedPosition = 0; // Tracks the last position returned by checkTerminalOutput() to avoid returning duplicate output
 var activeExecId = null; // Tracks the currently running terminal execution ID for interactive routing
 var _pendingInteractiveReader = null; // Stores the async iterator reader when process is waiting for input
 var _pendingInteractiveExecution = null; // Stores the execution object for exit code retrieval
@@ -997,6 +998,7 @@ export function resetTerminal() {
   }
   _lastSessionOutput = '';
   _lastSessionActive = false;
+  _lastCheckedPosition = 0;
 }
 
 /**
@@ -1008,19 +1010,14 @@ export function hasShellIntegration() {
 
 /**
  * Send text input directly to the active terminal.
+ * Note: The shell echo is captured naturally by the background reader
+ * (continueReadingInBackground), so we do NOT send a synthetic
+ * terminal_output event here — that would duplicate every input line.
  */
 export function sendTerminalInput(text) {
   var terminal = getTerminal();
   terminal.show(true);
   terminal.sendText(text, true); // send with newline so it submits the input
-
-  if (sendEventCallback) {
-    sendEventCallback({
-      type: 'terminal_output',
-      terminalId: activeExecId || ('term_input_' + Date.now()),
-      chunk: text + '\n'
-    });
-  }
   return { success: true, message: 'Input sent to terminal: ' + text };
 }
 
@@ -1040,21 +1037,27 @@ export async function checkTerminalOutput() {
     await new Promise(function(resolve) { setTimeout(resolve, 1500); });
   }
 
-  var stdout = _lastSessionOutput || '';
+  var fullOutput = _lastSessionOutput || '';
   var stderr = '';
   var shellName = activeTerminal ? detectShellName(activeTerminal) : 'unknown';
   var platformName = getPlatform();
   var startedAt = Date.now();
 
+  // Return only NEW output since the last checkTerminalOutput call.
+  // This prevents the LLM from receiving accumulated session history
+  // every time, which causes massive text duplication in the context.
+  var newOutput = fullOutput.substring(_lastCheckedPosition);
+  _lastCheckedPosition = fullOutput.length;
+
   // Check whether there's an active running execution
   var isWaiting = _lastSessionActive;
   var exitCode = null;
 
-  var promptCheck = detectPrompt(stdout);
+  var promptCheck = detectPrompt(newOutput);
   return {
     shell: shellName,
     platform: platformName,
-    stdout: stdout,
+    stdout: newOutput,
     stderr: stderr,
     exitCode: exitCode,
     durationMs: Date.now() - startedAt,

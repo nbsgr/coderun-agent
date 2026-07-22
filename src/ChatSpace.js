@@ -1769,17 +1769,24 @@
 
       /**
        * Fill a terminal card with output data (stdout, stderr, shell).
+       * Only fills content if the body is empty (i.e., no streaming output
+       * was captured via terminal_output events). If the body already has
+       * content from live streaming, we do NOT clear it — that would
+       * duplicate the output.
        */
       function updateTerminalCardResult(card, status, result) {
         if (!card) return;
         var bodyEl = card.querySelector('.cr-terminal-body');
         if (!bodyEl) return;
 
+        // If the body already has content from terminal_output streaming,
+        // do NOT clear and repopulate — that would duplicate output.
+        if (bodyEl.children.length > 0) {
+          return;
+        }
+
         var stdout = result.stdout || result.output || '';
         var stderr = result.stderr || '';
-
-        // Clear existing lines
-        bodyEl.innerHTML = '';
 
         if (stdout) {
           var outLines = stdout.split('\n');
