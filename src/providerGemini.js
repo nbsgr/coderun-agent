@@ -1,4 +1,4 @@
-// providerGemini.js — Google Gemini API provider
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var model = config.model || 'gemini-1.5-pro';
@@ -29,10 +29,12 @@ export async function* chat(config, messages, tools) {
   console.log('[GEMINI] HTTP Status:', response.status, response.statusText);
 
   if (!response.ok) {
-    var err = await response.json().catch(function() { return {}; });
-    throw new Error(err.error?.message || 'Gemini Error: HTTP ' + response.status);
+    throw await handleApiResponseError(response, 'Gemini');
   }
 
+  if (!response.body) {
+    throw new Error('Gemini API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -125,15 +127,20 @@ export async function* chat(config, messages, tools) {
 
 export async function listModels(config) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/models?key=' + config.apiKey;
+  var res;
   try {
-    var res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    var data = await res.json();
-    return data.models ? data.models.map(function(m) { return m.name.split('/').pop(); }) : [];
+    res = await fetch(url);
   } catch (e) {
-    console.warn('[CODERUN] Failed to fetch models from Gemini-Compatible endpoint:', e.message);
+    console.warn('[CODERUN] Failed to reach Gemini endpoint:', e.message);
     return config.model ? [config.model] : ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
   }
+
+  if (!res.ok) {
+    throw await handleApiResponseError(res, 'Gemini');
+  }
+
+  var data = await safeReadJson(res, 'Gemini');
+  return data.models ? data.models.map(function(m) { return m.name.split('/').pop(); }) : [];
 }
 
 export async function embeddings(config, texts) {
@@ -146,7 +153,8 @@ export async function embeddings(config, texts) {
       requests: texts.map(function(t) { return { content: { parts: [{ text: t }] } }; })
     })
   });
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'Gemini');
+  var data = await safeReadJson(res, 'Gemini');
   return data.embeddings ? data.embeddings.map(function(e) { return e.values; }) : [];
 }
 
@@ -172,6 +180,7 @@ function convertMessages(messages) {
     if (m.content) parts.push({ text: m.content });
 
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       rawImages.forEach(function(img) {
         var cleanB64 = String(img).replace(/^data:[^;]+;base64,/, '');

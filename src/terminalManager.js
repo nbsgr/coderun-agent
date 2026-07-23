@@ -241,34 +241,6 @@ export function registerTerminalListeners(context) {
   context.subscriptions.push(closeSub);
 }
 
-/**
- * Read output stream from a TerminalShellExecution.
- */
-async function readExecutionStream(execId, execution) {
-  try {
-    var stream = execution.read();
-    for await (var chunk of stream) {
-      if (!pendingExecutions[execId]) break;
-      pendingExecutions[execId].output += chunk;
-      if (sendEventCallback) {
-        sendEventCallback({
-          type: 'terminal_output',
-          terminalId: execId,
-          chunk: chunk
-        });
-      }
-    }
-  } catch (err) {
-    console.error('[TERMINAL] Error reading execution stream:', err);
-    if (sendEventCallback && pendingExecutions[execId]) {
-      sendEventCallback({
-        type: 'terminal_error',
-        terminalId: execId,
-        message: err.message
-      });
-    }
-  }
-}
 
 /**
  * Continue reading from the shell integration stream in the background
@@ -579,12 +551,12 @@ export async function executeCommand(command, timeout, background) {
   if (shellIntegration) {
     // Use shell integration executeCommand for reliable tracking
     console.log('[TERMINAL] Executing via shell integration:', command);
+    var stdout = '';
+    var stderr = '';
     try {
       var execId = 'term_direct_' + (++executionCounter);
       activeExecId = execId;
       var execution = shellIntegration.executeCommand(command);
-      var stdout = '';
-      var stderr = '';
       var timeoutAt = startedAt + timeout * 1000;
 
       if (sendEventCallback) {

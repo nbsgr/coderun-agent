@@ -74,7 +74,7 @@ export async function gatherContext(userPrompt, workspace) {
  * Returns { type, description, needsFiles, needsContent }.
  */
 function analyzeIntent(prompt) {
-  var lower = prompt.toLowerCase();
+  var lower = String(prompt || '').toLowerCase();
 
   // Code generation / creation
   if (lower.includes('create') || lower.includes('generate') || lower.includes('add') ||
@@ -294,7 +294,7 @@ async function searchRelevantFiles(prompt, workspace) {
  * Filters out stop words and short tokens.
  */
 function extractKeywords(text) {
-  var words = text.toLowerCase().split(/[^a-zA-Z0-9_]+/).filter(Boolean);
+  var words = String(text || '').toLowerCase().split(/[^a-zA-Z0-9_]+/).filter(Boolean);
   var STOP_WORDS = {
     'the':1,'a':1,'an':1,'is':1,'are':1,'was':1,'were':1,'be':1,'been':1,
     'being':1,'have':1,'has':1,'had':1,'do':1,'does':1,'did':1,'will':1,

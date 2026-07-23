@@ -124,9 +124,6 @@ export function buildMessages(userPrompt, options) {
       role: msg.role,
       content: msg.content || ''
     };
-    if (msg.thinking) {
-      historyMsg.content = '\ue000' + msg.thinking + '\ue001\n' + historyMsg.content;
-    }
     if (msg.tool_calls) historyMsg.tool_calls = msg.tool_calls;
     if (msg.tool_call_id) historyMsg.tool_call_id = msg.tool_call_id;
     if (msg.images) historyMsg.images = msg.images;
@@ -145,12 +142,14 @@ export function buildMessages(userPrompt, options) {
   }
 
   // 4. Current user prompt
-  var userMsg = { role: 'user', content: userPrompt };
-  var currentImages = options.images || [];
-  if (currentImages && currentImages.length) {
-    userMsg.images = currentImages;
+  if (userPrompt) {
+    var userMsg = { role: 'user', content: userPrompt };
+    var currentImages = options.images || [];
+    if (currentImages && currentImages.length) {
+      userMsg.images = currentImages;
+    }
+    messages.push(userMsg);
   }
-  messages.push(userMsg);
 
   return messages;
 }

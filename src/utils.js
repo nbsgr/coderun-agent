@@ -75,3 +75,86 @@ export function mergeDefaults(target, defaults) {
   }
   return result;
 }
+
+export async function handleApiResponseError(response, providerName) {
+  var status = response.status;
+  var statusText = response.statusText;
+  
+  // Try to parse structured error message from response body
+  var errorMsg = '';
+  try {
+    var clone = response.clone();
+    var bodyText = await clone.text();
+    if (bodyText) {
+      try {
+        var bodyJson = JSON.parse(bodyText);
+        // Common structured error formats:
+        // OpenAI / OpenRouter / Groq: { error: { message: "..." } }
+        // Anthropic: { error: { type: "...", message: "..." } }
+        // Gemini: [ { error: { message: "..." } } ] or { error: { message: "..." } }
+        if (bodyJson.error) {
+          errorMsg = bodyJson.error.message || bodyJson.error.type || String(bodyJson.error);
+        } else if (Array.isArray(bodyJson) && bodyJson[0]?.error) {
+          errorMsg = bodyJson[0].error.message || String(bodyJson[0].error);
+        } else if (bodyJson.message) {
+          errorMsg = bodyJson.message;
+        } else {
+          errorMsg = truncate(bodyText, 300);
+        }
+      } catch (_) {
+        // Not JSON - clean HTML or truncate text
+        errorMsg = truncate(bodyText.replace(/<[^>]*>/g, '').trim(), 300);
+      }
+    }
+  } catch (_) {}
+
+  var prefix = providerName ? (providerName + ' API Error') : 'API Error';
+  
+  // Check common HTTP status codes
+  if (status === 429) {
+    return new Error(prefix + ': HTTP 429 Rate Limit Exceeded. Please check your API quota or wait a moment before trying again.' + (errorMsg ? ' Details: ' + errorMsg : ''));
+  }
+  if (status === 401) {
+    return new Error(prefix + ': HTTP 401 Unauthorized. Invalid API key. Please check your API key in the extension settings.' + (errorMsg ? ' Details: ' + errorMsg : ''));
+  }
+  if (status === 403) {
+    return new Error(prefix + ': HTTP 403 Forbidden. Access denied. Please verify your billing/quota or IP permissions.' + (errorMsg ? ' Details: ' + errorMsg : ''));
+  }
+  if (status === 404) {
+    return new Error(prefix + ': HTTP 404 Not Found. The requested model or endpoint does not exist.' + (errorMsg ? ' Details: ' + errorMsg : ''));
+  }
+  if (status >= 500) {
+    return new Error(prefix + ': HTTP ' + status + ' Upstream Server Error. The provider\'s server is overloaded, failed, or temporarily unavailable.' + (errorMsg ? ' Details: ' + errorMsg : ''));
+  }
+  
+  return new Error(prefix + ': HTTP ' + status + ' ' + (statusText || '') + (errorMsg ? ' - ' + errorMsg : ''));
+}
+
+export async function safeReadJson(response, providerName) {
+  var contentType = response.headers.get('content-type') || '';
+  if (contentType && !contentType.toLowerCase().includes('application/json')) {
+    var text = '';
+    try {
+      var cloneForText = response.clone();
+      text = await cloneForText.text();
+    } catch (_) {}
+    if (text.trim().startsWith('<') || text.toLowerCase().includes('html')) {
+      throw new Error((providerName ? providerName + ' API Error: ' : '') + 'Expected JSON response, but received HTML. Please check if your Base URL is correct.');
+    }
+  }
+
+  try {
+    var cloneForJson = response.clone();
+    return await cloneForJson.json();
+  } catch (err) {
+    var bodyText = '';
+    try {
+      var cloneForFallback = response.clone();
+      bodyText = await cloneForFallback.text();
+    } catch (_) {}
+    if (bodyText.trim().startsWith('<') || bodyText.toLowerCase().includes('html')) {
+      throw new Error((providerName ? providerName + ' API Error: ' : '') + 'Expected JSON response, but received HTML. Please check if your Base URL is correct.');
+    }
+    throw new Error((providerName ? providerName + ' API Error: ' : '') + 'Failed to parse JSON response: ' + err.message);
+  }
+}

@@ -246,7 +246,13 @@
         S._currentCheckpoints = [];
         S.timeline = null;
         S._toolCalls = [];
-        if (todosPanel) todosPanel.style.display = 'none';
+        if (todosPanel) {
+          if (conversation && conversation.plan) {
+            renderTodos(conversation.plan);
+          } else {
+            todosPanel.style.display = 'none';
+          }
+        }
         if (controlsPanel) controlsPanel.style.display = 'none';
       }
 
@@ -752,6 +758,157 @@
           });
         } catch (e) {
           console.error("[CHATSPACE] Error in doSend:", e);
+        }
+      }
+
+      function doContinue() {
+        try {
+          if (S.isStreaming) return;
+
+          var currentModel = (window.getDashboardModel ? window.getDashboardModel() : '') || model;
+          var currentProvider = (window.getDashboardProvider ? window.getDashboardProvider() : '') || '';
+          var currentWorkspace = (window.getDashboardWorkspace ? window.getDashboardWorkspace() : '') || workspace;
+          var currentBaseUrl = (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : '') || baseUrl;
+
+          if (!currentModel) {
+            if (window.webviewAlert) {
+              window.webviewAlert('Please select a model from the dropdown before resuming.');
+            } else {
+              alert('Please select a model from the dropdown before resuming.');
+            }
+            return;
+          }
+
+          if (!conversation.messages) conversation.messages = [];
+
+          clearStreamTurn();
+          S.fullResponse = '';
+          S.botBody = appendBotWrapper(msgList);
+          appendTyping(S.botBody);
+          setStreaming(true);
+          scrollBottom(msgList);
+
+          var history = conversation.messages.map(function(m) {
+            var h = { role: m.role, content: m.content || '' };
+            if (m.thinking) h.thinking = m.thinking;
+            if (m.tool_calls) h.tool_calls = m.tool_calls;
+            if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
+            if (m.images) h.images = m.images;
+            if (m.image && !h.images) h.images = [m.image];
+            return h;
+          });
+
+          if (window.VSCODE && window.VSCODE_API) {
+            onStreamStart();
+            window.activeChatStreamCallback = function(ev) {
+              if (ev && ev.message && ev.message.content) {
+                console.log('[CHATSPACE] Received content event:', ev.message.content.substring(0, 100));
+              }
+              if (ev.type === 'stream_end') {
+                finishStream(S);
+                setStreaming(false);
+                onStreamEnd();
+                saveBotResponse(S);
+                if (S._currentCheckpoints && S._currentCheckpoints.length) {
+                  var lastRow = msgList.querySelector('.cr-row--bot:last-child');
+                  var lastBody = lastRow ? lastRow.querySelector('.cr-bot-body') : null;
+                  if (lastBody) {
+                    appendActionsBar(lastBody, S._currentCheckpoints);
+                  }
+                }
+                scrollBottomSmooth(msgList);
+                window.activeChatStreamCallback = null;
+                return;
+              }
+              if (ev.type === 'stream_error') {
+                handleStreamError(ev.error);
+                onStreamError(ev.error);
+                window.activeChatStreamCallback = null;
+                return;
+              }
+              handleEvent(ev, S);
+              scrollBottomSmooth(msgList);
+            };
+
+            window.VSCODE_API.postMessage({
+              type: "startChat",
+              message: null, // Signals backend to continue existing history
+              image: null,
+              model: currentModel,
+              provider: currentProvider,
+              history: history,
+              workspaceFolder: currentWorkspace
+            });
+            return;
+          }
+
+          onStreamStart();
+          abortCtrl = new AbortController();
+
+          var body = {
+            message: null,
+            model: currentModel,
+            session_id: convId,
+            workspaceFolder: currentWorkspace,
+            workspace_folder: currentWorkspace,
+            history: history
+          };
+
+          fetch(currentBaseUrl + '/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/x-ndjson' },
+            body: JSON.stringify(body),
+            signal: abortCtrl.signal
+          })
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+            var reader = res.body.getReader();
+            var dec = new TextDecoder('utf-8');
+            var buf = '';
+
+            function pump() {
+              return reader.read().then(function(c) {
+                if (c.done) {
+                  if (buf.trim()) {
+                    try { handleEvent(JSON.parse(buf.trim()), S); } catch(e) {}
+                  }
+                  finishStream(S);
+                  setStreaming(false);
+                  onStreamEnd();
+                  saveBotResponse(S);
+                  scrollBottomSmooth(msgList);
+                  return;
+                }
+                buf += dec.decode(c.value, { stream: true });
+                var lines = buf.split('\n');
+                buf = lines.pop();
+                lines.forEach(function(line) {
+                  line = line.trim();
+                  if (!line) return;
+                  try {
+                    var ev = JSON.parse(line);
+                    handleEvent(ev, S);
+                    scrollBottomSmooth(msgList);
+                  } catch(e) {}
+                });
+                return pump();
+              }).catch(function(e) {
+                if (e.name !== 'AbortError') {
+                  handleStreamError(e);
+                  onStreamError(e);
+                }
+              });
+            }
+            return pump();
+          })
+          .catch(function(e) {
+            if (e.name !== 'AbortError') {
+              handleStreamError(e);
+              onStreamError(e);
+            }
+          });
+        } catch (e) {
+          console.error("[CHATSPACE] Error in doContinue:", e);
         }
       }
 
@@ -1275,7 +1432,9 @@
                   S._terminalCards[termId].open = false;
                 }
               }
-              S._activeTerminalId = null;
+              if (S._activeTerminalId === termId) {
+                S._activeTerminalId = null;
+              }
               break;
             }
             case 'terminal_error': {
@@ -1515,7 +1674,7 @@
         }
 
         targetParent.appendChild(d);
-        var actions = d.querySelector('#actions-' + id);
+        var actions = d.querySelector('[id="actions-' + id + '"]');
         actions.addEventListener('click', function(e) {
           var btn = e.target.closest('[data-action]');
           if (!btn) return;
@@ -2036,8 +2195,7 @@
         btnContinue.textContent = 'Continue';
         btnContinue.addEventListener('click', function() {
           btnContainer.remove();
-          input.value = "Continue building the project from where you left off";
-          doSend();
+          doContinue();
         });
 
         var btnQuit = mk('button', 'cr-btn cr-btn-quit-all');

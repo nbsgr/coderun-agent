@@ -107,6 +107,9 @@
         saveStateToVscode();
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations)); } catch (_) {}
       }
+    } catch (_) {}
+    
+    try {
       if (selectedModel) {
         state.selectedModel = selectedModel;
         saveStateToVscode();

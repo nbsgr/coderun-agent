@@ -75,6 +75,9 @@ export async function applyPatch(diffId, workspace) {
   // Just mark as accepted — tools.js actually writes the file
   // after the deferred promise resolves.
   patch.status = 'accepted';
+  if (patch.deferred && patch.deferred.resolve) {
+    patch.deferred.resolve({ accepted: true });
+  }
   delete _pendingPatches[diffId];
   return { success: true, message: 'Applied: ' + patch.filePath };
 }
@@ -88,6 +91,9 @@ export function rejectPatch(diffId) {
     return { success: false, message: 'Patch not found: ' + diffId };
   }
   patch.status = 'rejected';
+  if (patch.deferred && patch.deferred.resolve) {
+    patch.deferred.resolve({ accepted: false });
+  }
   delete _pendingPatches[diffId];
   return { success: true, message: 'Rejected: ' + patch.filePath };
 }
@@ -144,6 +150,12 @@ export function rejectAll() {
  * Cancel all pending patches (used when chat is stopped).
  */
 export function cancelAll() {
+  for (var id in _pendingPatches) {
+    var patch = _pendingPatches[id];
+    if (patch && patch.deferred && patch.deferred.resolve) {
+      patch.deferred.resolve({ accepted: false });
+    }
+  }
   _pendingPatches = {};
 }
 
@@ -154,18 +166,22 @@ export async function openDiffEditor(diffId, workspace) {
   var patch = _pendingPatches[diffId] || getPatch(diffId);
   if (!patch) return;
 
-  var tmpDir = path.join(os.tmpdir(), 'coderun-diff');
-  await fs.mkdir(tmpDir, { recursive: true });
+  try {
+    var tmpDir = path.join(os.tmpdir(), 'coderun-diff');
+    await fs.mkdir(tmpDir, { recursive: true });
 
-  var originalName = patch.isNewFile ? '(new) ' + patch.filePath : patch.filePath;
-  var originalUri = vscode.Uri.file(path.join(tmpDir, originalName.replace(/[\\/:*?"<>|]/g, '_') + '.original'));
-  var proposedUri = vscode.Uri.file(path.join(tmpDir, patch.filePath.replace(/[\\/:*?"<>|]/g, '_') + '.proposed'));
+    var originalName = patch.isNewFile ? '(new) ' + patch.filePath : patch.filePath;
+    var originalUri = vscode.Uri.file(path.join(tmpDir, originalName.replace(/[\\/:*?"<>|]/g, '_') + '.original'));
+    var proposedUri = vscode.Uri.file(path.join(tmpDir, patch.filePath.replace(/[\\/:*?"<>|]/g, '_') + '.proposed'));
 
-  await fs.writeFile(originalUri.fsPath, patch.originalText, 'utf-8');
-  await fs.writeFile(proposedUri.fsPath, patch.modifiedText, 'utf-8');
+    await fs.writeFile(originalUri.fsPath, patch.originalText, 'utf-8');
+    await fs.writeFile(proposedUri.fsPath, patch.modifiedText, 'utf-8');
 
-  var title = patch.isNewFile ? 'Create: ' + patch.filePath : 'Edit: ' + patch.filePath;
-  await vscode.commands.executeCommand('vscode.diff', originalUri, proposedUri, title);
+    var title = patch.isNewFile ? 'Create: ' + patch.filePath : 'Edit: ' + patch.filePath;
+    await vscode.commands.executeCommand('vscode.diff', originalUri, proposedUri, title);
+  } catch (err) {
+    console.error('[CODERUN] Error opening diff editor:', err);
+  }
 }
 
 // ========================================================

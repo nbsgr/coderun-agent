@@ -9,6 +9,9 @@ import * as terminalManager from './terminalManager.js';
 import * as searchManager from './searchManager.js';
 import { parseSymbols } from './symbolParser.js';
 
+var DEBUG = false;
+function dbg() { if (DEBUG) console.log.apply(console, arguments); }
+
 // =====================================================
 // HELPER: SAFE PATH
 // =====================================================
@@ -327,10 +330,10 @@ async function* run_terminal(args, workspace) {
   yield { type: 'action', action: 'run_terminal', message: 'Running command: ' + command };
 
   try {
-    console.log('[TOOLS] run_terminal: calling terminalManager.executeCommand');
+    dbg('[TOOLS] run_terminal: calling terminalManager.executeCommand');
     // Execute via terminalManager which uses VS Code Terminal API + Shell Integration
     var result = await terminalManager.executeCommand(command, timeout, background);
-    console.log('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
+    dbg('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
     // The terminalManager fires terminal_start, terminal_output, terminal_exit events
     // via its sendEventCallback. These are forwarded to the webview by extension.js.
@@ -352,7 +355,7 @@ async function* run_terminal(args, workspace) {
     var interactive = result.interactive === true;
     var promptDetected = result.promptDetected === true;
     var status = result.status || (toolSuccess ? 'completed' : 'failed');
-    console.log('[TOOLS] run_terminal: yielding tool_result. exitCode:', toolExitCode, 'success:', toolSuccess, 'waitingForInput:', waitingForInput, 'interactive:', interactive, 'promptDetected:', promptDetected, 'stdout length:', toolStdout.length);
+    dbg('[TOOLS] run_terminal: yielding tool_result. exitCode:', toolExitCode, 'success:', toolSuccess, 'waitingForInput:', waitingForInput, 'interactive:', interactive, 'promptDetected:', promptDetected, 'stdout length:', toolStdout.length);
 
     yield {
       type: 'tool_result',

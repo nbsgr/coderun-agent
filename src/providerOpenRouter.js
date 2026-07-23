@@ -1,4 +1,4 @@
-// providerOpenRouter.js — OpenRouter API provider (OpenAI-compatible)
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -23,8 +23,8 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var err = await response.json().catch(function() { return {}; });
-    var msg = err.error?.message || 'OpenRouter Error: HTTP ' + response.status;
+    var errObj = await handleApiResponseError(response, 'OpenRouter');
+    var msg = errObj.message;
     // Detect tool use unsupported error and provide helpful guidance
     if (msg.indexOf('No endpoints found') !== -1 || msg.indexOf('tool use') !== -1 || msg.indexOf('tool') !== -1) {
       msg += '\n\nThis model does not support tool/function calling on OpenRouter.' +
@@ -66,8 +66,8 @@ export async function listModels(config) {
   var res = await fetch(url, {
     headers: { 'Authorization': 'Bearer ' + config.apiKey }
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'OpenRouter');
+  var data = await safeReadJson(res, 'OpenRouter');
   return data.data ? data.data.map(function(m) { return m.id; }) : [];
 }
 

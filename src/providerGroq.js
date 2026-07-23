@@ -1,6 +1,4 @@
-// providerGroq.js — Groq API provider (OpenAI-compatible with optimizations)
-// Groq is fast inference for open-source models
-// Base URL: https://api.groq.com/openai/v1
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -23,8 +21,8 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var err = await response.json().catch(function() { return {}; });
-    var msg = err.error?.message || 'Groq Error: HTTP ' + response.status;
+    var errObj = await handleApiResponseError(response, 'Groq');
+    var msg = errObj.message;
     // Groq-specific: some models don't support tools
     if (msg.includes('tool') || msg.includes('function')) {
       msg += '\n\nNote: Not all Groq models support tool use.\nTry: llama3-groq-70b-8192-tool-use-preview or llama3-groq-8b-8192-tool-use-preview';
@@ -32,6 +30,9 @@ export async function* chat(config, messages, tools) {
     throw new Error(msg);
   }
 
+  if (!response.body) {
+    throw new Error('Groq API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -49,7 +50,7 @@ export async function* chat(config, messages, tools) {
         try {
           var data = JSON.parse(line.slice(6));
           yield parseChunk(data);
-        } catch (e) {}
+        } catch (e) { console.warn('[Groq] Failed to parse SSE chunk:', e.message); }
       }
     }
   }
@@ -60,8 +61,8 @@ export async function listModels(config) {
   var res = await fetch(url, {
     headers: { 'Authorization': 'Bearer ' + config.apiKey }
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'Groq');
+  var data = await safeReadJson(res, 'Groq');
   return data.data ? data.data.map(function(m) { return m.id; }) : [];
 }
 
@@ -89,6 +90,7 @@ function convertMessages(messages) {
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });

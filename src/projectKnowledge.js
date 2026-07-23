@@ -112,18 +112,21 @@ export function getStats() {
 export function searchFiles(query) {
   if (!_projectDb || !_ready || !query) return [];
   try {
-    var like = '%' + query.replace(/'/g, "''") + '%';
+    var like = '%' + query + '%';
     var stmt = _projectDb.prepare(
       'SELECT path, language, size, last_modified FROM files WHERE path LIKE ? OR path LIKE ? LIMIT 50'
     );
     stmt.bind([like, like]);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       var row = stmt.getAsObject();
       row.score = row.path && row.path.toLowerCase().includes(query.toLowerCase()) ? 10 : 0;
       results.push(row);
     }
+    } finally {
     stmt.free();
+    }
     results.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
     return results;
   } catch (e) {
@@ -204,11 +207,14 @@ export function getPlansBySession(sessionId) {
     var stmt = _projectDb.prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at DESC');
     stmt.bind([sessionId]);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       var row = stmt.getAsObject();
       results.push(normalizeTask(row));
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (_) { return []; }
 }
@@ -240,11 +246,14 @@ export function getPlansByStatus(status) {
     var stmt = _projectDb.prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC');
     stmt.bind([status]);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       var row = stmt.getAsObject();
       results.push(normalizeTask(row));
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (_) { return []; }
 }
@@ -256,13 +265,9 @@ export function updatePlanStatus(planId, status) {
   if (!_projectDb || !_ready || !planId) return;
   try {
     var now = status === 'completed' || status === 'failed' ? Date.now() : null;
-    _projectDb.run('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?', {
-      bind: [status, now, planId]
-    });
+    _projectDb.run('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?', [status, now, planId]);
     // Also update the metadata-based plan status for backward compat
-    _projectDb.run('UPDATE metadata SET value = ? WHERE key = ?', {
-      bind: [status, 'plan_' + planId + '_status']
-    });
+    _projectDb.run('UPDATE metadata SET value = ? WHERE key = ?', [status, 'plan_' + planId + '_status']);
     saveProjectDb();
   } catch (_) {}
 }
@@ -323,10 +328,13 @@ export function getCheckpoints(filePath, sessionId) {
     var stmt = _projectDb.prepare(sql);
     stmt.bind(params);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       results.push(stmt.getAsObject());
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (_) { return []; }
 }
@@ -349,10 +357,13 @@ export function getRecentCheckpoints(sessionId, limit) {
     var stmt = _projectDb.prepare(sql);
     stmt.bind(params);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       results.push(stmt.getAsObject());
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (_) { return []; }
 }
@@ -363,7 +374,7 @@ export function getRecentCheckpoints(sessionId, limit) {
 export function deleteCheckpoint(id) {
   if (!_projectDb || !_ready || !id) return;
   try {
-    _projectDb.run('DELETE FROM checkpoints WHERE id = ?', { bind: [id] });
+    _projectDb.run('DELETE FROM checkpoints WHERE id = ?', [id]);
     saveProjectDb();
   } catch (_) {}
 }
@@ -374,7 +385,7 @@ export function deleteCheckpoint(id) {
 export function deleteCheckpointsBySession(sessionId) {
   if (!_projectDb || !_ready || !sessionId) return;
   try {
-    _projectDb.run('DELETE FROM checkpoints WHERE session_id = ?', { bind: [sessionId] });
+    _projectDb.run('DELETE FROM checkpoints WHERE session_id = ?', [sessionId]);
     saveProjectDb();
   } catch (_) {}
 }
@@ -397,7 +408,7 @@ export function getCheckpointStats() {
 export function trimOldestCheckpoints(count) {
   if (!_projectDb || !_ready || !count) return;
   try {
-    _projectDb.run('DELETE FROM checkpoints WHERE id IN (SELECT id FROM checkpoints ORDER BY created_at ASC LIMIT ?)', { bind: [count] });
+    _projectDb.run('DELETE FROM checkpoints WHERE id IN (SELECT id FROM checkpoints ORDER BY created_at ASC LIMIT ?)', [count]);
     saveProjectDb();
   } catch (_) {}
 }
@@ -448,7 +459,7 @@ export function getSetting(key) {
 export function getIndexStatus() {
   if (!_ready || !_projectDb) return { ready: false, indexed: false };
   try {
-    var stmt = _registryDb.exec("SELECT index_status FROM registry WHERE workspace_path = ?", { bind: [_workspace] });
+    var stmt = _registryDb.run("SELECT index_status FROM registry WHERE workspace_path = ?", [_workspace]);
     var status = 'pending';
     if (stmt.length && stmt[0].values.length) {
       status = stmt[0].values[0][0];
@@ -476,10 +487,13 @@ export function searchByGlob(likePattern, subDir) {
     var stmt = _projectDb.prepare(sql);
     stmt.bind(params);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       results.push(stmt.getAsObject().path);
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (e) {
     console.error('[PK] searchByGlob error:', e.message);
@@ -495,7 +509,7 @@ export function searchByGlob(likePattern, subDir) {
 export function searchChunks(query) {
   if (!_projectDb || !_ready || !query) return [];
   try {
-    var like = '%' + query.replace(/'/g, "''") + '%';
+    var like = '%' + query + '%';
     var sql = `
       SELECT DISTINCT f.path, c.content
       FROM chunks c
@@ -506,7 +520,8 @@ export function searchChunks(query) {
     var stmt = _projectDb.prepare(sql);
     stmt.bind([like]);
     var results = [];
-    while (stmt.step()) {
+    try {
+      while (stmt.step()) {
       var row = stmt.getAsObject();
       var content = row.content || '';
       var idx = content.toLowerCase().indexOf(query.toLowerCase());
@@ -522,7 +537,9 @@ export function searchChunks(query) {
         snippet: snippet
       });
     }
+    } finally {
     stmt.free();
+    }
     return results;
   } catch (e) {
     console.error('[PK] searchChunks error:', e.message);
@@ -642,11 +659,11 @@ async function openRegistry() {
   console.log('[PK] Registry opened:', _registryPath);
 }
 
-function saveRegistry() {
+async function saveRegistry() {
   if (!_registryDb || !_registryPath) return;
   try {
     var data = _registryDb.export();
-    fs.writeFile(_registryPath, Buffer.from(data)).catch(function(e) {
+    await fs.writeFile(_registryPath, Buffer.from(data)).catch(function(e) {
       console.error('[PK] Failed to save registry:', e.message);
     });
   } catch (e) {
@@ -668,9 +685,9 @@ async function registerWorkspace() {
   stmt.free();
   saveRegistry();
 
-  var check = _registryDb.exec('SELECT first_indexed FROM registry WHERE workspace_path = ?', { bind: [_workspace] });
+  var check = _registryDb.run('SELECT first_indexed FROM registry WHERE workspace_path = ?', [_workspace]);
   if (check.length && check[0].values.length && !Number(check[0].values[0][0])) {
-    _registryDb.run('UPDATE registry SET first_indexed = ? WHERE workspace_path = ?', { bind: [now, _workspace] });
+    _registryDb.run('UPDATE registry SET first_indexed = ? WHERE workspace_path = ?', [now, _workspace]);
     saveRegistry();
   }
 }
@@ -752,17 +769,17 @@ async function openProjectDb() {
     )
   `);
 
-  _projectDb.run('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', { bind: ['db_version', String(_INDEX_DB_VERSION)] });
+  _projectDb.run('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', ['db_version', String(_INDEX_DB_VERSION)]);
 
   saveProjectDb();
   console.log('[PK] Project database ready');
 }
 
-function saveProjectDb() {
+async function saveProjectDb() {
   if (!_projectDb || !_projectDbPath) return;
   try {
     var data = _projectDb.export();
-    fs.writeFile(_projectDbPath, Buffer.from(data)).catch(function(e) {
+    await fs.writeFile(_projectDbPath, Buffer.from(data)).catch(function(e) {
       console.error('[PK] Failed to save project DB:', e.message);
     });
   } catch (e) {
@@ -779,7 +796,7 @@ async function indexWorkspace() {
   _indexing = true;
 
   if (_registryDb) {
-    _registryDb.run('UPDATE registry SET index_status = ? WHERE workspace_path = ?', { bind: ['indexing', _workspace] });
+    _registryDb.run('UPDATE registry SET index_status = ? WHERE workspace_path = ?', ['indexing', _workspace]);
     saveRegistry();
   }
 
@@ -795,9 +812,7 @@ async function indexWorkspace() {
 
     if (_registryDb) {
       var now = Date.now();
-      _registryDb.run('UPDATE registry SET last_indexed = ?, index_status = ?, last_opened = ? WHERE workspace_path = ?', {
-        bind: [now, 'ready', now, _workspace]
-      });
+      _registryDb.run('UPDATE registry SET last_indexed = ?, index_status = ?, last_opened = ? WHERE workspace_path = ?', [now, 'ready', now, _workspace]);
       saveRegistry();
     }
 
@@ -807,7 +822,7 @@ async function indexWorkspace() {
   } catch (e) {
     console.error('[PK] Indexing error:', e.message);
     if (_registryDb) {
-      _registryDb.run('UPDATE registry SET index_status = ? WHERE workspace_path = ?', { bind: ['error', _workspace] });
+      _registryDb.run('UPDATE registry SET index_status = ? WHERE workspace_path = ?', ['error', _workspace]);
       saveRegistry();
     }
   }
@@ -868,10 +883,13 @@ async function indexSingleFile(relPath) {
     var modified = stat.mtime.toISOString();
 
     var fd = await fs.open(fullPath, 'r');
-    var readLen = Math.min(size, 32768);
-    var buffer = Buffer.alloc(readLen);
-    await fd.read(buffer, 0, readLen, 0);
-    await fd.close();
+    try {
+      var readLen = Math.min(size, 32768);
+      var buffer = Buffer.alloc(readLen);
+      await fd.read(buffer, 0, readLen, 0);
+    } finally {
+      await fd.close();
+    }
 
     var content = buffer.toString('utf-8');
     var hash = simpleHash(content);
@@ -899,7 +917,7 @@ async function indexSingleFile(relPath) {
     idStmt.free();
 
     // Delete old chunks, create new ones
-    _projectDb.run('DELETE FROM chunks WHERE file_id = ?', { bind: [fileId] });
+    _projectDb.run('DELETE FROM chunks WHERE file_id = ?', [fileId]);
 
     if (content.length > 0) {
       var insertChunk = _projectDb.prepare('INSERT INTO chunks (file_id, chunk_index, content) VALUES (?, ?, ?)');
@@ -955,7 +973,7 @@ function setupWatcher() {
         var relPath = path.relative(_workspace, uri.fsPath);
         if (!relPath || relPath.startsWith('..')) return;
         try {
-          _projectDb.run('DELETE FROM files WHERE path = ?', { bind: [relPath] });
+          _projectDb.run('DELETE FROM files WHERE path = ?', [relPath]);
           saveProjectDb();
         } catch (_) {}
       })

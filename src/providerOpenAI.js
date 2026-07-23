@@ -1,4 +1,4 @@
-// providerOpenAI.js — OpenAI API provider
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -23,8 +23,7 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var err = await response.json().catch(function() { return {}; });
-    throw new Error(err.error?.message || 'OpenAI Error: HTTP ' + response.status);
+    throw await handleApiResponseError(response, 'OpenAI');
   }
 
   var reader = response.body.getReader();
@@ -55,8 +54,8 @@ export async function listModels(config) {
   var res = await fetch(url, {
     headers: { 'Authorization': 'Bearer ' + config.apiKey }
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'OpenAI');
+  var data = await safeReadJson(res, 'OpenAI');
   return data.data ? data.data.map(function(m) { return m.id; }) : [];
 }
 
@@ -70,7 +69,7 @@ export async function embeddings(config, texts) {
     },
     body: JSON.stringify({ model: config.model || 'text-embedding-3-small', input: texts })
   });
-  var data = await res.json();
+  var data = await safeReadJson(res, 'OpenAI');
   return data.data ? data.data.map(function(d) { return d.embedding; }) : [];
 }
 
@@ -84,7 +83,7 @@ export async function images(config, prompt) {
     },
     body: JSON.stringify({ model: config.model || 'dall-e-3', prompt: prompt, n: 1 })
   });
-  var data = await res.json();
+  var data = await safeReadJson(res, 'OpenAI');
   return data.data ? data.data[0].url : null;
 }
 

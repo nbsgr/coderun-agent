@@ -2,7 +2,7 @@
   "name": "ai-agent",
   "displayName": "AI-AGENT",
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "publisher": "Bala-Siva-Ganesh",
   "icon": "logo.png",
   "repository": {
@@ -21,7 +21,9 @@
   "activationEvents": [
     "onView:coderun.chatView",
     "onCommand:coderun.openSidebar",
-    "onCommand:coderun.openPanel"
+    "onCommand:coderun.openPanel",
+    "onCommand:coderun.newChat",
+    "onCommand:coderun.undoLastEdit"
   ],
   "main": "./src/extension.js",
   "contributes": {

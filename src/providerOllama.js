@@ -1,4 +1,4 @@
-// providerOllama.js — Ollama API provider
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
@@ -16,10 +16,12 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var errText = await response.text();
-    throw new Error('Ollama API Error: HTTP ' + response.status + ' - ' + errText);
+    throw await handleApiResponseError(response, 'Ollama');
   }
 
+  if (!response.body) {
+    throw new Error('Ollama API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -46,8 +48,8 @@ export async function* chat(config, messages, tools) {
 export async function listModels(config) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/api/tags';
   var res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'Ollama');
+  var data = await safeReadJson(res, 'Ollama');
   return data.models ? data.models.map(function(m) { return m.name; }) : [];
 }
 
@@ -60,7 +62,8 @@ export async function embeddings(config, texts) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.model, prompt: texts[i] })
     });
-    var data = await res.json();
+    if (!res.ok) throw await handleApiResponseError(res, 'Ollama');
+    var data = await safeReadJson(res, 'Ollama');
     results.push(data.embedding || []);
   }
   return results;
@@ -102,6 +105,7 @@ function convertMessages(messages) {
             args = JSON.parse(args);
           } catch (_) {
             console.error('[OLLAMA] Failed to parse tool call arguments:', args);
+            args = {};
           }
         }
         return {
@@ -116,6 +120,7 @@ function convertMessages(messages) {
     }
     
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       msg.images = rawImages.map(function(img) {
         return String(img).replace(/^data:[^;]+;base64,/, '');

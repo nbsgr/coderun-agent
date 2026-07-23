@@ -1,5 +1,4 @@
-// providerCompatible.js — Generic OpenAI-compatible provider
-// Works with LM Studio, vLLM, LocalAI, and any OpenAI-compatible endpoint
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -20,10 +19,12 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var err = await response.text();
-    throw new Error('API Error: HTTP ' + response.status + ' - ' + err);
+    throw await handleApiResponseError(response, 'Compatible');
   }
 
+  if (!response.body) {
+    throw new Error('Compatible API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -41,7 +42,7 @@ export async function* chat(config, messages, tools) {
         try {
           var data = JSON.parse(line.slice(6));
           yield parseChunk(data);
-        } catch (e) {}
+        } catch (e) { console.warn('[Compatible] Failed to parse SSE chunk:', e.message); }
       }
     }
   }
@@ -61,7 +62,7 @@ export async function listModels(config) {
         var cfUrl = 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/models/search?per_page=300';
         var res = await fetch(cfUrl, { headers: headers });
         if (res.ok) {
-          var data = await res.json();
+          var data = await safeReadJson(res, 'Compatible');
           if (data.result && Array.isArray(data.result)) {
             return data.result.map(function(m) { return m.name; });
           }
@@ -73,16 +74,21 @@ export async function listModels(config) {
   }
 
   var url = baseUrl + '/models';
+  var res;
   try {
-    var res = await fetch(url, { headers: headers });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    var data = await res.json();
-    return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+    res = await fetch(url, { headers: headers });
   } catch (e) {
-    console.warn('[CODERUN] Failed to fetch models from compatible endpoint:', e.message);
+    console.warn('[CODERUN] Failed to reach compatible endpoint:', e.message);
     // Fallback to currently configured model if available
     return config.model ? [config.model] : [];
   }
+
+  if (!res.ok) {
+    throw await handleApiResponseError(res, 'Compatible');
+  }
+
+  var data = await safeReadJson(res, 'Compatible');
+  return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
 }
 
 export async function embeddings(config, texts) {
@@ -94,7 +100,8 @@ export async function embeddings(config, texts) {
     headers: headers,
     body: JSON.stringify({ model: config.model, input: texts })
   });
-  var data = await res.json();
+  if (!res.ok) throw await handleApiResponseError(res, 'Compatible');
+  var data = await safeReadJson(res, 'Compatible');
   return data.data ? data.data.map(function(d) { return d.embedding; }) : [];
 }
 
@@ -142,6 +149,7 @@ function convertMessages(messages) {
     }
     
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });

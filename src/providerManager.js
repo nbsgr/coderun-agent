@@ -11,7 +11,11 @@ import * as providerCompatible from './providerCompatible.js';
 import * as providerGroq from './providerGroq.js';
 
 export function createProvider(config) {
-  var provider = config.provider || PROVIDERS.OLLAMA;
+  if (!config || typeof config !== 'object') {
+    console.warn('[CODERUN] createProvider called with invalid config, falling back to Ollama');
+    return providerOllama;
+  }
+  var provider = String(config.provider || PROVIDERS.OLLAMA);
 
   if (provider.startsWith('compatible')) {
     var apiType = config.apiType || 'openai';
@@ -47,6 +51,7 @@ export function createProvider(config) {
 }
 
 export function getProviderName(config) {
+  if (!config) return PROVIDERS.OLLAMA;
   return config.provider || PROVIDERS.OLLAMA;
 }
 

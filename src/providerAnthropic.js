@@ -1,4 +1,4 @@
-// providerAnthropic.js — Anthropic Claude API provider
+import { handleApiResponseError, safeReadJson } from './utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/messages';
@@ -35,10 +35,12 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    var err = await response.json().catch(function() { return {}; });
-    throw new Error(err.error?.message || 'Anthropic Error: HTTP ' + response.status);
+    throw await handleApiResponseError(response, 'Anthropic');
   }
 
+  if (!response.body) {
+    throw new Error('Anthropic API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -55,7 +57,7 @@ export async function* chat(config, messages, tools) {
       try {
         var data = JSON.parse(line.slice(6));
         yield parseChunk(data);
-      } catch (e) {}
+      } catch (e) { console.warn('[Anthropic] Failed to parse SSE chunk:', e.message); }
     }
   }
 }
@@ -67,10 +69,11 @@ export async function listModels(config) {
     if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
     try {
       var res = await fetch(url, { headers: headers });
-      if (res.ok) {
-        var data = await res.json();
-        return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+      if (!res.ok) {
+        throw await handleApiResponseError(res, 'Anthropic');
       }
+      var data = await safeReadJson(res, 'Anthropic');
+      return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
     } catch (e) {
       console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint:', e.message);
     }
@@ -99,6 +102,7 @@ function convertMessages(messages) {
   return messages.map(function(m) {
     var role = m.role === 'tool' ? 'user' : m.role;
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
 
     if (m.role === 'tool') {
       return {
