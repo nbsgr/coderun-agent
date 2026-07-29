@@ -112,6 +112,11 @@ export function buildMessages(userPrompt, options) {
     systemContent += '\n\n' + knowledge.learningContext;
   }
 
+  // Workspace Intelligence (from Workspace Intelligence Engine)
+  if (knowledge.workspaceIntelligence) {
+    systemContent += '\n\n' + knowledge.workspaceIntelligence;
+  }
+
   // Checkpoint / undo context (from Checkpoint Engine)
   if (knowledge.checkpointContext) {
     systemContent += '\n\n' + knowledge.checkpointContext;

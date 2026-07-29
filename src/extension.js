@@ -16,6 +16,7 @@ import * as permissions from './permissions.js';
 import * as projectKnowledge from './projectKnowledge.js';
 import * as checkpointManager from './checkpointManager.js';
 import * as diffManager from './diffManager.js';
+import * as workspaceIntelligence from './workspaceIntelligence.js';
 import { PROVIDER_DEFAULTS } from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,9 @@ export function activate(context) {
 
   // Initialize project knowledge base (SQLite, indexing, file watcher, memory)
   projectKnowledge.initialize(context);
+
+  // Warm up workspace intelligence cache (non-blocking)
+  workspaceIntelligence.scan(getWorkspaceFolder());
 
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

@@ -23,6 +23,7 @@ import * as planningManager from './planningManager.js';
 import * as learningManager from './learningManager.js';
 import * as timelineManager from './timelineManager.js';
 import * as checkpointManager from './checkpointManager.js';
+import * as workspaceIntelligence from './workspaceIntelligence.js';
 
 // ========================================================
 // PUBLIC API
@@ -453,6 +454,19 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
     var learningContext = learningManager.getLearningContext();
     if (learningContext) {
       knowledge.learningContext = learningContext;
+    }
+  } catch (_) {}
+
+  // Workspace Intelligence (single authoritative source for workspace metadata)
+  try {
+    if (workspaceIntelligence.isReady()) {
+      var wiContext = workspaceIntelligence.formatForPrompt();
+      if (wiContext) {
+        knowledge.workspaceIntelligence = wiContext;
+      }
+    } else {
+      // Trigger async scan if not yet done (won't block this request)
+      workspaceIntelligence.scan(project.path);
     }
   } catch (_) {}
 
