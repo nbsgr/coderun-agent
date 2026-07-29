@@ -437,6 +437,14 @@
                   thinking = content.substring(startIdx + 1, endIdx);
                   content = content.substring(0, startIdx) + content.substring(endIdx + 1);
                   content = content.replace(/^\n+/, '');
+                } else if (!thinking && content.includes('<think>')) {
+                  var tStart = content.indexOf('<think>');
+                  var tEnd = content.indexOf('</think>');
+                  if (tStart !== -1 && tEnd !== -1 && tEnd > tStart) {
+                    thinking = content.substring(tStart + 7, tEnd);
+                    content = content.substring(0, tStart) + content.substring(tEnd + 8);
+                    content = content.replace(/^\n+/, '');
+                  }
                 }
 
                 if (thinking) {
@@ -1461,7 +1469,9 @@
         flushContentRender(S);
         removeTyping(S.botBody);
         S.thinkBlock = null; S.thinkPre = null;
-        if (todosPanel) {
+        if (conversation && conversation.plan) {
+          renderTodos(conversation.plan);
+        } else if (todosPanel) {
           todosPanel.style.display = 'none';
           todosPanel.innerHTML = '';
         }

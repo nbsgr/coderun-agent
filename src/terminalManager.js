@@ -755,6 +755,67 @@ export async function executeCommand(command, timeout, background) {
   console.log('[TERMINAL] Shell integration unavailable — using child_process fallback:', command);
   terminal.sendText(command, true);
 
+  // Helper to detect interactive commands or sub-shell invocations
+  function isInteractiveCommand(cmd) {
+    var lower = String(cmd || '').toLowerCase();
+    var interactiveKeywords = [
+      'cmd', 'powershell', 'pwsh', 'bash', 'sh', 'zsh',
+      'python', 'node', 'npm start', 'npm run', 'nodemon', 'flask run', 'deno',
+      'ssh', 'ftp', 'telnet',
+      'read ', 'set /p', 'choice', 'input(', 'raw_input(',
+      'ping -t', 'ping localhost -t'
+    ];
+    return interactiveKeywords.some(function(kw) {
+      var idx = lower.indexOf(kw);
+      if (idx === -1) return false;
+      if (idx === 0) return true;
+      var prevChar = lower.charAt(idx - 1);
+      return (prevChar === ' ' || prevChar === '&' || prevChar === '|' || prevChar === ';');
+    });
+  }
+
+  if (isInteractiveCommand(command)) {
+    var execId = 'term_interactive_' + (++executionCounter);
+    if (sendEventCallback) {
+      sendEventCallback({
+        type: 'terminal_start',
+        terminalId: execId,
+        command: command,
+        shell: shellName,
+        platform: platformName,
+        cwd: cwd,
+        interactive: true
+      });
+      setTimeout(function() {
+        if (sendEventCallback) {
+          sendEventCallback({
+            type: 'terminal_exit',
+            terminalId: execId,
+            exitCode: 0,
+            duration: Date.now() - startedAt,
+            shell: shellName,
+            platform: platformName,
+            cwd: cwd,
+            message: 'Interactive session active in terminal.'
+          });
+        }
+      }, 1000);
+    }
+    return {
+      shell: shellName,
+      platform: platformName,
+      command: command,
+      stdout: 'Interactive command running in VS Code terminal.',
+      stderr: '',
+      exitCode: 0,
+      durationMs: Date.now() - startedAt,
+      success: true,
+      workingDirectory: cwd,
+      interactive: true,
+      message: 'Interactive command executed in VS Code terminal.'
+    };
+  }
+
   var execId = 'term_fallback_' + (++executionCounter);
   activeExecId = execId;
   if (sendEventCallback) {

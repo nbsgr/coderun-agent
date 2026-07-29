@@ -412,7 +412,11 @@ export async function runAgentLoop(userPrompt, config, options) {
       await executionTrace.saveTrace(workspace);
 
       var assistantMsg = { role: 'assistant', content: iterationContent || '' };
+      if (iterationThinking || fullThinking) {
+        assistantMsg.thinking = iterationThinking || fullThinking;
+      }
       messages.push(assistantMsg);
+      sendHistoryUpdate();
       sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'direct_answer', content: fullContent, thinking: fullThinking });
       return { content: fullContent, thinking: fullThinking, done: true };
     }
@@ -738,8 +742,10 @@ export async function runAgentLoop(userPrompt, config, options) {
       };
     });
     var assistantMsg = { role: 'assistant', content: iterationContent || '' };
+    if (iterationThinking) assistantMsg.thinking = iterationThinking;
     if (assistantToolCalls.length) assistantMsg.tool_calls = assistantToolCalls;
     messages.push(assistantMsg);
+    sendHistoryUpdate();
 
     // Add tool results to messages for next iteration.
     // Ollama expects `tool_name` in addition to `tool_call_id` on the
@@ -760,6 +766,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
       messages.push(toolMsg);
     }
+    sendHistoryUpdate();
 
     // End of iteration
     dbg('[AGENT LOOP] End of iteration', iteration, '- next iteration starting...');
@@ -786,24 +793,44 @@ export async function runAgentLoop(userPrompt, config, options) {
   return { content: fullContent, thinking: fullThinking, done: false, maxReached: true };
 }
 
-// Parse DeepSeek-style \uE000...\uE001 think tags from streaming content
+// Parse DeepSeek-style \uE000...\uE001 AND <think>...</think> tags from streaming content
 function processThinkTags(text, inThinkTag, buffer) {
   var contentPart = '';
   var thinkingPart = '';
   buffer += text;
 
+  // Two possible open/close tag pairs
+  var OPEN_UNICODE = '\uE000';
+  var CLOSE_UNICODE = '\uE001';
+  var OPEN_HTML = '<think>';
+  var CLOSE_HTML = '</think>';
+
   while (true) {
     if (!inThinkTag) {
-      var startIdx = buffer.indexOf('\uE000');
+      // Look for whichever open tag comes first
+      var uIdx = buffer.indexOf(OPEN_UNICODE);
+      var hIdx = buffer.indexOf(OPEN_HTML);
+      var startIdx = -1;
+      var tagLen = 0;
+
+      if (uIdx !== -1 && (hIdx === -1 || uIdx <= hIdx)) {
+        startIdx = uIdx;
+        tagLen = OPEN_UNICODE.length; // 1
+      } else if (hIdx !== -1) {
+        startIdx = hIdx;
+        tagLen = OPEN_HTML.length; // 7
+      }
+
       if (startIdx !== -1) {
         contentPart += buffer.substring(0, startIdx);
         inThinkTag = true;
-        buffer = buffer.substring(startIdx + 1);
+        buffer = buffer.substring(startIdx + tagLen);
       } else {
-        // Check for partial tag at end
+        // Check for partial tag at end of buffer
         var partialLen = 0;
-        for (var i = 1; i <= buffer.length; i++) {
-          if ('\uE000'.startsWith(buffer.slice(-i))) {
+        for (var i = 1; i <= Math.min(buffer.length, 7); i++) {
+          var tail = buffer.slice(-i);
+          if (OPEN_HTML.startsWith(tail) || OPEN_UNICODE.startsWith(tail)) {
             partialLen = i;
             break;
           }
@@ -813,15 +840,29 @@ function processThinkTags(text, inThinkTag, buffer) {
         break;
       }
     } else {
-      var endIdx = buffer.indexOf('\uE001');
+      // Look for whichever close tag comes first
+      var uEndIdx = buffer.indexOf(CLOSE_UNICODE);
+      var hEndIdx = buffer.indexOf(CLOSE_HTML);
+      var endIdx = -1;
+      var closeLen = 0;
+
+      if (uEndIdx !== -1 && (hEndIdx === -1 || uEndIdx <= hEndIdx)) {
+        endIdx = uEndIdx;
+        closeLen = CLOSE_UNICODE.length; // 1
+      } else if (hEndIdx !== -1) {
+        endIdx = hEndIdx;
+        closeLen = CLOSE_HTML.length; // 8
+      }
+
       if (endIdx !== -1) {
         thinkingPart += buffer.substring(0, endIdx);
         inThinkTag = false;
-        buffer = buffer.substring(endIdx + 1);
+        buffer = buffer.substring(endIdx + closeLen);
       } else {
         var partialLen = 0;
-        for (var i = 1; i <= buffer.length; i++) {
-          if ('\uE001'.startsWith(buffer.slice(-i))) {
+        for (var i = 1; i <= Math.min(buffer.length, 8); i++) {
+          var tail = buffer.slice(-i);
+          if (CLOSE_HTML.startsWith(tail) || CLOSE_UNICODE.startsWith(tail)) {
             partialLen = i;
             break;
           }
