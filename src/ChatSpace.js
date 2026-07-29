@@ -27,46 +27,23 @@
     chevron: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
   };
 
-  function esc(s) {
+  // Shared utilities from webview-shared.js — single source of truth
+  var esc = window.sharedEsc || function(s) {
     return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function md(text) {
-    if (!text) return '';
-    if (typeof window.renderMarkdown === 'function') return window.renderMarkdown(text);
-    return esc(text).replace(/\n/g, '<br>');
-  }
-
-  function mk(tag, cls) {
-    var el = document.createElement(tag);
-    if (cls) el.className = cls;
-    return el;
-  }
-
-  function truncate(s, n) { return s.length > n ? s.substring(0, n) + '…' : s; }
-
-  function flatStr(v) {
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  };
+  var truncate = window.sharedTruncate || function(s, n) { return s.length > n ? s.substring(0, n) + '\u2026' : s; };
+  var flatStr = window.sharedFlatStr || function(v) {
     if (v == null) return '';
     if (typeof v === 'string') return v;
     try { return JSON.stringify(v); } catch (_) { return String(v); }
-  }
-
-  function formatTime(ts) {
+  };
+  var formatTime = window.sharedFormatTime || function(ts) {
     if (!ts) return '';
     var d = new Date(ts);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function fmtActionLabel(action, args) {
-    return 'Executing action <span class="cr-action-name">' + esc(action) + '</span>';
-  }
-
-  // ── ANSI escape sequence cleaner (client-side belt & suspenders) ───
-  function stripAnsi(text) {
+  };
+  var stripAnsi = window.sharedStripAnsi || function(text) {
     if (!text) return '';
     return String(text)
       .replace(/\x1B\]\d+(?:;[^\x1B]*)*(?:\x1B\\)/g, '')
@@ -81,6 +58,22 @@
       .replace(/\]133;/g, '')
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n');
+  };
+
+  function md(text) {
+    if (!text) return '';
+    if (typeof window.renderMarkdown === 'function') return window.renderMarkdown(text);
+    return esc(text).replace(/\n/g, '<br>');
+  }
+
+  function mk(tag, cls) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    return el;
+  }
+
+  function fmtActionLabel(action, args) {
+    return 'Executing action <span class="cr-action-name">' + esc(action) + '</span>';
   }
 
   function scrollBottom(el) {

@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
 import * as searchManager from './searchManager.js';
+import * as planningManager from './planningManager.js';
 import { parseSymbols } from './symbolParser.js';
 
 var DEBUG = false;
@@ -635,20 +636,107 @@ async function* web_request(args, workspace) {
 
 async function* update_plan(args, workspace) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
-  var steps = args.steps;
-  if (steps && !Array.isArray(steps)) steps = [steps];
+
+  var planId = args.plan_id || args.planId || '';
+  var taskId = args.task_id || args.taskId || '';
+  var status = args.status || '';
+  var tasks = args.tasks || args.steps || [];
+
+  // If plan and task IDs are provided, delegate to engine for task-level update
+  if (planId && taskId && status) {
+    var observation = args.observation ? {
+      type: status === 'completed' ? 'success' : status === 'failed' ? 'failure' : 'info',
+      detail: args.observation || '',
+      source: 'update_plan_tool',
+      output: args.output || ''
+    } : null;
+
+    var result = planningManager.updateTaskStatus(planId, taskId, status, observation);
+    var enginePlan = result.plan || planningManager.getPlan(planId);
+
+    yield {
+      type: 'tool_result',
+      tool: 'update_plan',
+      success: result.success,
+      message: result.success ? 'Task ' + taskId + ' updated to ' + status : 'Failed to update task',
+      plan: enginePlan ? {
+        id: enginePlan.id,
+        phases: enginePlan.phases,
+        summary: enginePlan.summary,
+        status: enginePlan.status
+      } : null,
+      readyTasks: result.readyTasks || [],
+      blockedTasks: result.blockedTasks || []
+    };
+    return;
+  }
+
+  // Legacy: update flat checklist steps
+  if (tasks && !Array.isArray(tasks)) tasks = [tasks];
   yield {
     type: 'tool_result',
     tool: 'update_plan',
     success: true,
     message: 'Plan updated successfully.',
-    steps: steps
+    steps: tasks
   };
 }
 
 async function* create_plan(args, workspace) {
   yield { type: 'action', action: 'create_plan', message: 'Creating execution plan' };
-  var steps = args.steps;
+
+  var goal = args.goal || args.description || '';
+  var steps = args.steps || args.tasks || [];
+
+  // If a goal is provided, use the planning engine to build a structured plan
+  if (goal && workspace) {
+    var analysis = planningManager.analyzeRequest(goal, null, workspace);
+    var sessionId = args.session_id || 'session_' + Date.now();
+    var plan = planningManager.buildPlan(analysis, sessionId);
+
+    yield {
+      type: 'tool_result',
+      tool: 'create_plan',
+      success: true,
+      message: 'Structured plan created with ' + plan.phases.length + ' phases and ' +
+               countTasks(plan) + ' tasks. Complexity: ' + plan.complexity.label +
+               '. Estimated ~' + plan.estimatedIterations + ' iterations.',
+      plan: {
+        id: plan.id,
+        goal: plan.goal,
+        summary: plan.summary,
+        phases: plan.phases.map(function(ph) {
+          return {
+            id: ph.id,
+            name: ph.name,
+            description: ph.description,
+            order: ph.order,
+            status: ph.status,
+            tasks: ph.tasks.map(function(t) {
+              return {
+                id: t.id,
+                description: t.description,
+                status: t.status,
+                complexity: t.complexity,
+                action: t.action,
+                dependsOn: t.dependsOn,
+                parallelWith: t.parallelWith
+              };
+            }),
+            parallelGroups: ph.parallelGroups
+          };
+        }),
+        status: plan.status,
+        complexity: plan.complexity,
+        risks: plan.risks,
+        estimatedIterations: plan.estimatedIterations,
+        executionGraph: plan.executionGraph
+      }
+    };
+    return;
+  }
+
+  // Fallback: flat checklist from LLM-provided steps
   if (steps && !Array.isArray(steps)) steps = [steps];
   yield {
     type: 'tool_result',
@@ -657,6 +745,16 @@ async function* create_plan(args, workspace) {
     message: 'Plan created successfully.',
     steps: steps
   };
+}
+
+function countTasks(plan) {
+  var count = 0;
+  if (plan && plan.phases) {
+    for (var p = 0; p < plan.phases.length; p++) {
+      count += plan.phases[p].tasks.length;
+    }
+  }
+  return count;
 }
 
 // =====================================================

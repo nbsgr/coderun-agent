@@ -219,31 +219,46 @@ registerTool('web_request',
 );
 
 registerTool('update_plan',
-  "Update the plan steps (todos checklist) shown to the user. Use this tool to mark steps as 'completed', 'active', or 'pending', or to add/update tasks in the plan as you make progress.",
+  "Update the execution plan. Supports two modes:\n" +
+  "  1. Task-level update (recommended): Provide plan_id + task_id + status to update a specific task's status in the structured plan.\n" +
+  "  2. Flat checklist update (legacy): Provide steps array to update flat todo items by order number.\n" +
+  "Use task-level updates for granular control. Status values: 'pending', 'active', 'completed', 'failed', 'skipped'.",
   {
+    plan_id: { type: "string", description: "The plan ID (required for task-level updates)." },
+    task_id: { type: "string", description: "The task ID to update (e.g., 't1_1'). Use with plan_id for task-level updates." },
+    status: { type: "string", description: "New status: 'pending', 'active', 'completed', 'failed', 'skipped'. Use with plan_id + task_id." },
+    observation: { type: "string", description: "Optional observation detail about the task execution outcome." },
+    output: { type: "string", description: "Optional execution output to record on the task." },
     steps: {
       type: "array",
-      description: "Array of plan step updates to apply.",
+      description: "Array of plan step updates (legacy flat checklist mode).",
       items: {
         type: "object",
         properties: {
           order: { type: "integer", description: "The step number to update (1-indexed)." },
-          status: { type: "string", description: "The new status for the step: 'pending', 'active', or 'completed'." },
+          status: { type: "string", description: "The new status: 'pending', 'active', or 'completed'." },
           description: { type: "string", description: "Optional new description for the step." }
         },
         required: ["order", "status"]
       }
     }
   },
-  ["steps"]
+  []
 );
 
 registerTool('create_plan',
-  "Create a structured plan (checklist of todos) for resolving the user request. Call this tool at the start of execution if you need to create a plan.",
+  "Create a structured execution plan for the user request. Two modes:\n" +
+  "  1. Goal-based (recommended): Provide a 'goal' description. The engine will analyze the request, detect intent, " +
+  "estimate complexity, identify required tools, and build a hierarchical plan with phases, tasks, dependencies, and parallel groups.\n" +
+  "  2. Manual steps: Provide 'steps' array to create a flat checklist.\n" +
+  "Always use goal-based mode when the request is complex or multi-step.\n" +
+  "Plan structure returned includes: phases (each with tasks, dependencies, parallel groups), execution graph, complexity, risks.",
   {
+    goal: { type: "string", description: "The user request or goal to plan for. Engine will auto-analyze and build a structured plan." },
+    session_id: { type: "string", description: "Optional chat session ID for plan correlation." },
     steps: {
       type: "array",
-      description: "Array of plan steps to create.",
+      description: "Manual flat checklist steps (fallback if no goal provided).",
       items: {
         type: "object",
         properties: {
@@ -254,5 +269,5 @@ registerTool('create_plan',
       }
     }
   },
-  ["steps"]
+  []
 );

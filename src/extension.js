@@ -185,6 +185,7 @@ function getWebviewHtml(webview, extensionUri) {
   var dashboardCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.css')));
   var chatSpaceCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.css')));
   var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'MarkdownRenderer.js')));
+  var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'webview-shared.js')));
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.js')));
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js')));
 
@@ -218,6 +219,7 @@ function getWebviewHtml(webview, extensionUri) {
   </script>
 
   <script nonce="${nonce}" src="${markdownJs}"></script>
+  <script nonce="${nonce}" src="${webviewSharedJs}"></script>
   <script nonce="${nonce}" src="${dashboardJs}"></script>
   <script nonce="${nonce}" src="${chatSpaceJs}"></script>
 

@@ -41,10 +41,32 @@ export function buildMessages(userPrompt, options) {
   systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
 
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
-    'You have access to planning tools (`create_plan` and `update_plan`) to plan your execution steps as a checklist of todos shown to the user.\n' +
-    '1. If a plan/todo list is required to solve the user prompt, you MUST call `create_plan` at the beginning of the execution (first tool call) to define the plan steps.\n' +
-    '2. As you make progress, you MUST call `update_plan` to mark steps as \'active\' or \'completed\' using the step `order` (1, 2, 3, etc.). Do not skip steps. Only mark a step completed when it is fully verified.\n' +
-    '3. You should work one step at a time: complete the current active step before starting the next one.';
+    'You have access to `create_plan` and `update_plan` tools for structured execution planning.\n' +
+    '\n' +
+    '### Goal-based planning (recommended):\n' +
+    'Call `create_plan` with a `goal` description. The Planning Engine will automatically:\n' +
+    '  - Analyze the user request and detect intent (code_generation, refactoring, debugging, etc.)\n' +
+    '  - Estimate complexity (low/medium/high/very_high)\n' +
+    '  - Identify required tools\n' +
+    '  - Build a hierarchical plan with phases, tasks, and dependency DAG\n' +
+    '  - Detect tasks that can run in parallel (parallel groups)\n' +
+    '  - Assess risks\n' +
+    '  - Return an execution graph with entry points and critical path\n' +
+    '\n' +
+    '### Task-level updates:\n' +
+    'Use `update_plan` with `plan_id`, `task_id`, and `status` to update individual tasks.\n' +
+    'Task IDs follow the pattern: t{phase}_{task} (e.g., t1_1, t2_3).\n' +
+    'Status values: pending, active, completed, failed, skipped.\n' +
+    'You can also include an `observation` explaining why the task succeeded or failed.\n' +
+    '\n' +
+    '### DAG-aware execution:\n' +
+    '- A task can start only when ALL its dependencies are completed.\n' +
+    '- Tasks in the same parallel group can be executed concurrently.\n' +
+    '- If a task fails, check blocked tasks and decide whether to re-plan.\n' +
+    '- Complete tasks in critical path order for optimal throughput.\n' +
+    '\n' +
+    '### Flat checklist (fallback):\n' +
+    'If you prefer manual control, use `create_plan` with a `steps` array. Use `update_plan` with `steps` to update order-based checklists.';
   if (skills.length) {
     systemContent += '\n\n## SKILLS\n' + skills.join('\n');
   }

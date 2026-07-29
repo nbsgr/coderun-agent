@@ -66,17 +66,14 @@
     }
   }
 
-  function esc(value) {
+  // Shared utilities from webview-shared.js — single source of truth
+  var esc = window.sharedEsc || function(value) {
     return String(value == null ? "" : value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function genId() {
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  };
+  var sharedGenId = window.sharedGenId || function() {
     return "cr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
-  }
+  };
 
   function loadConversations() {
     try { state.conversations = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (_) { state.conversations = []; }
@@ -950,7 +947,7 @@
 
   function createNewChat() {
     var conversation = {
-      id: genId(),
+      id: sharedGenId(),
       title: "New chat",
       messages: [],
       createdAt: Date.now()

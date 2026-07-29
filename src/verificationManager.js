@@ -22,7 +22,7 @@ import * as path from 'path';
 /**
  * Verify a single execution step result.
  *
- * @param {object} stepResult - StepResult from executionManager
+ * @param {object} stepResult - StepResult from a tool execution step
  * @param {object} stepArgs   - The original step { action, target, description }
  * @param {string} workspace  - Absolute workspace path
  * @returns {Promise<VerificationResult>}

@@ -50,10 +50,6 @@ export const DANGEROUS_TOOLS = new Set([
 ]);
 
 export const STORAGE_KEYS = {
-  CONVERSATIONS: 'coderun_conversations',
-  SELECTED_MODEL: 'coderun_selected_model',
-  SETTINGS: 'coderun_settings',
-  SIDEBAR_OPEN: 'coderun_sidebar_open',
   PROVIDER_CONFIGS: 'coderun_provider_configs'
 };
 

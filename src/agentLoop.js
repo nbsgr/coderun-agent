@@ -16,6 +16,8 @@ import * as learningManager from './learningManager.js';
 import * as timelineManager from './timelineManager.js';
 import * as checkpointManager from './checkpointManager.js';
 import * as terminalManager from './terminalManager.js';
+import * as events from './events.js';
+import * as agentState from './agentState.js';
 
 // Debug flag — set to true for verbose logging
 var DEBUG = false;
@@ -46,10 +48,22 @@ export function resolveDiff(id, accepted) {
 var MAX_RETRIES = 3;
 
 export async function runAgentLoop(userPrompt, config, options) {
+  // Reset state machine for clean session
+  agentState.reset();
+
   options = options || {};
   var workspace = options.workspace || '';
   var history = options.history || [];
-  var sendEvent = options.sendEvent || function() {};
+  // Wrap sendEvent to also emit through the events.js bus.
+  // This lets any module listen to agent events without being in the
+  // direct call chain, unifying the two event systems.
+  var _sendEventCallback = options.sendEvent || function() {};
+  var sendEvent = function(event) {
+    // Emit to the event bus first (allows middleware/interceptors)
+    events.emit('agent:' + (event.type || 'event'), event);
+    // Then forward to the webview callback
+    _sendEventCallback(event);
+  };
   var askPermission = options.askPermission || requestPermission;
   var signal = options.signal || null;
   var maxIterations = config.maxIterations || MAX_ITERATIONS;
@@ -134,6 +148,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     // half-modified state.
     if (signal && signal.stopped) {
       console.log('[AGENT LOOP] Stop requested at iteration ' + iteration);
+      agentState.transition('stopped');
       sendEvent({
         type: EVENT_TYPES.AGENT_DONE,
         reason: 'stopped',
@@ -145,6 +160,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
     iteration++;
     console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
+    agentState.transition('thinking');
     sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'thinking', iteration: iteration });
 
     var streamBuffer = '';
@@ -302,6 +318,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
     // No tool calls = we're done
     if (completedToolCalls.length === 0) {
+      agentState.transition('completed');
       var assistantMsg = { role: 'assistant', content: iterationContent || '' };
       messages.push(assistantMsg);
       sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'direct_answer', content: fullContent, thinking: fullThinking });
@@ -309,6 +326,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     }
 
     // Execute tools
+    agentState.transition('executing');
     sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
     
     var toolPromises = completedToolCalls.map(async function(tc, index) {
@@ -403,93 +421,57 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       // Verify tool result (Phase 8 — Agentic Loop)
       if (lastResult && lastResult.success !== false) {
-        if (toolName === 'create_plan' && lastResult.steps) {
+        // ── Plan management: delegate to planningManager ───────────
+        if (toolName === 'create_plan' && (lastResult.plan || lastResult.steps)) {
           try {
-            if (currentPlan) {
-              lastResult.steps.forEach(function(s) {
-                var step = currentPlan.steps.find(function(existing) { return existing.order === s.order; });
-                if (!step) {
-                  currentPlan.steps.push({
-                    order: s.order,
-                    action: s.action || 'custom',
-                    target: s.target || '',
-                    description: s.description || '',
-                    expected_output: s.expected_output || '',
-                    status: s.status || 'pending'
-                  });
-                }
-              });
-              sendEvent({
-                type: 'plan_updated',
-                plan: currentPlan
-              });
-            } else {
+            if (lastResult.plan) {
+              // New engine format — the tool already persisted it
+              currentPlan = lastResult.plan;
+              sendEvent({ type: 'plan_created', plan: currentPlan });
+            } else if (lastResult.steps) {
+              // Legacy flat checklist — upgrade to engine format
               var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
                                                   : 'session_' + Date.now();
+              var analysis = planningManager.analyzeRequest(userPrompt, null, workspace);
+              var newPlan = planningManager.buildPlan(analysis, sessionId);
+              currentPlan = newPlan;
+              sendEvent({ type: 'plan_created', plan: currentPlan });
+            }
+          } catch (_) {}
+        } else if (toolName === 'update_plan' && lastResult.plan) {
+          try {
+            // Engine format — update cache
+            currentPlan = lastResult.plan;
+            sendEvent({ type: 'plan_updated', plan: currentPlan });
+          } catch (_) {}
+        } else if (toolName === 'update_plan' && lastResult.steps) {
+          try {
+            // Legacy flat checklist — store as-is
+            if (!currentPlan) {
               currentPlan = {
                 id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-                session_id: sessionId,
+                session_id: history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
+                                                : 'session_' + Date.now(),
                 goal: userPrompt,
-                steps: lastResult.steps.map(function(s) {
-                  return {
-                    order: s.order,
-                    action: s.action || 'custom',
-                    target: s.target || '',
-                    description: s.description || '',
-                    expected_output: s.expected_output || '',
-                    status: s.status || 'pending'
-                  };
-                }),
+                steps: [],
                 status: 'draft',
                 created_at: Date.now()
               };
-              sendEvent({
-                type: 'plan_created',
-                plan: currentPlan
-              });
             }
-            try {
-              planningManager.storePlan(currentPlan);
-            } catch (_) {}
+            if (currentPlan && currentPlan.steps) {
+              lastResult.steps.forEach(function(upd) {
+                var step = currentPlan.steps.find(function(s) { return s.order === upd.order; });
+                if (step) {
+                  if (upd.status) step.status = upd.status;
+                  if (upd.description) step.description = upd.description;
+                } else {
+                  currentPlan.steps.push(upd);
+                }
+              });
+              sendEvent({ type: 'plan_updated', plan: currentPlan });
+              try { planningManager.storePlan(currentPlan); } catch (_) {}
+            }
           } catch (_) {}
-        } else if (toolName === 'update_plan' && lastResult.steps) {
-          if (!currentPlan) {
-            var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
-                                                : 'session_' + Date.now();
-            currentPlan = {
-              id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-              session_id: sessionId,
-              goal: userPrompt,
-              steps: [],
-              status: 'draft',
-              created_at: Date.now()
-            };
-          }
-          if (currentPlan && currentPlan.steps) {
-            lastResult.steps.forEach(function(upd) {
-              var step = currentPlan.steps.find(function(s) { return s.order === upd.order; });
-              if (step) {
-                if (upd.status) step.status = upd.status;
-                if (upd.description) step.description = upd.description;
-              } else {
-                currentPlan.steps.push({
-                  order: upd.order,
-                  action: upd.action || 'custom',
-                  target: upd.target || '',
-                  description: upd.description || '',
-                  expected_output: upd.expected_output || '',
-                  status: upd.status || 'pending'
-                });
-              }
-            });
-            sendEvent({
-              type: 'plan_updated',
-              plan: currentPlan
-            });
-            try {
-              planningManager.storePlan(currentPlan);
-            } catch (_) {}
-          }
         }
 
         try {
@@ -621,10 +603,15 @@ export async function runAgentLoop(userPrompt, config, options) {
   }
   } finally {
     console.log('[AGENT LOOP] While loop exited. finally block.');
+    // If the loop exited without completing (error propagated), mark as failed
+    if (!agentState.isTerminal()) {
+      agentState.transition('failed');
+    }
     sendHistoryUpdate();
   }
 
   // Max iterations reached
+  agentState.transition('completed');
   sendEvent({
     type: EVENT_TYPES.AGENT_DONE,
     reason: 'max_iterations',

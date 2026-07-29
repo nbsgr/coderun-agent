@@ -136,7 +136,6 @@ src/
 │
 ├── contextManager.js         ← Identifies request intent, extracts editor state & active file details
 ├── planningManager.js        ← Generates step-by-step plans written to a database-backed plan file
-├── executionManager.js       ← Executes plan steps and processes step completions
 ├── verificationManager.js    ← Runs post-execution tests (build checks, syntax checks, output matches)
 ├── learningManager.js        ← Automates style guidelines discovery (indentation, framework syntax)
 ├── timelineManager.js        ← Logs chronological system events to timeline history
@@ -162,7 +161,9 @@ src/
 ├── ChatSpace.js / .css       ← Chat message space: collapsible tool cards, inline terminal
 │                                cards with live streaming, permission dialogs, diff reviews,
 │                                thought process blocks, and task continuation buttons
-└── MarkdownRenderer.js       ← Client-side markdown processor with custom syntax highlighting
+├── MarkdownRenderer.js       ← Client-side markdown processor with custom syntax highlighting
+├── webview-shared.js         ← Shared utilities (esc, truncate, stripAnsi) between Dashboard.js and ChatSpace.js
+└── agentState.js             ← Formal finite state machine for the agent loop (idle→thinking→executing→completed)
 ```
 
 ---
