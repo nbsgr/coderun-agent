@@ -1084,7 +1084,7 @@
       conversation.messages = conversation.messages.concat(newMessages);
     }
 
-    if (plan) {
+    if (plan !== undefined) {
       conversation.plan = plan;
     }
 

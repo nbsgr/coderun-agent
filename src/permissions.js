@@ -1,66 +1,47 @@
 // permissions.js — Permission handling for dangerous tools
-// Supports per-call Allow/Deny AND persistent "Always Allow" / "Always Deny"
-// decisions per tool name. Persistent decisions are stored via the VS Code
-// globalState API when an extensionContext is provided.
+// Supports per-call Allow/Deny AND chat-scoped "Always Allow" / "Always Deny"
+// decisions per tool name.
 
 import { DANGEROUS_TOOLS } from './constants.js';
 
 var pendingPermissions = {};
-var persistentDecisions = {}; // { [toolName]: 'allow' | 'deny' }
-var extensionContext = null;
-var STORAGE_KEY = 'coderun_permission_decisions';
+var chatDecisions = {}; // { [toolName]: 'allow' | 'deny' }
 
 export function setExtensionContext(context) {
-  extensionContext = context;
-  loadPersistent();
-}
-
-function loadPersistent() {
-  if (!extensionContext) return;
-  try {
-    var raw = extensionContext.globalState.get(STORAGE_KEY, '{}');
-    persistentDecisions = JSON.parse(raw || '{}') || {};
-  } catch (_) {
-    persistentDecisions = {};
-  }
-}
-
-function savePersistent() {
-  if (!extensionContext) return;
-  try {
-    extensionContext.globalState.update(STORAGE_KEY, JSON.stringify(persistentDecisions));
-  } catch (e) {
-    console.error('[PERMISSIONS] Failed to save decisions:', e);
+  if (context && context.globalState) {
+    try { context.globalState.update('coderun_permission_decisions', '{}'); } catch (_) {}
   }
 }
 
 /**
- * Persist a decision for a given tool so future calls of that tool do not
- * need to prompt. decision must be 'allow' or 'deny'.
+ * Remember a decision for a given tool in the current chat only.
+ * decision must be 'allow' or 'deny'.
  */
 export function setAlwaysDecision(toolName, decision) {
   if (!toolName || (decision !== 'allow' && decision !== 'deny')) return;
-  persistentDecisions[toolName] = decision;
-  savePersistent();
+  chatDecisions[toolName] = decision;
 }
 
 export function clearAlwaysDecision(toolName) {
   if (!toolName) {
-    persistentDecisions = {};
-  } else if (persistentDecisions[toolName]) {
-    delete persistentDecisions[toolName];
+    chatDecisions = {};
+  } else if (chatDecisions[toolName]) {
+    delete chatDecisions[toolName];
   }
-  savePersistent();
 }
 
 export function getAlwaysDecision(toolName) {
-  return persistentDecisions[toolName] || null;
+  return chatDecisions[toolName] || null;
 }
 
 export function listAlwaysDecisions() {
   var out = {};
-  for (var k in persistentDecisions) out[k] = persistentDecisions[k];
+  for (var k in chatDecisions) out[k] = chatDecisions[k];
   return out;
+}
+
+export function resetChatDecisions() {
+  chatDecisions = {};
 }
 
 /**
@@ -68,13 +49,12 @@ export function listAlwaysDecisions() {
  *   true   — user allowed
  *   false  — user denied
  *
- * Persistent "always" decisions short-circuit the prompt entirely.
+ * Chat-scoped "always" decisions short-circuit the prompt for this chat only.
  */
 export function requestPermission(toolName, args, id, sendEvent) {
-  // Short-circuit if user has set an "always" decision for this tool.
-  var persistent = getAlwaysDecision(toolName);
-  if (persistent === 'allow') return Promise.resolve(true);
-  if (persistent === 'deny') return Promise.resolve(false);
+  var chatDecision = getAlwaysDecision(toolName);
+  if (chatDecision === 'allow') return Promise.resolve(true);
+  if (chatDecision === 'deny') return Promise.resolve(false);
 
   return new Promise(function(resolve) {
     pendingPermissions[id] = resolve;
@@ -83,8 +63,8 @@ export function requestPermission(toolName, args, id, sendEvent) {
 
 /**
  * Resolve a pending permission request. The frontend calls this when the
- * user clicks Allow / Deny. For "always" variants, also persist the
- * decision for the current tool.
+ * user clicks Allow / Deny. For "always" variants, remember the decision
+ * for the current chat.
  */
 export function resolvePermission(id, approved, options) {
   options = options || {};

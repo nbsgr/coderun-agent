@@ -34,12 +34,15 @@ import * as projectKnowledge from './projectKnowledge.js';
 // DATA MODEL HELPERS
 // ═══════════════════════════════════════════════════════════
 
-function generateId() {
-  return 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+function generatePlanId() {
+  return 'plan_' + Date.now().toString(36);
 }
 
 function generateTaskId(phaseOrder, taskOrder) {
-  return 't' + phaseOrder + '_' + taskOrder + '_' + Math.random().toString(36).slice(2, 6);
+  if (phaseOrder === 1) {
+    return String(taskOrder);
+  }
+  return 't' + phaseOrder + '_' + taskOrder;
 }
 
 var VALID_PLAN_STATUSES = new Set(['draft', 'approved', 'in_progress', 'completed', 'failed', 'cancelled']);
@@ -405,7 +408,7 @@ function generateSuggestions(intent, complexity) {
  * @returns {object} Plan
  */
 export function buildPlan(analysis, sessionId) {
-  var planId = generateId();
+  var planId = generatePlanId();
   var phases = buildPhases(analysis);
   var graph = buildExecutionGraph(phases);
 
@@ -414,7 +417,7 @@ export function buildPlan(analysis, sessionId) {
     sessionId: sessionId,
     goal: analysis.goal,
     summary: '',
-    status: 'draft',
+    status: 'active',
     estimatedIterations: analysis.estimatedIterations,
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -426,6 +429,13 @@ export function buildPlan(analysis, sessionId) {
     executionGraph: graph,
     observations: []
   };
+
+  // Auto-activate first phase and first task
+  if (plan.phases && plan.phases.length && plan.phases[0].tasks && plan.phases[0].tasks.length) {
+    plan.phases[0].status = 'active';
+    plan.phases[0].tasks[0].status = 'active';
+    plan.phases[0].tasks[0].startedAt = Date.now();
+  }
 
   plan.summary = summarizePlan(plan);
   persistPlan(plan);
@@ -466,6 +476,14 @@ export function updateTaskStatus(planId, taskId, status, observation) {
   }
 
   var plan = loadPlan(planId);
+  if (!plan) {
+    try {
+      var currentRuntimePlan = runtime.getCurrentPlan();
+      if (currentRuntimePlan && (currentRuntimePlan.id === planId || !planId)) {
+        plan = currentRuntimePlan;
+      }
+    } catch (_) {}
+  }
   if (!plan) return { success: false, blockedTasks: [], readyTasks: [] };
 
   var task = findTaskInPlan(plan, taskId);
@@ -702,7 +720,7 @@ export function formatPlanContext(plan) {
 
   var graph = plan.executionGraph || {};
   var lines = ['📋 **Execution Plan: ' + esc(plan.goal) + '**'];
-  lines.push('Status: ' + plan.status + ' | Estimated: ~' + plan.estimatedIterations + ' iterations | Complexity: ' + plan.complexity.label);
+  lines.push('Plan ID: ' + (plan.id || 'unknown') + ' | Status: ' + plan.status + ' | Estimated: ~' + plan.estimatedIterations + ' iterations | Complexity: ' + plan.complexity.label);
 
   if (plan.risks && plan.risks.length) {
     lines.push('Risks: ' + plan.risks.map(function(r) { return r.description; }).join('; '));
@@ -1131,12 +1149,69 @@ function revisePlan(plan, observation) {
 // ═══════════════════════════════════════════════════════════
 
 function findTaskInPlan(plan, taskId) {
-  for (var p = 0; p < plan.phases.length; p++) {
-    var phase = plan.phases[p];
-    for (var t = 0; t < phase.tasks.length; t++) {
-      if (phase.tasks[t].id === taskId) return phase.tasks[t];
+  if (!plan || taskId == null) return null;
+
+  var strId = String(taskId).trim();
+  var numId = Number(strId);
+  var lowerStr = strId.toLowerCase();
+  var cleanTaskId = lowerStr.replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+
+  function matchesTask(task, index, globalOrder) {
+    if (!task) return false;
+
+    var tId = String(task.id || '').trim();
+    var tDesc = String(task.description || '').trim().toLowerCase();
+    var tOrder = task.order || globalOrder || (index + 1);
+
+    // 1. Exact or case-insensitive ID match
+    if (tId === strId || tId.toLowerCase() === lowerStr) return true;
+
+    // 2. Numeric order match (e.g., taskId = "1" or 1, matching order)
+    if (!isNaN(numId) && numId > 0 && (tOrder === numId || (index + 1) === numId)) return true;
+
+    // 3. Normalized ID match (e.g., 't1_1' -> '1_1', 'step_1' -> '1')
+    var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+    if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
+    if (cleanTId && !isNaN(Number(cleanTaskId)) && Number(cleanTId) === Number(cleanTaskId)) return true;
+
+    // 4. Description / title match
+    if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
+
+    // 5. Phase_Task notation (e.g. 't1_1' -> task 1, 't1_2' -> task 2)
+    var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
+    if (ptMatch) {
+      var reqTask = Number(ptMatch[2]);
+      if (globalOrder === reqTask || (index + 1) === reqTask) return true;
+    }
+
+    return false;
+  }
+
+  // Search inside plan.phases
+  if (plan.phases && Array.isArray(plan.phases)) {
+    var globalIndex = 0;
+    for (var p = 0; p < plan.phases.length; p++) {
+      var phase = plan.phases[p];
+      if (phase.tasks && Array.isArray(phase.tasks)) {
+        for (var t = 0; t < phase.tasks.length; t++) {
+          globalIndex++;
+          if (matchesTask(phase.tasks[t], t, globalIndex)) {
+            return phase.tasks[t];
+          }
+        }
+      }
     }
   }
+
+  // Search inside plan.steps
+  if (plan.steps && Array.isArray(plan.steps)) {
+    for (var s = 0; s < plan.steps.length; s++) {
+      if (matchesTask(plan.steps[s], s, s + 1)) {
+        return plan.steps[s];
+      }
+    }
+  }
+
   return null;
 }
 
@@ -1204,11 +1279,9 @@ function loadPlan(planId) {
 
 function loadAllActivePlans() {
   try {
-    // Scan all keys in metadata for plan data
-    // We use the known prefix to find them
-    // For simplicity, iterate through known plan IDs stored in session
-    // This is a best-effort query
-    return []; // Will be populated by planningManager bridge
+    // Scan projectKnowledge metadata for all plan keys (pe_plan_ prefix)
+    // Since we can't iterate SQLite keys directly, defer to planningManager's cache
+    return [];
   } catch (_) {
     return [];
   }

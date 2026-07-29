@@ -17,6 +17,42 @@
   overflow: hidden;
 }
 
+/* Custom Select Dropdowns */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px;
+  padding-right: 24px !important;
+  cursor: pointer;
+}
+
+/* Global Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Smooth Scrolling */
+.cr-root,
+.cr-msg-list,
+.cr-todos-list {
+  scroll-behavior: smooth;
+}
+
 /* ── Header ─────────────────────────────────────────────── */
 .cr-header {
   display: none;
@@ -1539,7 +1575,6 @@
 .cr-diff-status--accepted { color: #3fb950; background: rgba(63, 185, 80, 0.1); }
 .cr-diff-status--rejected { color: #f85149; background: rgba(248, 81, 73, 0.1); }
 
-/* ── Todos Panel ─────────────────────────────────────── */
 .cr-todos-panel {
   background: var(--vscode-sideBar-background, #252526);
   border: 1px solid var(--vscode-sideBar-border, #2d2d2d);
@@ -1552,11 +1587,12 @@
 .cr-todos-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   cursor: pointer;
   user-select: none;
   font-weight: 600;
   color: var(--vscode-descriptionForeground, #858585);
+  font-size: 12px;
 }
 
 .cr-todos-header:hover {
@@ -1574,30 +1610,42 @@
   flex: 1;
 }
 
-.cr-todos-icon {
-  display: flex;
-  align-items: center;
-  opacity: 0.6;
-}
-
-.cr-todos-icon .cr-icon {
-  width: 14px;
-  height: 14px;
-}
-
 .cr-todos-list {
   margin-top: 6px;
-  max-height: 140px;
+  max-height: 200px;
   overflow-y: auto;
-  padding-left: 4px;
+  padding-left: 2px;
 }
 
 .cr-todo-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0;
   color: var(--vscode-foreground, #cccccc);
+  line-height: 1.4;
+}
+
+.cr-todo-status-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cr-todo-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cr-todo-desc {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--vscode-foreground, #cccccc);
+  word-break: break-word;
 }
 
 .cr-todo-status {

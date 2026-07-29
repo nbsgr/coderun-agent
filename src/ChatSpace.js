@@ -1461,6 +1461,10 @@
         flushContentRender(S);
         removeTyping(S.botBody);
         S.thinkBlock = null; S.thinkPre = null;
+        if (todosPanel) {
+          todosPanel.style.display = 'none';
+          todosPanel.innerHTML = '';
+        }
       }
 
       // ═══════════════════════════════════════════════════

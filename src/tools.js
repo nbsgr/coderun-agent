@@ -8,10 +8,18 @@ import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
 import * as searchManager from './searchManager.js';
 import * as planningManager from './planningManager.js';
+import * as runtime from './runtime.js';
+import * as multiAgentRuntime from './multiAgentRuntime.js';
 import { parseSymbols } from './symbolParser.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
+
+// ═══════════════════════════════════════════════════════════
+// TOOL INTERFACE
+// Every tool is an async generator: async function*(args, context)
+// context = { workspace, sendEvent?, signal? }
+// ═══════════════════════════════════════════════════════════
 
 // =====================================================
 // HELPER: SAFE PATH
@@ -177,6 +185,28 @@ async function* edit_file(args, workspace) {
   }
 }
 
+async function _safeUnlink(target) {
+  try {
+    await fs.chmod(target, 0o666).catch(function() {});
+    await fs.unlink(target);
+  } catch (err) {
+    if (err.code === 'EPERM' || err.code === 'EACCES') {
+      await new Promise(function(resolve) { setTimeout(resolve, 150); });
+      await fs.rm(target, { force: true, maxRetries: 3, retryDelay: 100 });
+    } else if (existsSync(target)) {
+      throw err;
+    }
+  }
+}
+
+async function _safeRmDir(target) {
+  try {
+    await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
+  } catch (err) {
+    if (existsSync(target)) throw err;
+  }
+}
+
 async function* delete_file(args, workspace) {
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'delete_file', message: 'Deleting file: ' + filePath };
@@ -186,7 +216,7 @@ async function* delete_file(args, workspace) {
       yield { type: 'tool_result', tool: 'delete_file', success: false, message: 'File not found: ' + filePath };
       return;
     }
-    await fs.unlink(target);
+    await _safeUnlink(target);
     yield { type: 'tool_result', tool: 'delete_file', success: true, file_path: filePath, message: 'File deleted: ' + filePath };
   } catch (e) {
     yield { type: 'tool_result', tool: 'delete_file', success: false, message: e.message };
@@ -215,10 +245,10 @@ async function* delete_folder(args, workspace) {
   try {
     var target = _safePath(workspace, folderPath);
     if (!existsSync(target)) {
-      yield { type: 'tool_result', tool: 'delete_folder', success: false, message: 'Folder not found: ' + folderPath };
+      yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
       return;
     }
-    await fs.rm(target, { recursive: true, force: true });
+    await _safeRmDir(target);
     yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
   } catch (e) {
     yield { type: 'tool_result', tool: 'delete_folder', success: false, message: e.message };
@@ -638,9 +668,14 @@ async function* update_plan(args, workspace) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
 
   var planId = args.plan_id || args.planId || '';
-  var taskId = args.task_id || args.taskId || '';
-  var status = args.status || '';
+  var taskId = args.task_id != null ? args.task_id : (args.taskId != null ? args.taskId : (args.step_id != null ? args.step_id : (args.stepId != null ? args.stepId : (args.step != null ? args.step : (args.order != null ? args.order : (args.task != null ? args.task : ''))))));
+  var status = args.status || args.new_status || args.newStatus || args.task_status || '';
   var tasks = args.tasks || args.steps || [];
+
+  // Auto-discover plan_id if not provided — find latest active plan from cache
+  if (!planId) {
+    planId = discoverCurrentPlanId();
+  }
 
   // If plan and task IDs are provided, delegate to engine for task-level update
   if (planId && taskId && status) {
@@ -654,21 +689,61 @@ async function* update_plan(args, workspace) {
     var result = planningManager.updateTaskStatus(planId, taskId, status, observation);
     var enginePlan = result.plan || planningManager.getPlan(planId);
 
+    // Sync the updated plan back to Runtime so getActivePlan() sees it
+    if (enginePlan) runtime.updatePlan(enginePlan);
+
+    // Compute structured counts for the LLM
+    var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
+    if (enginePlan && enginePlan.phases) {
+      for (var pi = 0; pi < enginePlan.phases.length; pi++) {
+        var ph = enginePlan.phases[pi];
+        if (ph.tasks) {
+          for (var ti = 0; ti < ph.tasks.length; ti++) {
+            var st = ph.tasks[ti].status;
+            if (st === 'completed') completedCount++;
+            else if (st === 'pending' || st === 'blocked') pendingCount++;
+            else if (st === 'failed') failedCount++;
+            else if (st === 'skipped') skippedCount++;
+          }
+        }
+      }
+    }
+
+    var success = result.success !== false;
     yield {
       type: 'tool_result',
       tool: 'update_plan',
-      success: result.success,
-      message: result.success ? 'Task ' + taskId + ' updated to ' + status : 'Failed to update task',
-      plan: enginePlan ? {
-        id: enginePlan.id,
-        phases: enginePlan.phases,
-        summary: enginePlan.summary,
-        status: enginePlan.status
-      } : null,
+      success: success,
+      planId: planId,
+      taskId: taskId,
+      newStatus: status,
+      completedCount: completedCount,
+      pendingCount: pendingCount,
+      failedCount: failedCount,
+      skippedCount: skippedCount,
+      totalTasks: completedCount + pendingCount + failedCount + skippedCount,
+      message: success ? ('Task ' + taskId + ' updated to ' + status + ' (plan: ' + planId + '). Progress: ' + completedCount + '/' + (completedCount + pendingCount + failedCount + skippedCount) + ' done.') : 'Failed to update task ' + taskId + ' in plan ' + planId,
+      plan: enginePlan ? enginePlan : null,
       readyTasks: result.readyTasks || [],
       blockedTasks: result.blockedTasks || []
     };
     return;
+  }
+
+  // If planId was discovered but no taskId/status, return plan info so LLM sees task IDs
+  if (planId && !taskId) {
+    var enginePlan = planningManager.getPlan(planId);
+    if (enginePlan) {
+      var planSummary = 'Plan ' + planId + ': ' + (enginePlan.summary || enginePlan.goal || '') + ' [' + enginePlan.status + ']';
+      yield {
+        type: 'tool_result',
+        tool: 'update_plan',
+        success: true,
+        plan: enginePlan,
+        message: planSummary + '\nUse update_plan with task_id to update individual tasks.'
+      };
+      return;
+    }
   }
 
   // Legacy: update flat checklist steps
@@ -677,9 +752,41 @@ async function* update_plan(args, workspace) {
     type: 'tool_result',
     tool: 'update_plan',
     success: true,
-    message: 'Plan updated successfully.',
+    message: 'Plan updated successfully.' + (planId ? ' (plan: ' + planId + ')' : ''),
     steps: tasks
   };
+}
+
+/**
+ * Auto-discover the most recent active plan ID from the Runtime.
+ */
+function discoverCurrentPlanId() {
+  // Runtime is authoritative
+  try {
+    var activePlanId = runtime.getActivePlanId();
+    if (activePlanId) return activePlanId;
+
+    var activePlan = runtime.getCurrentPlan();
+    if (activePlan && activePlan.id) return activePlan.id;
+  } catch (_) {}
+
+  // Fallback: scan all plans in Runtime
+  try {
+    var allPlans = runtime.getAllPlans();
+    if (allPlans && allPlans.length) {
+      // Return the most recently updated non-terminal plan
+      var best = allPlans[0];
+      for (var i = 1; i < allPlans.length; i++) {
+        if (allPlans[i].updatedAt > best.updatedAt) best = allPlans[i];
+      }
+      if (best && best.status !== 'completed' && best.status !== 'failed' && best.status !== 'cancelled') {
+        return best.id;
+      }
+      return best.id;
+    }
+  } catch (_) {}
+
+  return '';
 }
 
 async function* create_plan(args, workspace) {
@@ -694,13 +801,39 @@ async function* create_plan(args, workspace) {
     var sessionId = args.session_id || 'session_' + Date.now();
     var plan = planningManager.buildPlan(analysis, sessionId);
 
+    // Register as active plan in Runtime
+    runtime.registerPlan(plan);
+    runtime.setActivePlanId(plan.id);
+
+    // Compute counts for structured result
+    var taskIds = [];
+    var totalTasks = 0;
+    var pendingTasks = 0;
+    if (plan.phases) {
+      for (var pi = 0; pi < plan.phases.length; pi++) {
+        var ph = plan.phases[pi];
+        if (ph.tasks) {
+          for (var ti = 0; ti < ph.tasks.length; ti++) {
+            var t = ph.tasks[ti];
+            taskIds.push(t.id);
+            totalTasks++;
+            if (t.status === 'pending') pendingTasks++;
+          }
+        }
+      }
+    }
+
     yield {
       type: 'tool_result',
       tool: 'create_plan',
       success: true,
       message: 'Structured plan created with ' + plan.phases.length + ' phases and ' +
-               countTasks(plan) + ' tasks. Complexity: ' + plan.complexity.label +
+               totalTasks + ' tasks. Complexity: ' + plan.complexity.label +
                '. Estimated ~' + plan.estimatedIterations + ' iterations.',
+      planId: plan.id,
+      taskIds: taskIds,
+      totalTasks: totalTasks,
+      pendingTasks: pendingTasks,
       plan: {
         id: plan.id,
         goal: plan.goal,
@@ -738,52 +871,317 @@ async function* create_plan(args, workspace) {
 
   // Fallback: flat checklist from LLM-provided steps
   if (steps && !Array.isArray(steps)) steps = [steps];
+  var fallbackPlan = {
+    id: 'plan_' + Date.now(),
+    goal: goal || 'Execution Plan',
+    status: 'active',
+    steps: steps.map(function(st, idx) {
+      return {
+        id: 'step_' + (idx + 1),
+        order: idx + 1,
+        description: typeof st === 'string' ? st : (st.description || st.step || ''),
+        status: (typeof st === 'object' && st.status) ? st.status : 'pending'
+      };
+    })
+  };
   yield {
     type: 'tool_result',
     tool: 'create_plan',
     success: true,
-    message: 'Plan created successfully.',
+    message: 'Plan created successfully with ' + steps.length + ' steps.',
+    plan: fallbackPlan,
     steps: steps
   };
 }
 
-function countTasks(plan) {
-  var count = 0;
-  if (plan && plan.phases) {
-    for (var p = 0; p < plan.phases.length; p++) {
-      count += plan.phases[p].tasks.length;
+// ── get_plan — Query current plan status ─────────────
+async function* get_plan(args, workspace) {
+  yield { type: 'action', action: 'get_plan', message: 'Getting plan status' };
+  try {
+    var planId = args.plan_id || args.planId || '';
+
+    // Try to get active plan if no ID specified
+    if (!planId) {
+      var activePlan = runtime.getCurrentPlan();
+      if (activePlan) planId = activePlan.id;
     }
+
+    // Try runtime first (authoritative), fallback to planningManager
+    var result = planId ? (runtime.getPlan(planId) || planningManager.getPlan(planId))
+                        : runtime.getCurrentPlan();
+
+    if (!result) {
+      var allPlans = planningManager.getAllPlansContext();
+      var activeId = runtime.getActivePlanId();
+      var activeInfo = activeId ? (' Active plan: ' + activeId) : '';
+      yield {
+        type: 'tool_result', tool: 'get_plan', success: true,
+        message: (allPlans || 'No active plans found.') + activeInfo,
+        plan: null
+      };
+      return;
+    }
+
+    // Compute counts
+    var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
+    if (result.phases) {
+      for (var pi = 0; pi < result.phases.length; pi++) {
+        var ph = result.phases[pi];
+        if (ph.tasks) {
+          for (var ti = 0; ti < ph.tasks.length; ti++) {
+            var st = ph.tasks[ti].status;
+            if (st === 'completed') completedCount++;
+            else if (st === 'pending' || st === 'blocked') pendingCount++;
+            else if (st === 'failed') failedCount++;
+            else if (st === 'skipped') skippedCount++;
+          }
+        }
+      }
+    }
+
+    yield {
+      type: 'tool_result', tool: 'get_plan', success: true,
+      planId: result.id,
+      status: result.status,
+      completedCount: completedCount,
+      pendingCount: pendingCount,
+      failedCount: failedCount,
+      skippedCount: skippedCount,
+      totalTasks: completedCount + pendingCount + failedCount + skippedCount,
+      plan: {
+        id: result.id, goal: result.goal, summary: result.summary,
+        status: result.status,
+        phases: result.phases ? result.phases.map(function(ph) {
+          return {
+            id: ph.id, name: ph.name, order: ph.order, status: ph.status,
+            tasks: ph.tasks.map(function(t) {
+              return { id: t.id, description: t.description, status: t.status,
+                complexity: t.complexity, action: t.action,
+                dependsOn: t.dependsOn, parallelWith: t.parallelWith };
+            })
+          };
+        }) : [],
+        complexity: result.complexity,
+        estimatedIterations: result.estimatedIterations,
+        executionGraph: result.executionGraph
+      },
+      message: 'Plan ' + result.id + ': ' + result.status + ' | ' +
+               completedCount + '/' + (completedCount + pendingCount + failedCount + skippedCount) +
+               ' done | ' + result.summary
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'get_plan', success: false, message: e.message };
   }
-  return count;
+}
+
+// ── invoke_subagent — Delegate to specialized sub-agent role ─────
+async function* invoke_subagent(args, workspace) {
+  var role = args.role || 'coding';
+  var task = args.task || args.prompt || args.goal || '';
+
+  yield { type: 'action', action: 'invoke_subagent', message: 'Delegating task to sub-agent [' + role + ']: ' + task };
+
+  if (!task) {
+    yield {
+      type: 'tool_result',
+      tool: 'invoke_subagent',
+      success: false,
+      message: 'Sub-agent task description is required.'
+    };
+    return;
+  }
+
+  var rolePrompt = multiAgentRuntime.getRolePrompt(role);
+
+  yield {
+    type: 'tool_result',
+    tool: 'invoke_subagent',
+    success: true,
+    role: role,
+    task: task,
+    message: 'Sub-agent [' + role + '] delegated task: "' + task + '". Role instructions:\n' + rolePrompt
+  };
 }
 
 // =====================================================
-// REGISTER ALL TOOLS
+// REGISTER ALL TOOLS — using descriptor-based toolRegistry
 // =====================================================
 
+function reg(name, handler, opts) {
+  opts = opts || {};
+  toolRegistry.register({
+    name: name,
+    handler: handler,
+    aliases: opts.aliases || [],
+    category: opts.category || 'utility',
+    description: opts.description || '',
+    parameters: opts.parameters || {},
+    required: opts.required || [],
+    metadata: {
+      dangerous: opts.dangerous || false,
+      needsPermission: opts.needsPermission || opts.dangerous || false,
+      category: opts.category || 'utility',
+      timeout: opts.timeout || 30000
+    }
+  });
+}
+
 export function registerAllTools() {
-  toolRegistry.register('read_file', read_file);
-  toolRegistry.register('read', read_file);
-  toolRegistry.register('write_file', write_file);
-  toolRegistry.register('write', write_file);
-  toolRegistry.register('edit_file', edit_file);
-  toolRegistry.register('edit', edit_file);
-  toolRegistry.register('delete_file', delete_file);
-  toolRegistry.register('create_folder', create_folder);
-  toolRegistry.register('delete_folder', delete_folder);
-  toolRegistry.register('list_directory', list_directory);
-  toolRegistry.register('search_files', search_files);
-  toolRegistry.register('get_file_info', get_file_info);
-  toolRegistry.register('run_terminal', run_terminal);
-  toolRegistry.register('bash', run_terminal);
-  toolRegistry.register('execute_command', run_terminal);
-  toolRegistry.register('terminal_input', terminal_input);
-  toolRegistry.register('stop_terminal', stop_terminal);
-  toolRegistry.register('list_symbols', list_symbols);
-  toolRegistry.register('patch_file', patch_file);
-  toolRegistry.register('web_request', web_request);
-  toolRegistry.register('get_current_datetime', get_current_datetime);
-  toolRegistry.register('find_in_files', find_in_files);
-  toolRegistry.register('update_plan', update_plan);
-  toolRegistry.register('create_plan', create_plan);
+  // ── Filesystem ─────────────────────────────────────
+  reg('read_file', read_file, {
+    aliases: ['read'],
+    category: 'filesystem',
+    description: 'Read the full contents of a file at the given relative path inside the workspace.',
+    parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/main.py'" } },
+    required: ['file_path']
+  });
+  reg('write_file', write_file, {
+    aliases: ['write'],
+    category: 'filesystem',
+    description: 'Create a new file or completely overwrite an existing file.',
+    parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" }, content: { type: 'string', description: 'The complete file content' } },
+    required: ['file_path', 'content'],
+    dangerous: true
+  });
+  reg('edit_file', edit_file, {
+    aliases: ['edit'],
+    category: 'filesystem',
+    description: 'Replace the first occurrence of an exact string in a file with a new string.',
+    parameters: { file_path: { type: 'string', description: 'Relative path' }, old_string: { type: 'string', description: 'The exact string to find' }, new_string: { type: 'string', description: 'The replacement string' } },
+    required: ['file_path', 'old_string', 'new_string'],
+    dangerous: true
+  });
+  reg('delete_file', delete_file, {
+    category: 'filesystem',
+    description: 'Permanently delete a file from the workspace.',
+    parameters: { file_path: { type: 'string', description: 'Relative path' } },
+    required: ['file_path'],
+    dangerous: true
+  });
+  reg('create_folder', create_folder, {
+    category: 'filesystem',
+    description: 'Create a directory (and any parent directories) in the workspace.',
+    parameters: { folder_path: { type: 'string', description: "Relative path e.g. 'src/components'" } },
+    required: ['folder_path']
+  });
+  reg('delete_folder', delete_folder, {
+    category: 'filesystem',
+    description: 'Delete a folder and ALL its contents recursively.',
+    parameters: { folder_path: { type: 'string', description: 'Relative path to delete' } },
+    required: ['folder_path'],
+    dangerous: true
+  });
+  reg('list_directory', list_directory, {
+    category: 'filesystem',
+    description: 'List all files and folders in a directory.',
+    parameters: { folder_path: { type: 'string', description: "Relative path. Use '.' for root." } },
+    required: []
+  });
+  reg('get_file_info', get_file_info, {
+    category: 'filesystem',
+    description: 'Get metadata about a file or folder (size, modified, type).',
+    parameters: { file_path: { type: 'string', description: 'Relative path' } },
+    required: ['file_path']
+  });
+  reg('patch_file', patch_file, {
+    category: 'filesystem',
+    description: 'Apply multiple search-and-replace blocks to a single file at once.',
+    parameters: {
+      file_path: { type: 'string', description: 'Relative path' },
+      patches: { type: 'array', description: 'Search-replace blocks.', items: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, required: ['find', 'replace'] } }
+    },
+    required: ['file_path', 'patches'],
+    dangerous: true
+  });
+
+  // ── Search ─────────────────────────────────────────
+  reg('search_files', search_files, {
+    category: 'search',
+    description: 'Recursively search for files matching a glob pattern.',
+    parameters: { pattern: { type: 'string', description: "Glob pattern e.g. '*.py'" }, folder_path: { type: 'string', description: 'Relative path to search in' } },
+    required: ['pattern']
+  });
+  reg('find_in_files', find_in_files, {
+    category: 'search',
+    description: 'Search file contents for a text query. Returns matching files with snippets.',
+    parameters: { query: { type: 'string', description: 'Text to search for' } },
+    required: ['query']
+  });
+  reg('list_symbols', list_symbols, {
+    category: 'search',
+    description: 'Extract code symbols (classes, functions) defined in a file.',
+    parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" } },
+    required: ['file_path']
+  });
+
+  // ── Terminal ───────────────────────────────────────
+  reg('run_terminal', run_terminal, {
+    aliases: ['bash', 'execute_command'],
+    category: 'terminal',
+    description: 'Execute a shell command. Pass empty command to check terminal output.',
+    parameters: { command: { type: 'string', description: 'The command to execute' }, timeout: { type: 'integer', description: 'Max seconds (default 30)' }, background: { type: 'boolean', description: 'Run without waiting' } },
+    required: [],
+    dangerous: true,
+    needsPermission: true,
+    timeout: 60000
+  });
+  reg('terminal_input', terminal_input, {
+    category: 'terminal',
+    description: 'Send text input to the active terminal command.',
+    parameters: { text: { type: 'string', description: 'The text to send' } },
+    required: ['text']
+  });
+  reg('stop_terminal', stop_terminal, {
+    category: 'terminal',
+    description: 'Send Ctrl+C to stop the running terminal command.',
+    parameters: {},
+    required: []
+  });
+
+  // ── Utility ────────────────────────────────────────
+  reg('get_current_datetime', get_current_datetime, {
+    category: 'utility',
+    description: 'Get the current date and time in ISO format.',
+    parameters: {},
+    required: []
+  });
+  reg('web_request', web_request, {
+    category: 'utility',
+    description: 'Perform an HTTP request.',
+    parameters: { url: { type: 'string', description: 'The URL' }, method: { type: 'string', description: "GET/POST/PUT/DELETE" }, headers: { type: 'object', description: 'HTTP headers' }, body: { type: 'string', description: 'Request body' } },
+    required: ['url']
+  });
+
+  // ── Planning ───────────────────────────────────────
+  reg('create_plan', create_plan, {
+    category: 'planning',
+    description: 'Create a structured execution plan. Provide goal for auto-analysis, or manual steps.',
+    parameters: { goal: { type: 'string' }, session_id: { type: 'string' }, steps: { type: 'array' } },
+    required: []
+  });
+  reg('update_plan', update_plan, {
+    category: 'planning',
+    description: 'Update individual task statuses in an execution plan. Call this after completing a task to mark it done and advance. Provide observation with what you accomplished.',
+    parameters: { plan_id: { type: 'string', description: 'The plan ID (e.g., plan_xxx). Required.' }, task_id: { type: 'string', description: 'The task ID to update (e.g., t1_1). Required.' }, status: { type: 'string', description: 'New status: pending, active, completed, failed, skipped.' }, observation: { type: 'string', description: 'Brief note about what was done or why it failed.' }, output: { type: 'string', description: 'Summary of the output/results.' } },
+    required: ['plan_id', 'task_id', 'status']
+  });
+  reg('get_plan', get_plan, {
+    category: 'planning',
+    description: 'Get the current execution plan status. Use without plan_id to list all plans. Use with plan_id to get a specific plan with full task details.',
+    parameters: { plan_id: { type: 'string', description: 'Optional plan ID. Omit to list all plans.' } },
+    required: []
+  });
+
+  // ── Multi-Agent ────────────────────────────────────
+  reg('invoke_subagent', invoke_subagent, {
+    category: 'multiagent',
+    description: 'Delegate a specialized task to a sub-agent role (research, coding, testing, review, planner, documentation). Uses the configured LLM model instance with specialized role prompts.',
+    parameters: {
+      role: { type: 'string', description: 'Sub-agent role: research, coding, testing, review, planner, documentation' },
+      task: { type: 'string', description: 'Clear, specific description of what the sub-agent should accomplish' }
+    },
+    required: ['role', 'task']
+  });
+
+  console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');
 }

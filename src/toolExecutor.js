@@ -1,43 +1,9 @@
 // toolExecutor.js — Formats tool results for LLM context
+// Re-exports from the unified toolRegistry.
+// Kept for backward compatibility — agentLoop.js imports from here.
+// formatExecutionReport is kept here as it's not in the registry.
 
-export function formatToolResult(toolName, result) {
-  var res = result || {};
-  var parts = ['Tool: ' + toolName];
-  parts.push('Success: ' + (res.success !== false));
-
-  // Terminal-specific state: include status/interactive fields for the LLM
-  if (res.status !== undefined && res.status !== 'completed' && res.status !== 'failed') {
-    parts.push('Status: ' + res.status);
-  }
-  if (res.waiting_for_input === true || res.interactive === true) {
-    parts.push('Interactive: ' + (res.interactive === true));
-    parts.push('Waiting For Input: ' + (res.waiting_for_input === true));
-    if (res.prompt_detected === true) parts.push('Prompt Detected: true');
-  }
-
-  if (res.content !== undefined) parts.push('Content:' + res.content);
-  if (res.stdout !== undefined && res.stdout) parts.push('Stdout:\n' + res.stdout);
-  if (res.output !== undefined) parts.push('Output:' + res.output);
-  if (res.message !== undefined) parts.push('Message: ' + res.message);
-  if (res.entries !== undefined) parts.push('Entries: ' + JSON.stringify(res.entries));
-  if (res.matches !== undefined) parts.push('Matches: ' + JSON.stringify(res.matches));
-  if (res.info !== undefined) parts.push('Info: ' + JSON.stringify(res.info));
-  if (res.datetime !== undefined) parts.push('Datetime: ' + res.datetime);
-  return parts.join('\n');
-}
-
-export function formatToolCallsForHistory(toolCalls) {
-  return toolCalls.map(function(tc) {
-    return {
-      id: tc.id || tc.function?.name || 'call_' + Date.now(),
-      type: 'function',
-      function: {
-        name: tc.function?.name || tc.name,
-        arguments: tc.function?.arguments || tc.arguments || {}
-      }
-    };
-  });
-}
+export { formatResult as formatToolResult, formatToolCallsForHistory } from './toolRegistry.js';
 
 /**
  * Format an execution report into a readable string for the LLM.

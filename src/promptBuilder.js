@@ -41,9 +41,9 @@ export function buildMessages(userPrompt, options) {
   systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
 
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
-    'You have access to `create_plan` and `update_plan` tools for structured execution planning.\n' +
+    'You may use `create_plan`, `update_plan`, and `get_plan` when the user request genuinely benefits from structured tracking. Decide yourself whether planning is useful; do not create plans for simple answers or short single-step tasks.\n' +
     '\n' +
-    '### Goal-based planning (recommended):\n' +
+    '### Goal-based planning:\n' +
     'Call `create_plan` with a `goal` description. The Planning Engine will automatically:\n' +
     '  - Analyze the user request and detect intent (code_generation, refactoring, debugging, etc.)\n' +
     '  - Estimate complexity (low/medium/high/very_high)\n' +
@@ -53,11 +53,14 @@ export function buildMessages(userPrompt, options) {
     '  - Assess risks\n' +
     '  - Return an execution graph with entry points and critical path\n' +
     '\n' +
-    '### Task-level updates:\n' +
+    '### Task-level updates (REQUIRED for plan progression):\n' +
+    'After you complete a tool call that fulfills the current active task, **you MUST call `update_plan`** to mark it as completed and advance to the next task.\n' +
     'Use `update_plan` with `plan_id`, `task_id`, and `status` to update individual tasks.\n' +
     'Task IDs follow the pattern: t{phase}_{task} (e.g., t1_1, t2_3).\n' +
     'Status values: pending, active, completed, failed, skipped.\n' +
     'You can also include an `observation` explaining why the task succeeded or failed.\n' +
+    '\n' +
+    '**Important:** After each tool result, you will receive a "PLAN STATUS" message showing the current todo list. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.\n' +
     '\n' +
     '### DAG-aware execution:\n' +
     '- A task can start only when ALL its dependencies are completed.\n' +

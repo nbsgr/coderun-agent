@@ -1,25 +1,27 @@
 // agentState.js — Formal State Machine for the Agent Loop
 //
 // States:
-//   idle          — Ready, no active session
-//   thinking      — LLM provider is streaming a response
-//   executing     — Executing tool calls
-//   verifying     — Verifying tool result
-//   completed     — Agent finished successfully (terminal)
-//   failed        — Agent terminated with unrecoverable error
-//   stopped       — User requested stop between iterations
+//   idle              — Ready, no active session
+//   thinking          — LLM provider is streaming a response
+//   workspace_analysis — Analyzing workspace structure
+//   planning          — Planning steps
+//   searching         — Searching files
+//   reading           — Reading file content
+//   writing           — Writing files
+//   editing           — Editing files
+//   executing         — Executing tool calls / commands
+//   testing           — Running tests
+//   reviewing         — Reviewing & reflecting on results
+//   waiting           — Waiting for user approval
+//   completed         — Agent finished successfully (terminal)
+//   failed            — Agent terminated with unrecoverable error
+//   cancelled         — Agent cancelled
+//   stopped           — User requested stop between iterations
 //
-// Valid transitions (enforced):
-//   idle → thinking
-//   thinking → executing (tool calls received)
-//   thinking → completed (no tool calls, direct answer)
-//   executing → thinking (more iterations needed)
-//   executing → verifying (after tool execution)
-//   verifying → thinking (continue loop)
-//   verifying → completed (all steps done)
-//   executing → completed (no more iterations)
-//   * → failed (on error)
-//   * → stopped (on user signal)
+// Valid transitions: any non-terminal state → any active state.
+// Terminal states (completed, failed, cancelled, stopped) are sink states.
+// * → failed (on error)
+// * → stopped (on user signal)
 //
 // Invalid transitions throw StateError.
 
@@ -36,25 +38,46 @@ export class StateError extends Error {
 }
 
 /** Map of valid transitions: [fromState] → Set of allowed toStates */
+var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped'];
 var TRANSITIONS = {
-  idle:       new Set(['thinking']),
-  thinking:   new Set(['executing', 'completed', 'failed', 'stopped']),
-  executing:  new Set(['thinking', 'verifying', 'completed', 'failed', 'stopped']),
-  verifying:  new Set(['thinking', 'completed', 'failed', 'stopped']),
-  completed:  new Set([]),  // terminal
-  failed:     new Set([]),  // terminal
-  stopped:    new Set([])   // terminal
+  idle:               new Set(ACTIVE_STATES),
+  thinking:           new Set(ACTIVE_STATES),
+  verifying:          new Set(ACTIVE_STATES),
+  workspace_analysis: new Set(ACTIVE_STATES),
+  planning:           new Set(ACTIVE_STATES),
+  searching:          new Set(ACTIVE_STATES),
+  reading:            new Set(ACTIVE_STATES),
+  writing:            new Set(ACTIVE_STATES),
+  editing:            new Set(ACTIVE_STATES),
+  executing:          new Set(ACTIVE_STATES),
+  testing:            new Set(ACTIVE_STATES),
+  reviewing:          new Set(ACTIVE_STATES),
+  waiting:            new Set(ACTIVE_STATES),
+  completed:          new Set([]), // terminal
+  failed:             new Set([]), // terminal
+  cancelled:          new Set([]), // terminal
+  stopped:            new Set([])  // terminal
 };
 
 /** Human-readable labels for each state. */
 export var LABELS = {
-  idle:       'Idle',
-  thinking:   'Thinking',
-  executing:  'Executing Tools',
-  verifying:  'Verifying',
-  completed:  'Completed',
-  failed:     'Failed',
-  stopped:    'Stopped'
+  idle:               'Idle',
+  thinking:           'Thinking',
+  verifying:          'Verifying',
+  workspace_analysis: 'Analyzing Workspace',
+  planning:           'Planning',
+  searching:          'Searching Files',
+  reading:            'Reading File',
+  writing:            'Writing File',
+  editing:            'Editing File',
+  executing:          'Executing Command',
+  testing:            'Running Tests',
+  reviewing:          'Reviewing & Reflecting',
+  waiting:            'Waiting for Approval',
+  completed:          'Completed',
+  failed:             'Failed',
+  cancelled:          'Cancelled',
+  stopped:            'Stopped'
 };
 
 /**
@@ -98,9 +121,9 @@ export function canTransition(to) {
 }
 
 /**
- * Check if the current state is a terminal state (completed, failed, stopped).
+ * Check if the current state is a terminal state (completed, failed, cancelled).
  * @returns {boolean}
  */
 export function isTerminal() {
-  return _state === 'completed' || _state === 'failed' || _state === 'stopped';
+  return _state === 'completed' || _state === 'failed' || _state === 'cancelled' || _state === 'stopped';
 }

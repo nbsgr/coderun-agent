@@ -1,19 +1,19 @@
 // planningManager.js — Planning Engine Bridge
 //
-// This is the public-facing bridge between the core planning engine
-// (planningEngine.js) and the rest of the extension.
+// Thin facade between planningEngine and the rest of the extension.
+// The Runtime (runtime.js) is the SINGLE source of truth for all plan
+// objects. This module:
+//   - Delegates plan creation/mutation to planningEngine
+//   - Registers/syncs all plan changes with Runtime's plan cache
+//   - Formats plan data for prompt injection
+//   - Provides backward-compatible legacy API
 //
-// Responsibilities:
-//   - Expose planningEngine's capabilities with backward-compatible API
-//   - Track session-level plan cache for fast lookups
-//   - Provide formatted context for prompt injection
-//   - Bridge LLM tool results (create_plan/update_plan) to engine state
-//   - Handle plan discovery across sessions
+// NO plan caching here — the Runtime owns the plan cache.
 //
 // Consumers:
-//   - agentLoop.js  → getSessionPlans, storePlan, getActivePlansContext, analyzeRequest
+//   - agentLoop.js    → getSessionPlans, storePlan, getActivePlansContext, analyzeRequest
 //   - contextManager.js → getActivePlansContext
-//   - tools.js      → create_plan, update_plan tool implementations delegate here
+//   - tools.js        → create_plan, update_plan delegate here
 //
 // Public API:
 //   Legacy (backward-compatible):
@@ -24,9 +24,9 @@
 //     storePlan(plan)                             → void
 //     getActivePlansContext()                     → string
 //
-//   New (from planningEngine):
+//   New:
 //     analyzeRequest(goal, context, workspace)    → AnalysisResult
-//     buildPlan(analysis, sessionId)              → Plan
+//     buildPlan(analysis, sessionId)              → Plan (cached in Runtime)
 //     updateTaskStatus(planId, taskId, status, obs) → UpdateResult
 //     getReadyTasks(planId)                       → Task[]
 //     getBlockedTasks(planId)                     → Task[]
@@ -34,16 +34,11 @@
 //     getExecutionGraph(planId)                   → ExecutionGraph | null
 //     replanFromObservation(planId, observation)  → Plan | null
 //     addObservation(planId, observation)         → boolean
+//     getAllPlansContext()                        → string
 
 import * as planningEngine from './planningEngine.js';
 import * as projectKnowledge from './projectKnowledge.js';
-
-// ═══════════════════════════════════════════════════════════
-// SESSION CACHE
-// ═══════════════════════════════════════════════════════════
-
-var _planCache = {};  // { [sessionId]: { planId: Plan } }
-var _sessionPlanIndex = {};  // { [sessionId]: [planId, ...] }
+import * as runtime from './runtime.js';
 
 // ═══════════════════════════════════════════════════════════
 // LEGACY BACKWARD-COMPATIBLE API
@@ -60,37 +55,30 @@ export async function createPlan(goal, context, sessionId) {
   var workspace = (context && context.workspace) || '';
   var analysis = planningEngine.analyzeRequest(goal, context, workspace);
   var plan = planningEngine.buildPlan(analysis, sessionId);
-  cachePlan(sessionId, plan);
+  runtime.registerPlan(plan);
   return plan;
 }
 
 /**
  * Get all plans for a session (backward-compatible).
+ * Tries Runtime cache first, then falls back to engine/SQLite.
  */
 export function getSessionPlans(sessionId) {
-  // First check cache
-  if (_sessionPlanIndex[sessionId] && _sessionPlanIndex[sessionId].length) {
-    var plans = [];
-    for (var i = 0; i < _sessionPlanIndex[sessionId].length; i++) {
-      var plan = getFromCache(sessionId, _sessionPlanIndex[sessionId][i]);
-      if (plan) plans.push(plan);
-    }
-    if (plans.length) return plans;
-  }
+  // Runtime is the authoritative cache
+  var runtimePlans = runtime.getPlansBySession(sessionId);
+  if (runtimePlans && runtimePlans.length) return runtimePlans;
 
-  // Fallback: try loading from storage
+  // Fallback: try loading from engine storage
   try {
-    // Try loading via projectKnowledge's getPlansBySession
     var storedPlans = projectKnowledge.getPlansBySession(sessionId);
     if (storedPlans && storedPlans.length) {
       var enriched = [];
       for (var s = 0; s < storedPlans.length; s++) {
         var sp = storedPlans[s];
-        // Try to load full plan from engine storage
         var fullPlan = planningEngine.getPlan(sp.id);
         var plan = fullPlan || sp;
+        runtime.registerPlan(plan);
         enriched.push(plan);
-        cachePlan(sessionId, plan);
       }
       return enriched;
     }
@@ -101,13 +89,21 @@ export function getSessionPlans(sessionId) {
 
 /**
  * Get a single plan by ID (backward-compatible).
+ * Tries Runtime cache first, then engine/SQLite.
  */
 export function getPlan(planId) {
-  // Check engine first
-  var plan = planningEngine.getPlan(planId);
+  // Runtime is authoritative
+  var plan = runtime.getPlan(planId);
   if (plan) return plan;
 
-  // Fallback: projectKnowledge
+  // Fallback: engine
+  plan = planningEngine.getPlan(planId);
+  if (plan) {
+    runtime.registerPlan(plan);
+    return plan;
+  }
+
+  // Fallback: projectKnowledge tasks table
   try {
     return projectKnowledge.getPlan(planId);
   } catch (_) {
@@ -120,10 +116,13 @@ export function getPlan(planId) {
  */
 export function updatePlanStatus(planId, status) {
   planningEngine.updatePlanStatus(planId, status);
+  var plan = planningEngine.getPlan(planId);
+  if (plan) runtime.updatePlan(plan);
 }
 
 /**
  * Store a plan (backward-compatible — called from agentLoop).
+ * Delegates to Runtime's plan cache.
  */
 export function storePlan(plan) {
   if (!plan) return;
@@ -131,48 +130,56 @@ export function storePlan(plan) {
   if (plan.steps && !plan.phases) {
     var migrated = planningEngine.migrateLegacyPlan(plan);
     if (migrated) {
-      cachePlan(migrated.sessionId, migrated);
+      runtime.registerPlan(migrated);
+      return;
     }
-  } else {
-    // Already new format, persist via engine
-    try {
-      projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-    } catch (_) {}
-    cachePlan(plan.sessionId, plan);
   }
+  // Register/update in runtime cache
+  runtime.registerPlan(plan);
+  // Best-effort persistence
+  try {
+    projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
+  } catch (_) {}
 }
 
 /**
  * Get active plans as a formatted string for prompt injection.
  */
 export function getActivePlansContext() {
-  // Collect from engine
-  var engineContext = planningEngine.formatAllActivePlans();
-  if (engineContext) return engineContext;
-
-  // Fallback: scan cache for non-completed plans
+  var allPlans = runtime.getAllPlans();
   var activePlans = [];
-  for (var sid in _planCache) {
-    for (var pid in _planCache[sid]) {
-      var p = _planCache[sid][pid];
-      if (p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled') {
+  for (var a = 0; a < allPlans.length; a++) {
+    var p = allPlans[a];
+    if (p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled') {
+      var totalTasks = 0, completedTasks = 0;
+      if (p.phases) {
+        for (var pi = 0; pi < p.phases.length; pi++) {
+          if (p.phases[pi].tasks) {
+            totalTasks += p.phases[pi].tasks.length;
+            completedTasks += p.phases[pi].tasks.filter(function(t) { return t.status === 'completed'; }).length;
+          }
+        }
+      } else if (p.steps) {
+        totalTasks = p.steps.length;
+        completedTasks = p.steps.filter(function(s) { return s.status === 'completed'; }).length;
+      }
+      if (totalTasks === 0 || completedTasks < totalTasks) {
         activePlans.push(p);
       }
     }
   }
-
   if (!activePlans.length) return '';
 
   var parts = ['## 📋 ACTIVE PLANS'];
-  for (var a = 0; a < activePlans.length; a++) {
+  for (var a2 = 0; a2 < activePlans.length; a2++) {
     parts.push('');
-    parts.push(planningEngine.formatPlanContext(activePlans[a]));
+    parts.push(planningEngine.formatPlanContext(activePlans[a2]));
   }
   return parts.join('\n');
 }
 
 // ═══════════════════════════════════════════════════════════
-// NEW API — Delegating to planningEngine
+// NEW API — Delegating to planningEngine, syncing to Runtime
 // ═══════════════════════════════════════════════════════════
 
 /**
@@ -183,24 +190,150 @@ export function analyzeRequest(goal, context, workspace) {
 }
 
 /**
- * Build a plan from an analysis result.
+ * Get all plans as a formatted context string for the LLM.
+ * Reads from Runtime cache — always authoritative.
+ */
+export function getAllPlansContext() {
+  var allPlans = runtime.getAllPlans();
+  if (!allPlans.length) return '';
+
+  var lines = ['## ALL PLANS'];
+  for (var i = 0; i < allPlans.length; i++) {
+    var p = allPlans[i];
+    lines.push('');
+    lines.push('Plan: ' + esc(p.id));
+    lines.push('  Goal: ' + esc(p.goal || '').substring(0, 100));
+    lines.push('  Status: ' + (p.status || 'unknown'));
+    if (p.summary) lines.push('  Summary: ' + p.summary);
+    if (p.phases) {
+      for (var ph = 0; ph < p.phases.length; ph++) {
+        var phase = p.phases[ph];
+        lines.push('  Phase ' + phase.order + ': ' + phase.name + ' [' + phase.status + ']');
+        if (phase.tasks) {
+          for (var t = 0; t < phase.tasks.length; t++) {
+            var task = phase.tasks[t];
+            lines.push('    Task ' + task.id + ': ' + esc(task.description) + ' [' + task.status + ']');
+          }
+        }
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Build a plan from an analysis result and register it with Runtime.
  */
 export function buildPlan(analysis, sessionId) {
   var plan = planningEngine.buildPlan(analysis, sessionId);
-  cachePlan(sessionId, plan);
+  runtime.registerPlan(plan);
   return plan;
 }
 
 /**
  * Update a task's status and record an observation.
+ *
+ * Tries the engine (SQLite-backed) first. If the engine cannot find the plan
+ * (e.g. projectKnowledge wasn't ready), falls back to the Runtime's plan cache.
+ * The result is always synced back to the Runtime.
  */
 export function updateTaskStatus(planId, taskId, status, observation) {
+  // Try the engine (SQLite-backed) first
   var result = planningEngine.updateTaskStatus(planId, taskId, status, observation);
-  // Update cache if plan was modified
-  if (result.success && result.plan) {
-    cachePlan(result.plan.sessionId, result.plan);
+
+  // Engine succeeded — sync result to Runtime
+  if (result.success) {
+    if (result.plan) runtime.updatePlan(result.plan);
+    return result;
   }
-  return result;
+
+  // Engine failed — try to find the plan in Runtime cache
+  var plan = runtime.getPlan(planId) || runtime.getCurrentPlan();
+  if (!plan) return result; // not in Runtime either — return original failure
+
+  // Find the task by searching phases or steps using flexible matching
+  var task = null;
+  var strId = String(taskId).trim();
+  var numId = Number(strId);
+  var lowerStr = strId.toLowerCase();
+  var cleanTaskId = lowerStr.replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+
+  function matches(tObj, idx, ord) {
+    if (!tObj) return false;
+    var tId = String(tObj.id || '').trim();
+    var tDesc = String(tObj.description || '').trim().toLowerCase();
+    var tOrd = tObj.order || ord || (idx + 1);
+    if (tId === strId || tId.toLowerCase() === lowerStr) return true;
+    if (!isNaN(numId) && numId > 0 && (tOrd === numId || (idx + 1) === numId)) return true;
+    var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+    if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
+    if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
+    var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
+    if (ptMatch) {
+      var reqTask = Number(ptMatch[2]);
+      if (ord === reqTask || (idx + 1) === reqTask) return true;
+    }
+    return false;
+  }
+
+  if (plan.phases) {
+    var gIdx = 0;
+    for (var p = 0; p < plan.phases.length; p++) {
+      var phase = plan.phases[p];
+      if (phase.tasks) {
+        for (var t = 0; t < phase.tasks.length; t++) {
+          gIdx++;
+          if (matches(phase.tasks[t], t, gIdx)) {
+            task = phase.tasks[t];
+            break;
+          }
+        }
+      }
+      if (task) break;
+    }
+  }
+
+  if (!task && plan.steps) {
+    for (var s = 0; s < plan.steps.length; s++) {
+      if (matches(plan.steps[s], s, s + 1)) {
+        task = plan.steps[s];
+        break;
+      }
+    }
+  }
+
+  if (!task) return result;
+
+  // Update the task directly in memory
+  task.status = status;
+  if (observation) {
+    if (!task.observations) task.observations = [];
+    task.observations.push({
+      type: observation.type || 'info',
+      detail: observation.detail || '',
+      timestamp: Date.now(),
+      source: observation.source || 'update_plan_tool'
+    });
+  }
+  if (status === 'completed' || status === 'failed') task.completedAt = Date.now();
+  if (status === 'active') task.startedAt = Date.now();
+  plan.updatedAt = Date.now();
+
+  // Best-effort SQLite persistence
+  try {
+    projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
+    projectKnowledge.updatePlanStatus(plan.id, plan.status);
+  } catch (_) {}
+
+  // Sync the updated plan back to Runtime
+  runtime.updatePlan(plan);
+
+  return {
+    success: true,
+    plan: plan,
+    readyTasks: [],
+    blockedTasks: []
+  };
 }
 
 /**
@@ -246,37 +379,10 @@ export function addObservation(planId, observation) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// INTERNAL: Cache management
+// INTERNAL: Helpers
 // ═══════════════════════════════════════════════════════════
 
-function cachePlan(sessionId, plan) {
-  if (!sessionId || !plan || !plan.id) return;
-
-  if (!_planCache[sessionId]) _planCache[sessionId] = {};
-  _planCache[sessionId][plan.id] = plan;
-
-  if (!_sessionPlanIndex[sessionId]) _sessionPlanIndex[sessionId] = [];
-  if (_sessionPlanIndex[sessionId].indexOf(plan.id) === -1) {
-    _sessionPlanIndex[sessionId].push(plan.id);
-  }
-}
-
-function getFromCache(sessionId, planId) {
-  if (_planCache[sessionId] && _planCache[sessionId][planId]) {
-    return _planCache[sessionId][planId];
-  }
-  return null;
-}
-
-/**
- * Clear session cache (for testing or reset).
- */
-export function clearCache(sessionId) {
-  if (sessionId) {
-    delete _planCache[sessionId];
-    delete _sessionPlanIndex[sessionId];
-  } else {
-    _planCache = {};
-    _sessionPlanIndex = {};
-  }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

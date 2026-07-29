@@ -45,7 +45,9 @@ export function activate(context) {
   terminalManager.registerTerminalListeners(context);
 
   // Initialize project knowledge base (SQLite, indexing, file watcher, memory)
-  projectKnowledge.initialize(context);
+  projectKnowledge.initialize(context).catch(function(err) {
+    console.error('[CODERUN] projectKnowledge init failed:', err);
+  });
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());
@@ -186,12 +188,13 @@ function getWebviewHtml(webview, extensionUri) {
   var srcPath = path.join(extensionUri.fsPath, 'src');
   var nonce = getNonce();
 
-  var dashboardCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.css')));
-  var chatSpaceCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.css')));
-  var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'MarkdownRenderer.js')));
-  var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'webview-shared.js')));
-  var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.js')));
-  var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js')));
+  var cb = Date.now();
+  var dashboardCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.css'))).toString() + '?cb=' + cb;
+  var chatSpaceCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.css'))).toString() + '?cb=' + cb;
+  var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'MarkdownRenderer.js'))).toString() + '?cb=' + cb;
+  var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'webview-shared.js'))).toString() + '?cb=' + cb;
+  var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.js'))).toString() + '?cb=' + cb;
+  var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js'))).toString() + '?cb=' + cb;
 
   var workspaceFolder = getWorkspaceFolder();
   var cfg = config.getConfig();
@@ -344,6 +347,7 @@ async function handleFrontendMessage(message, webview) {
       // Start with a fresh terminal only if this is the first message in a new chat session
       if (!history || history.length === 0) {
         terminalManager.resetTerminal();
+        permissions.resetChatDecisions();
       }
 
       // Determine which provider to use from the frontend
@@ -391,19 +395,18 @@ async function handleFrontendMessage(message, webview) {
       // calls back via 'permissionResponse' which routes into
       // permissions.resolvePermission — which resolves the right Promise.
       var askPermission = function(toolName, args, id) {
-        // Short-circuit: if a persistent "always" decision exists, requestPermission
-        // returns a resolved promise immediately and no UI prompt is needed.
-        var persistent = permissions.getAlwaysDecision(toolName);
-        if (persistent) {
+        // Short-circuit: if this chat has an "always" decision, no UI prompt is needed.
+        var chatDecision = permissions.getAlwaysDecision(toolName);
+        if (chatDecision) {
           sendEvent({
             type: 'requestPermission',
             tool: toolName,
             arguments: args,
             id: id,
             autoResolved: true,
-            decision: persistent
+            decision: chatDecision
           });
-          return Promise.resolve(persistent === 'allow');
+          return Promise.resolve(chatDecision === 'allow');
         }
         // Otherwise: ask the webview to render the 4-button permission card.
         sendEvent({

@@ -18,6 +18,17 @@ import * as checkpointManager from './checkpointManager.js';
 import * as terminalManager from './terminalManager.js';
 import * as events from './events.js';
 import * as agentState from './agentState.js';
+import * as runtime from './runtime.js';
+import { exec } from 'child_process';
+import * as observationEngine from './observationEngine.js';
+import * as goalTracker from './goalTracker.js';
+import * as gitIntelligence from './gitIntelligence.js';
+import * as approvalSystem from './approvalSystem.js';
+import * as recoveryEngine from './recoveryEngine.js';
+import * as reviewEngine from './reviewEngine.js';
+import * as workflowEngine from './workflowEngine.js';
+import * as executionTrace from './executionTrace.js';
+import * as memoryManager from './memoryManager.js';
 
 // Debug flag — set to true for verbose logging
 var DEBUG = false;
@@ -54,6 +65,12 @@ export async function runAgentLoop(userPrompt, config, options) {
   options = options || {};
   var workspace = options.workspace || '';
   var history = options.history || [];
+
+  // Initialize Runtime execution context
+  var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
+                                      : 'session_' + Date.now();
+  runtime.initSession(userPrompt, sessionId);
+
   // Wrap sendEvent to also emit through the events.js bus.
   // This lets any module listen to agent events without being in the
   // direct call chain, unifying the two event systems.
@@ -99,14 +116,24 @@ export async function runAgentLoop(userPrompt, config, options) {
     timelineManager.addEvent('session:start', sessionLabel);
   } catch (_) {}
 
+  // ── Session Startup ──────────────────────────────────────────
+  try {
+    events.emit('TaskStarted', { goal: userPrompt, sessionId: sessionId });
+    executionTrace.startTrace(sessionId, userPrompt);
+    goalTracker.initGoals(userPrompt);
+    memoryManager.clear();
+    memoryManager.setCurrentGoal(userPrompt);
+  } catch (e) {
+    console.error('[AGENT LOOP] Failed to initialize trace/goals:', e);
+  }
+
   // Retrieve existing plan for this request session if any (Planning Engine — Phase 4)
   var currentPlan = null;
   try {
-    var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
-                                        : 'session_' + Date.now();
     var sessionPlans = planningManager.getSessionPlans(sessionId);
     if (sessionPlans && sessionPlans.length) {
       currentPlan = sessionPlans[sessionPlans.length - 1];
+      if (currentPlan) runtime.setCurrentPlan(currentPlan);
       if (currentPlan && !knowledge.activePlans) {
         try {
           knowledge.activePlans = planningManager.getActivePlansContext();
@@ -160,8 +187,44 @@ export async function runAgentLoop(userPrompt, config, options) {
 
     iteration++;
     console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
-    agentState.transition('thinking');
-    sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'thinking', iteration: iteration });
+
+    var targetState = agentState.getState() === 'idle' ? 'thinking' : agentState.getState();
+
+    try {
+      if (agentState.getState() !== targetState) {
+        var fromState = agentState.getState();
+        agentState.transition(targetState);
+        executionTrace.recordTransition(fromState, targetState);
+      }
+    } catch (_) {
+      agentState.reset();
+      agentState.transition(targetState);
+    }
+
+    events.emit('state_changed', { state: targetState });
+
+    // Inject execution context without forcing a specialized role. The LLM
+    // decides whether planning/review/testing behavior is needed.
+    try {
+      var gitPrompt = await gitIntelligence.getGitPromptFragment(workspace);
+      var memPrompt = memoryManager.getPromptFragment();
+      var goalPrompt = goalTracker.getStatusReport();
+
+      var activePlanCtx = planningManager.getActivePlansContext();
+      if (messages && messages.length > 0 && messages[0].role === 'system') {
+        messages[0].content = messages[0].content.split('\n\n## ACTIVE EXECUTION CONTEXT')[0] +
+          '\n\n## ACTIVE EXECUTION CONTEXT\n' +
+          rolePrompt + '\n\n' +
+          (activePlanCtx ? activePlanCtx + '\n\n' : '') +
+          goalPrompt + '\n\n' +
+          gitPrompt + '\n\n' +
+          memPrompt;
+      }
+    } catch (e) {
+      console.error('[AGENT LOOP] Failed to update prompt context:', e);
+    }
+
+    sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: targetState, iteration: iteration });
 
     var streamBuffer = '';
     var inThinkTag = false;
@@ -316,9 +379,38 @@ export async function runAgentLoop(userPrompt, config, options) {
         };
       });
 
-    // No tool calls = we're done
+    // No tool calls = complete. Review is advisory only; it must not re-prompt
+    // the LLM because that duplicates final responses after cleanup/deletes.
     if (completedToolCalls.length === 0) {
+      try {
+        var fromReview = agentState.getState();
+        agentState.transition('reviewing');
+        executionTrace.recordTransition(fromReview, 'reviewing');
+        events.emit('state_changed', { state: 'reviewing' });
+
+        var modifiedFiles = memoryManager.getFilesModified();
+        var reviewReport = await reviewEngine.reviewChanges(workspace, modifiedFiles);
+
+        if (!reviewReport.passed) {
+          console.log('[AGENT LOOP] Reflection failed: ' + reviewReport.issues.join('; '));
+          sendEvent({
+            type: EVENT_TYPES.AGENT_STATUS,
+            status: 'review_warning',
+            message: reviewReport.issues.join('\n')
+          });
+        } else {
+          console.log('[AGENT LOOP] Reflection passed successfully!');
+        }
+      } catch (e) {
+        console.error('[AGENT LOOP] Review Engine crashed:', e);
+      }
+
+      var fromComplete = agentState.getState();
       agentState.transition('completed');
+      executionTrace.recordTransition(fromComplete, 'completed');
+      events.emit('TaskCompleted', { sessionId: sessionId, success: true });
+      await executionTrace.saveTrace(workspace);
+
       var assistantMsg = { role: 'assistant', content: iterationContent || '' };
       messages.push(assistantMsg);
       sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'direct_answer', content: fullContent, thinking: fullThinking });
@@ -326,7 +418,17 @@ export async function runAgentLoop(userPrompt, config, options) {
     }
 
     // Execute tools
-    agentState.transition('executing');
+    try {
+      if (agentState.getState() !== 'executing') {
+        var fromExec = agentState.getState();
+        agentState.transition('executing');
+        executionTrace.recordTransition(fromExec, 'executing');
+      }
+    } catch (_) {
+      agentState.reset();
+      agentState.transition('executing');
+    }
+    events.emit('state_changed', { state: 'executing' });
     sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
     
     var toolPromises = completedToolCalls.map(async function(tc, index) {
@@ -334,8 +436,37 @@ export async function runAgentLoop(userPrompt, config, options) {
       var args = tc.function?.arguments || {};
       var tcId = tc.id || 'call_' + iteration + '_' + index;
 
+      sendEvent({
+        type: EVENT_TYPES.TOOL_CALL,
+        tool: toolName,
+        args: args,
+        id: tcId,
+        index: index
+      });
+
       // Permission check
-      var approved = await askPermission(toolName, args, tcId, sendEvent);
+      var approved = true;
+      if (approvalSystem.requiresApproval(toolName, args)) {
+        try {
+          if (agentState.getState() !== 'waiting') {
+            var fromWait = agentState.getState();
+            agentState.transition('waiting');
+            executionTrace.recordTransition(fromWait, 'waiting');
+            events.emit('state_changed', { state: 'waiting' });
+          }
+        } catch (_) {}
+
+        approved = await askPermission(toolName, args, tcId, sendEvent);
+        memoryManager.recordUserDecision(toolName, args.command || args.file_path || args.folder_path || '', approved);
+        executionTrace.recordDecision(toolName, approved ? 'allow' : 'deny', 'User prompted approval');
+
+        try {
+          var fromExec2 = agentState.getState();
+          agentState.transition('executing');
+          executionTrace.recordTransition(fromExec2, 'executing');
+          events.emit('state_changed', { state: 'executing' });
+        } catch (_) {}
+      }
       if (!approved) {
         sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: 'Permission denied by user.', toolCallId: tcId });
         return {
@@ -349,6 +480,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Execute tool
       console.log('[AGENT LOOP] Running tool: ' + toolName);
       var lastResult = null;
+      var startTime = Date.now();
       var checkpointsCreated = [];
 
       // Create checkpoint BEFORE file modifications (captures original content)
@@ -357,7 +489,6 @@ export async function runAgentLoop(userPrompt, config, options) {
           var cpFile = args.file_path || '';
           if (cpFile) {
             var cpLabel = (toolName === 'delete_file' ? 'Deleted' : (toolName === 'write_file' ? 'Created' : 'Edited')) + ': ' + cpFile;
-            var sessionId = 'session_' + Date.now();
             var cpId = await checkpointManager.createCheckpoint(cpFile, workspace, sessionId, cpLabel);
             if (cpId) {
               checkpointsCreated.push({ id: cpId, filePath: cpFile, label: cpLabel });
@@ -409,7 +540,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       // Record tool usage for learning engine
       try {
-        learningManager.recordToolUsage(toolName, args.command || args.file_path || args.pattern || '');
+        learningManager.recordToolUsage(toolName, args.command || args.file_path || args.folder_path || args.pattern || '');
       } catch (_) {}
 
       // Record timeline event
@@ -419,34 +550,48 @@ export async function runAgentLoop(userPrompt, config, options) {
         timelineManager.addToolEvent(toolName, args, tlSuccess, tlMsg);
       } catch (_) {}
 
-      // Verify tool result (Phase 8 — Agentic Loop)
-      if (lastResult && lastResult.success !== false) {
-        // ── Plan management: delegate to planningManager ───────────
+      if (lastResult) {
+        // Verify tool result (Phase 8 — Agentic Loop)
         if (toolName === 'create_plan' && (lastResult.plan || lastResult.steps)) {
           try {
             if (lastResult.plan) {
-              // New engine format — the tool already persisted it
               currentPlan = lastResult.plan;
+              runtime.setCurrentPlan(currentPlan);
+              goalTracker.syncWithPlan(currentPlan);
               sendEvent({ type: 'plan_created', plan: currentPlan });
             } else if (lastResult.steps) {
-              // Legacy flat checklist — upgrade to engine format
-              var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
-                                                  : 'session_' + Date.now();
               var analysis = planningManager.analyzeRequest(userPrompt, null, workspace);
               var newPlan = planningManager.buildPlan(analysis, sessionId);
               currentPlan = newPlan;
+              runtime.setCurrentPlan(currentPlan);
+              goalTracker.syncWithPlan(currentPlan);
               sendEvent({ type: 'plan_created', plan: currentPlan });
             }
           } catch (_) {}
         } else if (toolName === 'update_plan' && lastResult.plan) {
           try {
-            // Engine format — update cache
             currentPlan = lastResult.plan;
+            var totalT = 0, compT = 0;
+            if (currentPlan.phases) {
+              for (var cpi = 0; cpi < currentPlan.phases.length; cpi++) {
+                if (currentPlan.phases[cpi].tasks) {
+                  totalT += currentPlan.phases[cpi].tasks.length;
+                  compT += currentPlan.phases[cpi].tasks.filter(function(t) { return t.status === 'completed'; }).length;
+                }
+              }
+            } else if (currentPlan.steps) {
+              totalT = currentPlan.steps.length;
+              compT = currentPlan.steps.filter(function(s) { return s.status === 'completed'; }).length;
+            }
+            if (totalT > 0 && compT === totalT) {
+              currentPlan.status = 'completed';
+            }
+            runtime.setCurrentPlan(currentPlan);
+            goalTracker.syncWithPlan(currentPlan);
             sendEvent({ type: 'plan_updated', plan: currentPlan });
           } catch (_) {}
         } else if (toolName === 'update_plan' && lastResult.steps) {
           try {
-            // Legacy flat checklist — store as-is
             if (!currentPlan) {
               currentPlan = {
                 id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
@@ -457,6 +602,7 @@ export async function runAgentLoop(userPrompt, config, options) {
                 status: 'draft',
                 created_at: Date.now()
               };
+              runtime.setCurrentPlan(currentPlan);
             }
             if (currentPlan && currentPlan.steps) {
               lastResult.steps.forEach(function(upd) {
@@ -468,49 +614,63 @@ export async function runAgentLoop(userPrompt, config, options) {
                   currentPlan.steps.push(upd);
                 }
               });
+              goalTracker.syncWithPlan(currentPlan);
               sendEvent({ type: 'plan_updated', plan: currentPlan });
               try { planningManager.storePlan(currentPlan); } catch (_) {}
             }
           } catch (_) {}
+        } else if (toolName === 'get_plan') {
+          try {
+            currentPlan = lastResult.plan || null;
+            runtime.setCurrentPlan(currentPlan);
+            goalTracker.syncWithPlan(currentPlan);
+            sendEvent({ type: 'plan_updated', plan: currentPlan });
+          } catch (_) {}
         }
 
         try {
-          var stepArgs = { action: toolName, target: args.file_path || args.command || args.pattern || '', description: '' };
+          var stepArgs = { action: toolName, target: args.file_path || args.folder_path || args.command || args.pattern || '', description: '' };
           var stepResult = {
             order: iteration,
             action: toolName,
-            status: 'completed',
-            duration: 0,
+            status: lastResult.success !== false ? 'completed' : 'failed',
+            duration: Date.now() - startTime,
             output: lastResult.message || lastResult.content || '',
-            error: null
+            error: lastResult.success === false ? (lastResult.message || 'failed') : null
           };
-          var verification = await verificationManager.verifyStep(stepResult, stepArgs, workspace);
-          if (!verification.verified) {
-            // Track retries for this tool execution
-            var retryKey = iteration + '_' + toolName;
-            var retryCount = Number(projectKnowledge.getSetting('retry_' + retryKey) || 0);
-            retryCount++;
-            projectKnowledge.setSetting('retry_' + retryKey, String(retryCount));
-            projectKnowledge.setSetting('retry_count_total', String(Number(projectKnowledge.getSetting('retry_count_total') || 0) + 1));
 
-            if (retryCount <= MAX_RETRIES) {
-              console.log('[AGENT LOOP] Verification failed for', toolName, '- retry', retryCount, '/', MAX_RETRIES);
-              sendEvent({
-                type: EVENT_TYPES.AGENT_STATUS,
-                status: 'verification_failed',
-                tool: toolName,
-                retry: retryCount,
-                maxRetries: MAX_RETRIES,
-                message: 'Verification: ' + verification.summary + ' — retrying (' + retryCount + '/' + MAX_RETRIES + ')'
-              });
-            } else {
-              console.log('[AGENT LOOP] Verification failed for', toolName, '- max retries reached');
-              sendEvent({
-                type: EVENT_TYPES.AGENT_STATUS,
-                status: 'verification_failed',
-                tool: toolName,
-                message: 'Verification: ' + verification.summary + ' — max retries reached'
-              });
+          var verification = await verificationManager.verifyStep(stepResult, stepArgs, workspace);
+
+          // Structured observation engine processing
+          var obs = observationEngine.generateObservation(toolName, args, lastResult, Date.now() - startTime);
+          executionTrace.recordObservation(obs);
+
+          if (!verification.verified) {
+            var recovery = await recoveryEngine.diagnoseAndRecover(toolName, verification.summary || 'Verification failed', {
+              workspace: workspace,
+              activeTaskId: currentPlan ? currentPlan.activeTaskId : ''
+            });
+
+            events.emit('ToolFailed', { tool: toolName, error: verification.summary, recovery: recovery.action });
+
+            if (recovery.action === 'retry') {
+              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] ' + recovery.message;
+            } else if (recovery.action === 'fallback' && recovery.command) {
+              console.log('[AGENT LOOP] Executing recovery fallback command: ' + recovery.command);
+              try {
+                var recoveryRes = await runRecoveryCommand(recovery.command, workspace);
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Executed fallback: ' + recovery.command + ' - ' + (recoveryRes.success ? 'success' : 'failed');
+              } catch (e) {
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Fallback failed: ' + e.message;
+              }
+            }
+          } else {
+            events.emit('ToolCompleted', { tool: toolName, result: lastResult });
+            memoryManager.recordTaskExecution(toolName, args, obs.summary);
+            if (toolName === 'write_file') {
+              memoryManager.recordFileCreated(args.file_path);
+            } else if (toolName === 'edit_file') {
+              memoryManager.recordFileModified(args.file_path);
             }
           }
         } catch (_) {}
@@ -528,6 +688,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     dbg('[AGENT LOOP] Promise.all(toolPromises) RESOLVED. Count:', toolPromises.length);
     var results = await Promise.all(toolPromises);
     dbg('[AGENT LOOP] All tool promises completed. Results:', results.length);
+
     var toolResults = [];
     var allCheckpoints = [];
     for (var ri = 0; ri < results.length; ri++) {
@@ -599,6 +760,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
       messages.push(toolMsg);
     }
+
+    // End of iteration
     dbg('[AGENT LOOP] End of iteration', iteration, '- next iteration starting...');
   }
   } finally {
@@ -611,7 +774,9 @@ export async function runAgentLoop(userPrompt, config, options) {
   }
 
   // Max iterations reached
-  agentState.transition('completed');
+  if (!agentState.isTerminal()) {
+    agentState.transition('completed');
+  }
   sendEvent({
     type: EVENT_TYPES.AGENT_DONE,
     reason: 'max_iterations',
@@ -669,4 +834,16 @@ function processThinkTags(text, inThinkTag, buffer) {
   }
 
   return { content: contentPart, thinking: thinkingPart, inThinkTag: inThinkTag, buffer: buffer };
+}
+
+function runRecoveryCommand(command, cwd) {
+  return new Promise(function(resolve) {
+    exec(command, { cwd: cwd, timeout: 15000, windowsHide: true }, function(error, stdout, stderr) {
+      if (error) {
+        resolve({ success: false, output: stderr || error.message });
+      } else {
+        resolve({ success: true, output: stdout });
+      }
+    });
+  });
 }
