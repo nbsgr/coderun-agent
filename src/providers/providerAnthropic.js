@@ -142,13 +142,21 @@ function parseChunk(data) {
   if (data.type === 'content_block_delta') {
     if (data.delta.thinking) result.thinking = data.delta.thinking;
     if (data.delta.text) result.content = data.delta.text;
+    if (data.delta.type === 'input_json_delta' && data.delta.partial_json) {
+      result.tool_calls = [{
+        index: data.index,
+        function: {
+          arguments: data.delta.partial_json
+        }
+      }];
+    }
   }
   if (data.type === 'content_block_start' && data.content_block?.type === 'tool_use') {
     result.tool_calls = [{
       id: data.content_block.id,
       function: {
         name: data.content_block.name,
-        arguments: data.content_block.input || {}
+        arguments: ''
       }
     }];
   }

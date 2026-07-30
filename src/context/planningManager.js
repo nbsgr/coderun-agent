@@ -38,6 +38,7 @@
 
 import * as planningEngine from './planningEngine.js';
 import * as runtime from '../agents/runtime.js';
+import * as projectKnowledge from './projectKnowledge.js';
 
 // Wire planningEngine persistence to runtime's in-memory plan cache.
 // This replaces the old SQLite-backed storage — plans are now stored
@@ -292,7 +293,6 @@ export function updateTaskStatus(planId, taskId, status, observation) {
   // Best-effort SQLite persistence
   try {
     projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-    projectKnowledge.updatePlanStatus(plan.id, plan.status);
   } catch (_) {}
 
   // Sync the updated plan back to Runtime

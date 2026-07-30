@@ -29,6 +29,7 @@ import * as reviewEngine from '../execution/reviewEngine.js';
 import * as workflowEngine from '../execution/workflowEngine.js';
 import * as executionTrace from '../execution/executionTrace.js';
 import * as memoryManager from '../context/memoryManager.js';
+import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 
 // Debug flag — set to true for verbose logging
 var DEBUG = false;
@@ -206,6 +207,8 @@ export async function runAgentLoop(userPrompt, config, options) {
     // Inject execution context without forcing a specialized role. The LLM
     // decides whether planning/review/testing behavior is needed.
     try {
+      var roleName = multiAgentRuntime.mapStateToRole(targetState, currentPlan ? currentPlan.activeTaskAction : '');
+      var rolePrompt = multiAgentRuntime.getRolePrompt(roleName);
       var gitPrompt = await gitIntelligence.getGitPromptFragment(workspace);
       var memPrompt = memoryManager.getPromptFragment();
       var goalPrompt = goalTracker.getStatusReport();

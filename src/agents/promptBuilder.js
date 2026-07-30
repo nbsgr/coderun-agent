@@ -60,7 +60,7 @@ export function buildMessages(userPrompt, options) {
     'Status values: pending, active, completed, failed, skipped.\n' +
     'You can also include an `observation` explaining why the task succeeded or failed.\n' +
     '\n' +
-    '**Important:** The current plan status (todos list and task states) is automatically appended to the end of every tool result message so you always see fresh progress. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.';
+    '**Important:** The current plan status (todos list and task states) is automatically appended to the end of every tool result message so you always see fresh progress. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.' +
     '\n' +
     '### DAG-aware execution:\n' +
     '- A task can start only when ALL its dependencies are completed.\n' +
