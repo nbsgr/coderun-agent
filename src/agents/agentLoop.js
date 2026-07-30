@@ -589,10 +589,15 @@ export async function runAgentLoop(userPrompt, config, options) {
             }
             if (totalT > 0 && compT === totalT) {
               currentPlan.status = 'completed';
+              runtime.setCurrentPlan(null);
+              goalTracker.syncWithPlan(null);
+              sendEvent({ type: 'plan_updated', plan: currentPlan });
+              currentPlan = null;
+            } else {
+              runtime.setCurrentPlan(currentPlan);
+              goalTracker.syncWithPlan(currentPlan);
+              sendEvent({ type: 'plan_updated', plan: currentPlan });
             }
-            runtime.setCurrentPlan(currentPlan);
-            goalTracker.syncWithPlan(currentPlan);
-            sendEvent({ type: 'plan_updated', plan: currentPlan });
           } catch (_) {}
         } else if (toolName === 'update_plan' && lastResult.steps) {
           try {
@@ -618,9 +623,19 @@ export async function runAgentLoop(userPrompt, config, options) {
                   currentPlan.steps.push(upd);
                 }
               });
-              goalTracker.syncWithPlan(currentPlan);
-              sendEvent({ type: 'plan_updated', plan: currentPlan });
-              try { planningManager.storePlan(currentPlan); } catch (_) {}
+              var allCompleted = currentPlan.steps.length > 0 &&
+                                 currentPlan.steps.every(function(s) { return s.status === 'completed'; });
+              if (allCompleted) {
+                currentPlan.status = 'completed';
+                runtime.setCurrentPlan(null);
+                goalTracker.syncWithPlan(null);
+                sendEvent({ type: 'plan_updated', plan: currentPlan });
+                currentPlan = null;
+              } else {
+                goalTracker.syncWithPlan(currentPlan);
+                sendEvent({ type: 'plan_updated', plan: currentPlan });
+                try { planningManager.storePlan(currentPlan); } catch (_) {}
+              }
             }
           } catch (_) {}
         } else if (toolName === 'get_plan') {

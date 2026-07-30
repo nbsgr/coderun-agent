@@ -742,6 +742,7 @@
               model: currentModel,
               provider: currentProvider,
               history: history,
+              plan: conversation.plan || null,
               workspaceFolder: currentWorkspace
             });
             return;
@@ -894,6 +895,7 @@
               model: currentModel,
               provider: currentProvider,
               history: history,
+              plan: conversation.plan || null,
               workspaceFolder: currentWorkspace
             });
             return;
@@ -1107,8 +1109,20 @@
             case 'plan_created':
             case 'plan_updated': {
               if (ev.plan) {
-                conversation.plan = ev.plan;
-                renderTodos(ev.plan);
+                var isCompleted = ev.plan.status === 'completed';
+                if (isCompleted) {
+                  conversation.plan = null;
+                  renderTodos(null);
+                  if (window.saveConversationMessageBatch) {
+                    window.saveConversationMessageBatch(convId, null, null);
+                  }
+                } else {
+                  conversation.plan = ev.plan;
+                  renderTodos(ev.plan);
+                  if (window.saveConversationMessageBatch) {
+                    window.saveConversationMessageBatch(convId, null, ev.plan);
+                  }
+                }
               }
               break;
             }

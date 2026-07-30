@@ -100,7 +100,10 @@
     try {
       var extConvs = typeof conversationsJson === "string" ? JSON.parse(conversationsJson || "[]") : Array.isArray(conversationsJson) ? conversationsJson : [];
       if (extConvs && extConvs.length > 0) {
-        state.conversations = extConvs;
+        state.conversations = extConvs.filter(Boolean).map(function(c) {
+          if (c.messages) c.messages = c.messages.filter(Boolean);
+          return c;
+        });
         saveStateToVscode();
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations)); } catch (_) {}
       }
@@ -1090,10 +1093,11 @@
       }
     }
 
+    var msgsToAppend = (newMessages || []).filter(Boolean);
     if (lastUserIdx !== -1) {
-      conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(newMessages);
+      conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(msgsToAppend);
     } else {
-      conversation.messages = conversation.messages.concat(newMessages);
+      conversation.messages = conversation.messages.concat(msgsToAppend);
     }
 
     // DEBUG: verify thinking survived merge
