@@ -28,14 +28,22 @@
 //   formatAllActivePlans() → string
 //   replanFromObservation(planId, observation) → Plan
 
-import * as projectKnowledge from './projectKnowledge.js';
+var _memStore = {};
+var _storage = {
+  getSetting: function(key) { return _memStore[key]; },
+  setSetting: function(key, val) { _memStore[key] = val; }
+};
+
+export function setStorageAdapter(adapter) {
+  if (adapter) _storage = adapter;
+}
 
 // ═══════════════════════════════════════════════════════════
 // DATA MODEL HELPERS
 // ═══════════════════════════════════════════════════════════
 
 function generatePlanId() {
-  return 'plan_' + Date.now().toString(36);
+  return '1';
 }
 
 function generateTaskId(phaseOrder, taskOrder) {
@@ -400,6 +408,36 @@ function generateSuggestions(intent, complexity) {
 // PLAN BUILDING
 // ═══════════════════════════════════════════════════════════
 
+function reindexTasks(plan) {
+  if (!plan || !plan.phases) return;
+  var oldToNewIdMap = {};
+  var taskCounter = 1;
+
+  plan.phases.forEach(function(phase) {
+    if (phase.tasks) {
+      phase.tasks.forEach(function(task) {
+        var oldId = task.id;
+        var newId = String(taskCounter++);
+        task.id = newId;
+        oldToNewIdMap[oldId] = newId;
+      });
+    }
+  });
+
+  // Update dependencies with new sequential IDs
+  plan.phases.forEach(function(phase) {
+    if (phase.tasks) {
+      phase.tasks.forEach(function(task) {
+        if (task.dependsOn) {
+          task.dependsOn = task.dependsOn.map(function(depId) {
+            return oldToNewIdMap[depId] || depId;
+          });
+        }
+      });
+    }
+  });
+}
+
 /**
  * Build a hierarchical Plan from an analysis result.
  *
@@ -410,7 +448,6 @@ function generateSuggestions(intent, complexity) {
 export function buildPlan(analysis, sessionId) {
   var planId = generatePlanId();
   var phases = buildPhases(analysis);
-  var graph = buildExecutionGraph(phases);
 
   var plan = {
     id: planId,
@@ -426,9 +463,15 @@ export function buildPlan(analysis, sessionId) {
     risks: analysis.risks,
     requiredTools: analysis.requiredTools,
     suggestions: analysis.suggestions,
-    executionGraph: graph,
+    executionGraph: null,
     observations: []
   };
+
+  // Re-index all tasks sequentially to be 1, 2, 3, 4...
+  reindexTasks(plan);
+
+  // Build execution graph after re-indexing
+  plan.executionGraph = buildExecutionGraph(plan.phases);
 
   // Auto-activate first phase and first task
   if (plan.phases && plan.phases.length && plan.phases[0].tasks && plan.phases[0].tasks.length) {
@@ -523,8 +566,8 @@ export function updateTaskStatus(planId, taskId, status, observation) {
 
   persistPlan(plan);
 
-  var blockedTasks = getBlockedTasks(plan);
-  var readyTasks = getReadyTasks(plan);
+  var blockedTasks = _getBlockedTasksFromPlan(plan);
+  var readyTasks = _getReadyTasksFromPlan(plan);
 
   return {
     success: true,
@@ -684,7 +727,6 @@ export function replanFromObservation(planId, observation) {
     source: observation.source || 'system',
     revision: plan.phases.length
   });
-
   // If a revised goal is provided, rebuild phases from the goal
   if (observation.revisedGoal) {
     var analysis = analyzeRequest(observation.revisedGoal, null, plan.planId);
@@ -700,6 +742,9 @@ export function replanFromObservation(planId, observation) {
     // Rebuild phases based on current state (mark completed tasks as skipped)
     plan = revisePlan(plan, observation);
   }
+
+  // Re-index all tasks sequentially to be 1, 2, 3, 4...
+  reindexTasks(plan);
 
   plan.executionGraph = buildExecutionGraph(plan.phases);
   plan.summary = summarizePlan(plan);
@@ -1156,7 +1201,7 @@ function findTaskInPlan(plan, taskId) {
   var lowerStr = strId.toLowerCase();
   var cleanTaskId = lowerStr.replace(/^(task[_\s]?|step[_\s]?|t)/, '');
 
-  function matchesTask(task, index, globalOrder) {
+  function matchesTask(task, index, globalOrder, phaseOrder) {
     if (!task) return false;
 
     var tId = String(task.id || '').trim();
@@ -1180,8 +1225,15 @@ function findTaskInPlan(plan, taskId) {
     // 5. Phase_Task notation (e.g. 't1_1' -> task 1, 't1_2' -> task 2)
     var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
     if (ptMatch) {
+      var reqPhase = Number(ptMatch[1]);
       var reqTask = Number(ptMatch[2]);
-      if (globalOrder === reqTask || (index + 1) === reqTask) return true;
+      if (phaseOrder != null) {
+        if (phaseOrder === reqPhase && ((index + 1) === reqTask || globalOrder === reqTask)) {
+          return true;
+        }
+      } else {
+        if (globalOrder === reqTask || (index + 1) === reqTask) return true;
+      }
     }
 
     return false;
@@ -1195,7 +1247,7 @@ function findTaskInPlan(plan, taskId) {
       if (phase.tasks && Array.isArray(phase.tasks)) {
         for (var t = 0; t < phase.tasks.length; t++) {
           globalIndex++;
-          if (matchesTask(phase.tasks[t], t, globalIndex)) {
+          if (matchesTask(phase.tasks[t], t, globalIndex, phase.order || (p + 1))) {
             return phase.tasks[t];
           }
         }
@@ -1206,7 +1258,7 @@ function findTaskInPlan(plan, taskId) {
   // Search inside plan.steps
   if (plan.steps && Array.isArray(plan.steps)) {
     for (var s = 0; s < plan.steps.length; s++) {
-      if (matchesTask(plan.steps[s], s, s + 1)) {
+      if (matchesTask(plan.steps[s], s, s + 1, null)) {
         return plan.steps[s];
       }
     }
@@ -1246,16 +1298,24 @@ function summarizePlan(plan) {
          completedTasks + ' done, ' + pendingTasks + ' pending, ' + failedTasks + ' failed | ' +
          'Complexity: ' + plan.complexity.label + ' | ~' + plan.estimatedIterations + ' iterations';
 }
-
 // ═══════════════════════════════════════════════════════════
 // INTERNAL: Persistence
 // ═══════════════════════════════════════════════════════════
 
+var _planStorage = {
+  get: function(id) { return null; },
+  set: function(id, plan) { }
+};
+
+export function setStorage(storage) {
+  if (storage) _planStorage = storage;
+}
+
 function persistPlan(plan) {
   try {
-    projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-    // Also sync plan status to tasks table and metadata for backward compat
-    projectKnowledge.updatePlanStatus(plan.id, plan.status);
+    if (plan && plan.id) {
+      _planStorage.set(plan.id, plan);
+    }
   } catch (e) {
     console.error('[PLAN ENGINE] Failed to persist plan:', e.message);
   }
@@ -1263,9 +1323,8 @@ function persistPlan(plan) {
 
 function loadPlan(planId) {
   try {
-    var raw = projectKnowledge.getSetting('pe_plan_' + planId);
-    if (!raw) return null;
-    var plan = JSON.parse(raw);
+    var plan = _planStorage.get(planId);
+    if (!plan) return null;
     // Ensure backward compatibility with old structure
     if (!plan.phases && plan.steps) {
       plan = migrateLegacyPlan(plan);
@@ -1279,8 +1338,9 @@ function loadPlan(planId) {
 
 function loadAllActivePlans() {
   try {
-    // Scan projectKnowledge metadata for all plan keys (pe_plan_ prefix)
-    // Since we can't iterate SQLite keys directly, defer to planningManager's cache
+    if (typeof _planStorage.getAll === 'function') {
+      return _planStorage.getAll() || [];
+    }
     return [];
   } catch (_) {
     return [];

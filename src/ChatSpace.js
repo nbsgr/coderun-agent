@@ -78,23 +78,33 @@
 
   function scrollBottom(el) {
     if (!el) return;
-    var hasPendingPermissions = el.querySelector('.cr-permission-actions button') !== null;
+    var lastChild = el.lastElementChild;
+    var hasPendingPermissions = lastChild && lastChild.querySelector('.cr-permission-actions button') !== null;
     if (hasPendingPermissions) {
       return;
     }
-    el.scrollTop = el.scrollHeight;
+    if (typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }
 
   // ── RAF-coalesced smooth scroll (avoids layout thrashing) ───
   var _scrollRAF = null;
   function scrollBottomSmooth(el) {
     if (!el) return;
-    var hasPendingPermissions = el.querySelector('.cr-permission-actions button') !== null;
+    var lastChild = el.lastElementChild;
+    var hasPendingPermissions = lastChild && lastChild.querySelector('.cr-permission-actions button') !== null;
     if (hasPendingPermissions) return;
     if (_scrollRAF) return;
     _scrollRAF = requestAnimationFrame(function() {
       _scrollRAF = null;
-      el.scrollTop = el.scrollHeight;
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
     });
   }
 

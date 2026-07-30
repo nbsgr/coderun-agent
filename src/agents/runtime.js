@@ -147,25 +147,43 @@ export function registerPlan(plan) {
   return plan;
 }
 
-/**
- * Replace a plan in the cache (after mutation). If the plan is the active
- * plan, the next call to getCurrentPlan() returns the updated reference.
- * @param {object} plan - Plan object (must have .id)
- * @returns {object} the same plan reference
- */
 export function updatePlan(plan) {
   if (!plan || !plan.id) return plan;
-  _plans[plan.id] = plan;
 
-  // Emit a runtime event so any listeners can react
-  events.emit('runtime:plan_updated', {
-    planId: plan.id,
-    plan: plan,
-    state: _state
-  });
+  var fullyCompleted = false;
+  if (plan.phases && plan.phases.length) {
+    var allDone = true;
+    for (var p = 0; p < plan.phases.length; p++) {
+      var phase = plan.phases[p];
+      if (phase.tasks && phase.tasks.length) {
+        for (var t = 0; t < phase.tasks.length; t++) {
+          var status = phase.tasks[t].status;
+          if (status !== 'completed' && status !== 'skipped') {
+            allDone = false;
+            break;
+          }
+        }
+      }
+      if (!allDone) break;
+    }
+    fullyCompleted = allDone;
+  }
+
+  if (fullyCompleted) {
+    console.log('[RUNTIME] Plan ' + plan.id + ' fully completed. Deleting.');
+    removePlan(plan.id);
+  } else {
+    _plans[plan.id] = plan;
+    // Emit a runtime event so any listeners can react
+    events.emit('runtime:plan_updated', {
+      planId: plan.id,
+      plan: plan,
+      state: _state
+    });
+  }
 
   // Notify subscribers about the plan change
-  if (_state.currentPlanId === plan.id) {
+  if (_state.currentPlanId === plan.id || fullyCompleted) {
     for (var i = 0; i < _subscribers.length; i++) {
       try { _subscribers[i](_state, _state); } catch (e) {
         console.error('[RUNTIME] Subscriber error:', e);
@@ -252,6 +270,11 @@ export function removePlan(planId) {
   if (_state.currentPlanId === planId) {
     _state.currentPlanId = '';
   }
+
+  events.emit('runtime:plan_removed', {
+    planId: planId,
+    state: _state
+  });
   return true;
 }
 

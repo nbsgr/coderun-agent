@@ -37,8 +37,16 @@
 //     getAllPlansContext()                        → string
 
 import * as planningEngine from './planningEngine.js';
-import * as projectKnowledge from './projectKnowledge.js';
 import * as runtime from '../agents/runtime.js';
+
+// Wire planningEngine persistence to runtime's in-memory plan cache.
+// This replaces the old SQLite-backed storage — plans are now stored
+// in VS Code workspaceState via extension.js event listeners.
+planningEngine.setStorage({
+  get: function(id) { return runtime.getPlan(id); },
+  set: function(id, plan) { runtime.updatePlan(plan); },
+  getAll: function() { return runtime.getAllPlans(); }
+});
 
 // ═══════════════════════════════════════════════════════════
 // LEGACY BACKWARD-COMPATIBLE API
@@ -59,56 +67,18 @@ export async function createPlan(goal, context, sessionId) {
   return plan;
 }
 
-/**
- * Get all plans for a session (backward-compatible).
- * Tries Runtime cache first, then falls back to engine/SQLite.
- */
 export function getSessionPlans(sessionId) {
   // Runtime is the authoritative cache
-  var runtimePlans = runtime.getPlansBySession(sessionId);
-  if (runtimePlans && runtimePlans.length) return runtimePlans;
-
-  // Fallback: try loading from engine storage
-  try {
-    var storedPlans = projectKnowledge.getPlansBySession(sessionId);
-    if (storedPlans && storedPlans.length) {
-      var enriched = [];
-      for (var s = 0; s < storedPlans.length; s++) {
-        var sp = storedPlans[s];
-        var fullPlan = planningEngine.getPlan(sp.id);
-        var plan = fullPlan || sp;
-        runtime.registerPlan(plan);
-        enriched.push(plan);
-      }
-      return enriched;
-    }
-  } catch (_) {}
-
-  return [];
+  return runtime.getPlansBySession(sessionId);
 }
 
 /**
  * Get a single plan by ID (backward-compatible).
- * Tries Runtime cache first, then engine/SQLite.
+ * Tries Runtime cache first.
  */
 export function getPlan(planId) {
   // Runtime is authoritative
-  var plan = runtime.getPlan(planId);
-  if (plan) return plan;
-
-  // Fallback: engine
-  plan = planningEngine.getPlan(planId);
-  if (plan) {
-    runtime.registerPlan(plan);
-    return plan;
-  }
-
-  // Fallback: projectKnowledge tasks table
-  try {
-    return projectKnowledge.getPlan(planId);
-  } catch (_) {
-    return null;
-  }
+  return runtime.getPlan(planId);
 }
 
 /**

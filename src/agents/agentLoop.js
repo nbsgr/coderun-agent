@@ -766,6 +766,19 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
       messages.push(toolMsg);
     }
+
+    if (currentPlan) {
+      try {
+        var planStatusContext = planningManager.getActivePlansContext();
+        if (planStatusContext) {
+          var lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === 'tool') {
+            lastMsg.content = (lastMsg.content || '') + '\n\n[PLAN STATUS]\n' + planStatusContext;
+          }
+        }
+      } catch (_) {}
+    }
+
     sendHistoryUpdate();
 
     // End of iteration

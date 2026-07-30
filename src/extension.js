@@ -18,6 +18,8 @@ import * as checkpointManager from './tools/checkpointManager.js';
 import * as diffManager from './tools/diffManager.js';
 import * as workspaceIntelligence from './context/workspaceIntelligence.js';
 import { PROVIDER_DEFAULTS } from './agents/constants.js';
+import * as runtime from './agents/runtime.js';
+import * as events from './agents/events.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +50,38 @@ export function activate(context) {
   projectKnowledge.initialize(context).catch(function(err) {
     console.error('[CODERUN] projectKnowledge init failed:', err);
   });
+
+  // Hydrate active plans from VS Code workspaceState (per-workspace localStorage equivalent)
+  try {
+    var savedPlans = context.workspaceState.get('coderun_active_plans');
+    if (savedPlans) {
+      var planList = Array.isArray(savedPlans) ? savedPlans : Object.values(savedPlans);
+      var hydratedCount = 0;
+      for (var i = 0; i < planList.length; i++) {
+        var plan = planList[i];
+        if (plan && plan.id) {
+          runtime.registerPlan(plan);
+          hydratedCount++;
+        }
+      }
+      console.log('[CODERUN] Hydrated active plans from workspaceState:', hydratedCount);
+    }
+  } catch (e) {
+    console.error('[CODERUN] Failed to hydrate plans:', e);
+  }
+
+  // Subscribe to plan events to save active plans to workspaceState
+  var savePlansToWorkspace = function() {
+    try {
+      var activePlans = runtime.getAllPlans();
+      context.workspaceState.update('coderun_active_plans', activePlans);
+    } catch (e) {
+      console.error('[CODERUN] Failed to persist active plans:', e);
+    }
+  };
+
+  events.on('runtime:plan_updated', savePlansToWorkspace);
+  events.on('runtime:plan_removed', savePlansToWorkspace);
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());
@@ -277,8 +311,9 @@ async function sendCurrentSettings(webview) {
   var hasKey = false;
   try {
     if (activeProvider) {
+      var key = await config.getApiKey(extensionContext, activeProvider);
       var saved = config.getSavedProviderConfig(extensionContext, activeProvider);
-      hasKey = saved && !!saved.apiKey;
+      hasKey = (!!key && key.length > 0) || (saved && !!saved.apiKey);
     } else {
       var key = await config.getApiKey(extensionContext);
       hasKey = !!key && key.length > 0;
@@ -568,25 +603,26 @@ async function handleFrontendMessage(message, webview) {
           await config.updateSettings(settingsToUpdate, vscode.ConfigurationTarget.Global);
           console.log('[CODERUN] Settings saved successfully');
 
+          // Also save per-provider config for multi-provider support
+          var savedProvider = message.settings.provider || config.getConfig().provider;
+          var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
+
           // Save API key to secrets BEFORE health check
           var resolvedApiKey = '';
           if (message.apiKey !== undefined && message.apiKey !== null) {
             if (message.apiKey === '') {
-              console.log('[CODERUN] Deleting API key from secrets');
-              await config.deleteApiKey(extensionContext);
+              console.log('[CODERUN] Deleting API key from secrets for provider:', savedProvider);
+              await config.deleteApiKey(extensionContext, savedProvider);
             } else if (message.apiKey !== '••••••••') {
-              console.log('[CODERUN] Saving API key to secrets');
-              await config.setApiKey(extensionContext, message.apiKey);
+              console.log('[CODERUN] Saving API key to secrets for provider:', savedProvider);
+              await config.setApiKey(extensionContext, message.apiKey, savedProvider);
               resolvedApiKey = message.apiKey;
             } else {
               // Placeholder — get existing key
-              try { resolvedApiKey = await config.getApiKey(extensionContext) || ''; } catch (_) {}
+              try { resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || ''; } catch (_) {}
             }
           }
 
-          // Also save per-provider config for multi-provider support
-          var savedProvider = message.settings.provider || config.getConfig().provider;
-          var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
           await config.saveProviderConfig(extensionContext, savedProvider, {
             baseUrl: savedBaseUrl,
             apiKey: resolvedApiKey,

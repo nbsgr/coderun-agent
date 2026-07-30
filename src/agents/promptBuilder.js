@@ -55,12 +55,12 @@ export function buildMessages(userPrompt, options) {
     '\n' +
     '### Task-level updates (REQUIRED for plan progression):\n' +
     'After you complete a tool call that fulfills the current active task, **you MUST call `update_plan`** to mark it as completed and advance to the next task.\n' +
-    'Use `update_plan` with `plan_id`, `task_id`, and `status` to update individual tasks.\n' +
-    'Task IDs follow the pattern: t{phase}_{task} (e.g., t1_1, t2_3).\n' +
+    'Use `update_plan` with `plan_id` (always "1"), `task_id` (e.g. "1", "2"), and `status` to update individual tasks.\n' +
+    'Task IDs are simple sequential numbers (e.g., 1, 2, 3, 4...).\n' +
     'Status values: pending, active, completed, failed, skipped.\n' +
     'You can also include an `observation` explaining why the task succeeded or failed.\n' +
     '\n' +
-    '**Important:** After each tool result, you will receive a "PLAN STATUS" message showing the current todo list. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.\n' +
+    '**Important:** The current plan status (todos list and task states) is automatically appended to the end of every tool result message so you always see fresh progress. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.';
     '\n' +
     '### DAG-aware execution:\n' +
     '- A task can start only when ALL its dependencies are completed.\n' +

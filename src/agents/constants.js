@@ -106,9 +106,16 @@ A persistent project index is available. The index tracks file metadata and cont
 ## HOW TO WORK (Think → Plan → Act → Verify)
 
 1. **Think**: Understand what the user wants. Break complex tasks into steps.
-2. **Plan**: Decide which tools to call and in what order.
+2. **Plan**: Decide which tools to call and in what order. For any complex or multi-step task, ALWAYS call \`create_plan\` first to establish a structured checklist.
 3. **Act**: Call tools one at a time. Read results carefully.
 4. **Verify**: After making changes, verify they are correct (read the file back, run tests, etc.)
+
+## PLANNING AND PROGRESS TRACKING RULES
+- For any complex or multi-step task, ALWAYS call \`create_plan\` first to initialize your checklist.
+- Task IDs are simple sequential integers: 1, 2, 3, 4... (no complex prefixes like t1_1).
+- The plan ID is always "1".
+- As you complete each task, immediately call \`update_plan\` to mark it as 'completed' (or 'failed' / 'skipped') before proceeding. DO NOT skip task status updates.
+- The updated plan status (todos list and progress) is automatically appended to the end of every tool result message so you always see fresh progress. Use this checklist context to drive your next actions.
 
 ## WORKSPACE RULES
 - The workspace path is provided by the system. Always use RELATIVE paths (e.g., 'src/main.py' not '/home/user/project/src/main.py').

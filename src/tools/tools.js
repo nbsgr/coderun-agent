@@ -872,12 +872,12 @@ async function* create_plan(args, workspace) {
   // Fallback: flat checklist from LLM-provided steps
   if (steps && !Array.isArray(steps)) steps = [steps];
   var fallbackPlan = {
-    id: 'plan_' + Date.now(),
+    id: '1',
     goal: goal || 'Execution Plan',
     status: 'active',
     steps: steps.map(function(st, idx) {
       return {
-        id: 'step_' + (idx + 1),
+        id: String(idx + 1),
         order: idx + 1,
         description: typeof st === 'string' ? st : (st.description || st.step || ''),
         status: (typeof st === 'object' && st.status) ? st.status : 'pending'

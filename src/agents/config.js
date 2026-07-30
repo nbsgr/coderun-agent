@@ -57,7 +57,7 @@ export function getProviderConfig() {
 export async function getProviderConfigWithKey(context) {
   var cfg = getProviderConfig();
   if (needsApiKey(cfg.provider)) {
-    cfg.apiKey = await getApiKey(context) || '';
+    cfg.apiKey = await getApiKey(context, cfg.provider) || await getApiKey(context) || '';
   } else {
     cfg.apiKey = '';
   }
@@ -67,22 +67,33 @@ export async function getProviderConfigWithKey(context) {
 /**
  * Get API key from VS Code secrets storage (encrypted).
  */
-export function getApiKey(context) {
+export function getApiKey(context, provider) {
+  if (provider) {
+    return context.secrets.get('coderun.apiKey.' + provider);
+  }
   return context.secrets.get('coderun.apiKey');
 }
 
 /**
  * Save API key to VS Code secrets storage (encrypted).
  */
-export async function setApiKey(context, key) {
-  await context.secrets.store('coderun.apiKey', key);
+export async function setApiKey(context, key, provider) {
+  if (provider) {
+    await context.secrets.store('coderun.apiKey.' + provider, key);
+  } else {
+    await context.secrets.store('coderun.apiKey', key);
+  }
 }
 
 /**
  * Delete API key from VS Code secrets storage.
  */
-export async function deleteApiKey(context) {
-  await context.secrets.delete('coderun.apiKey');
+export async function deleteApiKey(context, provider) {
+  if (provider) {
+    await context.secrets.delete('coderun.apiKey.' + provider);
+  } else {
+    await context.secrets.delete('coderun.apiKey');
+  }
 }
 
 export function getOllamaUrl() {
@@ -218,11 +229,19 @@ export async function getProviderConfigByName(context, providerName) {
   var saved = getSavedProviderConfig(context, providerName) || {};
   var isCompatible = providerName.startsWith('compatible');
   var defaults = isCompatible ? PROVIDER_DEFAULTS.compatible : (PROVIDER_DEFAULTS[providerName] || PROVIDER_DEFAULTS.ollama);
+
+  // Resolve API key securely from provider-specific secrets store,
+  // falling back to legacy plaintext saved.apiKey, and then global getApiKey()
+  var apiKey = '';
+  if (needsApiKey(providerName)) {
+    apiKey = await getApiKey(context, providerName) || saved.apiKey || await getApiKey(context) || '';
+  }
+
   return {
     provider: providerName,
     baseUrl: saved.baseUrl || defaults.baseUrl,
     model: saved.model || '',
-    apiKey: saved.apiKey || '',
+    apiKey: apiKey,
     needsKey: defaults.needsKey,
     apiType: saved.apiType || 'openai'
   };

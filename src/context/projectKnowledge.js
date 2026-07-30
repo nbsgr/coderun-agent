@@ -170,126 +170,8 @@ export function getProjectMetadata() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// PLANNING API — consumed by planningManager.js
+// PLANNING API — DELETED (Plans/Todos are stored in VS Code workspaceState)
 // ═══════════════════════════════════════════════════════════
-
-/**
- * Store or update a task (used by Planning Engine).
- */
-export function addTask(task) {
-  if (!_projectDb || !_ready) return;
-  try {
-    var stmt = _projectDb.prepare(`
-      INSERT OR REPLACE INTO tasks (id, description, status, created_at, completed_at, result, session_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.bind([
-      task.id || '',
-      task.description || '',
-      task.status || 'draft',
-      task.created_at || Date.now(),
-      task.completed_at || null,
-      task.result || '',
-      task.session_id || ''
-    ]);
-    stmt.step();
-    stmt.free();
-    saveProjectDb();
-  } catch (_) {}
-}
-
-/**
- * Get all plans/tasks for a session, ordered by creation time.
- */
-export function getPlansBySession(sessionId) {
-  if (!_projectDb || !_ready || !sessionId) return [];
-  try {
-    var stmt = _projectDb.prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at DESC');
-    stmt.bind([sessionId]);
-    var results = [];
-    try {
-      while (stmt.step()) {
-      var row = stmt.getAsObject();
-      results.push(normalizeTask(row));
-    }
-    } finally {
-    stmt.free();
-    }
-    return results;
-  } catch (_) { return []; }
-}
-
-/**
- * Get a single plan/task by ID.
- */
-export function getPlan(planId) {
-  if (!_projectDb || !_ready || !planId) return null;
-  try {
-    var stmt = _projectDb.prepare('SELECT * FROM tasks WHERE id = ?');
-    stmt.bind([planId]);
-    if (stmt.step()) {
-      var row = stmt.getAsObject();
-      stmt.free();
-      return normalizeTask(row);
-    }
-    stmt.free();
-    return null;
-  } catch (_) { return null; }
-}
-
-/**
- * Get all plans/tasks with a specific status.
- */
-export function getPlansByStatus(status) {
-  if (!_projectDb || !_ready || !status) return [];
-  try {
-    var stmt = _projectDb.prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC');
-    stmt.bind([status]);
-    var results = [];
-    try {
-      while (stmt.step()) {
-      var row = stmt.getAsObject();
-      results.push(normalizeTask(row));
-    }
-    } finally {
-    stmt.free();
-    }
-    return results;
-  } catch (_) { return []; }
-}
-
-/**
- * Update a plan/task status.
- */
-export function updatePlanStatus(planId, status) {
-  if (!_projectDb || !_ready || !planId) return;
-  try {
-    var now = status === 'completed' || status === 'failed' ? Date.now() : null;
-    _projectDb.run('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?', [status, now, planId]);
-    // Also update the metadata-based plan status for backward compat
-    _projectDb.run('UPDATE metadata SET value = ? WHERE key = ?', [status, 'plan_' + planId + '_status']);
-    saveProjectDb();
-  } catch (_) {}
-}
-
-function normalizeTask(row) {
-  var result = {};
-  try {
-    if (row.result && typeof row.result === 'string') {
-      result = JSON.parse(row.result);
-    }
-  } catch (_) {}
-  return {
-    id: row.id || '',
-    description: row.description || '',
-    status: row.status || 'pending',
-    created_at: row.created_at || 0,
-    completed_at: row.completed_at || null,
-    session_id: row.session_id || '',
-    steps: result.steps || [],
-    required_files: result.files || []
-  };
-}
 
 // ═══════════════════════════════════════════════════════════
 // CHECKPOINT API — consumed by checkpointManager.js
@@ -746,17 +628,7 @@ async function openProjectDb() {
     )
   `);
 
-  _projectDb.run(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      description TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at INTEGER NOT NULL DEFAULT 0,
-      completed_at INTEGER DEFAULT NULL,
-      result TEXT DEFAULT NULL,
-      session_id TEXT NOT NULL DEFAULT ''
-    )
-  `);
+
 
   _projectDb.run(`
     CREATE TABLE IF NOT EXISTS checkpoints (
