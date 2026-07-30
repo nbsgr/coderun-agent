@@ -1,7 +1,7 @@
 // providerManager.js — Creates the right provider based on config
 // The rest of the agent never knows which provider is being used.
 
-import { PROVIDERS } from './constants.js';
+import { PROVIDERS } from '../agents/constants.js';
 import * as providerOllama from './providerOllama.js';
 import * as providerOpenAI from './providerOpenAI.js';
 import * as providerAnthropic from './providerAnthropic.js';

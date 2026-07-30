@@ -5,19 +5,19 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { runAgent } from './agent.js';
-import * as agentLoop from './agentLoop.js';
-import { registerAllTools } from './tools.js';
-import * as config from './config.js';
-import * as providerManager from './providerManager.js';
-import { getWorkspaceFolder } from './workspaceContext.js';
-import * as terminalManager from './terminalManager.js';
-import * as permissions from './permissions.js';
-import * as projectKnowledge from './projectKnowledge.js';
-import * as checkpointManager from './checkpointManager.js';
-import * as diffManager from './diffManager.js';
-import * as workspaceIntelligence from './workspaceIntelligence.js';
-import { PROVIDER_DEFAULTS } from './constants.js';
+import { runAgent } from './agents/agent.js';
+import * as agentLoop from './agents/agentLoop.js';
+import { registerAllTools } from './tools/tools.js';
+import * as config from './agents/config.js';
+import * as providerManager from './providers/providerManager.js';
+import { getWorkspaceFolder } from './context/workspaceContext.js';
+import * as terminalManager from './tools/terminalManager.js';
+import * as permissions from './tools/permissions.js';
+import * as projectKnowledge from './context/projectKnowledge.js';
+import * as checkpointManager from './tools/checkpointManager.js';
+import * as diffManager from './tools/diffManager.js';
+import * as workspaceIntelligence from './context/workspaceIntelligence.js';
+import { PROVIDER_DEFAULTS } from './agents/constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -816,7 +816,7 @@ async function checkProviderHealth(webview, overrideConfig) {
   }
 
   try {
-    var provider = (await import('./providerManager.js')).createProvider(cfg);
+    var provider = (await import('./providers/providerManager.js')).createProvider(cfg);
     var models = await provider.listModels(cfg);
 
     statusBarItem.text = '$(comment-discussion) CodeRun (Online)';

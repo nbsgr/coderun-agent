@@ -1,8 +1,8 @@
 // recoveryEngine.js — Production-grade Recovery Engine
 // Diagnoses tool errors and executes policy-driven recovery actions (retries, dependencies installs, or fallbacks).
 
-import * as memoryManager from './memoryManager.js';
-import * as runtime from './runtime.js';
+import * as memoryManager from '../context/memoryManager.js';
+import * as runtime from '../agents/runtime.js';
 
 var MAX_RETRIES = 3;
 

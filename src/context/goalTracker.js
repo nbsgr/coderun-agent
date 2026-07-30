@@ -2,7 +2,7 @@
 // Tracks parent goals, subgoals, active tasks, completion rate, and syncs with planning & memory.
 
 import * as projectKnowledge from './projectKnowledge.js';
-import * as runtime from './runtime.js';
+import * as runtime from '../agents/runtime.js';
 import * as memoryManager from './memoryManager.js';
 
 var GOALS_KEY = 'mem_goals';

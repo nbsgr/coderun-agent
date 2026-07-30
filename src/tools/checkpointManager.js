@@ -6,7 +6,7 @@
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
-import * as projectKnowledge from './projectKnowledge.js';
+import * as projectKnowledge from '../context/projectKnowledge.js';
 
 var MAX_CHECKPOINTS = 100;
 

@@ -21,8 +21,8 @@ import * as projectKnowledge from './projectKnowledge.js';
 import * as searchManager from './searchManager.js';
 import * as planningManager from './planningManager.js';
 import * as learningManager from './learningManager.js';
-import * as timelineManager from './timelineManager.js';
-import * as checkpointManager from './checkpointManager.js';
+import * as timelineManager from '../execution/timelineManager.js';
+import * as checkpointManager from '../tools/checkpointManager.js';
 import * as workspaceIntelligence from './workspaceIntelligence.js';
 
 // ========================================================

@@ -1,4 +1,4 @@
-import { handleApiResponseError, safeReadJson } from './utils.js';
+import { handleApiResponseError, safeReadJson } from '../agents/utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -6,8 +6,6 @@ export async function* chat(config, messages, tools) {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + config.apiKey
   };
-  if (config.organization) headers['OpenAI-Organization'] = config.organization;
-  if (config.project) headers['OpenAI-Project'] = config.project;
 
   var body = {
     model: config.model,
@@ -23,9 +21,18 @@ export async function* chat(config, messages, tools) {
   });
 
   if (!response.ok) {
-    throw await handleApiResponseError(response, 'OpenAI');
+    var errObj = await handleApiResponseError(response, 'Groq');
+    var msg = errObj.message;
+    // Groq-specific: some models don't support tools
+    if (msg.includes('tool') || msg.includes('function')) {
+      msg += '\n\nNote: Not all Groq models support tool use.\nTry: llama3-groq-70b-8192-tool-use-preview or llama3-groq-8b-8192-tool-use-preview';
+    }
+    throw new Error(msg);
   }
 
+  if (!response.body) {
+    throw new Error('Groq API Error: Response body is empty. The server may have returned an incomplete response.');
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
@@ -43,7 +50,7 @@ export async function* chat(config, messages, tools) {
         try {
           var data = JSON.parse(line.slice(6));
           yield parseChunk(data);
-        } catch (e) {}
+        } catch (e) { console.warn('[Groq] Failed to parse SSE chunk:', e.message); }
       }
     }
   }
@@ -54,37 +61,27 @@ export async function listModels(config) {
   var res = await fetch(url, {
     headers: { 'Authorization': 'Bearer ' + config.apiKey }
   });
-  if (!res.ok) throw await handleApiResponseError(res, 'OpenAI');
-  var data = await safeReadJson(res, 'OpenAI');
+  if (!res.ok) throw await handleApiResponseError(res, 'Groq');
+  var data = await safeReadJson(res, 'Groq');
   return data.data ? data.data.map(function(m) { return m.id; }) : [];
 }
 
 export async function embeddings(config, texts) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/embeddings';
-  var res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + config.apiKey
-    },
-    body: JSON.stringify({ model: config.model || 'text-embedding-3-small', input: texts })
-  });
-  var data = await safeReadJson(res, 'OpenAI');
-  return data.data ? data.data.map(function(d) { return d.embedding; }) : [];
+  throw new Error('Embeddings not supported by Groq in this provider');
 }
 
 export async function images(config, prompt) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/images/generations';
-  var res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + config.apiKey
-    },
-    body: JSON.stringify({ model: config.model || 'dall-e-3', prompt: prompt, n: 1 })
-  });
-  var data = await safeReadJson(res, 'OpenAI');
-  return data.data ? data.data[0].url : null;
+  throw new Error('Image generation not supported by Groq');
+}
+
+function parseChunk(data) {
+  var result = {};
+  var delta = data.choices?.[0]?.delta;
+  if (!delta) return result;
+  if (delta.content) result.content = delta.content;
+  if (delta.thinking) result.thinking = delta.thinking;
+  if (delta.tool_calls) result.tool_calls = delta.tool_calls;
+  return result;
 }
 
 function convertMessages(messages) {
@@ -93,6 +90,7 @@ function convertMessages(messages) {
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });
@@ -104,14 +102,4 @@ function convertMessages(messages) {
     }
     return msg;
   });
-}
-
-function parseChunk(data) {
-  var result = {};
-  var delta = data.choices?.[0]?.delta;
-  if (!delta) return result;
-  if (delta.content) result.content = delta.content;
-  if (delta.thinking) result.thinking = delta.thinking;
-  if (delta.tool_calls) result.tool_calls = delta.tool_calls;
-  return result;
 }

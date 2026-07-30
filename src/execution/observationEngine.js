@@ -1,7 +1,7 @@
 // observationEngine.js — Production-grade Observation Engine
 // Intercepts tool execution outputs and produces structured observations.
 
-import * as runtime from './runtime.js';
+import * as runtime from '../agents/runtime.js';
 
 /**
  * Generate a structured observation from a completed tool execution.

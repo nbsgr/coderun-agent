@@ -2,7 +2,7 @@
 // Persisted in SQLite project metadata via projectKnowledge.
 
 import * as projectKnowledge from './projectKnowledge.js';
-import * as runtime from './runtime.js';
+import * as runtime from '../agents/runtime.js';
 
 var PREFIX = 'mem_';
 

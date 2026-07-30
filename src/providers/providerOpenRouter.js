@@ -1,4 +1,4 @@
-import { handleApiResponseError, safeReadJson } from './utils.js';
+import { handleApiResponseError, safeReadJson } from '../agents/utils.js';
 
 export async function* chat(config, messages, tools) {
   var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';

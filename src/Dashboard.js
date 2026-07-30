@@ -1069,6 +1069,18 @@
     if (!conversation) return;
     if (!conversation.messages) conversation.messages = [];
 
+    // DEBUG: trace thinking persistence
+    console.log('[SAVE_BATCH] convId:', convId, 'newMessages count:', newMessages ? newMessages.length : 0);
+    if (newMessages) {
+      for (var dbg = 0; dbg < newMessages.length; dbg++) {
+        var m = newMessages[dbg];
+        if (m.role === 'assistant') {
+          console.log('[SAVE_BATCH] assistant msg #' + dbg + ' has thinking:', !!m.thinking, 'content length:', (m.content || '').length, 'tool_calls:', !!(m.tool_calls && m.tool_calls.length));
+          if (m.thinking) console.log('[SAVE_BATCH] thinking preview:', String(m.thinking).substring(0, 100));
+        }
+      }
+    }
+
     // Find the index of the last user message
     var lastUserIdx = -1;
     for (var i = conversation.messages.length - 1; i >= 0; i--) {
@@ -1083,6 +1095,11 @@
     } else {
       conversation.messages = conversation.messages.concat(newMessages);
     }
+
+    // DEBUG: verify thinking survived merge
+    var assistantMsgs = conversation.messages.filter(function(m) { return m.role === 'assistant'; });
+    var thinkingCount = assistantMsgs.filter(function(m) { return !!m.thinking; }).length;
+    console.log('[SAVE_BATCH] After merge: total messages:', conversation.messages.length, 'assistant:', assistantMsgs.length, 'with thinking:', thinkingCount);
 
     if (plan !== undefined) {
       conversation.plan = plan;

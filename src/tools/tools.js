@@ -6,11 +6,11 @@ import { existsSync } from 'fs';
 import * as path from 'path';
 import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
-import * as searchManager from './searchManager.js';
-import * as planningManager from './planningManager.js';
-import * as runtime from './runtime.js';
-import * as multiAgentRuntime from './multiAgentRuntime.js';
-import { parseSymbols } from './symbolParser.js';
+import * as searchManager from '../context/searchManager.js';
+import * as planningManager from '../context/planningManager.js';
+import * as runtime from '../agents/runtime.js';
+import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
+import { parseSymbols } from '../context/symbolParser.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }

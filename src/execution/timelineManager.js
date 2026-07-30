@@ -3,7 +3,7 @@
 // Stores entries as a JSON array in a single SQLite metadata key.
 // ContextManager surfaces the timeline for LLM prompt context.
 
-import * as projectKnowledge from './projectKnowledge.js';
+import * as projectKnowledge from '../context/projectKnowledge.js';
 
 var TIMELINE_KEY = 'timeline_data';
 var MAX_ENTRIES = 50;

@@ -2,7 +2,7 @@
 // Supports per-call Allow/Deny AND chat-scoped "Always Allow" / "Always Deny"
 // decisions per tool name.
 
-import { DANGEROUS_TOOLS } from './constants.js';
+import { DANGEROUS_TOOLS } from '../agents/constants.js';
 
 var pendingPermissions = {};
 var chatDecisions = {}; // { [toolName]: 'allow' | 'deny' }

@@ -251,16 +251,37 @@
 
       function renderTodos(plan) {
         if (!todosPanel) return;
-        if (!plan || !plan.steps || !plan.steps.length) {
+        if (!plan) {
           todosPanel.style.display = 'none';
           return;
         }
-        var completedCount = plan.steps.filter(function(s) { return s.status === 'completed'; }).length;
-        var totalCount = plan.steps.length;
-        if (completedCount === totalCount) {
+
+        // Extract unified list of steps from structured phases or flat steps
+        var steps = [];
+        if (plan.phases && plan.phases.length) {
+          plan.phases.forEach(function(ph) {
+            if (ph.tasks) {
+              ph.tasks.forEach(function(t) {
+                steps.push({
+                  id: t.id,
+                  description: '[' + ph.name + '] ' + t.description,
+                  status: t.status
+                });
+              });
+            }
+          });
+        } else if (plan.steps) {
+          steps = plan.steps;
+        }
+
+        if (!steps || !steps.length) {
           todosPanel.style.display = 'none';
           return;
         }
+
+        var completedCount = steps.filter(function(s) { return s.status === 'completed'; }).length;
+        var totalCount = steps.length;
+
         todosPanel.style.display = 'block';
         var isCollapsed = todosPanel.dataset.collapsed === 'true';
 
@@ -271,7 +292,7 @@
             '<span class="cr-todos-icon"><svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>' +
           '</div>' +
           '<div class="cr-todos-list" style="display:' + (isCollapsed ? 'none' : 'block') + '">' +
-            plan.steps.map(function(s) {
+            steps.map(function(s) {
               var isComp = s.status === 'completed';
               var statusIcon = isComp
                 ? '<span class="cr-todo-status completed">' + I.check + '</span>'
@@ -400,6 +421,29 @@
         if (!msgList || !messages) return;
         msgList.innerHTML = '';
 
+        // ─── DEBUG DUMP: what messages are stored? ───
+        console.log('[LOAD_HISTORY] ═══ LOADING', messages.length, 'MESSAGES ═══');
+        messages.forEach(function(m, i) {
+          var summary = 'msg[' + i + '] role=' + m.role;
+          if (m.role === 'assistant') {
+            summary += ' content=' + (m.content || '').substring(0, 80) + 
+                       ' thinking=' + (m.thinking ? 'YES(' + m.thinking.length + ' chars)' : 'NO') +
+                       ' tool_calls=' + (m.tool_calls ? m.tool_calls.length : 0);
+            if (m.tool_calls) {
+              m.tool_calls.forEach(function(tc, j) {
+                var name = (tc.function && tc.function.name) || tc.name || '(EMPTY)';
+                console.log('  tool_call[' + j + '] name=' + name + ' id=' + (tc.id || '(none)'));
+              });
+            }
+          } else if (m.role === 'tool') {
+            summary += ' tool_name=' + (m.tool_name || '(none)') + ' tool_call_id=' + (m.tool_call_id || '(none)') + ' content=' + (m.content || '').substring(0, 80);
+          } else if (m.role === 'user') {
+            summary += ' content=' + (m.content || '').substring(0, 80);
+          }
+          console.log('[LOAD_HISTORY] ' + summary);
+        });
+        console.log('[LOAD_HISTORY] ═══ END DUMP ═══');
+
         var turns = [];
         var currentTurn = null;
 
@@ -431,6 +475,7 @@
               if (m.role === 'assistant') {
                 var content = m.content || '';
                 var thinking = m.thinking || null;
+                console.log('[LOAD_HISTORY] assistant msg #' + mIdx + ' has .thinking:', !!m.thinking, 'content length:', content.length, 'keys:', Object.keys(m).join(','));
                 var startIdx = content.indexOf('\uE000');
                 var endIdx = content.indexOf('\uE001');
                 if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
@@ -446,6 +491,7 @@
                     content = content.replace(/^\n+/, '');
                   }
                 }
+                console.log('[LOAD_HISTORY] final thinking resolved:', !!thinking, thinking ? thinking.substring(0, 80) : '(none)');
 
                 if (thinking) {
                   var det = appendThinkBlock(body);
@@ -1057,7 +1103,14 @@
               break;
             }
             case 'chat_history_update': {
+              console.log('[CHATSPACE] chat_history_update received, messages:', ev.messages ? ev.messages.length : 0);
               if (ev.messages && ev.messages.length) {
+                // DEBUG: check if any assistant messages have thinking
+                ev.messages.forEach(function(m, idx) {
+                  if (m.role === 'assistant') {
+                    console.log('[CHATSPACE] history_update assistant msg #' + idx + ' thinking:', !!m.thinking, 'content:', (m.content || '').substring(0, 60));
+                  }
+                });
                 if (window.saveConversationMessageBatch) {
                   window.saveConversationMessageBatch(convId, ev.messages, ev.plan);
                 }

@@ -38,7 +38,7 @@
 
 import * as planningEngine from './planningEngine.js';
 import * as projectKnowledge from './projectKnowledge.js';
-import * as runtime from './runtime.js';
+import * as runtime from '../agents/runtime.js';
 
 // ═══════════════════════════════════════════════════════════
 // LEGACY BACKWARD-COMPATIBLE API
