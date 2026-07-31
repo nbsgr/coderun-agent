@@ -9,7 +9,9 @@ var chatDecisions = {}; // { [toolName]: 'allow' | 'deny' }
 
 export function setExtensionContext(context) {
   if (context && context.globalState) {
-    try { context.globalState.update('coderun_permission_decisions', '{}'); } catch (_) {}
+    try { context.globalState.update('coderun_permission_decisions', '{}'); } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 }
 
@@ -51,14 +53,16 @@ export function resetChatDecisions() {
  *
  * Chat-scoped "always" decisions short-circuit the prompt for this chat only.
  */
+function executePermissionPromise(id, resolve) {
+  pendingPermissions[id] = resolve;
+}
+
 export function requestPermission(toolName, args, id, sendEvent) {
   var chatDecision = getAlwaysDecision(toolName);
   if (chatDecision === 'allow') return Promise.resolve(true);
   if (chatDecision === 'deny') return Promise.resolve(false);
 
-  return new Promise(function(resolve) {
-    pendingPermissions[id] = resolve;
-  });
+  return new Promise(executePermissionPromise.bind(null, id));
 }
 
 /**

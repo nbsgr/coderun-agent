@@ -4,16 +4,20 @@
 import { exec } from 'child_process';
 import * as path from 'path';
 
+function handleGitExecResult(resolve, error, stdout, stderr) {
+  if (error) {
+    resolve({ success: false, stdout: '', stderr: stderr || error.message });
+  } else {
+    resolve({ success: true, stdout: stdout.trim(), stderr: '' });
+  }
+}
+
+function executeGitPromise(args, cwd, resolve) {
+  exec('git ' + args, { cwd: cwd, timeout: 5000, windowsHide: true }, handleGitExecResult.bind(null, resolve));
+}
+
 function runGit(args, cwd) {
-  return new Promise(function(resolve) {
-    exec('git ' + args, { cwd: cwd, timeout: 5000, windowsHide: true }, function(error, stdout, stderr) {
-      if (error) {
-        resolve({ success: false, stdout: '', stderr: stderr || error.message });
-      } else {
-        resolve({ success: true, stdout: stdout.trim(), stderr: '' });
-      }
-    });
-  });
+  return new Promise(executeGitPromise.bind(null, args, cwd));
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -35,6 +35,7 @@ export async function createCheckpoint(filePath, workspace, sessionId, label) {
     try {
       content = await fs.readFile(fullPath, 'utf-8');
     } catch (_) {
+      // Intentionally fall back to empty content string on file read failure (e.g. permission error)
       content = '';
     }
   }
@@ -160,5 +161,7 @@ function trimCheckpoints() {
       var excess = stats.total - MAX_CHECKPOINTS;
       projectKnowledge.trimOldestCheckpoints(excess);
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }

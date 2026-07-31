@@ -22,7 +22,9 @@ function setVal(key, value) {
   // Synchronize with runtime memory state
   try {
     runtime.setMemory(key, value);
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 export function getCurrentGoal() { return getVal('currentGoal', ''); }

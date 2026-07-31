@@ -7,13 +7,16 @@ export async function* chat(config, messages, tools) {
   var contents = convertMessages(messages);
   var body = { contents: contents };
   if (tools && tools.length) {
-    body.tools = [{ function_declarations: tools.map(function(t) {
-      return {
+    var functionDeclarations = [];
+    for (var ti = 0; ti < tools.length; ti++) {
+      var t = tools[ti];
+      functionDeclarations.push({
         name: t.function.name,
         description: t.function.description,
         parameters: t.function.parameters
-      };
-    })}];
+      });
+    }
+    body.tools = [{ function_declarations: functionDeclarations }];
   }
 
   console.log('[GEMINI] Provider Selected: gemini');
@@ -45,13 +48,7 @@ export async function* chat(config, messages, tools) {
     if (raw.done) break;
     buffer += decoder.decode(raw.value, { stream: true });
 
-    // Gemini SSE may emit pretty-printed (multi-line) JSON per event.
-    // Events are delimited by \n\n or \r\n\r\n. Each event can contain
-    // JSON body text with internal newlines. We extract ONE complete
-    // event at a time, reassemble its data lines into a single JSON
-    // string, then parse.
     while (true) {
-      // Find the next event delimiter: \n\n or \r\n\r\n
       var nlPos = buffer.indexOf('\n\n');
       var crlfPos = buffer.indexOf('\r\n\r\n');
       var delimStart;
@@ -61,7 +58,7 @@ export async function* chat(config, messages, tools) {
       } else if (nlPos !== -1) {
         delimStart = nlPos; delimLen = 2;
       } else {
-        break; // No complete event in buffer yet
+        break;
       }
 
       var eventText = buffer.substring(0, delimStart);
@@ -70,9 +67,7 @@ export async function* chat(config, messages, tools) {
       var trimmed = (eventText || '').trim();
       if (!trimmed) continue;
 
-      // Normalize to \n-only
       var normalized = trimmed.replace(/\r\n/g, '\n');
-      // Reconstruct JSON from potentially multi-line SSE event body
       var eventLines = normalized.split('\n');
       var jsonParts = [];
       for (var ei = 0; ei < eventLines.length; ei++) {
@@ -103,7 +98,6 @@ export async function* chat(config, messages, tools) {
     }
   }
 
-  // Flush remaining buffer (last event may not be terminated with \n\n)
   var remaining = buffer.trim();
   if (remaining) {
     var jsonStr = remaining;
@@ -140,22 +134,38 @@ export async function listModels(config) {
   }
 
   var data = await safeReadJson(res, 'Gemini');
-  return data.models ? data.models.map(function(m) { return m.name.split('/').pop(); }) : [];
+  var models = [];
+  if (data.models) {
+    for (var i = 0; i < data.models.length; i++) {
+      models.push(data.models[i].name.split('/').pop());
+    }
+  }
+  return models;
 }
 
 export async function embeddings(config, texts) {
   var model = config.model || 'text-embedding-004';
   var url = config.baseUrl.replace(/\/+$/, '') + '/models/' + model + ':batchEmbedContents?key=' + config.apiKey;
+  
+  var requests = [];
+  for (var i = 0; i < texts.length; i++) {
+    requests.push({ content: { parts: [{ text: texts[i] }] } });
+  }
+
   var res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      requests: texts.map(function(t) { return { content: { parts: [{ text: t }] } }; })
-    })
+    body: JSON.stringify({ requests: requests })
   });
   if (!res.ok) throw await handleApiResponseError(res, 'Gemini');
   var data = await safeReadJson(res, 'Gemini');
-  return data.embeddings ? data.embeddings.map(function(e) { return e.values; }) : [];
+  var embeddingsList = [];
+  if (data.embeddings) {
+    for (var i = 0; i < data.embeddings.length; i++) {
+      embeddingsList.push(data.embeddings[i].values);
+    }
+  }
+  return embeddingsList;
 }
 
 export async function images(config, prompt) {
@@ -182,7 +192,8 @@ function convertMessages(messages) {
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
-      rawImages.forEach(function(img) {
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
         var cleanB64 = String(img).replace(/^data:[^;]+;base64,/, '');
         var mimeType = 'image/png';
         var match = String(img).match(/^data:([^;]+);base64,/);
@@ -193,7 +204,7 @@ function convertMessages(messages) {
             data: cleanB64
           }
         });
-      });
+      }
     }
 
     if (!parts.length) parts.push({ text: '' });
@@ -217,7 +228,6 @@ function parseChunk(data) {
         }
       }
     }
-    // Process every element in the array, not just the first
     for (var di2 = 0; di2 < data.length; di2++) {
       var item = data[di2];
       if (!item.candidates || !item.candidates[0]) continue;
@@ -242,7 +252,6 @@ function parseChunk(data) {
       }
     }
   } else {
-    // Single object (non-array)
     console.log('[GEMINI PARSER] Single object, has candidates:', !!data.candidates);
     if (data.candidates && data.candidates[0]) {
       console.log('[GEMINI PARSER] candidate[0] has content:', !!data.candidates[0].content);

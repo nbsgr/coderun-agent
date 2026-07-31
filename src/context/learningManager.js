@@ -72,7 +72,9 @@ export function getLearningContext() {
       if (convList && convList.length) {
         parts.push('Conventions: ' + convList.join(', '));
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
   var importantFiles = projectKnowledge.getSetting('learn_important_files');
@@ -82,7 +84,9 @@ export function getLearningContext() {
       if (fileList && fileList.length) {
         parts.push('Key Files: ' + fileList.join(', '));
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
   var commands = projectKnowledge.getSetting('learn_frequent_commands');
@@ -92,7 +96,9 @@ export function getLearningContext() {
       if (cmdList && cmdList.length) {
         parts.push('Frequent Commands: ' + cmdList.slice(0, 5).join(' | '));
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
   var architecture = projectKnowledge.getSetting('learn_architecture');
@@ -137,7 +143,9 @@ export function getFrequentCommands(limit) {
         cmds.push(row[0].replace('learn_cmd_', ''));
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
   return cmds;
 }
 
@@ -174,7 +182,9 @@ async function detectFramework(workspace) {
       if (deps.vite || pkg.devDependencies?.vite) buildSystem = 'Vite';
       if (deps.webpack || pkg.devDependencies?.webpack) buildSystem += ' + Webpack';
       if (deps.esbuild || pkg.devDependencies?.esbuild) buildSystem += ' + ESBuild';
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
   // Check for pom.xml (Maven)
@@ -211,7 +221,9 @@ async function detectFramework(workspace) {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
     if (framework === 'unknown') framework = 'Python';
     buildSystem = 'pip';
   }

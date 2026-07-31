@@ -15,6 +15,28 @@ import { parseSymbols } from '../context/symbolParser.js';
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
 
+function escapeStringForRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function executeDeferredPromise(deferred, resolve) {
+  deferred.resolve = resolve;
+}
+
+function createDeferredPromise() {
+  var deferred = {};
+  deferred.promise = new Promise(executeDeferredPromise.bind(null, deferred));
+  return deferred;
+}
+
+function executeSleepPromise(ms, resolve) {
+  setTimeout(resolve, ms);
+}
+
+function sleep(ms) {
+  return new Promise(executeSleepPromise.bind(null, ms));
+}
+
 // ═══════════════════════════════════════════════════════════
 // TOOL INTERFACE
 // Every tool is an async generator: async function*(args, context)
@@ -60,20 +82,13 @@ async function* write_file(args, workspace) {
   try {
     var target = _safePath(workspace, filePath);
 
-    // Read original content if file exists (for diff preview)
     var originalContent = '';
     if (existsSync(target)) {
       originalContent = await fs.readFile(target, 'utf-8');
     }
 
-    // Create a deferred promise for diff review
-    // The agent loop captures deferred.resolve and extension.js calls
-    // agentLoop.resolveDiff(id, accepted) to resolve it.
+    var deferred = createDeferredPromise();
     var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    var deferred = {};
-    deferred.promise = new Promise(function(resolve) {
-      deferred.resolve = resolve;
-    });
 
     yield {
       type: 'request_diff',
@@ -86,14 +101,12 @@ async function* write_file(args, workspace) {
       deferred: deferred
     };
 
-    // Wait for user to accept or reject in the diff editor
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
       yield { type: 'tool_result', tool: 'write_file', success: false, file_path: filePath, message: 'Write rejected by user.', rejected: true };
       return;
     }
 
-    // User accepted — write the file
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf-8');
     yield { type: 'tool_result', tool: 'write_file', success: true, file_path: filePath, message: 'File written: ' + filePath };
@@ -116,23 +129,20 @@ async function* edit_file(args, workspace) {
     var content = await fs.readFile(target, 'utf-8');
     var newContent = '';
 
-    // First try an exact match (simplest, safest, preserves original behavior)
     var idx = content.indexOf(oldString);
     if (idx !== -1) {
       newContent = content.substring(0, idx) + newString + content.substring(idx + oldString.length);
     } else {
-      // Fuzzy match: ignore differences in carriage returns, spaces, tabs, and newlines
-      var escapeRegExp = function(str) {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      };
-
       var tokens = oldString.trim().split(/\s+/);
       if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
         yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string is empty.' };
         return;
       }
 
-      var regexParts = tokens.map(function(t) { return escapeRegExp(t); });
+      var regexParts = [];
+      for (var ti = 0; ti < tokens.length; ti++) {
+        regexParts.push(escapeStringForRegExp(tokens[ti]));
+      }
       var pattern = regexParts.join('\\s+');
       var regex = new RegExp(pattern, 'g');
 
@@ -152,12 +162,8 @@ async function* edit_file(args, workspace) {
       newContent = content.substring(0, matchIdx) + newString + content.substring(matchIdx + matchLen);
     }
 
-    // Create a deferred promise for diff review
+    var deferred = createDeferredPromise();
     var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    var deferred = {};
-    deferred.promise = new Promise(function(resolve) {
-      deferred.resolve = resolve;
-    });
 
     yield {
       type: 'request_diff',
@@ -170,14 +176,12 @@ async function* edit_file(args, workspace) {
       deferred: deferred
     };
 
-    // Wait for user to accept or reject
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
       yield { type: 'tool_result', tool: 'edit_file', success: false, file_path: filePath, message: 'Edit rejected by user.', rejected: true };
       return;
     }
 
-    // User accepted — write the file
     await fs.writeFile(target, newContent, 'utf-8');
     yield { type: 'tool_result', tool: 'edit_file', success: true, file_path: filePath, message: 'File edited: ' + filePath };
   } catch (e) {
@@ -187,11 +191,15 @@ async function* edit_file(args, workspace) {
 
 async function _safeUnlink(target) {
   try {
-    await fs.chmod(target, 0o666).catch(function() {});
+    try {
+      await fs.chmod(target, 0o666);
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
     await fs.unlink(target);
   } catch (err) {
     if (err.code === 'EPERM' || err.code === 'EACCES') {
-      await new Promise(function(resolve) { setTimeout(resolve, 150); });
+      await sleep(150);
       await fs.rm(target, { force: true, maxRetries: 3, retryDelay: 100 });
     } else if (existsSync(target)) {
       throw err;
@@ -261,9 +269,11 @@ async function* list_directory(args, workspace) {
   try {
     var target = _safePath(workspace, folderPath);
     var list = await fs.readdir(target, { withFileTypes: true });
-    var entries = list.map(function(item) {
-      return { name: item.name, type: item.isDirectory() ? 'directory' : 'file' };
-    });
+    var entries = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      entries.push({ name: item.name, type: item.isDirectory() ? 'directory' : 'file' });
+    }
     yield { type: 'tool_result', tool: 'list_directory', success: true, folder_path: folderPath, entries: entries };
   } catch (e) {
     yield { type: 'tool_result', tool: 'list_directory', success: false, message: e.message };
@@ -278,11 +288,11 @@ async function* search_files(args, workspace) {
     var target = _safePath(workspace, folderPath);
     var matches = [];
 
-    // Use SearchManager which delegates to SQLite index or falls back to fs walk
     try {
       var results = await searchManager.searchFiles(pattern, workspace, folderPath === '.' ? '' : folderPath);
       matches = results || [];
     } catch (_) {
+      // Intentionally fall back to empty list on search execution error
       matches = [];
     }
 
@@ -321,20 +331,12 @@ async function* get_file_info(args, workspace) {
 // TERMINAL TOOLS — Uses VS Code Terminal Shell Integration
 // =====================================================
 
-/**
- * Execute a command in the VS Code Integrated Terminal using shell integration.
- * Streams output live to the chat UI via terminal events.
- * The terminalManager handles the actual execution and event forwarding.
- * Returns a structured result with shell, command, stdout, stderr, exitCode, etc.
- */
 async function* run_terminal(args, workspace) {
   var command = args.command || '';
   var timeout = args.timeout || 30;
   var background = args.background || false;
 
   if (!command) {
-    // Empty command = check current terminal output (continuation after terminal_input).
-    // Wait briefly for any new output, then return whatever the terminal has.
     yield { type: 'action', action: 'run_terminal', message: 'Checking terminal output...' };
     var checkResult = await terminalManager.checkTerminalOutput();
     yield {
@@ -362,22 +364,9 @@ async function* run_terminal(args, workspace) {
 
   try {
     dbg('[TOOLS] run_terminal: calling terminalManager.executeCommand');
-    // Execute via terminalManager which uses VS Code Terminal API + Shell Integration
     var result = await terminalManager.executeCommand(command, timeout, background);
     dbg('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
-    // The terminalManager fires terminal_start, terminal_output, terminal_exit events
-    // via its sendEventCallback. These are forwarded to the webview by extension.js.
-    // We yield a result here for the agent loop, but the actual output streaming
-    // happens through the event system.
-    //
-    // The result now includes structured fields: shell, platform, command,
-    // stdout, stderr, exitCode, durationMs, success, workingDirectory
-
-    // Determine success: exitCode === 0 → success.
-    // If exitCode is null (fallback where it couldn't be determined),
-    // use result.success if present, otherwise assume success if
-    // stderr is empty and no error was thrown.
     var toolSuccess = result.exitCode === 0 || (result.exitCode == null && result.success !== false);
     var toolExitCode = result.exitCode;
     var toolStderr = result.stderr || '';
@@ -395,7 +384,6 @@ async function* run_terminal(args, workspace) {
       status: status,
       interactive: interactive,
       prompt_detected: promptDetected,
-      // Structured terminal result for the LLM — accurate, no fabrication
       shell: result.shell || terminalManager.getShellName(),
       platform: result.platform || terminalManager.getPlatformName(),
       command: command,
@@ -405,7 +393,6 @@ async function* run_terminal(args, workspace) {
       duration_ms: result.durationMs || 0,
       working_directory: result.workingDirectory || workspace,
       waiting_for_input: waitingForInput,
-      // Human-readable message based on actual output
       message: waitingForInput
         ? ('The command is waiting for your input:\n' + (toolStdout || '(no output yet)') + '\n\nStatus: ' + status +
            ' | Interactive: ' + interactive + ' | Prompt detected: ' + promptDetected +
@@ -417,7 +404,6 @@ async function* run_terminal(args, workspace) {
             : 'Command failed' +
               (toolExitCode != null ? ' with exit code ' + toolExitCode : '') +
               (toolStderr ? ': ' + toolStderr.trim().substring(0, 500) : '.')),
-      // Backward-compat fields
       output: toolStdout,
       exitCode: toolExitCode
     };
@@ -540,7 +526,6 @@ async function* patch_file(args, workspace) {
     var content = await fs.readFile(target, 'utf-8');
     var newContent = content;
 
-    // Apply patches one by one
     for (var i = 0; i < patches.length; i++) {
       var p = patches[i];
       var findStr = p.find || '';
@@ -551,18 +536,16 @@ async function* patch_file(args, workspace) {
       if (idx !== -1) {
         newContent = newContent.substring(0, idx) + replaceStr + newContent.substring(idx + findStr.length);
       } else {
-        // Fuzzy whitespace match
-        var escapeRegExp = function(str) {
-          return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        };
-
         var tokens = findStr.trim().split(/\s+/);
         if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
           yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is empty.' };
           return;
         }
 
-        var regexParts = tokens.map(function(t) { return escapeRegExp(t); });
+        var regexParts = [];
+        for (var ti = 0; ti < tokens.length; ti++) {
+          regexParts.push(escapeStringForRegExp(tokens[ti]));
+        }
         var pattern = regexParts.join('\\s+');
         var regex = new RegExp(pattern, 'g');
 
@@ -583,12 +566,8 @@ async function* patch_file(args, workspace) {
       }
     }
 
-    // Create a deferred promise for diff review
+    var deferred = createDeferredPromise();
     var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    var deferred = {};
-    deferred.promise = new Promise(function(resolve) {
-      deferred.resolve = resolve;
-    });
 
     yield {
       type: 'request_diff',
@@ -601,14 +580,12 @@ async function* patch_file(args, workspace) {
       deferred: deferred
     };
 
-    // Wait for user to accept or reject
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
       yield { type: 'tool_result', tool: 'patch_file', success: false, file_path: filePath, message: 'Patch rejected by user.', rejected: true };
       return;
     }
 
-    // User accepted — write the file
     await fs.writeFile(target, newContent, 'utf-8');
     yield { type: 'tool_result', tool: 'patch_file', success: true, file_path: filePath, message: 'File patched successfully: ' + filePath };
   } catch (e) {
@@ -645,9 +622,10 @@ async function* web_request(args, workspace) {
     }
 
     var resHeaders = {};
-    res.headers.forEach(function(value, key) {
-      resHeaders[key] = value;
-    });
+    var headerEntries = res.headers.entries();
+    for (var entry of headerEntries) {
+      resHeaders[entry[0]] = entry[1];
+    }
 
     yield {
       type: 'tool_result',
@@ -672,12 +650,10 @@ async function* update_plan(args, workspace) {
   var status = args.status || args.new_status || args.newStatus || args.task_status || '';
   var tasks = args.tasks || args.steps || [];
 
-  // Auto-discover plan_id if not provided — find latest active plan from cache
   if (!planId) {
     planId = discoverCurrentPlanId();
   }
 
-  // If plan and task IDs are provided, delegate to engine for task-level update
   if (planId && taskId && status) {
     var observation = args.observation ? {
       type: status === 'completed' ? 'success' : status === 'failed' ? 'failure' : 'info',
@@ -689,10 +665,8 @@ async function* update_plan(args, workspace) {
     var result = planningManager.updateTaskStatus(planId, taskId, status, observation);
     var enginePlan = result.plan || planningManager.getPlan(planId);
 
-    // Sync the updated plan back to Runtime so getActivePlan() sees it
     if (enginePlan) runtime.updatePlan(enginePlan);
 
-    // Compute structured counts for the LLM
     var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
     if (enginePlan && enginePlan.phases) {
       for (var pi = 0; pi < enginePlan.phases.length; pi++) {
@@ -730,7 +704,6 @@ async function* update_plan(args, workspace) {
     return;
   }
 
-  // If planId was discovered but no taskId/status, return plan info so LLM sees task IDs
   if (planId && !taskId) {
     var enginePlan = planningManager.getPlan(planId);
     if (enginePlan) {
@@ -746,7 +719,6 @@ async function* update_plan(args, workspace) {
     }
   }
 
-  // Legacy: update flat checklist steps
   if (tasks && !Array.isArray(tasks)) tasks = [tasks];
   yield {
     type: 'tool_result',
@@ -757,24 +729,20 @@ async function* update_plan(args, workspace) {
   };
 }
 
-/**
- * Auto-discover the most recent active plan ID from the Runtime.
- */
 function discoverCurrentPlanId() {
-  // Runtime is authoritative
   try {
     var activePlanId = runtime.getActivePlanId();
     if (activePlanId) return activePlanId;
 
     var activePlan = runtime.getCurrentPlan();
     if (activePlan && activePlan.id) return activePlan.id;
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
-  // Fallback: scan all plans in Runtime
   try {
     var allPlans = runtime.getAllPlans();
     if (allPlans && allPlans.length) {
-      // Return the most recently updated non-terminal plan
       var best = allPlans[0];
       for (var i = 1; i < allPlans.length; i++) {
         if (allPlans[i].updatedAt > best.updatedAt) best = allPlans[i];
@@ -784,7 +752,9 @@ function discoverCurrentPlanId() {
       }
       return best.id;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   return '';
 }
@@ -795,17 +765,14 @@ async function* create_plan(args, workspace) {
   var goal = args.goal || args.description || '';
   var steps = args.steps || args.tasks || [];
 
-  // If a goal is provided, use the planning engine to build a structured plan
   if (goal && workspace) {
     var analysis = planningManager.analyzeRequest(goal, null, workspace);
     var sessionId = args.session_id || 'session_' + Date.now();
     var plan = planningManager.buildPlan(analysis, sessionId);
 
-    // Register as active plan in Runtime
     runtime.registerPlan(plan);
     runtime.setActivePlanId(plan.id);
 
-    // Compute counts for structured result
     var taskIds = [];
     var totalTasks = 0;
     var pendingTasks = 0;
@@ -823,6 +790,33 @@ async function* create_plan(args, workspace) {
       }
     }
 
+    var serializedPhases = [];
+    for (var pi = 0; pi < plan.phases.length; pi++) {
+      var ph = plan.phases[pi];
+      var serializedTasks = [];
+      for (var ti = 0; ti < ph.tasks.length; ti++) {
+        var t = ph.tasks[ti];
+        serializedTasks.push({
+          id: t.id,
+          description: t.description,
+          status: t.status,
+          complexity: t.complexity,
+          action: t.action,
+          dependsOn: t.dependsOn,
+          parallelWith: t.parallelWith
+        });
+      }
+      serializedPhases.push({
+        id: ph.id,
+        name: ph.name,
+        description: ph.description,
+        order: ph.order,
+        status: ph.status,
+        tasks: serializedTasks,
+        parallelGroups: ph.parallelGroups
+      });
+    }
+
     yield {
       type: 'tool_result',
       tool: 'create_plan',
@@ -838,27 +832,7 @@ async function* create_plan(args, workspace) {
         id: plan.id,
         goal: plan.goal,
         summary: plan.summary,
-        phases: plan.phases.map(function(ph) {
-          return {
-            id: ph.id,
-            name: ph.name,
-            description: ph.description,
-            order: ph.order,
-            status: ph.status,
-            tasks: ph.tasks.map(function(t) {
-              return {
-                id: t.id,
-                description: t.description,
-                status: t.status,
-                complexity: t.complexity,
-                action: t.action,
-                dependsOn: t.dependsOn,
-                parallelWith: t.parallelWith
-              };
-            }),
-            parallelGroups: ph.parallelGroups
-          };
-        }),
+        phases: serializedPhases,
         status: plan.status,
         complexity: plan.complexity,
         risks: plan.risks,
@@ -869,20 +843,23 @@ async function* create_plan(args, workspace) {
     return;
   }
 
-  // Fallback: flat checklist from LLM-provided steps
   if (steps && !Array.isArray(steps)) steps = [steps];
+  var serializedSteps = [];
+  for (var idx = 0; idx < steps.length; idx++) {
+    var st = steps[idx];
+    serializedSteps.push({
+      id: String(idx + 1),
+      order: idx + 1,
+      description: typeof st === 'string' ? st : (st.description || st.step || ''),
+      status: (typeof st === 'object' && st.status) ? st.status : 'pending'
+    });
+  }
+
   var fallbackPlan = {
     id: '1',
     goal: goal || 'Execution Plan',
     status: 'active',
-    steps: steps.map(function(st, idx) {
-      return {
-        id: String(idx + 1),
-        order: idx + 1,
-        description: typeof st === 'string' ? st : (st.description || st.step || ''),
-        status: (typeof st === 'object' && st.status) ? st.status : 'pending'
-      };
-    })
+    steps: serializedSteps
   };
   yield {
     type: 'tool_result',
@@ -900,18 +877,16 @@ async function* get_plan(args, workspace) {
   try {
     var planId = args.plan_id || args.planId || '';
 
-    // Try to get active plan if no ID specified
     if (!planId) {
       var activePlan = runtime.getCurrentPlan();
       if (activePlan) planId = activePlan.id;
     }
 
-    // Try runtime first (authoritative), fallback to planningManager
     var result = planId ? (runtime.getPlan(planId) || planningManager.getPlan(planId))
                         : runtime.getCurrentPlan();
 
     if (!result) {
-      var allPlans = planningManager.getAllPlansContext();
+      var allPlans = planningManager.getActivePlansContext();
       var activeId = runtime.getActivePlanId();
       var activeInfo = activeId ? (' Active plan: ' + activeId) : '';
       yield {
@@ -922,7 +897,6 @@ async function* get_plan(args, workspace) {
       return;
     }
 
-    // Compute counts
     var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
     if (result.phases) {
       for (var pi = 0; pi < result.phases.length; pi++) {
@@ -939,6 +913,33 @@ async function* get_plan(args, workspace) {
       }
     }
 
+    var serializedPhases = [];
+    if (result.phases) {
+      for (var pi = 0; pi < result.phases.length; pi++) {
+        var ph = result.phases[pi];
+        var serializedTasks = [];
+        for (var ti = 0; ti < ph.tasks.length; ti++) {
+          var t = ph.tasks[ti];
+          serializedTasks.push({
+            id: t.id,
+            description: t.description,
+            status: t.status,
+            complexity: t.complexity,
+            action: t.action,
+            dependsOn: t.dependsOn,
+            parallelWith: t.parallelWith
+          });
+        }
+        serializedPhases.push({
+          id: ph.id,
+          name: ph.name,
+          order: ph.order,
+          status: ph.status,
+          tasks: serializedTasks
+        });
+      }
+    }
+
     yield {
       type: 'tool_result', tool: 'get_plan', success: true,
       planId: result.id,
@@ -951,16 +952,7 @@ async function* get_plan(args, workspace) {
       plan: {
         id: result.id, goal: result.goal, summary: result.summary,
         status: result.status,
-        phases: result.phases ? result.phases.map(function(ph) {
-          return {
-            id: ph.id, name: ph.name, order: ph.order, status: ph.status,
-            tasks: ph.tasks.map(function(t) {
-              return { id: t.id, description: t.description, status: t.status,
-                complexity: t.complexity, action: t.action,
-                dependsOn: t.dependsOn, parallelWith: t.parallelWith };
-            })
-          };
-        }) : [],
+        phases: serializedPhases,
         complexity: result.complexity,
         estimatedIterations: result.estimatedIterations,
         executionGraph: result.executionGraph

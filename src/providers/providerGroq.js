@@ -23,7 +23,6 @@ export async function* chat(config, messages, tools) {
   if (!response.ok) {
     var errObj = await handleApiResponseError(response, 'Groq');
     var msg = errObj.message;
-    // Groq-specific: some models don't support tools
     if (msg.includes('tool') || msg.includes('function')) {
       msg += '\n\nNote: Not all Groq models support tool use.\nTry: llama3-groq-70b-8192-tool-use-preview or llama3-groq-8b-8192-tool-use-preview';
     }
@@ -63,7 +62,13 @@ export async function listModels(config) {
   });
   if (!res.ok) throw await handleApiResponseError(res, 'Groq');
   var data = await safeReadJson(res, 'Groq');
-  return data.data ? data.data.map(function(m) { return m.id; }) : [];
+  var models = [];
+  if (data.data) {
+    for (var i = 0; i < data.data.length; i++) {
+      models.push(data.data[i].id);
+    }
+  }
+  return models;
 }
 
 export async function embeddings(config, texts) {
@@ -85,7 +90,9 @@ function parseChunk(data) {
 }
 
 function convertMessages(messages) {
-  return messages.map(function(m) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
     var msg = { role: m.role, content: m.content || '' };
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
@@ -94,12 +101,14 @@ function convertMessages(messages) {
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });
-      rawImages.forEach(function(img) {
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
         var dataUri = String(img).startsWith('data:') ? img : 'data:image/png;base64,' + img;
         parts.push({ type: 'image_url', image_url: { url: dataUri } });
-      });
+      }
       msg.content = parts;
     }
-    return msg;
-  });
+    converted.push(msg);
+  }
+  return converted;
 }

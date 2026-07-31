@@ -23,12 +23,19 @@ function saveGoals(data) {
     var pct = calculateCompletionRate(data.subgoals);
     runtime.setMemory('goal_completion_pct', pct);
     runtime.setMemory('active_task_id', data.activeTaskId);
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 function calculateCompletionRate(subgoals) {
   if (!subgoals || !subgoals.length) return 0;
-  var completed = subgoals.filter(function(g) { return g.status === 'completed'; }).length;
+  var completed = 0;
+  for (var i = 0; i < subgoals.length; i++) {
+    if (subgoals[i].status === 'completed') {
+      completed++;
+    }
+  }
   return Math.round((completed / subgoals.length) * 100);
 }
 
@@ -80,22 +87,56 @@ export function syncWithPlan(plan) {
   }
 
   data.subgoals = subgoals;
-  var active = subgoals.find(function(g) { return g.status === 'active' || g.status === 'in_progress'; });
-  if (!active) active = subgoals.find(function(g) { return g.status === 'pending'; });
+  var active = null;
+  for (var i = 0; i < subgoals.length; i++) {
+    var status = subgoals[i].status;
+    if (status === 'active' || status === 'in_progress') {
+      active = subgoals[i];
+      break;
+    }
+  }
+  if (!active) {
+    for (var i = 0; i < subgoals.length; i++) {
+      if (subgoals[i].status === 'pending') {
+        active = subgoals[i];
+        break;
+      }
+    }
+  }
   if (active) data.activeTaskId = active.id;
   saveGoals(data);
 }
 
 export function updateGoalStatus(goalId, status) {
   var data = loadGoals();
-  var goal = data.subgoals.find(function(g) { return g.id === goalId; });
+  var goal = null;
+  for (var i = 0; i < data.subgoals.length; i++) {
+    if (data.subgoals[i].id === goalId) {
+      goal = data.subgoals[i];
+      break;
+    }
+  }
   if (goal) {
     goal.status = status;
     if (status === 'active' || status === 'in_progress') {
       data.activeTaskId = goalId;
     } else if (data.activeTaskId === goalId && (status === 'completed' || status === 'failed' || status === 'skipped')) {
-      var next = data.subgoals.find(function(g) { return g.status === 'active' || g.status === 'in_progress'; });
-      if (!next) next = data.subgoals.find(function(g) { return g.status === 'pending'; });
+      var next = null;
+      for (var i = 0; i < data.subgoals.length; i++) {
+        var st = data.subgoals[i].status;
+        if (st === 'active' || st === 'in_progress') {
+          next = data.subgoals[i];
+          break;
+        }
+      }
+      if (!next) {
+        for (var i = 0; i < data.subgoals.length; i++) {
+          if (data.subgoals[i].status === 'pending') {
+            next = data.subgoals[i];
+            break;
+          }
+        }
+      }
       data.activeTaskId = next ? next.id : '';
     }
     saveGoals(data);
@@ -110,13 +151,7 @@ export function getCompletionPercentage() {
   return calculateCompletionRate(loadGoals().subgoals);
 }
 
-/**
- * Get a status report from the Runtime's active plan.
- * This is the authoritative source — always reflects the latest plan state.
- * Falls back to legacy SQLite-based goals if no active plan exists.
- */
 export function getStatusReport() {
-  // Try Runtime's active plan first (authoritative)
   var activePlan = runtime.getCurrentPlan();
   if (activePlan && activePlan.phases) {
     var allTasks = [];
@@ -134,8 +169,16 @@ export function getStatusReport() {
       }
     }
 
-    var completedCount = allTasks.filter(function(t) { return t.status === 'completed'; }).length;
-    var activeTask = allTasks.find(function(t) { return t.status === 'active'; });
+    var completedCount = 0;
+    var activeTask = null;
+    for (var i = 0; i < allTasks.length; i++) {
+      if (allTasks[i].status === 'completed') {
+        completedCount++;
+      }
+      if (allTasks[i].status === 'active') {
+        activeTask = allTasks[i];
+      }
+    }
     var pct = allTasks.length ? Math.round((completedCount / allTasks.length) * 100) : 0;
 
     var lines = ['## GOAL PROGRESS REPORT'];
@@ -156,7 +199,6 @@ export function getStatusReport() {
     return lines.join('\n');
   }
 
-  // Fallback: legacy SQLite-based goals
   var data = loadGoals();
   var lines = ['## GOAL PROGRESS REPORT'];
   lines.push('Primary Goal: ' + data.primaryGoal);

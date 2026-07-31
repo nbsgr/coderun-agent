@@ -75,8 +75,16 @@ export async function verifyStep(stepResult, stepArgs, workspace) {
       break;
   }
 
-  var issues = checks.filter(function(c) { return !c.passed; }).map(function(c) { return c.type + ': ' + c.detail; });
-  var passedCount = checks.filter(function(c) { return c.passed; }).length;
+  var issues = [];
+  var passedCount = 0;
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    if (c.passed) {
+      passedCount++;
+    } else {
+      issues.push(c.type + ': ' + c.detail);
+    }
+  }
 
   return {
     verified: issues.length === 0,
@@ -114,7 +122,11 @@ export function verifyReport(report, plan, workspace) {
       checks.push({ type: 'status', passed: true, detail: 'Step completed' });
     }
 
-    totalPassed += checks.filter(function(c) { return c.passed; }).length;
+    for (var ci = 0; ci < checks.length; ci++) {
+      if (checks[ci].passed) {
+        totalPassed++;
+      }
+    }
     totalChecks += checks.length;
 
     stepResults.push({
@@ -191,6 +203,7 @@ async function verifyWriteStep(result, step, workspace) {
         var stat = await fs.stat(filePath);
         checks.push({ type: 'file_size', passed: stat.size > 0, detail: 'File size: ' + stat.size + ' bytes' });
       } catch (_) {
+        // Intentionally handle stat retrieval failure by pushing a failed check block
         checks.push({ type: 'file_size', passed: false, detail: 'Could not stat file' });
       }
     }
@@ -219,6 +232,7 @@ async function verifyEditStep(result, step, workspace) {
         var stat = await fs.stat(filePath);
         checks.push({ type: 'file_modified', passed: true, detail: 'Last modified: ' + stat.mtime.toISOString() });
       } catch (_) {
+        // Intentionally handle stat retrieval failure by pushing a failed check block
         checks.push({ type: 'file_modified', passed: false, detail: 'Could not stat file' });
       }
     }

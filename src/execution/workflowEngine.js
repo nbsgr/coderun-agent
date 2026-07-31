@@ -43,7 +43,13 @@ export function getWorkflow(type) {
  */
 export function getNextState(type, currentState) {
   var flow = getWorkflow(type);
-  var idx = flow.findIndex(function(step) { return step.state === currentState; });
+  var idx = -1;
+  for (var i = 0; i < flow.length; i++) {
+    if (flow[i].state === currentState) {
+      idx = i;
+      break;
+    }
+  }
   if (idx !== -1 && idx < flow.length - 1) {
     return flow[idx + 1].state;
   }
@@ -55,5 +61,10 @@ export function getNextState(type, currentState) {
  */
 export function isStateInWorkflow(type, state) {
   var flow = getWorkflow(type);
-  return flow.some(function(step) { return step.state === state; });
+  for (var i = 0; i < flow.length; i++) {
+    if (flow[i].state === state) {
+      return true;
+    }
+  }
+  return false;
 }

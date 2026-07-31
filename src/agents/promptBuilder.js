@@ -3,6 +3,10 @@
 
 import { SYSTEM_PROMPT } from './constants.js';
 
+function formatMemoryItem(m) {
+  return '- ' + m;
+}
+
 export function buildMessages(userPrompt, options) {
   options = options || {};
   var history = options.history || [];
@@ -74,7 +78,7 @@ export function buildMessages(userPrompt, options) {
     systemContent += '\n\n## SKILLS\n' + skills.join('\n');
   }
   if (memory.length) {
-    systemContent += '\n\n## MEMORY\n' + memory.map(function(m) { return '- ' + m; }).join('\n');
+    systemContent += '\n\n## MEMORY\n' + memory.map(formatMemoryItem).join('\n');
   }
   if (mcpContext) {
     systemContent += '\n\n## MCP CONTEXT\n' + mcpContext;
@@ -194,7 +198,7 @@ export function buildSystemPromptOnly(workspace, skills, memory, mcpContext) {
     content += '\n\n## SKILLS\n' + skills.join('\n');
   }
   if (memory && memory.length) {
-    content += '\n\n## MEMORY\n' + memory.map(function(m) { return '- ' + m; }).join('\n');
+    content += '\n\n## MEMORY\n' + memory.map(formatMemoryItem).join('\n');
   }
   if (mcpContext) {
     content += '\n\n## MCP CONTEXT\n' + mcpContext;

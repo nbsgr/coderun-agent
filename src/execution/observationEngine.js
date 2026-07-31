@@ -19,6 +19,7 @@ export function generateObservation(toolName, args, result, durationMs) {
     try {
       output = JSON.stringify(output);
     } catch (_) {
+      // Intentionally fall back to string coercion if JSON stringify fails
       output = String(output);
     }
   }
@@ -91,7 +92,9 @@ export function generateObservation(toolName, args, result, durationMs) {
   // Add to runtime state
   try {
     runtime.addObservation(errors.length ? 'error' : 'success', summary, 'observation_engine');
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   return observation;
 }

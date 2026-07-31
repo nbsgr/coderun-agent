@@ -25,7 +25,6 @@ export async function* chat(config, messages, tools) {
   if (!response.ok) {
     var errObj = await handleApiResponseError(response, 'OpenRouter');
     var msg = errObj.message;
-    // Detect tool use unsupported error and provide helpful guidance
     if (msg.indexOf('No endpoints found') !== -1 || msg.indexOf('tool use') !== -1 || msg.indexOf('tool') !== -1) {
       msg += '\n\nThis model does not support tool/function calling on OpenRouter.' +
              '\nPlease use a model that supports tools, such as:' +
@@ -55,7 +54,9 @@ export async function* chat(config, messages, tools) {
         try {
           var data = JSON.parse(line.slice(6));
           yield parseChunk(data);
-        } catch (e) {}
+        } catch (e) {
+          // Intentionally ignored to allow safe execution fallback
+        }
       }
     }
   }
@@ -68,7 +69,13 @@ export async function listModels(config) {
   });
   if (!res.ok) throw await handleApiResponseError(res, 'OpenRouter');
   var data = await safeReadJson(res, 'OpenRouter');
-  return data.data ? data.data.map(function(m) { return m.id; }) : [];
+  var models = [];
+  if (data.data) {
+    for (var i = 0; i < data.data.length; i++) {
+      models.push(data.data[i].id);
+    }
+  }
+  return models;
 }
 
 export async function embeddings(config, texts) {
@@ -93,20 +100,25 @@ function parseChunk(data) {
 }
 
 function convertMessages(messages) {
-  return messages.map(function(m) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
     var msg = { role: m.role, content: m.content || '' };
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });
-      rawImages.forEach(function(img) {
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
         var dataUri = String(img).startsWith('data:') ? img : 'data:image/png;base64,' + img;
         parts.push({ type: 'image_url', image_url: { url: dataUri } });
-      });
+      }
       msg.content = parts;
     }
-    return msg;
-  });
+    converted.push(msg);
+  }
+  return converted;
 }

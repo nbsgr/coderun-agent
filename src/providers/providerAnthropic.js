@@ -8,8 +8,15 @@ export async function* chat(config, messages, tools) {
     'anthropic-version': '2023-06-01'
   };
 
-  var systemMsg = messages.find(function(m) { return m.role === 'system'; });
-  var chatMessages = messages.filter(function(m) { return m.role !== 'system'; });
+  var systemMsg = null;
+  var chatMessages = [];
+  for (var i = 0; i < messages.length; i++) {
+    if (messages[i].role === 'system') {
+      systemMsg = messages[i];
+    } else {
+      chatMessages.push(messages[i]);
+    }
+  }
 
   var body = {
     model: config.model,
@@ -19,13 +26,16 @@ export async function* chat(config, messages, tools) {
   };
   if (systemMsg) body.system = systemMsg.content;
   if (tools && tools.length) {
-    body.tools = tools.map(function(t) {
-      return {
+    var anthropicTools = [];
+    for (var ti = 0; ti < tools.length; ti++) {
+      var t = tools[ti];
+      anthropicTools.push({
         name: t.function.name,
         description: t.function.description,
         input_schema: t.function.parameters
-      };
-    });
+      });
+    }
+    body.tools = anthropicTools;
   }
 
   var response = await fetch(url, {
@@ -73,14 +83,18 @@ export async function listModels(config) {
         throw await handleApiResponseError(res, 'Anthropic');
       }
       var data = await safeReadJson(res, 'Anthropic');
-      return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+      var models = [];
+      if (data.data) {
+        for (var i = 0; i < data.data.length; i++) {
+          models.push(data.data[i].id || data.data[i].name);
+        }
+      }
+      return models;
     } catch (e) {
       console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint:', e.message);
     }
-    // Fallback to currently configured model if available
     return config.model ? [config.model] : [];
   }
-  // Anthropic does not have a public models endpoint; return known models
   return [
     'claude-3-5-sonnet-20241022',
     'claude-3-5-haiku-20241022',
@@ -99,16 +113,19 @@ export async function images(config, prompt) {
 }
 
 function convertMessages(messages) {
-  return messages.map(function(m) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
     var role = m.role === 'tool' ? 'user' : m.role;
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
 
     if (m.role === 'tool') {
-      return {
+      converted.push({
         role: 'user',
         content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }]
-      };
+      });
+      continue;
     }
 
     if (rawImages && rawImages.length) {
@@ -116,7 +133,8 @@ function convertMessages(messages) {
       if (m.content) {
         contentBlocks.push({ type: 'text', text: m.content });
       }
-      rawImages.forEach(function(img) {
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
         var cleanB64 = String(img).replace(/^data:[^;]+;base64,/, '');
         var mediaType = 'image/png';
         var match = String(img).match(/^data:([^;]+);base64,/);
@@ -129,12 +147,14 @@ function convertMessages(messages) {
             data: cleanB64
           }
         });
-      });
-      return { role: role, content: contentBlocks };
+      }
+      converted.push({ role: role, content: contentBlocks });
+      continue;
     }
 
-    return { role: role, content: m.content || '' };
-  });
+    converted.push({ role: role, content: m.content || '' });
+  }
+  return converted;
 }
 
 function parseChunk(data) {

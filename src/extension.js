@@ -31,9 +31,141 @@ let extensionContext = null;
 let currentAbortController = null;
 
 // =====================================================
+// TOP LEVEL EVENT HANDLERS / HELPER FUNCTIONS
+// =====================================================
+
+function handlePlanChangeSave() {
+  try {
+    var activePlans = runtime.getAllPlans();
+    if (extensionContext) {
+      extensionContext.workspaceState.update('coderun_active_plans', activePlans);
+    }
+  } catch (e) {
+    console.error('[CODERUN] Failed to persist active plans:', e);
+  }
+}
+
+function handleOpenSidebarCommand() {
+  vscode.commands.executeCommand('coderun.chatView.focus');
+}
+
+function handleOpenPanelCommand(context) {
+  createOrShowPanel(context.extensionUri);
+}
+
+function handleNewChatCommand() {
+  if (currentWebview) {
+    currentWebview.postMessage({ type: 'newChat' });
+  }
+}
+
+async function handleUndoLastEditCommand() {
+  var ws = getWorkspaceFolder();
+  if (!ws) {
+    vscode.window.showInformationMessage('No workspace folder open');
+    return;
+  }
+  var result = await checkpointManager.undoLast(ws, null);
+  if (result.success) {
+    vscode.window.showInformationMessage(result.message);
+    if (currentWebview) {
+      currentWebview.postMessage({ type: 'undoComplete', message: result.message });
+    }
+  } else {
+    vscode.window.showInformationMessage(result.message || 'Nothing to undo');
+  }
+}
+
+function handleTerminalCloseEvent(terminal) {
+  terminalManager.onTerminalClosed(terminal);
+}
+
+async function handleConfigurationChangeEvent(e) {
+  if (e.affectsConfiguration('coderun')) {
+    config.invalidateCache();
+    if (currentWebview) {
+      await sendCurrentSettings(currentWebview);
+      await checkProviderHealth(currentWebview);
+    }
+  }
+}
+
+function handleFrontendMessageReceive(webview, message) {
+  handleFrontendMessage(message, webview);
+}
+
+function sendAgentEventToWebview(webview, event) {
+  webview.postMessage({ type: 'agentEvent', event: event });
+}
+
+function handleAskPermission(webview, toolName, args, id) {
+  var chatDecision = permissions.getAlwaysDecision(toolName);
+  if (chatDecision) {
+    webview.postMessage({
+      type: 'agentEvent',
+      event: {
+        type: 'requestPermission',
+        tool: toolName,
+        arguments: args,
+        id: id,
+        autoResolved: true,
+        decision: chatDecision
+      }
+    });
+    return Promise.resolve(chatDecision === 'allow');
+  }
+  webview.postMessage({
+    type: 'agentEvent',
+    event: {
+      type: 'requestPermission',
+      tool: toolName,
+      arguments: args,
+      id: id
+    }
+  });
+  return permissions.requestPermission(toolName, args, id, null);
+}
+
+function handleAgentEvent(webview, event) {
+  var eventForWebview = event;
+  if (event && event.type === 'request_diff' && event.deferred) {
+    // The deferred object (Promise + resolve function) cannot be serialized
+    // through webview.postMessage. Strip it before sending to the UI.
+    eventForWebview = {};
+    for (var key in event) {
+      if (key !== 'deferred') eventForWebview[key] = event[key];
+    }
+  }
+  webview.postMessage({ type: 'agentEvent', event: eventForWebview });
+  if (event.type === 'request_diff' && event.id) {
+    diffManager.storePatch(event);
+  }
+}
+
+function handleConfirmDeleteResult(webview, id, choice) {
+  if (choice === 'Delete' && webview) {
+    webview.postMessage({ type: 'deleteConversationConfirmed', id: id });
+  }
+}
+
+function handleConfirmClearAllResult(webview, choice) {
+  if (choice === 'Delete All' && webview) {
+    webview.postMessage({ type: 'clearAllConversationsConfirmed' });
+  }
+}
+
+function handleOpenTextDocumentResolve(doc) {
+  vscode.window.showTextDocument(doc);
+}
+
+function handleOpenTextDocumentReject(err) {
+  console.error('[CODERUN] Failed to open file:', err);
+}
+
+// =====================================================
 // ACTIVATE
 // =====================================================
-export function activate(context) {
+export async function activate(context) {
   console.log('[CODERUN] Extension Activated');
   extensionContext = context;
 
@@ -47,11 +179,13 @@ export function activate(context) {
   terminalManager.registerTerminalListeners(context);
 
   // Initialize project knowledge base (SQLite, indexing, file watcher, memory)
-  projectKnowledge.initialize(context).catch(function(err) {
+  try {
+    await projectKnowledge.initialize(context);
+  } catch (err) {
     console.error('[CODERUN] projectKnowledge init failed:', err);
-  });
+  }
 
-  // Hydrate active plans from VS Code workspaceState (per-workspace localStorage equivalent)
+  // Hydrate active plans from VS Code workspaceState
   try {
     var savedPlans = context.workspaceState.get('coderun_active_plans');
     if (savedPlans) {
@@ -71,17 +205,8 @@ export function activate(context) {
   }
 
   // Subscribe to plan events to save active plans to workspaceState
-  var savePlansToWorkspace = function() {
-    try {
-      var activePlans = runtime.getAllPlans();
-      context.workspaceState.update('coderun_active_plans', activePlans);
-    } catch (e) {
-      console.error('[CODERUN] Failed to persist active plans:', e);
-    }
-  };
-
-  events.on('runtime:plan_updated', savePlansToWorkspace);
-  events.on('runtime:plan_removed', savePlansToWorkspace);
+  events.on('runtime:plan_updated', handlePlanChangeSave);
+  events.on('runtime:plan_removed', handlePlanChangeSave);
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());
@@ -96,47 +221,23 @@ export function activate(context) {
 
   // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('coderun.openSidebar', function() {
-      vscode.commands.executeCommand('coderun.chatView.focus');
-    })
+    vscode.commands.registerCommand('coderun.openSidebar', handleOpenSidebarCommand)
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('coderun.openPanel', function() {
-      createOrShowPanel(context.extensionUri);
-    })
+    vscode.commands.registerCommand('coderun.openPanel', handleOpenPanelCommand.bind(null, context))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('coderun.newChat', function() {
-      if (currentWebview) {
-        currentWebview.postMessage({ type: 'newChat' });
-      }
-    })
+    vscode.commands.registerCommand('coderun.newChat', handleNewChatCommand)
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('coderun.undoLastEdit', async function() {
-      var ws = getWorkspaceFolder();
-      if (!ws) {
-        vscode.window.showInformationMessage('No workspace folder open');
-        return;
-      }
-      var result = await checkpointManager.undoLast(ws, null);
-      if (result.success) {
-        vscode.window.showInformationMessage(result.message);
-        // Notify the webview to refresh
-        if (currentWebview) {
-          currentWebview.postMessage({ type: 'undoComplete', message: result.message });
-        }
-      } else {
-        vscode.window.showInformationMessage(result.message || 'Nothing to undo');
-      }
-    })
+    vscode.commands.registerCommand('coderun.undoLastEdit', handleUndoLastEditCommand)
   );
 
   // Sidebar provider
-  var sidebarProvider = new SidebarWebviewViewProvider(context.extensionUri);
+  var sidebarProvider = createSidebarWebviewViewProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('coderun.chatView', sidebarProvider, {
       webviewOptions: { retainContextWhenHidden: true }
@@ -145,50 +246,39 @@ export function activate(context) {
 
   // Terminal cleanup
   context.subscriptions.push(
-    vscode.window.onDidCloseTerminal(function(terminal) {
-      terminalManager.onTerminalClosed(terminal);
-    })
+    vscode.window.onDidCloseTerminal(handleTerminalCloseEvent)
   );
 
-  // Config changes — when user edits settings.json, notify webview
+  // Config changes
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(async function(e) {
-      if (e.affectsConfiguration('coderun')) {
-        config.invalidateCache();
-        if (currentWebview) {
-          await sendCurrentSettings(currentWebview);
-          await checkProviderHealth(currentWebview);
-        }
-      }
-    })
+    vscode.workspace.onDidChangeConfiguration(handleConfigurationChangeEvent)
   );
 }
 
 // =====================================================
 // SIDEBAR WEBVIEW PROVIDER
 // =====================================================
-class SidebarWebviewViewProvider {
-  constructor(extensionUri) {
-    this.extensionUri = extensionUri;
-  }
+function createSidebarWebviewViewProvider(extensionUri) {
+  return {
+    resolveWebviewView: handleResolveWebviewView.bind(null, extensionUri)
+  };
+}
 
-  resolveWebviewView(webviewView, context, token) {
-    console.log('[CODERUN] resolveWebviewView called');
-    sidebarWebviewView = webviewView;
+function handleResolveWebviewView(extensionUri, webviewView, context, token) {
+  console.log('[CODERUN] resolveWebviewView called');
+  sidebarWebviewView = webviewView;
 
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [vscode.Uri.file(path.join(this.extensionUri.fsPath, 'src'))]
-    };
+  webviewView.webview.options = {
+    enableScripts: true,
+    localResourceRoots: [vscode.Uri.file(path.join(extensionUri.fsPath, 'src'))]
+  };
 
-    webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
+  webviewView.webview.html = getWebviewHtml(webviewView.webview, extensionUri);
 
-    webviewView.webview.onDidReceiveMessage(function(message) {
-      handleFrontendMessage(message, webviewView.webview);
-    });
+  var receiveCb = handleFrontendMessageReceive.bind(null, webviewView.webview);
+  webviewView.webview.onDidReceiveMessage(receiveCb);
 
-    currentWebview = webviewView.webview;
-  }
+  currentWebview = webviewView.webview;
 }
 
 // =====================================================
@@ -208,9 +298,8 @@ function createOrShowPanel(extensionUri) {
 
   panel.webview.html = getWebviewHtml(panel.webview, extensionUri);
 
-  panel.webview.onDidReceiveMessage(function(message) {
-    handleFrontendMessage(message, panel.webview);
-  });
+  var receiveCb = handleFrontendMessageReceive.bind(null, panel.webview);
+  panel.webview.onDidReceiveMessage(receiveCb);
 
   currentWebview = panel.webview;
 }
@@ -319,10 +408,10 @@ async function sendCurrentSettings(webview) {
       hasKey = !!key && key.length > 0;
     }
   } catch (e) {
+    // Intentionally fallback to false if reading keys from VS Code secret storage fails
     hasKey = false;
   }
 
-  // Include all saved provider configs so the frontend can show them
   var providerConfigs = config.getAllProviderConfigs(extensionContext);
 
   webview.postMessage({
@@ -357,8 +446,6 @@ async function handleFrontendMessage(message, webview) {
         var selectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
         var selectedProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
         webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
-        // Send the current "Always Allow / Always Deny" map so the UI can
-        // mark persistent decisions without needing an extra round-trip.
         webview.postMessage({
           type: 'permissionState',
           decisions: permissions.listAlwaysDecisions()
@@ -366,9 +453,7 @@ async function handleFrontendMessage(message, webview) {
       } catch (e) {
         console.error('[CODERUN] Failed to send initial data:', e);
       }
-      // Send current VS Code settings to frontend so UI is in sync
       await sendCurrentSettings(webview);
-      // Check active provider health first, then refresh all saved providers
       await checkProviderHealth(webview);
       await refreshAllProviderModels(webview);
       break;
@@ -384,31 +469,25 @@ async function handleFrontendMessage(message, webview) {
         runtime.registerPlan(plan);
         runtime.setActivePlanId(plan.id);
       }
-      // Start with a fresh terminal only if this is the first message in a new chat session
       if (!history || history.length === 0) {
         terminalManager.resetTerminal();
         permissions.resetChatDecisions();
       }
 
-      // Determine which provider to use from the frontend
       var providerName = message.provider || '';
       var frontendModel = message.model || '';
 
-      // If frontend sent a provider, look up its saved config
       var providerConfig;
       if (providerName && (PROVIDER_DEFAULTS[providerName] || providerName.startsWith('compatible:'))) {
         providerConfig = await config.getProviderConfigByName(extensionContext, providerName);
       } else {
-        // Fallback: read the currently active provider from VS Code settings
         providerConfig = await config.getProviderConfigWithKey(extensionContext);
       }
 
-      // Override model from frontend (most important — user selected it)
       if (frontendModel && frontendModel.trim()) {
         providerConfig.model = frontendModel.trim();
       }
 
-      // Validate we have required config
       if (!providerConfig.model) {
         webview.postMessage({
           type: 'agentEvent',
@@ -425,56 +504,14 @@ async function handleFrontendMessage(message, webview) {
         break;
       }
 
-      // Set up terminal event forwarding callback
-      terminalManager.setSendEventCallback(function(event) {
-        webview.postMessage({ type: 'agentEvent', event: event });
-      });
+      terminalManager.setSendEventCallback(sendAgentEventToWebview.bind(null, webview));
 
-      // Build a permission bridge: the agent calls askPermission(toolName, args, id);
-      // we ask the webview, the user clicks Allow/Deny/Always-*, and the webview
-      // calls back via 'permissionResponse' which routes into
-      // permissions.resolvePermission — which resolves the right Promise.
-      var askPermission = function(toolName, args, id) {
-        // Short-circuit: if this chat has an "always" decision, no UI prompt is needed.
-        var chatDecision = permissions.getAlwaysDecision(toolName);
-        if (chatDecision) {
-          sendEvent({
-            type: 'requestPermission',
-            tool: toolName,
-            arguments: args,
-            id: id,
-            autoResolved: true,
-            decision: chatDecision
-          });
-          return Promise.resolve(chatDecision === 'allow');
-        }
-        // Otherwise: ask the webview to render the 4-button permission card.
-        sendEvent({
-          type: 'requestPermission',
-          tool: toolName,
-          arguments: args,
-          id: id
-        });
-        return permissions.requestPermission(toolName, args, id, null);
-      };
-
-      var sendEvent = function(event) {
-        webview.postMessage({ type: 'agentEvent', event: event });
-
-        // Handle diff review requests — store as pending patch
-        if (event.type === 'request_diff' && event.id) {
-          diffManager.storePatch(event);
-        }
-      };
-
-      // Cooperative stop: the frontend can fire 'stopChat' to set this flag,
-      // the agent loop checks it between iterations.
       currentAbortController = { stopped: false };
       var abortCtrl = currentAbortController;
 
       try {
         console.log('[EXTENSION] Calling runAgent...');
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, sendEvent, askPermission, { signal: abortCtrl, image: userImage });
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage });
         console.log('[EXTENSION] runAgent completed');
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
@@ -524,28 +561,22 @@ async function handleFrontendMessage(message, webview) {
     }
 
     case 'confirmDelete': {
+      var confirmCb = handleConfirmDeleteResult.bind(null, webview, message.id);
       vscode.window.showWarningMessage(
         'Delete this conversation?',
         { modal: true },
         'Delete'
-      ).then(function(choice) {
-        if (choice === 'Delete' && webview) {
-          webview.postMessage({ type: 'deleteConversationConfirmed', id: message.id });
-        }
-      });
+      ).then(confirmCb);
       break;
     }
 
     case 'confirmClearAll': {
+      var clearCb = handleConfirmClearAllResult.bind(null, webview);
       vscode.window.showWarningMessage(
         'Delete ALL conversations? This cannot be undone.',
         { modal: true },
         'Delete All'
-      ).then(function(choice) {
-        if (choice === 'Delete All' && webview) {
-          webview.postMessage({ type: 'clearAllConversationsConfirmed' });
-        }
-      });
+      ).then(clearCb);
       break;
     }
 
@@ -591,7 +622,6 @@ async function handleFrontendMessage(message, webview) {
     }
 
     case 'saveSettings': {
-      // Save provider settings to VS Code configuration (settings.json)
       if (message.settings) {
         console.log('[CODERUN] Saving settings:', JSON.stringify(message.settings));
         try {
@@ -608,11 +638,9 @@ async function handleFrontendMessage(message, webview) {
           await config.updateSettings(settingsToUpdate, vscode.ConfigurationTarget.Global);
           console.log('[CODERUN] Settings saved successfully');
 
-          // Also save per-provider config for multi-provider support
           var savedProvider = message.settings.provider || config.getConfig().provider;
           var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
 
-          // Save API key to secrets BEFORE health check
           var resolvedApiKey = '';
           if (message.apiKey !== undefined && message.apiKey !== null) {
             if (message.apiKey === '') {
@@ -623,8 +651,11 @@ async function handleFrontendMessage(message, webview) {
               await config.setApiKey(extensionContext, message.apiKey, savedProvider);
               resolvedApiKey = message.apiKey;
             } else {
-              // Placeholder — get existing key
-              try { resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || ''; } catch (_) {}
+              try {
+                resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || '';
+              } catch (_) {
+                // Intentionally ignore retrieval errors; fall back to empty string
+              }
             }
           }
 
@@ -686,6 +717,7 @@ async function handleFrontendMessage(message, webview) {
         var selectedProvider = extensionContext.globalState.get('coderun_selected_provider', '');
         webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
       } catch (e) {
+        // Intentionally fall back to empty list on globalState reading exception
         webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '', selectedProvider: '' });
       }
       break;
@@ -705,11 +737,7 @@ async function handleFrontendMessage(message, webview) {
       if (message.path) {
         var wsPath = getWorkspaceFolder();
         var fullPath = path.join(wsPath, message.path);
-        vscode.workspace.openTextDocument(fullPath).then(function(doc) {
-          vscode.window.showTextDocument(doc);
-        }).catch(function(err) {
-          console.error('[CODERUN] Failed to open file:', err);
-        });
+        vscode.workspace.openTextDocument(fullPath).then(handleOpenTextDocumentResolve, handleOpenTextDocumentReject);
       }
       break;
     }
@@ -753,7 +781,6 @@ async function handleFrontendMessage(message, webview) {
     case 'acceptDiff': {
       var wsPath = getWorkspaceFolder();
       var result = await diffManager.applyPatch(message.diffId, wsPath);
-      // Resolve the deferred promise so tools.js generator continues
       if (result.success) {
         agentLoop.resolveDiff(message.diffId, true);
       }
@@ -764,7 +791,6 @@ async function handleFrontendMessage(message, webview) {
     case 'acceptAllDiffs': {
       var wsPath = getWorkspaceFolder();
       var results = await diffManager.acceptAll(wsPath);
-      // Resolve all deferreds
       for (var ri = 0; ri < results.length; ri++) {
         var r = results[ri];
         if (r.success) {
@@ -778,7 +804,6 @@ async function handleFrontendMessage(message, webview) {
     case 'rejectDiff': {
       if (message.diffId) {
         var result = diffManager.rejectPatch(message.diffId);
-        // Reject the deferred so tools.js generator continues
         agentLoop.resolveDiff(message.diffId, false);
         webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
       }
@@ -787,7 +812,6 @@ async function handleFrontendMessage(message, webview) {
 
     case 'rejectAllDiffs': {
       var results = diffManager.rejectAll();
-      // Reject all deferreds
       for (var ri = 0; ri < results.length; ri++) {
         var r = results[ri];
         agentLoop.resolveDiff(r.diffId, false);
@@ -891,15 +915,12 @@ async function checkProviderHealth(webview, overrideConfig) {
 
 /**
  * Refresh models from ALL saved provider configurations.
- * Iterates over every saved provider and sends individual health status
- * messages so the frontend accumulates all models in the dropdown.
  */
 async function refreshAllProviderModels(webview) {
   var allConfigs = config.getAllProviderConfigs(extensionContext);
   var providerKeys = Object.keys(allConfigs);
 
   if (!providerKeys.length) {
-    // No saved configs — fall back to the active provider
     await checkProviderHealth(webview);
     return;
   }

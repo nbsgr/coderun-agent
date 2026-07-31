@@ -27,15 +27,16 @@
 
 var _state = 'idle';
 
-/** Error thrown on invalid state transitions. */
-export class StateError extends Error {
-  constructor(from, to) {
-    super('Invalid state transition: ' + from + ' → ' + to);
-    this.name = 'StateError';
-    this.from = from;
-    this.to = to;
-  }
+export function StateError(from, to) {
+  var err = new Error('Invalid state transition: ' + from + ' → ' + to);
+  Object.setPrototypeOf(err, StateError.prototype);
+  err.name = 'StateError';
+  err.from = from;
+  err.to = to;
+  return err;
 }
+StateError.prototype = Object.create(Error.prototype);
+StateError.prototype.constructor = StateError;
 
 /** Map of valid transitions: [fromState] → Set of allowed toStates */
 var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped'];

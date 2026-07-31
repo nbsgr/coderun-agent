@@ -53,7 +53,6 @@ export async function listModels(config) {
   var headers = {};
   if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
 
-  // Cloudflare Workers AI custom models endpoint handler
   if (baseUrl.includes('cloudflare.com')) {
     try {
       var match = baseUrl.match(/\/accounts\/([^\/]+)/);
@@ -64,7 +63,11 @@ export async function listModels(config) {
         if (res.ok) {
           var data = await safeReadJson(res, 'Compatible');
           if (data.result && Array.isArray(data.result)) {
-            return data.result.map(function(m) { return m.name; });
+            var models = [];
+            for (var i = 0; i < data.result.length; i++) {
+              models.push(data.result[i].name);
+            }
+            return models;
           }
         }
       }
@@ -79,7 +82,6 @@ export async function listModels(config) {
     res = await fetch(url, { headers: headers });
   } catch (e) {
     console.warn('[CODERUN] Failed to reach compatible endpoint:', e.message);
-    // Fallback to currently configured model if available
     return config.model ? [config.model] : [];
   }
 
@@ -88,7 +90,13 @@ export async function listModels(config) {
   }
 
   var data = await safeReadJson(res, 'Compatible');
-  return data.data ? data.data.map(function(m) { return m.id || m.name; }) : [];
+  var models = [];
+  if (data.data) {
+    for (var i = 0; i < data.data.length; i++) {
+      models.push(data.data[i].id || data.data[i].name);
+    }
+  }
+  return models;
 }
 
 export async function embeddings(config, texts) {
@@ -102,7 +110,13 @@ export async function embeddings(config, texts) {
   });
   if (!res.ok) throw await handleApiResponseError(res, 'Compatible');
   var data = await safeReadJson(res, 'Compatible');
-  return data.data ? data.data.map(function(d) { return d.embedding; }) : [];
+  var embeddingList = [];
+  if (data.data) {
+    for (var i = 0; i < data.data.length; i++) {
+      embeddingList.push(data.data[i].embedding);
+    }
+  }
+  return embeddingList;
 }
 
 export async function images(config, prompt) {
@@ -123,30 +137,36 @@ function parseChunk(data) {
 }
 
 function convertMessages(messages) {
-  return messages.map(function(m) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
     var msg = { role: m.role, content: m.content || '' };
     
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     
     if (m.tool_calls) {
-      msg.tool_calls = m.tool_calls.map(function(tc) {
+      var convertedToolCalls = [];
+      for (var tcIndex = 0; tcIndex < m.tool_calls.length; tcIndex++) {
+        var tc = m.tool_calls[tcIndex];
         var args = tc.function?.arguments || tc.arguments || {};
         if (typeof args !== 'string') {
           try {
             args = JSON.stringify(args);
           } catch (_) {
+            // Intentionally fall back to empty object JSON if serialization fails
             args = '{}';
           }
         }
-        return {
+        convertedToolCalls.push({
           id: tc.id,
           type: tc.type || 'function',
           function: {
             name: tc.function?.name || tc.name,
             arguments: args
           }
-        };
-      });
+        });
+      }
+      msg.tool_calls = convertedToolCalls;
     }
     
     var rawImages = m.images || (m.image ? [m.image] : null);
@@ -154,12 +174,14 @@ function convertMessages(messages) {
     if (rawImages && rawImages.length) {
       var parts = [];
       if (m.content) parts.push({ type: 'text', text: m.content });
-      rawImages.forEach(function(img) {
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
         var dataUri = String(img).startsWith('data:') ? img : 'data:image/png;base64,' + img;
         parts.push({ type: 'image_url', image_url: { url: dataUri } });
-      });
+      }
       msg.content = parts;
     }
-    return msg;
-  });
+    converted.push(msg);
+  }
+  return converted;
 }

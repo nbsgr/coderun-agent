@@ -64,7 +64,9 @@ export async function initialize(context) {
   _projectName = path.basename(_workspace);
 
   _globalStorage = context.globalStorageUri.fsPath;
-  try { await fs.mkdir(_globalStorage, { recursive: true }); } catch (_) {}
+  try { await fs.mkdir(_globalStorage, { recursive: true }); } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   _workspaceHash = crypto.createHash('sha256').update(_workspace).digest('hex').substring(0, 8).toUpperCase();
   _projectFolder = _projectName + '_' + _workspaceHash;
@@ -104,6 +106,10 @@ export function getStats() {
   }
 }
 
+function sortFilesByScore(a, b) {
+  return (b.score || 0) - (a.score || 0);
+}
+
 /**
  * Search indexed files by name or path.
  * Simple LIKE-based search.
@@ -127,7 +133,7 @@ export function searchFiles(query) {
     } finally {
     stmt.free();
     }
-    results.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+    results.sort(sortFilesByScore);
     return results;
   } catch (e) {
     console.error('[PK] searchFiles error:', e.message);
@@ -191,7 +197,9 @@ export function addCheckpoint(cp) {
     stmt.step();
     stmt.free();
     saveProjectDb();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 /**
@@ -258,7 +266,9 @@ export function deleteCheckpoint(id) {
   try {
     _projectDb.run('DELETE FROM checkpoints WHERE id = ?', [id]);
     saveProjectDb();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 /**
@@ -269,7 +279,9 @@ export function deleteCheckpointsBySession(sessionId) {
   try {
     _projectDb.run('DELETE FROM checkpoints WHERE session_id = ?', [sessionId]);
     saveProjectDb();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 /**
@@ -292,7 +304,9 @@ export function trimOldestCheckpoints(count) {
   try {
     _projectDb.run('DELETE FROM checkpoints WHERE id IN (SELECT id FROM checkpoints ORDER BY created_at ASC LIMIT ?)', [count]);
     saveProjectDb();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -313,7 +327,9 @@ export function setSetting(key, value) {
     stmt.bind([key, typeof value === 'string' ? value : JSON.stringify(value)]);
     stmt.step();
     stmt.free();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 export function getSetting(key) {
   if (!_projectDb || !_ready) return null;
@@ -437,7 +453,12 @@ export function getAllPaths() {
   try {
     var stmt = _projectDb.exec('SELECT path FROM files ORDER BY path');
     if (!stmt.length) return [];
-    return stmt[0].values.map(function(r) { return r[0]; });
+    var values = stmt[0].values;
+    var paths = [];
+    for (var i = 0; i < values.length; i++) {
+      paths.push(values[i][0]);
+    }
+    return paths;
   } catch (_) { return []; }
 }
 
@@ -468,7 +489,9 @@ export async function reindexWorkspace() {
     _projectDb.run('DELETE FROM files');
     _projectDb.run('DELETE FROM chunks');
     saveProjectDb();
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
   await indexWorkspace();
 }
 
@@ -545,9 +568,11 @@ async function saveRegistry() {
   if (!_registryDb || !_registryPath) return;
   try {
     var data = _registryDb.export();
-    await fs.writeFile(_registryPath, Buffer.from(data)).catch(function(e) {
+    try {
+      await fs.writeFile(_registryPath, Buffer.from(data));
+    } catch (e) {
       console.error('[PK] Failed to save registry:', e.message);
-    });
+    }
   } catch (e) {
     console.error('[PK] Failed to export registry:', e.message);
   }
@@ -579,7 +604,9 @@ async function registerWorkspace() {
 // ========================================================
 
 async function openProjectDb() {
-  try { await fs.mkdir(_projectDir, { recursive: true }); } catch (_) {}
+  try { await fs.mkdir(_projectDir, { recursive: true }); } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   try {
     if (existsSync(_projectDbPath)) {
@@ -651,9 +678,11 @@ async function saveProjectDb() {
   if (!_projectDb || !_projectDbPath) return;
   try {
     var data = _projectDb.export();
-    await fs.writeFile(_projectDbPath, Buffer.from(data)).catch(function(e) {
+    try {
+      await fs.writeFile(_projectDbPath, Buffer.from(data));
+    } catch (e) {
       console.error('[PK] Failed to save project DB:', e.message);
-    });
+    }
   } catch (e) {
     console.error('[PK] Failed to export project DB:', e.message);
   }
@@ -734,7 +763,9 @@ async function walkAndIndex(rootDir, dirPath) {
         unchanged++;
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   return { indexed: indexed, unchanged: unchanged };
 }
@@ -813,6 +844,41 @@ async function indexSingleFile(relPath) {
 // INTERNAL: File watcher
 // ========================================================
 
+async function runIndexAndSave(relPath) {
+  try {
+    await indexSingleFile(relPath);
+    await saveProjectDb();
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+}
+
+function handleWatcherFileChange(uri) {
+  if (!_projectDb || !_ready) return;
+  var relPath = path.relative(_workspace, uri.fsPath);
+  if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
+  runIndexAndSave(relPath);
+}
+
+function handleWatcherFileCreate(uri) {
+  if (!_projectDb || !_ready) return;
+  var relPath = path.relative(_workspace, uri.fsPath);
+  if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
+  runIndexAndSave(relPath);
+}
+
+function handleWatcherFileDelete(uri) {
+  if (!_projectDb || !_ready) return;
+  var relPath = path.relative(_workspace, uri.fsPath);
+  if (!relPath || relPath.startsWith('..')) return;
+  try {
+    _projectDb.run('DELETE FROM files WHERE path = ?', [relPath]);
+    saveProjectDb();
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+}
+
 function setupWatcher() {
   if (!_workspace) return;
 
@@ -822,33 +888,15 @@ function setupWatcher() {
     );
 
     _disposables.push(
-      _fileWatcher.onDidChange(function(uri) {
-        if (!_projectDb || !_ready) return;
-        var relPath = path.relative(_workspace, uri.fsPath);
-        if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
-        indexSingleFile(relPath).then(function() { saveProjectDb(); }).catch(function() {});
-      })
+      _fileWatcher.onDidChange(handleWatcherFileChange)
     );
 
     _disposables.push(
-      _fileWatcher.onDidCreate(function(uri) {
-        if (!_projectDb || !_ready) return;
-        var relPath = path.relative(_workspace, uri.fsPath);
-        if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
-        indexSingleFile(relPath).then(function() { saveProjectDb(); }).catch(function() {});
-      })
+      _fileWatcher.onDidCreate(handleWatcherFileCreate)
     );
 
     _disposables.push(
-      _fileWatcher.onDidDelete(function(uri) {
-        if (!_projectDb || !_ready) return;
-        var relPath = path.relative(_workspace, uri.fsPath);
-        if (!relPath || relPath.startsWith('..')) return;
-        try {
-          _projectDb.run('DELETE FROM files WHERE path = ?', [relPath]);
-          saveProjectDb();
-        } catch (_) {}
-      })
+      _fileWatcher.onDidDelete(handleWatcherFileDelete)
     );
 
     console.log('[PK] File watcher established');

@@ -6,6 +6,14 @@ import * as runtime from '../agents/runtime.js';
 
 var MAX_RETRIES = 3;
 
+function executeRecoverySleep(ms, resolve) {
+  setTimeout(resolve, ms);
+}
+
+function recoverySleep(ms) {
+  return new Promise(executeRecoverySleep.bind(null, ms));
+}
+
 // ═══════════════════════════════════════════════════════════
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
@@ -25,7 +33,9 @@ export async function diagnoseAndRecover(toolName, errorMsg, context) {
   // Record error in memory
   try {
     memoryManager.recordError(toolName + ' failed: ' + errorMsg);
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Load and increment retries
   var retries = 0;
@@ -34,6 +44,7 @@ export async function diagnoseAndRecover(toolName, errorMsg, context) {
     var allRetries = memoryManager.getRetries();
     retries = allRetries[recoveryKey] || 1;
   } catch (_) {
+    // Intentionally fallback to 1 retry if memoryManager retrieval fails
     retries = 1;
   }
 
@@ -60,7 +71,7 @@ export async function diagnoseAndRecover(toolName, errorMsg, context) {
   // 2. Diagnose: File lock or resource busy
   if (err.includes('ebusy') || err.includes('resource busy') || err.includes('lock')) {
     // Suggest immediate retry after short backoff
-    await new Promise(function(r) { setTimeout(r, 1000 * retries); });
+    await recoverySleep(1000 * retries);
     return {
       action: 'retry',
       message: 'Diagnosed resource lock. Retrying after backoff delay.'

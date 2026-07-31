@@ -1,13 +1,16 @@
 // events.js — Simple event bus for loose coupling
 
 var listeners = {};
+var onceHandlers = [];
+
+function performOff(event, handler) {
+  off(event, handler);
+}
 
 export function on(event, handler) {
   if (!listeners[event]) listeners[event] = [];
   listeners[event].push(handler);
-  return function() {
-    off(event, handler);
-  };
+  return performOff.bind(null, event, handler);
 }
 
 export function off(event, handler) {
@@ -18,16 +21,34 @@ export function off(event, handler) {
 
 export function emit(event, data) {
   if (!listeners[event]) return;
-  listeners[event].forEach(function(fn) {
-    try { fn(data); } catch (e) { console.error('[EVENTS] Handler error:', e); }
-  });
+  var list = listeners[event];
+  for (var i = 0; i < list.length; i++) {
+    var fn = list[i];
+    try {
+      fn(data);
+    } catch (e) {
+      console.error('[EVENTS] Handler error:', e);
+    }
+  }
+}
+
+function handleOnce(index, data) {
+  var entry = onceHandlers[index];
+  if (!entry) return;
+  off(entry.event, entry.wrapper);
+  entry.handler(data);
+  onceHandlers[index] = null;
 }
 
 export function once(event, handler) {
-  var wrapper = function(data) {
-    off(event, wrapper);
-    handler(data);
+  var index = onceHandlers.length;
+  var wrapper = handleOnce.bind(null, index);
+  var entry = {
+    event: event,
+    handler: handler,
+    wrapper: wrapper
   };
+  onceHandlers.push(entry);
   on(event, wrapper);
 }
 

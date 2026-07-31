@@ -50,7 +50,13 @@ export async function listModels(config) {
   var res = await fetch(url);
   if (!res.ok) throw await handleApiResponseError(res, 'Ollama');
   var data = await safeReadJson(res, 'Ollama');
-  return data.models ? data.models.map(function(m) { return m.name; }) : [];
+  var models = [];
+  if (data.models) {
+    for (var i = 0; i < data.models.length; i++) {
+      models.push(data.models[i].name);
+    }
+  }
+  return models;
 }
 
 export async function embeddings(config, texts) {
@@ -86,11 +92,12 @@ function parseChunk(data) {
 }
 
 function convertMessages(messages) {
-  return messages.map(function(m) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
     var msg = { role: m.role, content: m.content || '' };
     if (m.thinking) msg.thinking = m.thinking;
     
-    // For Ollama tool role, name is required
     if (m.role === 'tool') {
       msg.name = m.tool_name || m.name || '';
     }
@@ -98,7 +105,9 @@ function convertMessages(messages) {
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     
     if (m.tool_calls) {
-      msg.tool_calls = m.tool_calls.map(function(tc) {
+      var convertedToolCalls = [];
+      for (var tcIndex = 0; tcIndex < m.tool_calls.length; tcIndex++) {
+        var tc = m.tool_calls[tcIndex];
         var args = tc.function?.arguments || tc.arguments || {};
         if (typeof args === 'string') {
           try {
@@ -108,24 +117,28 @@ function convertMessages(messages) {
             args = {};
           }
         }
-        return {
+        convertedToolCalls.push({
           id: tc.id,
           type: tc.type || 'function',
           function: {
             name: tc.function?.name || tc.name,
             arguments: args
           }
-        };
-      });
+        });
+      }
+      msg.tool_calls = convertedToolCalls;
     }
     
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
-      msg.images = rawImages.map(function(img) {
-        return String(img).replace(/^data:[^;]+;base64,/, '');
-      });
+      var imageList = [];
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        imageList.push(String(rawImages[imgIdx]).replace(/^data:[^;]+;base64,/, ''));
+      }
+      msg.images = imageList;
     }
-    return msg;
-  });
+    converted.push(msg);
+  }
+  return converted;
 }

@@ -20,7 +20,7 @@ import * as projectKnowledge from './projectKnowledge.js';
  * Search for files matching a glob pattern.
  * Uses SQLite index when ready, falls back to filesystem walk.
  *
- * @param {string} pattern - Glob pattern (e.g. "*.js", "src/**&#47;*.ts")
+ * @param {string} pattern - Glob pattern (e.g. "*.js", "src/**&#47;*.js")
  * @param {string} rootDir - Absolute workspace root
  * @param {string} subDir  - Relative subdirectory to scope search (optional)
  * @returns {Promise<string[]>} Array of relative paths
@@ -28,23 +28,21 @@ import * as projectKnowledge from './projectKnowledge.js';
 export async function searchFiles(pattern, rootDir, subDir) {
   if (!pattern || !rootDir) return [];
 
-  // Strip leading globstar patterns for LIKE conversion
   var likePattern = pattern.replace(/\*\*/g, '*').replace(/\?/g, '_');
 
-  // Attempt SQLite search if index is ready
   var status = projectKnowledge.getIndexStatus();
   if (status.ready && status.indexed) {
     try {
-      // Generate a LIKE query from the glob pattern
       var sqlLike = patternToLike(likePattern);
       var results = projectKnowledge.searchByGlob(sqlLike, subDir || '');
       if (results && results.length) {
         return results;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
-  // Fallback: filesystem walk
   return await fallbackWalk(pattern, rootDir, subDir);
 }
 
@@ -63,7 +61,6 @@ export async function searchFiles(pattern, rootDir, subDir) {
 export async function searchContent(query, rootDir) {
   if (!query || !rootDir) return [];
 
-  // Attempt SQLite search if index is ready
   var status = projectKnowledge.getIndexStatus();
   if (status.ready && status.indexed) {
     try {
@@ -71,10 +68,11 @@ export async function searchContent(query, rootDir) {
       if (results && results.length) {
         return results;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
 
-  // Fallback: filesystem grep (read files and search)
   return await fallbackGrep(query, rootDir);
 }
 
@@ -101,16 +99,12 @@ export function getSearchStatus() {
 // ========================================================
 
 function patternToLike(pattern) {
-  // Convert glob to SQL LIKE pattern
   var like = pattern;
   like = like.replace(/\*/g, '%');
   like = like.replace(/\?/g, '_');
   like = like.replace(/\./g, '.');
-  // Remove leading ./ or /
   like = like.replace(/^[.\\/]+/, '');
-  // Ensure leading %
   if (!like.startsWith('%')) like = '%' + like;
-  // Ensure trailing % if not a specific extension pattern
   if (like.includes('.') && !like.endsWith('%')) like = like + '%';
   else if (!like.endsWith('%')) like = like + '%';
   return like;
@@ -120,44 +114,54 @@ function patternToLike(pattern) {
 // INTERNAL: Filesystem fallback walk
 // ========================================================
 
+function globToRegex(pat) {
+  var escaped = pat.replace(/[-[\]{}()+?.,\^$|#\s]/g, '\\$&');
+  var wildcards = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp('^' + wildcards + '$', 'i');
+}
+
+async function walkFilesFallback(dir, regex, searchDir, matches) {
+  try {
+    var list = await fs.readdir(dir, { withFileTypes: true });
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var fullPath = path.resolve(dir, item.name);
+      if (item.isDirectory()) {
+        if (item.name === 'node_modules' || item.name === '.git' || item.name === '.venv' || item.name === '__pycache__') continue;
+        if (item.name.startsWith('.')) continue;
+        await walkFilesFallback(fullPath, regex, searchDir, matches);
+      } else {
+        if (regex.test(item.name)) {
+          matches.push(path.relative(searchDir, fullPath));
+        }
+      }
+    }
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+}
+
+async function runTouchFile(relPath) {
+  try {
+    await projectKnowledge.touchFile(relPath);
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+}
+
 async function fallbackWalk(pattern, rootDir, subDir) {
   var searchDir = subDir ? path.join(rootDir, subDir) : rootDir;
   var matches = [];
-
-  function globToRegex(pat) {
-    var escaped = pat.replace(/[-[\]{}()+?.,\^$|#\s]/g, '\\$&');
-    var wildcards = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
-    return new RegExp('^' + wildcards + '$', 'i');
-  }
-
   var regex = globToRegex(pattern);
 
-  async function walk(dir) {
-    try {
-      var list = await fs.readdir(dir, { withFileTypes: true });
-      for (var i = 0; i < list.length; i++) {
-        var item = list[i];
-        var fullPath = path.resolve(dir, item.name);
-        if (item.isDirectory()) {
-          if (item.name === 'node_modules' || item.name === '.git' || item.name === '.venv' || item.name === '__pycache__') continue;
-          if (item.name.startsWith('.')) continue;
-          await walk(fullPath);
-        } else {
-          if (regex.test(item.name)) {
-            matches.push(path.relative(searchDir, fullPath));
-          }
-        }
-      }
-    } catch (_) {}
+  if (existsSync(searchDir)) {
+    await walkFilesFallback(searchDir, regex, searchDir, matches);
   }
 
-  if (existsSync(searchDir)) await walk(searchDir);
-
-  // Schedule re-index of newly discovered files
   if (matches.length) {
     for (var m = 0; m < matches.length; m++) {
       var relPath = subDir ? path.join(subDir, matches[m]) : matches[m];
-      projectKnowledge.touchFile(relPath).catch(function() {});
+      runTouchFile(relPath);
     }
   }
 
@@ -176,44 +180,54 @@ var GREP_BINARY_EXTS = {
   '.class':1,'.pyc':1,'.pyd':1,'.ttf':1,'.otf':1,'.woff':1,'.woff2':1,'.eot':1
 };
 
+function sortSearchResultsByMatches(a, b) {
+  return b.matches - a.matches;
+}
+
+async function walkGrepFallback(dir, lowerQuery, rootDir, results) {
+  try {
+    var entries = await fs.readdir(dir, { withFileTypes: true });
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var fullPath = path.resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.venv' || entry.name.startsWith('.')) continue;
+        await walkGrepFallback(fullPath, lowerQuery, rootDir, results);
+      } else {
+        var ext = path.extname(entry.name).toLowerCase();
+        if (GREP_BINARY_EXTS[ext]) continue;
+        try {
+          var content = await fs.readFile(fullPath, 'utf-8');
+          var lowerContent = content.toLowerCase();
+          var idx = lowerContent.indexOf(lowerQuery);
+          if (idx !== -1) {
+            var start = Math.max(0, idx - 40);
+            var end = Math.min(content.length, idx + lowerQuery.length + 40);
+            var snippet = content.substring(start, end).replace(/\n/g, ' ');
+            var relPath = path.relative(rootDir, fullPath);
+            var matchesPattern = lowerQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            var matchesCount = (lowerContent.match(new RegExp(matchesPattern, 'g')) || []).length;
+            results.push({
+              path: relPath,
+              matches: matchesCount,
+              snippet: '...' + snippet + '...'
+            });
+          }
+        } catch (_) {
+          // Intentionally ignored to allow safe execution fallback
+        }
+      }
+    }
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+}
+
 async function fallbackGrep(query, rootDir) {
   var results = [];
   var lowerQuery = query.toLowerCase();
 
-  async function walk(dir) {
-    try {
-      var entries = await fs.readdir(dir, { withFileTypes: true });
-      for (var i = 0; i < entries.length; i++) {
-        var entry = entries[i];
-        var fullPath = path.resolve(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.venv' || entry.name.startsWith('.')) continue;
-          await walk(fullPath);
-        } else {
-          var ext = path.extname(entry.name).toLowerCase();
-          if (GREP_BINARY_EXTS[ext]) continue;
-          try {
-            var content = await fs.readFile(fullPath, 'utf-8');
-            var lowerContent = content.toLowerCase();
-            var idx = lowerContent.indexOf(lowerQuery);
-            if (idx !== -1) {
-              var start = Math.max(0, idx - 40);
-              var end = Math.min(content.length, idx + query.length + 40);
-              var snippet = content.substring(start, end).replace(/\n/g, ' ');
-              var relPath = path.relative(rootDir, fullPath);
-              results.push({
-                path: relPath,
-                matches: (lowerContent.match(new RegExp(lowerQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length,
-                snippet: '...' + snippet + '...'
-              });
-            }
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
-  }
-
-  await walk(rootDir);
-  results.sort(function(a, b) { return b.matches - a.matches; });
+  await walkGrepFallback(rootDir, lowerQuery, rootDir, results);
+  results.sort(sortSearchResultsByMatches);
   return results.slice(0, 20);
 }

@@ -40,13 +40,23 @@ import * as planningEngine from './planningEngine.js';
 import * as runtime from '../agents/runtime.js';
 import * as projectKnowledge from './projectKnowledge.js';
 
+function getPlanFromRuntime(id) {
+  return runtime.getPlan(id);
+}
+
+function updatePlanInRuntime(id, plan) {
+  runtime.updatePlan(plan);
+}
+
+function getAllPlansFromRuntime() {
+  return runtime.getAllPlans();
+}
+
 // Wire planningEngine persistence to runtime's in-memory plan cache.
-// This replaces the old SQLite-backed storage — plans are now stored
-// in VS Code workspaceState via extension.js event listeners.
 planningEngine.setStorage({
-  get: function(id) { return runtime.getPlan(id); },
-  set: function(id, plan) { runtime.updatePlan(plan); },
-  getAll: function() { return runtime.getAllPlans(); }
+  get: getPlanFromRuntime,
+  set: updatePlanInRuntime,
+  getAll: getAllPlansFromRuntime
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -69,7 +79,6 @@ export async function createPlan(goal, context, sessionId) {
 }
 
 export function getSessionPlans(sessionId) {
-  // Runtime is the authoritative cache
   return runtime.getPlansBySession(sessionId);
 }
 
@@ -78,7 +87,6 @@ export function getSessionPlans(sessionId) {
  * Tries Runtime cache first.
  */
 export function getPlan(planId) {
-  // Runtime is authoritative
   return runtime.getPlan(planId);
 }
 
@@ -97,7 +105,6 @@ export function updatePlanStatus(planId, status) {
  */
 export function storePlan(plan) {
   if (!plan) return;
-  // If it's a legacy flat plan, let the engine migrate and persist
   if (plan.steps && !plan.phases) {
     var migrated = planningEngine.migrateLegacyPlan(plan);
     if (migrated) {
@@ -105,12 +112,12 @@ export function storePlan(plan) {
       return;
     }
   }
-  // Register/update in runtime cache
   runtime.registerPlan(plan);
-  // Best-effort persistence
   try {
     projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 /**
@@ -127,12 +134,20 @@ export function getActivePlansContext() {
         for (var pi = 0; pi < p.phases.length; pi++) {
           if (p.phases[pi].tasks) {
             totalTasks += p.phases[pi].tasks.length;
-            completedTasks += p.phases[pi].tasks.filter(function(t) { return t.status === 'completed'; }).length;
+            for (var ti = 0; ti < p.phases[pi].tasks.length; ti++) {
+              if (p.phases[pi].tasks[ti].status === 'completed') {
+                completedTasks++;
+              }
+            }
           }
         }
       } else if (p.steps) {
         totalTasks = p.steps.length;
-        completedTasks = p.steps.filter(function(s) { return s.status === 'completed'; }).length;
+        for (var si = 0; si < p.steps.length; si++) {
+          if (p.steps[si].status === 'completed') {
+            completedTasks++;
+          }
+        }
       }
       if (totalTasks === 0 || completedTasks < totalTasks) {
         activePlans.push(p);
@@ -150,55 +165,35 @@ export function getActivePlansContext() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// NEW API — Delegating to planningEngine, syncing to Runtime
+// NEW PLANNING SERVICE API
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Analyze a user request before planning.
- */
 export function analyzeRequest(goal, context, workspace) {
   return planningEngine.analyzeRequest(goal, context, workspace);
 }
 
-/**
- * Get all plans as a formatted context string for the LLM.
- * Reads from Runtime cache — always authoritative.
- */
-export function getAllPlansContext() {
-  var allPlans = runtime.getAllPlans();
-  if (!allPlans.length) return '';
-
-  var lines = ['## ALL PLANS'];
-  for (var i = 0; i < allPlans.length; i++) {
-    var p = allPlans[i];
-    lines.push('');
-    lines.push('Plan: ' + esc(p.id));
-    lines.push('  Goal: ' + esc(p.goal || '').substring(0, 100));
-    lines.push('  Status: ' + (p.status || 'unknown'));
-    if (p.summary) lines.push('  Summary: ' + p.summary);
-    if (p.phases) {
-      for (var ph = 0; ph < p.phases.length; ph++) {
-        var phase = p.phases[ph];
-        lines.push('  Phase ' + phase.order + ': ' + phase.name + ' [' + phase.status + ']');
-        if (phase.tasks) {
-          for (var t = 0; t < phase.tasks.length; t++) {
-            var task = phase.tasks[t];
-            lines.push('    Task ' + task.id + ': ' + esc(task.description) + ' [' + task.status + ']');
-          }
-        }
-      }
-    }
-  }
-  return lines.join('\n');
-}
-
-/**
- * Build a plan from an analysis result and register it with Runtime.
- */
 export function buildPlan(analysis, sessionId) {
   var plan = planningEngine.buildPlan(analysis, sessionId);
   runtime.registerPlan(plan);
   return plan;
+}
+
+function matchesTask(strId, lowerStr, numId, cleanTaskId, tObj, idx, ord) {
+  if (!tObj) return false;
+  var tId = String(tObj.id || '').trim();
+  var tDesc = String(tObj.description || '').trim().toLowerCase();
+  var tOrd = tObj.order || ord || (idx + 1);
+  if (tId === strId || tId.toLowerCase() === lowerStr) return true;
+  if (!isNaN(numId) && numId > 0 && (tOrd === numId || (idx + 1) === numId)) return true;
+  var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+  if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
+  if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
+  var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
+  if (ptMatch) {
+    var reqTask = Number(ptMatch[2]);
+    if (ord === reqTask || (idx + 1) === reqTask) return true;
+  }
+  return false;
 }
 
 /**
@@ -209,43 +204,21 @@ export function buildPlan(analysis, sessionId) {
  * The result is always synced back to the Runtime.
  */
 export function updateTaskStatus(planId, taskId, status, observation) {
-  // Try the engine (SQLite-backed) first
   var result = planningEngine.updateTaskStatus(planId, taskId, status, observation);
 
-  // Engine succeeded — sync result to Runtime
   if (result.success) {
     if (result.plan) runtime.updatePlan(result.plan);
     return result;
   }
 
-  // Engine failed — try to find the plan in Runtime cache
   var plan = runtime.getPlan(planId) || runtime.getCurrentPlan();
-  if (!plan) return result; // not in Runtime either — return original failure
+  if (!plan) return result;
 
-  // Find the task by searching phases or steps using flexible matching
   var task = null;
   var strId = String(taskId).trim();
   var numId = Number(strId);
   var lowerStr = strId.toLowerCase();
   var cleanTaskId = lowerStr.replace(/^(task[_\s]?|step[_\s]?|t)/, '');
-
-  function matches(tObj, idx, ord) {
-    if (!tObj) return false;
-    var tId = String(tObj.id || '').trim();
-    var tDesc = String(tObj.description || '').trim().toLowerCase();
-    var tOrd = tObj.order || ord || (idx + 1);
-    if (tId === strId || tId.toLowerCase() === lowerStr) return true;
-    if (!isNaN(numId) && numId > 0 && (tOrd === numId || (idx + 1) === numId)) return true;
-    var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
-    if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
-    if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
-    var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
-    if (ptMatch) {
-      var reqTask = Number(ptMatch[2]);
-      if (ord === reqTask || (idx + 1) === reqTask) return true;
-    }
-    return false;
-  }
 
   if (plan.phases) {
     var gIdx = 0;
@@ -254,7 +227,7 @@ export function updateTaskStatus(planId, taskId, status, observation) {
       if (phase.tasks) {
         for (var t = 0; t < phase.tasks.length; t++) {
           gIdx++;
-          if (matches(phase.tasks[t], t, gIdx)) {
+          if (matchesTask(strId, lowerStr, numId, cleanTaskId, phase.tasks[t], t, gIdx)) {
             task = phase.tasks[t];
             break;
           }
@@ -266,7 +239,7 @@ export function updateTaskStatus(planId, taskId, status, observation) {
 
   if (!task && plan.steps) {
     for (var s = 0; s < plan.steps.length; s++) {
-      if (matches(plan.steps[s], s, s + 1)) {
+      if (matchesTask(strId, lowerStr, numId, cleanTaskId, plan.steps[s], s, s + 1)) {
         task = plan.steps[s];
         break;
       }
@@ -275,7 +248,6 @@ export function updateTaskStatus(planId, taskId, status, observation) {
 
   if (!task) return result;
 
-  // Update the task directly in memory
   task.status = status;
   if (observation) {
     if (!task.observations) task.observations = [];
@@ -290,12 +262,12 @@ export function updateTaskStatus(planId, taskId, status, observation) {
   if (status === 'active') task.startedAt = Date.now();
   plan.updatedAt = Date.now();
 
-  // Best-effort SQLite persistence
   try {
     projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
-  // Sync the updated plan back to Runtime
   runtime.updatePlan(plan);
 
   return {

@@ -29,9 +29,15 @@
 //   replanFromObservation(planId, observation) → Plan
 
 var _memStore = {};
+function getMemStoreSetting(key) {
+  return _memStore[key];
+}
+function setMemStoreSetting(key, val) {
+  _memStore[key] = val;
+}
 var _storage = {
-  getSetting: function(key) { return _memStore[key]; },
-  setSetting: function(key, val) { _memStore[key] = val; }
+  getSetting: getMemStoreSetting,
+  setSetting: setMemStoreSetting
 };
 
 export function setStorageAdapter(adapter) {
@@ -413,29 +419,36 @@ function reindexTasks(plan) {
   var oldToNewIdMap = {};
   var taskCounter = 1;
 
-  plan.phases.forEach(function(phase) {
+  for (var p = 0; p < plan.phases.length; p++) {
+    var phase = plan.phases[p];
     if (phase.tasks) {
-      phase.tasks.forEach(function(task) {
+      for (var t = 0; t < phase.tasks.length; t++) {
+        var task = phase.tasks[t];
         var oldId = task.id;
         var newId = String(taskCounter++);
         task.id = newId;
         oldToNewIdMap[oldId] = newId;
-      });
+      }
     }
-  });
+  }
 
   // Update dependencies with new sequential IDs
-  plan.phases.forEach(function(phase) {
-    if (phase.tasks) {
-      phase.tasks.forEach(function(task) {
-        if (task.dependsOn) {
-          task.dependsOn = task.dependsOn.map(function(depId) {
-            return oldToNewIdMap[depId] || depId;
-          });
+  for (var p2 = 0; p2 < plan.phases.length; p2++) {
+    var phase2 = plan.phases[p2];
+    if (phase2.tasks) {
+      for (var t2 = 0; t2 < phase2.tasks.length; t2++) {
+        var task2 = phase2.tasks[t2];
+        if (task2.dependsOn) {
+          var newDeps = [];
+          for (var d = 0; d < task2.dependsOn.length; d++) {
+            var depId = task2.dependsOn[d];
+            newDeps.push(oldToNewIdMap[depId] || depId);
+          }
+          task2.dependsOn = newDeps;
         }
-      });
+      }
     }
-  });
+  }
 }
 
 /**
@@ -525,7 +538,9 @@ export function updateTaskStatus(planId, taskId, status, observation) {
       if (currentRuntimePlan && (currentRuntimePlan.id === planId || !planId)) {
         plan = currentRuntimePlan;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
   if (!plan) return { success: false, blockedTasks: [], readyTasks: [] };
 
@@ -768,7 +783,11 @@ export function formatPlanContext(plan) {
   lines.push('Plan ID: ' + (plan.id || 'unknown') + ' | Status: ' + plan.status + ' | Estimated: ~' + plan.estimatedIterations + ' iterations | Complexity: ' + plan.complexity.label);
 
   if (plan.risks && plan.risks.length) {
-    lines.push('Risks: ' + plan.risks.map(function(r) { return r.description; }).join('; '));
+    var riskDescriptions = [];
+    for (var ri = 0; ri < plan.risks.length; ri++) {
+      riskDescriptions.push(plan.risks[ri].description);
+    }
+    lines.push('Risks: ' + riskDescriptions.join('; '));
   }
 
   lines.push('');
@@ -1039,30 +1058,31 @@ function buildExecutionGraph(phases) {
   };
 }
 
+function dfsPath(nodes, visited, longest, path, nodeId) {
+  if (visited[nodeId]) return longest;
+  visited[nodeId] = true;
+  path.push(nodeId);
+  var successors = nodes[nodeId] ? nodes[nodeId].successors : [];
+  if (successors.length === 0) {
+    if (path.length > longest.length) {
+      longest = path.slice();
+    }
+  } else {
+    for (var i = 0; i < successors.length; i++) {
+      longest = dfsPath(nodes, visited, longest, path, successors[i]);
+    }
+  }
+  path.pop();
+  visited[nodeId] = false;
+  return longest;
+}
+
 function findCriticalPath(nodes, entryPoints) {
   var longest = [];
   var visited = {};
 
-  function dfs(nodeId, path) {
-    if (visited[nodeId]) return;
-    visited[nodeId] = true;
-    path.push(nodeId);
-    var successors = nodes[nodeId] ? nodes[nodeId].successors : [];
-    if (successors.length === 0) {
-      if (path.length > longest.length) {
-        longest = path.slice();
-      }
-    } else {
-      for (var i = 0; i < successors.length; i++) {
-        dfs(successors[i], path);
-      }
-    }
-    path.pop();
-    visited[nodeId] = false;
-  }
-
   for (var e = 0; e < entryPoints.length; e++) {
-    dfs(entryPoints[e], []);
+    longest = dfsPath(nodes, visited, longest, [], entryPoints[e]);
   }
 
   return longest;
@@ -1094,13 +1114,20 @@ function detectParallelGroups(tasks) {
       if (noDep) {
         group.push(tasks[j]);
         assigned[tasks[j].id] = true;
-        // Mark as parallel with each other
-        tasks[j].parallelWith = group.filter(function(g) { return g.id !== tasks[j].id; }).map(function(g) { return g.id; });
+        
+        var parallelIds = [];
         for (var g = 0; g < group.length; g++) {
           if (group[g].id !== tasks[j].id) {
-            if (!group[g].parallelWith) group[g].parallelWith = [];
-            if (group[g].parallelWith.indexOf(tasks[j].id) === -1) {
-              group[g].parallelWith.push(tasks[j].id);
+            parallelIds.push(group[g].id);
+          }
+        }
+        tasks[j].parallelWith = parallelIds;
+
+        for (var g2 = 0; g2 < group.length; g2++) {
+          if (group[g2].id !== tasks[j].id) {
+            if (!group[g2].parallelWith) group[g2].parallelWith = [];
+            if (group[g2].parallelWith.indexOf(tasks[j].id) === -1) {
+              group[g2].parallelWith.push(tasks[j].id);
             }
           }
         }
@@ -1193,6 +1220,44 @@ function revisePlan(plan, observation) {
 // INTERNAL: Search helpers
 // ═══════════════════════════════════════════════════════════
 
+function matchesTaskInstance(strId, lowerStr, numId, cleanTaskId, task, index, globalOrder, phaseOrder) {
+  if (!task) return false;
+
+  var tId = String(task.id || '').trim();
+  var tDesc = String(task.description || '').trim().toLowerCase();
+  var tOrder = task.order || globalOrder || (index + 1);
+
+  // 1. Exact or case-insensitive ID match
+  if (tId === strId || tId.toLowerCase() === lowerStr) return true;
+
+  // 2. Numeric order match (e.g., taskId = "1" or 1, matching order)
+  if (!isNaN(numId) && numId > 0 && (tOrder === numId || (index + 1) === numId)) return true;
+
+  // 3. Normalized ID match (e.g., 't1_1' -> '1_1', 'step_1' -> '1')
+  var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
+  if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
+  if (cleanTId && !isNaN(Number(cleanTaskId)) && Number(cleanTId) === Number(cleanTaskId)) return true;
+
+  // 4. Description / title match
+  if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
+
+  // 5. Phase_Task notation (e.g. 't1_1' -> task 1, 't1_2' -> task 2)
+  var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
+  if (ptMatch) {
+    var reqPhase = Number(ptMatch[1]);
+    var reqTask = Number(ptMatch[2]);
+    if (phaseOrder != null) {
+      if (phaseOrder === reqPhase && ((index + 1) === reqTask || globalOrder === reqTask)) {
+        return true;
+      }
+    } else {
+      if (globalOrder === reqTask || (index + 1) === reqTask) return true;
+    }
+  }
+
+  return false;
+}
+
 function findTaskInPlan(plan, taskId) {
   if (!plan || taskId == null) return null;
 
@@ -1200,44 +1265,6 @@ function findTaskInPlan(plan, taskId) {
   var numId = Number(strId);
   var lowerStr = strId.toLowerCase();
   var cleanTaskId = lowerStr.replace(/^(task[_\s]?|step[_\s]?|t)/, '');
-
-  function matchesTask(task, index, globalOrder, phaseOrder) {
-    if (!task) return false;
-
-    var tId = String(task.id || '').trim();
-    var tDesc = String(task.description || '').trim().toLowerCase();
-    var tOrder = task.order || globalOrder || (index + 1);
-
-    // 1. Exact or case-insensitive ID match
-    if (tId === strId || tId.toLowerCase() === lowerStr) return true;
-
-    // 2. Numeric order match (e.g., taskId = "1" or 1, matching order)
-    if (!isNaN(numId) && numId > 0 && (tOrder === numId || (index + 1) === numId)) return true;
-
-    // 3. Normalized ID match (e.g., 't1_1' -> '1_1', 'step_1' -> '1')
-    var cleanTId = tId.toLowerCase().replace(/^(task[_\s]?|step[_\s]?|t)/, '');
-    if (cleanTId && cleanTaskId && cleanTId === cleanTaskId) return true;
-    if (cleanTId && !isNaN(Number(cleanTaskId)) && Number(cleanTId) === Number(cleanTaskId)) return true;
-
-    // 4. Description / title match
-    if (tDesc && lowerStr && (tDesc === lowerStr || tDesc.includes(lowerStr) || lowerStr.includes(tDesc))) return true;
-
-    // 5. Phase_Task notation (e.g. 't1_1' -> task 1, 't1_2' -> task 2)
-    var ptMatch = lowerStr.match(/^t?(\d+)[._-](\d+)$/);
-    if (ptMatch) {
-      var reqPhase = Number(ptMatch[1]);
-      var reqTask = Number(ptMatch[2]);
-      if (phaseOrder != null) {
-        if (phaseOrder === reqPhase && ((index + 1) === reqTask || globalOrder === reqTask)) {
-          return true;
-        }
-      } else {
-        if (globalOrder === reqTask || (index + 1) === reqTask) return true;
-      }
-    }
-
-    return false;
-  }
 
   // Search inside plan.phases
   if (plan.phases && Array.isArray(plan.phases)) {
@@ -1247,7 +1274,7 @@ function findTaskInPlan(plan, taskId) {
       if (phase.tasks && Array.isArray(phase.tasks)) {
         for (var t = 0; t < phase.tasks.length; t++) {
           globalIndex++;
-          if (matchesTask(phase.tasks[t], t, globalIndex, phase.order || (p + 1))) {
+          if (matchesTaskInstance(strId, lowerStr, numId, cleanTaskId, phase.tasks[t], t, globalIndex, phase.order || (p + 1))) {
             return phase.tasks[t];
           }
         }
@@ -1258,7 +1285,7 @@ function findTaskInPlan(plan, taskId) {
   // Search inside plan.steps
   if (plan.steps && Array.isArray(plan.steps)) {
     for (var s = 0; s < plan.steps.length; s++) {
-      if (matchesTask(plan.steps[s], s, s + 1, null)) {
+      if (matchesTaskInstance(strId, lowerStr, numId, cleanTaskId, plan.steps[s], s, s + 1, null)) {
         return plan.steps[s];
       }
     }
@@ -1302,9 +1329,14 @@ function summarizePlan(plan) {
 // INTERNAL: Persistence
 // ═══════════════════════════════════════════════════════════
 
+function fallbackGetPlan(id) {
+  return null;
+}
+function fallbackSetPlan(id, plan) {}
+
 var _planStorage = {
-  get: function(id) { return null; },
-  set: function(id, plan) { }
+  get: fallbackGetPlan,
+  set: fallbackSetPlan
 };
 
 export function setStorage(storage) {
@@ -1349,8 +1381,9 @@ function loadAllActivePlans() {
 
 /**
  * Migrate a legacy flat-checklist plan to the new hierarchical structure.
+ * Exported — used by planningManager.js to migrate legacy plans at runtime.
  */
-function migrateLegacyPlan(legacy) {
+export function migrateLegacyPlan(legacy) {
   var tasks = [];
   for (var i = 0; i < legacy.steps.length; i++) {
     var s = legacy.steps[i];

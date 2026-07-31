@@ -10,45 +10,45 @@
   /**
    * HTML-escape a string.
    */
-  window.sharedEsc = function (s) {
+  function sharedEsc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  };
+  }
 
   /**
    * Truncate a string to n characters with ellipsis.
    */
-  window.sharedTruncate = function (s, n) {
+  function sharedTruncate(s, n) {
     return s.length > n ? s.substring(0, n) + '\u2026' : s;
-  };
+  }
 
   /**
    * Convert a value to a flat string representation.
    */
-  window.sharedFlatStr = function (v) {
+  function sharedFlatStr(v) {
     if (v == null) return '';
     if (typeof v === 'string') return v;
     try { return JSON.stringify(v); } catch (_) { return String(v); }
-  };
+  }
 
   /**
    * Format a timestamp to a localized time string.
    */
-  window.sharedFormatTime = function (ts) {
+  function sharedFormatTime(ts) {
     if (!ts) return '';
     var d = new Date(ts);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  }
 
   /**
    * Strip ANSI escape sequences, shell integration markers, and control
    * characters from terminal output. Keeps only human-readable text.
    * This is the canonical client-side implementation.
    */
-  window.sharedStripAnsi = function (text) {
+  function sharedStripAnsi(text) {
     if (!text) return '';
     return String(text)
       .replace(/\x1B\]\d+(?:;[^\x1B]*)*(?:\x1B\\)/g, '')
@@ -63,21 +63,29 @@
       .replace(/\]133;/g, '')
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n');
-  };
+  }
 
   /**
    * Generate a unique identifier for conversations and messages.
    */
-  window.sharedGenId = function () {
+  function sharedGenId() {
     return 'cr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-  };
+  }
 
   /**
    * Safely parse JSON with a fallback value.
    */
-  window.sharedSafeJsonParse = function (str, fallback) {
+  function sharedSafeJsonParse(str, fallback) {
     try { return JSON.parse(str); } catch (_) { return fallback; }
-  };
+  }
+
+  window.sharedEsc = sharedEsc;
+  window.sharedTruncate = sharedTruncate;
+  window.sharedFlatStr = sharedFlatStr;
+  window.sharedFormatTime = sharedFormatTime;
+  window.sharedStripAnsi = sharedStripAnsi;
+  window.sharedGenId = sharedGenId;
+  window.sharedSafeJsonParse = sharedSafeJsonParse;
 
   console.log('[WEBVIEW SHARED] Utilities loaded');
 })();

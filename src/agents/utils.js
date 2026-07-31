@@ -28,16 +28,34 @@ export function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function executeSleep(ms, resolve) {
+  setTimeout(resolve, ms);
+}
+
 export function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(executeSleep.bind(null, ms));
+}
+
+function runDebounced(debouncer, args) {
+  debouncer.fn.apply(null, args);
+}
+
+function handleDebounceTimeout(debouncer, args) {
+  runDebounced(debouncer, args);
+}
+
+function executeDebounce(debouncer, ...args) {
+  clearTimeout(debouncer.timer);
+  debouncer.timer = setTimeout(handleDebounceTimeout.bind(null, debouncer, args), debouncer.ms);
 }
 
 export function debounce(fn, ms) {
-  var timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
+  var debouncer = {
+    fn: fn,
+    ms: ms,
+    timer: null
   };
+  return executeDebounce.bind(null, debouncer);
 }
 
 export function safeJsonParse(str, fallback) {
@@ -106,7 +124,9 @@ export async function handleApiResponseError(response, providerName) {
         errorMsg = truncate(bodyText.replace(/<[^>]*>/g, '').trim(), 300);
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   var prefix = providerName ? (providerName + ' API Error') : 'API Error';
   
@@ -137,7 +157,9 @@ export async function safeReadJson(response, providerName) {
     try {
       var cloneForText = response.clone();
       text = await cloneForText.text();
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
     if (text.trim().startsWith('<') || text.toLowerCase().includes('html')) {
       throw new Error((providerName ? providerName + ' API Error: ' : '') + 'Expected JSON response, but received HTML. Please check if your Base URL is correct.');
     }
@@ -151,7 +173,9 @@ export async function safeReadJson(response, providerName) {
     try {
       var cloneForFallback = response.clone();
       bodyText = await cloneForFallback.text();
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
     if (bodyText.trim().startsWith('<') || bodyText.toLowerCase().includes('html')) {
       throw new Error((providerName ? providerName + ' API Error: ' : '') + 'Expected JSON response, but received HTML. Please check if your Base URL is correct.');
     }

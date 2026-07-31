@@ -12,7 +12,11 @@
 
   var vscodeState = {};
   if (!!window.VSCODE && window.VSCODE_API) {
-    try { vscodeState = window.VSCODE_API.getState() || {}; } catch (e) {}
+    try {
+      vscodeState = window.VSCODE_API.getState() || {};
+    } catch (e) {
+      // Intentionally ignore if VS Code state retrieval is restricted or errors
+    }
   }
 
   var state = {
@@ -62,27 +66,40 @@
           selectedProvider: state.selectedProvider,
           workspaceFolder: state.workspaceFolder
         });
-      } catch (e) {}
+      } catch (e) {
+        // Intentionally ignore if VS Code state storage is restricted or errors
+      }
     }
   }
 
-  // Shared utilities from webview-shared.js — single source of truth
-  var esc = window.sharedEsc || function(value) {
+  function defaultEsc(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  };
-  var sharedGenId = window.sharedGenId || function() {
+  }
+  var esc = window.sharedEsc || defaultEsc;
+
+  function defaultGenId() {
     return "cr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
-  };
+  }
+  var sharedGenId = window.sharedGenId || defaultGenId;
 
   function loadConversations() {
-    try { state.conversations = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (_) { state.conversations = []; }
+    try {
+      state.conversations = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    } catch (_) {
+      // Intentionally fall back to empty list if localStorage access is disabled or parsing fails
+      state.conversations = [];
+    }
   }
 
   function saveConversations() {
     var raw = JSON.stringify(state.conversations);
     saveStateToVscode();
-    try { localStorage.setItem(STORAGE_KEY, raw); } catch (_) {}
+    try {
+      localStorage.setItem(STORAGE_KEY, raw);
+    } catch (_) {
+      // Intentionally ignore if localStorage write access is restricted or quota exceeded
+    }
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "saveConversations", conversations: raw });
     }
@@ -90,37 +107,74 @@
 
   function saveSelectedModel() {
     saveStateToVscode();
-    try { localStorage.setItem(MODEL_KEY, state.selectedModel); } catch (_) {}
+    try {
+      localStorage.setItem(MODEL_KEY, state.selectedModel);
+    } catch (_) {
+      // Intentionally ignore if localStorage write access is restricted
+    }
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "saveSelectedModel", model: state.selectedModel, provider: state.selectedProvider });
     }
   }
 
-  window.loadConversationsFromExtension = function(conversationsJson, selectedModel, selectedProvider) {
+  function loadConversationsFromExtension(conversationsJson, selectedModel, selectedProvider) {
     try {
       var extConvs = typeof conversationsJson === "string" ? JSON.parse(conversationsJson || "[]") : Array.isArray(conversationsJson) ? conversationsJson : [];
       if (extConvs && extConvs.length > 0) {
-        state.conversations = extConvs.filter(Boolean).map(function(c) {
-          if (c.messages) c.messages = c.messages.filter(Boolean);
-          return c;
-        });
+        var cleanConvs = [];
+        for (var i = 0; i < extConvs.length; i++) {
+          if (extConvs[i]) {
+            var c = extConvs[i];
+            if (c.messages) {
+              var cleanMsgs = [];
+              for (var j = 0; j < c.messages.length; j++) {
+                if (c.messages[j]) cleanMsgs.push(c.messages[j]);
+              }
+              c.messages = cleanMsgs;
+            }
+            cleanConvs.push(c);
+          }
+        }
+        state.conversations = cleanConvs;
         saveStateToVscode();
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations)); } catch (_) {}
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
+        } catch (_) {
+          // Intentionally ignore if localStorage write access is restricted
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignore errors during extension data load to preserve app flow
+    }
     
     try {
       if (selectedModel) {
         state.selectedModel = selectedModel;
         saveStateToVscode();
-        try { localStorage.setItem(MODEL_KEY, state.selectedModel); } catch (_) {}
+        try {
+          localStorage.setItem(MODEL_KEY, state.selectedModel);
+        } catch (_) {
+          // Intentionally ignore if localStorage write access is restricted
+        }
       }
       if (selectedProvider) {
         state.selectedProvider = selectedProvider;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignore errors during model selection persistence to preserve app flow
+    }
     renderSidebar();
-    if (state.activeConversationId && state.conversations.some(function(c) { return c.id === state.activeConversationId; })) {
+
+    var hasActive = false;
+    if (state.activeConversationId) {
+      for (var i = 0; i < state.conversations.length; i++) {
+        if (state.conversations[i].id === state.activeConversationId) {
+          hasActive = true;
+          break;
+        }
+      }
+    }
+    if (state.activeConversationId && hasActive) {
       selectConversation(state.activeConversationId);
     } else if (state.conversations.length) {
       selectConversation(state.conversations[0].id);
@@ -129,20 +183,18 @@
     }
     updateModelSelectValue();
     updateModelBadge();
-  };
+  }
+  window.loadConversationsFromExtension = loadConversationsFromExtension;
 
-  window.setDashboardWorkspace = function(folderPath) {
+  function setDashboardWorkspace(folderPath) {
     state.workspaceFolder = folderPath || "";
     var display = document.getElementById("cfgWorkspaceDisplay");
     if (display) display.textContent = state.workspaceFolder || "(not detected)";
     saveStateToVscode();
-  };
+  }
+  window.setDashboardWorkspace = setDashboardWorkspace;
 
-  /**
-   * Apply settings received from VS Code backend.
-   * This is the primary way settings are loaded in VS Code mode.
-   */
-  window.applyVscodeSettings = function(vscodeSettings) {
+  function applyVscodeSettings(vscodeSettings) {
     if (!vscodeSettings) return;
     state.settingsLoadedFromVscode = true;
 
@@ -156,7 +208,6 @@
     }
     if (vscodeSettings.model !== undefined) {
       state.settings.model = vscodeSettings.model;
-      // Always sync settings model to selectedModel if selectedModel is empty or not set
       if (!state.selectedModel) {
         state.selectedModel = vscodeSettings.model;
       }
@@ -167,11 +218,11 @@
     if (vscodeSettings.confirmDangerous !== undefined) state.settings.confirmDangerous = vscodeSettings.confirmDangerous;
     if (vscodeSettings.hasApiKey !== undefined) state.hasApiKey = vscodeSettings.hasApiKey;
 
-    // Update settings UI if visible
     updateSettingsUI();
     updateModelBadge();
     updateModelSelectValue();
-  };
+  }
+  window.applyVscodeSettings = applyVscodeSettings;
 
   function updateSettingsUI() {
     var providerEl = document.getElementById("cfgProvider");
@@ -308,31 +359,40 @@
     }
     section.innerHTML = html;
 
-    section.querySelectorAll('.cr-saved-provider-load').forEach(function(btn) {
-      btn.onclick = function(e) {
-        e.stopPropagation();
-        var item = btn.closest('.cr-saved-provider-item');
-        var prov = item ? item.dataset.provider : '';
-        if (prov && configs[prov]) {
-          loadProviderToForm(prov, configs[prov]);
-        }
-      };
-    });
-    section.querySelectorAll('.cr-saved-provider-remove').forEach(function(btn) {
-      btn.onclick = function(e) {
-        e.stopPropagation();
-        var item = btn.closest('.cr-saved-provider-item');
-        var prov = item ? item.dataset.provider : '';
-        if (prov) {
-          delete configs[prov];
-          state.savedProviderConfigs = configs;
-          renderSavedProviders();
-          if (state.isVsCode && window.VSCODE_API) {
-            window.VSCODE_API.postMessage({ type: 'removeProviderConfig', provider: prov });
-          }
-        }
-      };
-    });
+    var loadBtns = section.querySelectorAll('.cr-saved-provider-load');
+    for (var li = 0; li < loadBtns.length; li++) {
+      loadBtns[li].onclick = handleLoadProviderClick.bind(null, configs);
+    }
+
+    var removeBtns = section.querySelectorAll('.cr-saved-provider-remove');
+    for (var ri = 0; ri < removeBtns.length; ri++) {
+      removeBtns[ri].onclick = handleRemoveProviderClick.bind(null, configs);
+    }
+  }
+
+  function handleLoadProviderClick(configs, e) {
+    e.stopPropagation();
+    var btn = e.currentTarget;
+    var item = btn.closest('.cr-saved-provider-item');
+    var prov = item ? item.dataset.provider : '';
+    if (prov && configs[prov]) {
+      loadProviderToForm(prov, configs[prov]);
+    }
+  }
+
+  function handleRemoveProviderClick(configs, e) {
+    e.stopPropagation();
+    var btn = e.currentTarget;
+    var item = btn.closest('.cr-saved-provider-item');
+    var prov = item ? item.dataset.provider : '';
+    if (prov) {
+      delete configs[prov];
+      state.savedProviderConfigs = configs;
+      renderSavedProviders();
+      if (state.isVsCode && window.VSCODE_API) {
+        window.VSCODE_API.postMessage({ type: 'removeProviderConfig', provider: prov });
+      }
+    }
   }
 
   /**
@@ -352,7 +412,7 @@
     state.hasApiKey = !!cfg.apiKey;
   }
 
-  window.renderDashboard = function(container) {
+  function renderDashboard(container) {
     if (!container) return;
     loadConversations();
     container.innerHTML = buildShell();
@@ -365,7 +425,16 @@
       sidebar.classList.toggle("closed", !state.sidebarOpen);
     }
 
-    if (state.activeConversationId && state.conversations.some(function(c) { return c.id === state.activeConversationId; })) {
+    var hasActive = false;
+    if (state.activeConversationId) {
+      for (var i = 0; i < state.conversations.length; i++) {
+        if (state.conversations[i].id === state.activeConversationId) {
+          hasActive = true;
+          break;
+        }
+      }
+    }
+    if (state.activeConversationId && hasActive) {
       selectConversation(state.activeConversationId);
     } else if (state.conversations.length) {
       selectConversation(state.conversations[0].id);
@@ -373,15 +442,14 @@
       selectConversation(null);
     }
 
-    // In VS Code mode, request current settings from backend
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "webviewReady" });
     } else {
-      // Standalone mode: load from localStorage / window.CODERUN_CONFIG
       loadStandaloneSettings();
       loadModels();
     }
-  };
+  }
+  window.renderDashboard = renderDashboard;
 
   function loadStandaloneSettings() {
     // Standalone fallback: read from localStorage or window.CODERUN_CONFIG
@@ -394,7 +462,9 @@
         state.settings.model = saved.model;
         state.selectedModel = saved.model;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignore storage read/parse error to fall back to default settings
+    }
 
     // Override with window.CODERUN_CONFIG if present
     if (window.CODERUN_CONFIG) {
@@ -473,8 +543,8 @@
 
   function initUI() {
     document.getElementById("rail-toggle").onclick = toggleSidebar;
-    document.getElementById("rail-chat").onclick = function() { switchPanel("panel-chat", this); };
-    document.getElementById("rail-settings").onclick = function() { switchPanel("panel-settings", this); };
+    document.getElementById("rail-chat").onclick = handleRailChatClick;
+    document.getElementById("rail-settings").onclick = handleRailSettingsClick;
     document.getElementById("newChatBtn").onclick = createNewChat;
     document.getElementById("newChatHeaderBtn").onclick = createNewChat;
     document.getElementById("refreshModelsBtn").onclick = loadModels;
@@ -482,207 +552,331 @@
     if (clearTermBtn) clearTermBtn.onclick = clearTerminal;
 
     var modelSelect = document.getElementById("modelSelect");
-    modelSelect.onchange = function() {
-      state.selectedModel = modelSelect.value;
-      state.selectedProvider = modelSelect.options[modelSelect.selectedIndex]?.dataset?.provider || '';
-      saveSelectedModel();
-      updateModelBadge();
-    };
+    modelSelect.onchange = handleModelSelectChange;
 
-    // Auto-fill base URL when provider changes
-    document.getElementById("cfgProvider").onchange = function() {
-      var provider = this.value;
-      var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
-      var compNameEl = document.getElementById("cfgCompatibleName");
-      var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
-      var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
-      
-      var isCompatible = provider === 'compatible' || provider.startsWith('compatible:');
-      if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
-        if (isCompatible) {
-          compNameGroup.style.display = 'flex';
-          compApiTypeGroup.style.display = 'flex';
-          if (provider.startsWith('compatible:')) {
-            compNameEl.value = provider.substring(11);
-            var saved = (state.savedProviderConfigs || {})[provider] || {};
-            compApiTypeEl.value = saved.apiType || 'openai';
-          } else {
-            compNameEl.value = '';
-            compApiTypeEl.value = 'openai';
-          }
-        } else {
-          compNameGroup.style.display = 'none';
-          compApiTypeGroup.style.display = 'none';
-          compNameEl.value = '';
-          compApiTypeEl.value = 'openai';
-        }
-      }
+    document.getElementById("cfgProvider").onchange = handleCfgProviderChange;
 
-      var defaults = {
-        ollama: "http://localhost:11434",
-        openai: "https://api.openai.com/v1",
-        anthropic: "https://api.anthropic.com/v1",
-        gemini: "https://generativelanguage.googleapis.com/v1beta",
-        openrouter: "https://openrouter.ai/api/v1",
-        xai: "https://api.x.ai/v1",
-        groq: "https://api.groq.com/openai/v1",
-        compatible: ""
-      };
-      
-      var baseUrlEl = document.getElementById("cfgBaseUrl");
-      if (baseUrlEl) {
-        if (provider.startsWith('compatible:')) {
-          var configs = state.savedProviderConfigs || {};
-          if (configs[provider] && configs[provider].baseUrl) {
-            baseUrlEl.value = configs[provider].baseUrl;
-          } else {
-            baseUrlEl.value = '';
-          }
-        } else if (defaults[provider] !== undefined) {
-          baseUrlEl.value = defaults[provider];
-        }
-      }
+    document.getElementById("saveSettingsBtn").onclick = handleSaveSettingsClick;
 
-      var apiKeyEl = document.getElementById("cfgApiKey");
-      if (apiKeyEl) {
-        if (provider.startsWith('compatible:')) {
-          var configs = state.savedProviderConfigs || {};
-          apiKeyEl.value = (configs[provider] && configs[provider].apiKey) ? "••••••••" : "";
-        } else {
-          apiKeyEl.value = "";
-        }
-      }
+    document.getElementById("clearAllConvBtn").onclick = handleClearAllConvClick;
 
-      var modelEl = document.getElementById("cfgModel");
-      if (modelEl) {
-        if (provider.startsWith('compatible:')) {
-          var configs = state.savedProviderConfigs || {};
-          modelEl.value = (configs[provider] && configs[provider].model) ? configs[provider].model : "";
-        } else {
-          modelEl.value = "";
-        }
-      }
-    };
+    document.getElementById("stopGenerationBtn").onclick = handleStopGenerationClick;
 
-    document.getElementById("saveSettingsBtn").onclick = function() {
-      var newProvider = document.getElementById("cfgProvider").value;
-      var compNameEl = document.getElementById("cfgCompatibleName");
-      var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
-      var customApiType = 'openai';
-      if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
-        var customName = compNameEl ? compNameEl.value.trim() : '';
-        customApiType = compApiTypeEl ? compApiTypeEl.value : 'openai';
-        if (customName) {
-          newProvider = 'compatible:' + customName;
-        } else {
-          newProvider = 'compatible';
-        }
-      }
+    document.addEventListener("keydown", handleDocumentKeyDown);
 
-      var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
-      var newApiKey = document.getElementById("cfgApiKey").value.trim();
-      var newModel = document.getElementById("cfgModel").value.trim();
-      var newMaxIter = parseInt(document.getElementById("cfgMaxIterations").value) || 20;
-      var newStreaming = document.getElementById("cfgStreaming").checked;
-      var newShowThinking = document.getElementById("cfgShowThinking").checked;
-      var newConfirm = document.getElementById("cfgConfirmDangerous").checked;
-
-      // Update local state
-      state.provider = newProvider;
-      state.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
-      state.settings.provider = newProvider;
-      state.settings.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
-      state.settings.model = newModel;
-      state.settings.maxIterations = newMaxIter;
-      state.settings.streaming = newStreaming;
-      state.settings.showThinking = newShowThinking;
-      state.settings.confirmDangerous = newConfirm;
-      state.settings.apiType = customApiType;
-
-      if (newModel) {
-        state.selectedModel = newModel;
-        state.selectedProvider = newProvider;
-      }
-
-      if (state.isVsCode && window.VSCODE_API) {
-        var apiKeyToSend = newApiKey;
-        var savedConfigs = state.savedProviderConfigs || {};
-        var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
-
-        if (hasExistingKey && newApiKey === "") {
-          apiKeyToSend = "";
-        } else if (hasExistingKey && newApiKey === "••••••••") {
-          apiKeyToSend = "••••••••";
-        }
-
-        window.VSCODE_API.postMessage({
-          type: "saveSettings",
-          settings: {
-            provider: newProvider,
-            baseUrl: newBaseUrl || DEFAULT_BASE_URL,
-            model: newModel,
-            maxIterations: newMaxIter,
-            streaming: newStreaming,
-            showThinking: newShowThinking,
-            confirmDangerous: newConfirm,
-            apiType: customApiType
-          },
-          apiKey: apiKeyToSend
-        });
-
-        if (newApiKey && newApiKey !== "••••••••") {
-          window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
-        } else if (newApiKey === "" && hasExistingKey) {
-          window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
-        }
-      } else {
-        // Standalone mode: save to localStorage
-        try {
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-            provider: newProvider,
-            baseUrl: newBaseUrl || DEFAULT_BASE_URL,
-            apiKey: newApiKey,
-            model: newModel
-          }));
-        } catch (_) {}
-        loadModels();
-      }
-
-      var button = document.getElementById("saveSettingsBtn");
-      button.textContent = "Saved";
-      setTimeout(function() { button.textContent = "Save Settings"; }, 1200);
-
-      updateModelBadge();
-      updateModelSelectValue();
-    };
-
-    document.getElementById("clearAllConvBtn").onclick = function() {
-      if (state.isVsCode && window.VSCODE_API) {
-        window.VSCODE_API.postMessage({ type: "confirmClearAll" });
-        return;
-      }
-      if (confirm("Delete all conversations?")) performClearAll();
-    };
-
-    document.getElementById("stopGenerationBtn").onclick = function() {
-      if (window.stopCurrentChatStream) window.stopCurrentChatStream();
-      showStopButton(false);
-    };
-
-    document.addEventListener("keydown", function(event) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "l") {
-        event.preventDefault();
-        createNewChat();
-      }
-    });
-
-    // Set initial settings values
     updateSettingsUI();
   }
 
+  function handleRailChatClick() {
+    switchPanel("panel-chat", this);
+  }
+
+  function handleRailSettingsClick() {
+    switchPanel("panel-settings", this);
+  }
+
+  function handleModelSelectChange() {
+    var modelSelect = document.getElementById("modelSelect");
+    state.selectedModel = modelSelect.value;
+    state.selectedProvider = modelSelect.options[modelSelect.selectedIndex]?.dataset?.provider || '';
+    saveSelectedModel();
+    updateModelBadge();
+  }
+
+  function handleCfgProviderChange() {
+    var providerEl = document.getElementById("cfgProvider");
+    var provider = providerEl ? providerEl.value : '';
+    var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
+    var compNameEl = document.getElementById("cfgCompatibleName");
+    var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
+    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
+    
+    var isCompatible = provider === 'compatible' || provider.startsWith('compatible:');
+    if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
+      if (isCompatible) {
+        compNameGroup.style.display = 'flex';
+        compApiTypeGroup.style.display = 'flex';
+        if (provider.startsWith('compatible:')) {
+          compNameEl.value = provider.substring(11);
+          var saved = (state.savedProviderConfigs || {})[provider] || {};
+          compApiTypeEl.value = saved.apiType || 'openai';
+        } else {
+          compNameEl.value = '';
+          compApiTypeEl.value = 'openai';
+        }
+      } else {
+        compNameGroup.style.display = 'none';
+        compApiTypeGroup.style.display = 'none';
+        compNameEl.value = '';
+        compApiTypeEl.value = 'openai';
+      }
+    }
+
+    var defaults = {
+      ollama: "http://localhost:11434",
+      openai: "https://api.openai.com/v1",
+      anthropic: "https://api.anthropic.com/v1",
+      gemini: "https://generativelanguage.googleapis.com/v1beta",
+      openrouter: "https://openrouter.ai/api/v1",
+      xai: "https://api.x.ai/v1",
+      groq: "https://api.groq.com/openai/v1",
+      compatible: ""
+    };
+    
+    var baseUrlEl = document.getElementById("cfgBaseUrl");
+    if (baseUrlEl) {
+      if (provider.startsWith('compatible:')) {
+        var configs = state.savedProviderConfigs || {};
+        if (configs[provider] && configs[provider].baseUrl) {
+          baseUrlEl.value = configs[provider].baseUrl;
+        } else {
+          baseUrlEl.value = '';
+        }
+      } else if (defaults[provider] !== undefined) {
+        baseUrlEl.value = defaults[provider];
+      }
+    }
+
+    var apiKeyEl = document.getElementById("cfgApiKey");
+    if (apiKeyEl) {
+      if (provider.startsWith('compatible:')) {
+        var configs = state.savedProviderConfigs || {};
+        apiKeyEl.value = (configs[provider] && configs[provider].apiKey) ? "••••••••" : "";
+      } else {
+        apiKeyEl.value = "";
+      }
+    }
+
+    var modelEl = document.getElementById("cfgModel");
+    if (modelEl) {
+      if (provider.startsWith('compatible:')) {
+        var configs = state.savedProviderConfigs || {};
+        modelEl.value = (configs[provider] && configs[provider].model) ? configs[provider].model : "";
+      } else {
+        modelEl.value = "";
+      }
+    }
+  }
+
+  function handleSaveSettingsClick() {
+    var newProvider = document.getElementById("cfgProvider").value;
+    var compNameEl = document.getElementById("cfgCompatibleName");
+    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
+    var customApiType = 'openai';
+    if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
+      var customName = compNameEl ? compNameEl.value.trim() : '';
+      customApiType = compApiTypeEl ? compApiTypeEl.value : 'openai';
+      if (customName) {
+        newProvider = 'compatible:' + customName;
+      } else {
+        newProvider = 'compatible';
+      }
+    }
+
+    var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
+    var newApiKey = document.getElementById("cfgApiKey").value.trim();
+    var newModel = document.getElementById("cfgModel").value.trim();
+    var newMaxIter = parseInt(document.getElementById("cfgMaxIterations").value) || 20;
+    var newStreaming = document.getElementById("cfgStreaming").checked;
+    var newShowThinking = document.getElementById("cfgShowThinking").checked;
+    var newConfirm = document.getElementById("cfgConfirmDangerous").checked;
+
+    state.provider = newProvider;
+    state.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.settings.provider = newProvider;
+    state.settings.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.settings.model = newModel;
+    state.settings.maxIterations = newMaxIter;
+    state.settings.streaming = newStreaming;
+    state.settings.showThinking = newShowThinking;
+    state.settings.confirmDangerous = newConfirm;
+    state.settings.apiType = customApiType;
+
+    if (newModel) {
+      state.selectedModel = newModel;
+      state.selectedProvider = newProvider;
+    }
+
+    if (state.isVsCode && window.VSCODE_API) {
+      var apiKeyToSend = newApiKey;
+      var savedConfigs = state.savedProviderConfigs || {};
+      var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
+
+      if (hasExistingKey && newApiKey === "") {
+        apiKeyToSend = "";
+      } else if (hasExistingKey && newApiKey === "••••••••") {
+        apiKeyToSend = "••••••••";
+      }
+
+      window.VSCODE_API.postMessage({
+        type: "saveSettings",
+        settings: {
+          provider: newProvider,
+          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          model: newModel,
+          maxIterations: newMaxIter,
+          streaming: newStreaming,
+          showThinking: newShowThinking,
+          confirmDangerous: newConfirm,
+          apiType: customApiType
+        },
+        apiKey: apiKeyToSend
+      });
+
+      if (newApiKey && newApiKey !== "••••••••") {
+        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
+      } else if (newApiKey === "" && hasExistingKey) {
+        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
+      }
+    } else {
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+          provider: newProvider,
+          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          apiKey: newApiKey,
+          model: newModel
+        }));
+      } catch (_) {
+        // Intentionally ignore localStorage quota/access restrictions when saving settings
+      }
+      loadModels();
+    }
+
+    var button = document.getElementById("saveSettingsBtn");
+    if (button) {
+      button.textContent = "Saved";
+      setTimeout(handleSaveSettingsTimeout.bind(null, button), 1200);
+    }
+    updateModelBadge();
+    updateModelSelectValue();
+  }
+
+  function handleSaveSettingsClick() {
+    var newProvider = document.getElementById("cfgProvider").value;
+    var compNameEl = document.getElementById("cfgCompatibleName");
+    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
+    var customApiType = 'openai';
+    if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
+      var customName = compNameEl ? compNameEl.value.trim() : '';
+      customApiType = compApiTypeEl ? compApiTypeEl.value : 'openai';
+      if (customName) {
+        newProvider = 'compatible:' + customName;
+      } else {
+        newProvider = 'compatible';
+      }
+    }
+
+    var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
+    var newApiKey = document.getElementById("cfgApiKey").value.trim();
+    var newModel = document.getElementById("cfgModel").value.trim();
+    var newMaxIter = parseInt(document.getElementById("cfgMaxIterations").value) || 20;
+    var newStreaming = document.getElementById("cfgStreaming").checked;
+    var newShowThinking = document.getElementById("cfgShowThinking").checked;
+    var newConfirm = document.getElementById("cfgConfirmDangerous").checked;
+
+    state.provider = newProvider;
+    state.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.settings.provider = newProvider;
+    state.settings.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.settings.model = newModel;
+    state.settings.maxIterations = newMaxIter;
+    state.settings.streaming = newStreaming;
+    state.settings.showThinking = newShowThinking;
+    state.settings.confirmDangerous = newConfirm;
+    state.settings.apiType = customApiType;
+
+    if (newModel) {
+      state.selectedModel = newModel;
+      state.selectedProvider = newProvider;
+    }
+
+    if (state.isVsCode && window.VSCODE_API) {
+      var apiKeyToSend = newApiKey;
+      var savedConfigs = state.savedProviderConfigs || {};
+      var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
+
+      if (hasExistingKey && newApiKey === "") {
+        apiKeyToSend = "";
+      } else if (hasExistingKey && newApiKey === "••••••••") {
+        apiKeyToSend = "••••••••";
+      }
+
+      window.VSCODE_API.postMessage({
+        type: "saveSettings",
+        settings: {
+          provider: newProvider,
+          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          model: newModel,
+          maxIterations: newMaxIter,
+          streaming: newStreaming,
+          showThinking: newShowThinking,
+          confirmDangerous: newConfirm,
+          apiType: customApiType
+        },
+        apiKey: apiKeyToSend
+      });
+
+      if (newApiKey && newApiKey !== "••••••••") {
+        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
+      } else if (newApiKey === "" && hasExistingKey) {
+        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
+      }
+    } else {
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+          provider: newProvider,
+          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          apiKey: newApiKey,
+          model: newModel
+        }));
+      } catch (_) {
+        // Intentionally ignore localStorage quota/access restrictions when saving settings
+      }
+      loadModels();
+    }
+
+    var button = document.getElementById("saveSettingsBtn");
+    if (button) {
+      button.textContent = "Saved";
+      setTimeout(handleSaveSettingsTimeout.bind(null, button), 1200);
+    }
+    updateModelBadge();
+    updateModelSelectValue();
+  }
+
+  function handleSaveSettingsTimeout(button) {
+    button.textContent = "Save Settings";
+  }
+
+  function handleClearAllConvClick() {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "confirmClearAll" });
+      return;
+    }
+    if (confirm("Delete all conversations?")) performClearAll();
+  }
+
+  function handleStopGenerationClick() {
+    if (window.stopCurrentChatStream) window.stopCurrentChatStream();
+    showStopButton(false);
+  }
+
+  function handleDocumentKeyDown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "l") {
+      event.preventDefault();
+      createNewChat();
+    }
+  }
+
   function switchPanel(panelId, button) {
-    document.querySelectorAll(".cr-panel").forEach(function(panel) { panel.classList.remove("active"); });
-    document.querySelectorAll(".cr-rail-btn").forEach(function(btn) { btn.classList.remove("active"); });
+    var panels = document.querySelectorAll(".cr-panel");
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.remove("active");
+    }
+    var railBtns = document.querySelectorAll(".cr-rail-btn");
+    for (var j = 0; j < railBtns.length; j++) {
+      railBtns[j].classList.remove("active");
+    }
     document.getElementById(panelId).classList.add("active");
     if (button) button.classList.add("active");
   }
@@ -693,6 +887,38 @@
     var sidebar = document.getElementById("cr-chat-sidebar");
     sidebar.classList.toggle("open", state.sidebarOpen);
     sidebar.classList.toggle("closed", !state.sidebarOpen);
+  }
+
+  function handleHealthCheckResponse(response) {
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    return response.json();
+  }
+
+  function handleHealthCheckData(data) {
+    var dot = document.getElementById("status-dot");
+    var text = document.getElementById("status-text");
+    state.isOnline = true;
+    if (dot) dot.className = "cr-status-dot";
+    if (text) text.textContent = "Online";
+    var allModels = [];
+    if (data.models) {
+      for (var i = 0; i < data.models.length; i++) {
+        allModels.push(data.models[i].name);
+      }
+    }
+    state.models = allModels;
+    state.modelsByProvider = { ollama: allModels };
+    renderModelOptions();
+  }
+
+  function handleHealthCheckError() {
+    var dot = document.getElementById("status-dot");
+    var text = document.getElementById("status-text");
+    state.isOnline = false;
+    if (dot) dot.className = "cr-status-dot offline";
+    if (text) text.textContent = "Offline";
+    var select = document.getElementById("modelSelect");
+    if (select) select.innerHTML = '<option value="">Unable to load models</option>';
   }
 
   function checkHealth() {
@@ -706,28 +932,10 @@
       return;
     }
 
-    // Standalone: try to fetch from base URL
     fetch(state.baseUrl + "/api/tags")
-      .then(function(response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
-      })
-      .then(function(data) {
-        state.isOnline = true;
-        if (dot) dot.className = "cr-status-dot";
-        if (text) text.textContent = "Online";
-        var allModels = data.models ? data.models.map(function(m) { return m.name; }) : [];
-        state.models = allModels;
-        state.modelsByProvider = { ollama: allModels };
-        renderModelOptions();
-      })
-      .catch(function() {
-        state.isOnline = false;
-        if (dot) dot.className = "cr-status-dot offline";
-        if (text) text.textContent = "Offline";
-        var select = document.getElementById("modelSelect");
-        if (select) select.innerHTML = '<option value="">Unable to load models</option>';
-      });
+      .then(handleHealthCheckResponse)
+      .then(handleHealthCheckData)
+      .catch(handleHealthCheckError);
   }
 
   function loadModels() {
@@ -746,8 +954,6 @@
     select.innerHTML = "";
 
     if (!state.models.length) {
-      // === FIX: Don't show error message as dropdown option ===
-      // Instead show a placeholder and let the user know via status
       select.innerHTML = '<option value="">No models available</option>';
       state.selectedModel = "";
       updateModelBadge();
@@ -851,6 +1057,16 @@
     badge.textContent = state.selectedModel || state.settings.model || "No model";
   }
 
+  function handleThreadItemClick(event) {
+    var button = event.target.closest("[data-action]");
+    if (button) {
+      if (button.dataset.action === "rename") startRename(button.dataset.id);
+      if (button.dataset.action === "delete") deleteConversation(button.dataset.id);
+      return;
+    }
+    if (state.renamingId !== this.dataset.id) selectConversation(this.dataset.id);
+  }
+
   function renderSidebar() {
     var list = document.getElementById("thread-list");
     if (!list) return;
@@ -887,18 +1103,22 @@
 
     var items = list.querySelectorAll(".cr-thread-item");
     for (var j = 0; j < items.length; j++) {
-      items[j].onclick = function(event) {
-        var button = event.target.closest("[data-action]");
-        if (button) {
-          if (button.dataset.action === "rename") startRename(button.dataset.id);
-          if (button.dataset.action === "delete") deleteConversation(button.dataset.id);
-          return;
-        }
-        if (state.renamingId !== this.dataset.id) selectConversation(this.dataset.id);
-      };
+      items[j].onclick = handleThreadItemClick;
     }
 
     if (state.renamingId) bindRenameInput();
+  }
+
+  function handleRenameInputBlur() {
+    saveRename(state.renamingId);
+  }
+
+  function handleRenameInputKeyDown(event) {
+    if (event.key === "Enter") saveRename(state.renamingId);
+    if (event.key === "Escape") {
+      state.renamingId = null;
+      renderSidebar();
+    }
   }
 
   function bindRenameInput() {
@@ -906,14 +1126,20 @@
     if (!input) return;
     input.focus();
     input.select();
-    input.onblur = function() { saveRename(state.renamingId); };
-    input.onkeydown = function(event) {
-      if (event.key === "Enter") saveRename(state.renamingId);
-      if (event.key === "Escape") {
-        state.renamingId = null;
-        renderSidebar();
-      }
-    };
+    input.onblur = handleRenameInputBlur;
+    input.onkeydown = handleRenameInputKeyDown;
+  }
+
+  function handleChatStreamStart() {
+    showStopButton(true);
+  }
+
+  function handleChatStreamEnd() {
+    showStopButton(false);
+  }
+
+  function handleChatStreamError() {
+    showStopButton(false);
   }
 
   function selectConversation(id) {
@@ -935,15 +1161,21 @@
       return;
     }
 
-    var conversation = state.conversations.find(function(item) { return item.id === id; });
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === id) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     if (conversation && typeof window.renderChatSpace === "function") {
       window.renderChatSpace(container, conversation, {
         model: state.selectedModel,
         workspaceFolder: state.workspaceFolder,
         baseUrl: state.baseUrl,
-        onStreamStart: function() { showStopButton(true); },
-        onStreamEnd: function() { showStopButton(false); },
-        onStreamError: function() { showStopButton(false); }
+        onStreamStart: handleChatStreamStart,
+        onStreamEnd: handleChatStreamEnd,
+        onStreamError: handleChatStreamError
       });
     }
   }
@@ -961,7 +1193,13 @@
   }
 
   function startRename(id) {
-    var conversation = state.conversations.find(function(item) { return item.id === id; });
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === id) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     state.renamingId = id;
     state.renameValue = conversation ? conversation.title || "" : "";
     renderSidebar();
@@ -970,7 +1208,13 @@
   function saveRename(id) {
     var input = document.getElementById("rename-input-" + id);
     var title = input ? input.value.trim() : "";
-    var conversation = state.conversations.find(function(item) { return item.id === id; });
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === id) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     if (conversation && title) {
       conversation.title = title;
       saveConversations();
@@ -988,7 +1232,13 @@
   }
 
   function performDelete(id) {
-    state.conversations = state.conversations.filter(function(item) { return item.id !== id; });
+    var remaining = [];
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id !== id) {
+        remaining.push(state.conversations[i]);
+      }
+    }
+    state.conversations = remaining;
     if (state.activeConversationId === id) {
       state.activeConversationId = state.conversations[0] ? state.conversations[0].id : null;
     }
@@ -1013,27 +1263,44 @@
     if (button) button.style.display = show ? "inline-flex" : "none";
   }
 
-  window.updateAgentTimeline = function() {};
-  window.clearAgentTimeline = function() {};
+  function updateAgentTimelineStub() {}
+  function clearAgentTimelineStub() {}
+  window.updateAgentTimeline = updateAgentTimelineStub;
+  window.clearAgentTimeline = clearAgentTimelineStub;
 
   // ── Terminal output is now rendered ONLY via inline tool cards ────
   //    inside each assistant message. The fixed terminal panel is no
   //    longer used. These stubs prevent errors if any code still calls
   //    them.
-  window.appendTerminalLine = function() {};
-  window.forwardTerminalEvent = function() {};
-  window.clearTerminal = function() {};
+  function appendTerminalLineStub() {}
+  function forwardTerminalEventStub() {}
+  function clearTerminalStub() {}
+  window.appendTerminalLine = appendTerminalLineStub;
+  window.forwardTerminalEvent = forwardTerminalEventStub;
+  window.clearTerminal = clearTerminalStub;
   function clearTerminal() {}
 
-  window.getDashboardModel = function() { return state.selectedModel; };
-  window.getDashboardProvider = function() { return state.selectedProvider; };
-  window.getDashboardWorkspace = function() { return state.workspaceFolder; };
-  window.getDashboardBaseUrl = function() { return state.baseUrl; };
-  window.getDashboardAlwaysDecisions = function() { return state.alwaysDecisions || {}; };
+  function getDashboardModel() { return state.selectedModel; }
+  function getDashboardProvider() { return state.selectedProvider; }
+  function getDashboardWorkspace() { return state.workspaceFolder; }
+  function getDashboardBaseUrl() { return state.baseUrl; }
+  function getDashboardAlwaysDecisions() { return state.alwaysDecisions || {}; }
 
-  window.saveConversationMessage = function(convId, role, content, extra) {
+  window.getDashboardModel = getDashboardModel;
+  window.getDashboardProvider = getDashboardProvider;
+  window.getDashboardWorkspace = getDashboardWorkspace;
+  window.getDashboardBaseUrl = getDashboardBaseUrl;
+  window.getDashboardAlwaysDecisions = getDashboardAlwaysDecisions;
+
+  function saveConversationMessage(convId, role, content, extra) {
     extra = extra || {};
-    var conversation = state.conversations.find(function(item) { return item.id === convId; });
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === convId) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     if (!conversation) return;
     if (!conversation.messages) conversation.messages = [];
 
@@ -1065,14 +1332,20 @@
 
     saveConversations();
     renderSidebar();
-  };
+  }
+  window.saveConversationMessage = saveConversationMessage;
 
-  window.saveConversationMessageBatch = function(convId, newMessages, plan) {
-    var conversation = state.conversations.find(function(item) { return item.id === convId; });
+  function saveConversationMessageBatch(convId, newMessages, plan) {
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === convId) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     if (!conversation) return;
     if (!conversation.messages) conversation.messages = [];
 
-    // DEBUG: trace thinking persistence
     console.log('[SAVE_BATCH] convId:', convId, 'newMessages count:', newMessages ? newMessages.length : 0);
     if (newMessages) {
       for (var dbg = 0; dbg < newMessages.length; dbg++) {
@@ -1084,7 +1357,6 @@
       }
     }
 
-    // Find the index of the last user message
     var lastUserIdx = -1;
     for (var i = conversation.messages.length - 1; i >= 0; i--) {
       if (conversation.messages[i].role === 'user') {
@@ -1093,16 +1365,32 @@
       }
     }
 
-    var msgsToAppend = (newMessages || []).filter(Boolean);
+    var msgsToAppend = [];
+    if (newMessages) {
+      for (var k = 0; k < newMessages.length; k++) {
+        if (newMessages[k]) msgsToAppend.push(newMessages[k]);
+      }
+    }
+
     if (lastUserIdx !== -1) {
       conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(msgsToAppend);
     } else {
       conversation.messages = conversation.messages.concat(msgsToAppend);
     }
 
-    // DEBUG: verify thinking survived merge
-    var assistantMsgs = conversation.messages.filter(function(m) { return m.role === 'assistant'; });
-    var thinkingCount = assistantMsgs.filter(function(m) { return !!m.thinking; }).length;
+    var assistantMsgs = [];
+    for (var i = 0; i < conversation.messages.length; i++) {
+      if (conversation.messages[i].role === 'assistant') {
+        assistantMsgs.push(conversation.messages[i]);
+      }
+    }
+
+    var thinkingCount = 0;
+    for (var i = 0; i < assistantMsgs.length; i++) {
+      if (assistantMsgs[i].thinking) {
+        thinkingCount++;
+      }
+    }
     console.log('[SAVE_BATCH] After merge: total messages:', conversation.messages.length, 'assistant:', assistantMsgs.length, 'with thinking:', thinkingCount);
 
     if (plan !== undefined) {
@@ -1111,26 +1399,35 @@
 
     saveConversations();
     renderSidebar();
-  };
+  }
+  window.saveConversationMessageBatch = saveConversationMessageBatch;
 
-  window.updateConversationTitle = function(convId, title) {
-    var conversation = state.conversations.find(function(item) { return item.id === convId; });
+  function updateConversationTitle(convId, title) {
+    var conversation = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === convId) {
+        conversation = state.conversations[i];
+        break;
+      }
+    }
     if (conversation && title) {
       conversation.title = title;
       saveConversations();
       renderSidebar();
     }
-  };
+  }
+  window.updateConversationTitle = updateConversationTitle;
 
-  window.webviewAlert = function(message) {
+  function webviewAlert(message) {
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "showAlert", message: message });
       return;
     }
     alert(message);
-  };
+  }
+  window.webviewAlert = webviewAlert;
 
-  window.addEventListener("message", function(event) {
+  function handleWindowMessage(event) {
     var message = event.data || {};
     if (message.type === "loadConversations") {
       window.loadConversationsFromExtension(message.conversations, message.selectedModel, message.selectedProvider);
@@ -1148,12 +1445,9 @@
       createNewChat();
     }
     if (message.type === "currentSettings") {
-      // Received current settings from VS Code backend
       window.applyVscodeSettings(message.settings);
-      // Store all saved provider configs for multi-provider support
       if (message.providerConfigs) {
         var newConfigs = message.providerConfigs;
-        // Clean up models from providers that are no longer saved
         if (state.savedProviderConfigs) {
           for (var oldProv in state.savedProviderConfigs) {
             if (!newConfigs[oldProv] && state.modelsByProvider) {
@@ -1164,7 +1458,6 @@
         state.modelsByProvider = state.modelsByProvider || {};
         state.savedProviderConfigs = newConfigs;
         renderSavedProviders();
-        // Rebuild flat model list
         state.models = [];
         for (var provKey in state.modelsByProvider) {
           if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
@@ -1181,10 +1474,8 @@
       if (message.online && message.models) {
         if (dot) dot.className = "cr-status-dot";
         if (text) text.textContent = "Online";
-        // Accumulate models per provider — don't clear other providers' models
         if (!state.modelsByProvider) state.modelsByProvider = {};
         state.modelsByProvider[message.provider || "ollama"] = message.models;
-        // Flatten all provider models into state.models
         state.models = [];
         for (var provKey in state.modelsByProvider) {
           if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
@@ -1195,7 +1486,6 @@
       } else {
         if (dot) dot.className = "cr-status-dot offline";
         if (text) text.textContent = "Offline";
-        // Don't clear existing models — keep them for offline viewing
         var select = document.getElementById("modelSelect");
         var errorMsg = message.error || "Unable to load models";
         if (select && (!state.models || !state.models.length)) {
@@ -1205,17 +1495,18 @@
       }
     }
     if (message.type === "permissionState") {
-      // Backend pushed the current "Always Allow / Always Deny" map.
-      // Store it on state so ChatSpace can read it when it mounts.
       state.alwaysDecisions = message.decisions || {};
     }
-  });
+  }
+  window.addEventListener("message", handleWindowMessage);
 
-  window.getDashboardActiveConversationId = function() {
+  function getDashboardActiveConversationId() {
     return state.activeConversationId;
-  };
+  }
+  window.getDashboardActiveConversationId = getDashboardActiveConversationId;
 
-  window.selectDashboardConversation = function(id) {
+  function selectDashboardConversation(id) {
     selectConversation(id);
-  };
+  }
+  window.selectDashboardConversation = selectDashboardConversation;
 }());

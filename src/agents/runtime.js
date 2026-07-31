@@ -84,12 +84,14 @@ var _subscribers = [];
  * @param {function} fn - (newState) => void
  * @returns {function} unsubscribe
  */
+function performUnsubscribe(subscriberList, fn) {
+  var idx = subscriberList.indexOf(fn);
+  if (idx !== -1) subscriberList.splice(idx, 1);
+}
+
 export function subscribe(fn) {
   _subscribers.push(fn);
-  return function() {
-    var idx = _subscribers.indexOf(fn);
-    if (idx !== -1) _subscribers.splice(idx, 1);
-  };
+  return performUnsubscribe.bind(null, _subscribers, fn);
 }
 
 // ═══════════════════════════════════════════════════════════

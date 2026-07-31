@@ -215,7 +215,9 @@ function getEditorContext() {
         }
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   return result;
 }
@@ -268,7 +270,9 @@ async function searchRelevantFiles(prompt, workspace) {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
 
     // Also try content search if we need more files
     if (relevant.length < 3) {
@@ -283,7 +287,9 @@ async function searchRelevantFiles(prompt, workspace) {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        // Intentionally ignored to allow safe execution fallback
+      }
     }
   }
 
@@ -447,7 +453,9 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
     if (planContext) {
       knowledge.activePlans = planContext;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Learning context (from Learning Engine)
   try {
@@ -455,7 +463,9 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
     if (learningContext) {
       knowledge.learningContext = learningContext;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Workspace Intelligence (single authoritative source for workspace metadata)
   try {
@@ -468,7 +478,9 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
       // Trigger async scan if not yet done (won't block this request)
       workspaceIntelligence.scan(project.path);
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Trigger learning initialization in background (idempotent — runs once)
   try {
@@ -476,7 +488,9 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
     if (meta && meta.path) {
       learningManager.initialize(meta.path);
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Timeline context (from Timeline Engine)
   try {
@@ -485,6 +499,7 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
       knowledge.timeline = timelineCtx;
     }
   } catch (_) {
+    // Intentionally fall back to empty timeline context if retrieval fails
     knowledge.timeline = '';
   }
 
@@ -494,7 +509,9 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
     if (cpCtx) {
       knowledge.checkpointContext = cpCtx;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Stubs for future phases (empty strings — backward compatible)
   knowledge.projectMemory = '';

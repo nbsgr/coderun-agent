@@ -52,7 +52,8 @@ export function storePatch(event) {
     status: 'pending',
     additions: stats.additions,
     deletions: stats.deletions,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    deferred: event.deferred || null
   };
 
   _pendingPatches[diffId] = patch;

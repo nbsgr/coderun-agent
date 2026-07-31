@@ -2,83 +2,6 @@
 //
 // SINGLE query point for workspace understanding. Other modules call THIS
 // instead of scanning files themselves.
-//
-// ═══════════════════════════════════════════════════════════════
-// DATA FLOW (how workspace info flows through the system)
-// ═══════════════════════════════════════════════════════════════
-//
-//   extension.js activate()
-//     │
-//     ├── projectKnowledge.initialize(context)
-//     │     └── Creates SQLite DB at:
-//     │           <globalStorageUri>/projects/<Name_Hash>/index.db
-//     │     └── Tables: files, chunks, metadata, tasks, checkpoints
-//     │     └── indexWorkspace() — walks project, stores file metadata
-//     │           in `files` table + content `chunks` table
-//     │     └── setupWatcher() — watches for create/change/delete,
-//     │           re-indexes single file via hash+mtime comparison
-//     │
-//     ├── workspaceIntelligence.scan(workspaceRoot)
-//     │     └── Triggers learningManager.initialize() which detects:
-//     │           learn_framework   → 'React', 'Next.js', etc.
-//     │           learn_build_system → 'Vite', 'Maven', etc.
-//     │           learn_conventions  → JSON['TypeScript','ESLint']
-//     │           learn_architecture → 'App router', 'MVC', etc.
-//     │         All stored via projectKnowledge.setSetting('learn_*')
-//     │         → SQLite `metadata` table
-//     │     └── Additional WI-only discovery (git, components, etc.)
-//     │         stored via projectKnowledge.setSetting('wi_*')
-//     │         → SQLite `metadata` table
-//     │
-//   contextManager.gatherContext()
-//     │
-//     ├── Calls workspaceIntelligence.formatForPrompt()
-//     │     └── Reads ONLY from SQLite (projectKnowledge.getSetting)
-//     │     └── Zero filesystem access
-//     │
-//     └── Calls learningManager.getLearningContext()
-//           └── Reads learn_* keys from SQLite
-//
-//   promptBuilder.buildMessages()
-//     ├── Injects workspace intelligence context
-//     ├── Injects learning context
-//     └── Sends to LLM
-//
-//   LLM receives structured workspace info in system prompt and DECIDES:
-//     a) "I have enough info" → answers directly from context
-//     b) "I need details" → uses tools (read_file, search_files)
-//     c) "I need to verify" → uses search or find_in_files
-//
-// ═══════════════════════════════════════════════════════════════
-// SQLite DATABASE SCHEMA (created by projectKnowledge.js)
-// ═══════════════════════════════════════════════════════════════
-//
-//   files table (file index):
-//     id, path, language, size, hash, last_modified, last_indexed
-//
-//   chunks table (file content chunks):
-//     id, file_id, chunk_index, content, embedding
-//
-//   metadata table (key-value store):
-//     key        → 'learn_framework', 'wi_project_type', etc.
-//     value      → string value (JSON for arrays)
-//
-//   tasks table (planning engine):
-//     id, description, status, created_at, completed_at, result, session_id
-//
-//   checkpoints table (undo engine):
-//     id, file_path, content, created_at, session_id, label
-//
-// ═══════════════════════════════════════════════════════════════
-// WORKSPACE INTEL KEYS IN SQLITE (wi_* prefix)
-// ═══════════════════════════════════════════════════════════════
-//
-//   wi_name, wi_project_type, wi_languages, wi_package_manager,
-//   wi_build_system, wi_entry_points, wi_config_files,
-//   wi_has_src, wi_has_test, wi_components, wi_services,
-//   wi_dependencies, wi_dev_dependencies, wi_total_deps,
-//   wi_git_branch, wi_git_repo, wi_is_monorepo, wi_sub_projects,
-//   wi_detected_at
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -198,13 +121,22 @@ async function doScan(root) {
   // Step 1: Trigger learningManager (framework, build, conventions)
   try {
     await learningManager.initialize(root);
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 
   // Step 2: Quick filesystem analysis for WI-specific data
   try {
     var entries = await fs.readdir(root, { withFileTypes: true });
-    var fileNames = entries.filter(function(e) { return e.isFile(); }).map(function(e) { return e.name; });
-    var dirNames = entries.filter(function(e) { return e.isDirectory(); }).map(function(e) { return e.name; });
+    var fileNames = [];
+    var dirNames = [];
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].isFile()) {
+        fileNames.push(entries[i].name);
+      } else if (entries[i].isDirectory()) {
+        dirNames.push(entries[i].name);
+      }
+    }
 
     storeBasic(root, fileNames, dirNames);
     storeLanguages(fileNames, dirNames);
@@ -232,13 +164,21 @@ function storeBasic(root, fileNames, dirNames) {
   projectKnowledge.setSetting('wi_name', path.basename(root));
 
   var type = 'other';
+  var hasDotNet = false;
+  for (var f = 0; f < fileNames.length; f++) {
+    if (fileNames[f].endsWith('.csproj') || fileNames[f].endsWith('.sln')) {
+      hasDotNet = true;
+      break;
+    }
+  }
+
   if (fileNames.indexOf('package.json') !== -1) type = 'node';
   else if (fileNames.indexOf('pom.xml') !== -1) type = 'java';
   else if (fileNames.indexOf('build.gradle') !== -1 || fileNames.indexOf('build.gradle.kts') !== -1) type = 'java';
   else if (fileNames.indexOf('pyproject.toml') !== -1 || fileNames.indexOf('requirements.txt') !== -1) type = 'python';
   else if (fileNames.indexOf('Cargo.toml') !== -1) type = 'rust';
   else if (fileNames.indexOf('go.mod') !== -1) type = 'go';
-  else if (fileNames.some(function(f) { return f.endsWith('.csproj') || f.endsWith('.sln'); })) type = 'dotnet';
+  else if (hasDotNet) type = 'dotnet';
   else if (dirNames.indexOf('node_modules') !== -1) type = 'node';
   else if (dirNames.indexOf('venv') !== -1 || dirNames.indexOf('.venv') !== -1) type = 'python';
   projectKnowledge.setSetting('wi_project_type', type);
@@ -249,7 +189,7 @@ function storeBasic(root, fileNames, dirNames) {
   else if (fileNames.indexOf('package-lock.json') !== -1) projectKnowledge.setSetting('wi_package_manager', 'npm');
   else if (fileNames.indexOf('bun.lockb') !== -1) projectKnowledge.setSetting('wi_package_manager', 'bun');
 
-  // Build system (beyond learningManager)
+  // Build system
   var buildTools = [];
   if (fileNames.indexOf('vite.config.ts') !== -1 || fileNames.indexOf('vite.config.js') !== -1) buildTools.push('Vite');
   if (fileNames.indexOf('webpack.config.js') !== -1) buildTools.push('Webpack');
@@ -299,7 +239,9 @@ function storeEntryPoints(root, fileNames) {
         if (typeof pkg.bin === 'string') entries.push(pkg.bin);
         else for (var b in pkg.bin) entries.push(pkg.bin[b]);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
   var common = ['src/index.js', 'src/index.ts', 'src/main.js', 'src/main.ts',
     'index.js', 'index.ts', 'main.js', 'main.ts', 'src/app.js', 'src/app.tsx',
@@ -321,7 +263,12 @@ function storeConfigFiles(fileNames) {
     'pom.xml', 'build.gradle', 'pyproject.toml', 'requirements.txt',
     'Cargo.toml', 'go.mod', 'Gemfile', 'composer.json',
     '.env', '.env.example', '.gitignore', '.editorconfig', '.nvmrc'];
-  var configs = fileNames.filter(function(f) { return known.indexOf(f) !== -1; });
+  var configs = [];
+  for (var f = 0; f < fileNames.length; f++) {
+    if (known.indexOf(fileNames[f]) !== -1) {
+      configs.push(fileNames[f]);
+    }
+  }
   if (configs.length) projectKnowledge.setSetting('wi_config_files', JSON.stringify(configs));
 }
 
@@ -342,7 +289,9 @@ async function storeComponents(root, dirNames) {
           comps.push(sub[d].name);
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
   if (comps.length) projectKnowledge.setSetting('wi_components', JSON.stringify(comps));
 }
@@ -365,7 +314,9 @@ async function storeServices(root, dirNames) {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
   if (svcs.length) projectKnowledge.setSetting('wi_services', JSON.stringify(svcs));
 }
@@ -380,7 +331,9 @@ async function storeGitInfo(root) {
       var m = head.match(/ref:\s*refs\/heads\/(.+)/);
       if (m) projectKnowledge.setSetting('wi_git_branch', m[1].trim());
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
   try {
     var cfgPath = path.join(gitDir, 'config');
     if (existsSync(cfgPath)) {
@@ -388,7 +341,9 @@ async function storeGitInfo(root) {
       var m = cfg.match(/url\s*=\s*(?:https:\/\/[^/]+|git@[^:]+)[:/](.+?)\.git/);
       if (m) projectKnowledge.setSetting('wi_git_repo', m[1]);
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 async function storeDependencies(root, fileNames) {
@@ -402,7 +357,9 @@ async function storeDependencies(root, fileNames) {
       projectKnowledge.setSetting('wi_dev_dependencies', JSON.stringify(devDeps));
       projectKnowledge.setSetting('wi_total_deps', String(deps.length + devDeps.length));
     }
-  } catch (_) {}
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
 }
 
 async function storeMonoRepo(root, fileNames, dirNames) {
@@ -422,7 +379,9 @@ async function storeMonoRepo(root, fileNames, dirNames) {
           subProjects.push(path.join(pkgDirs[i], items[s].name));
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
   }
   if (subProjects.length) projectKnowledge.setSetting('wi_sub_projects', JSON.stringify(subProjects));
 }
