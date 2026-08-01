@@ -261,10 +261,16 @@
     var stepsHtml = '';
     for (var si = 0; si < steps.length; si++) {
       var s = steps[si];
-      var isComp = s.status === 'completed';
-      var statusIcon = isComp
-        ? '<span class="cr-todo-status completed">' + I.check + '</span>'
-        : '<span class="cr-todo-status pending"><span class="cr-todo-circle"></span></span>';
+      var statusIcon = '';
+      if (s.status === 'completed') {
+        statusIcon = '<span class="cr-todo-status completed">' + I.check + '</span>';
+      } else if (s.status === 'active' || s.status === 'in_progress') {
+        statusIcon = '<span class="cr-todo-status active"><span class="cr-todo-pulse"></span></span>';
+      } else if (s.status === 'failed') {
+        statusIcon = '<span class="cr-todo-status failed">❌</span>';
+      } else {
+        statusIcon = '<span class="cr-todo-status pending"><span class="cr-todo-circle"></span></span>';
+      }
       stepsHtml +=
         '<div class="cr-todo-item">' +
           statusIcon +
@@ -1093,19 +1099,10 @@
         case 'plan_created':
         case 'plan_updated': {
           if (ev.plan) {
-            var isCompleted = ev.plan.status === 'completed';
-            if (isCompleted) {
-              chatCtx.conversation.plan = null;
-              renderTodos(chatCtx, null);
-              if (window.saveConversationMessageBatch) {
-                window.saveConversationMessageBatch(chatCtx.convId, null, null);
-              }
-            } else {
-              chatCtx.conversation.plan = ev.plan;
-              renderTodos(chatCtx, ev.plan);
-              if (window.saveConversationMessageBatch) {
-                window.saveConversationMessageBatch(chatCtx.convId, null, ev.plan);
-              }
+            chatCtx.conversation.plan = ev.plan;
+            renderTodos(chatCtx, ev.plan);
+            if (window.saveConversationMessageBatch) {
+              window.saveConversationMessageBatch(chatCtx.convId, null, ev.plan);
             }
           }
           break;

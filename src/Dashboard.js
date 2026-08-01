@@ -508,8 +508,12 @@
                 '</aside>' +
                 '<section class="cr-chat-main">' +
                   '<div class="cr-model-bar">' +
-                    '<label for="modelSelect">Model</label>' +
-                    '<select id="modelSelect"><option value="">Loading models...</option></select>' +
+                    '<label for="modelInput">Model</label>' +
+                    '<div class="cr-combobox">' +
+                      '<input type="text" id="modelInput" placeholder="Select model..." readonly autocomplete="off">' +
+                      '<span id="modelDropdownArrow" class="cr-combobox-arrow">▼</span>' +
+                      '<div id="modelDropdownList" class="cr-combobox-list" style="display:none"></div>' +
+                    '</div>' +
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
                     '<button id="stopGenerationBtn" class="cr-stop-gen-btn" title="Stop generation" style="display:none">Stop</button>' +
                   '</div>' +
@@ -551,8 +555,13 @@
     var clearTermBtn = document.getElementById("clearTerminalBtn");
     if (clearTermBtn) clearTermBtn.onclick = clearTerminal;
 
-    var modelSelect = document.getElementById("modelSelect");
-    modelSelect.onchange = handleModelSelectChange;
+    var modelInput = document.getElementById("modelInput");
+    if (modelInput) {
+      modelInput.onclick = handleModelInputClick;
+      modelInput.oninput = handleModelInputInput;
+    }
+
+    document.addEventListener("click", handleDocumentClickCloseDropdown);
 
     document.getElementById("cfgProvider").onchange = handleCfgProviderChange;
 
@@ -575,10 +584,43 @@
     switchPanel("panel-settings", this);
   }
 
-  function handleModelSelectChange() {
-    var modelSelect = document.getElementById("modelSelect");
-    state.selectedModel = modelSelect.value;
-    state.selectedProvider = modelSelect.options[modelSelect.selectedIndex]?.dataset?.provider || '';
+  function handleModelInputClick(e) {
+    if (e) e.stopPropagation();
+    var list = document.getElementById("modelDropdownList");
+    if (list) {
+      var isHidden = list.style.display === "none";
+      list.style.display = isHidden ? "block" : "none";
+    }
+  }
+
+  function handleModelInputInput() {
+    var modelInput = document.getElementById("modelInput");
+    if (modelInput) {
+      state.selectedModel = modelInput.value;
+      saveSelectedModel();
+      updateModelBadge();
+    }
+  }
+
+  function handleDocumentClickCloseDropdown(e) {
+    var list = document.getElementById("modelDropdownList");
+    if (list && !e.target.closest(".cr-combobox")) {
+      list.style.display = "none";
+    }
+  }
+
+  function handleModelItemClick() {
+    var model = this.dataset.model;
+    var provider = this.dataset.provider;
+    state.selectedModel = model;
+    state.selectedProvider = provider;
+
+    var modelInput = document.getElementById("modelInput");
+    if (modelInput) modelInput.value = model;
+
+    var list = document.getElementById("modelDropdownList");
+    if (list) list.style.display = "none";
+
     saveSelectedModel();
     updateModelBadge();
   }
@@ -939,8 +981,8 @@
   }
 
   function loadModels() {
-    var select = document.getElementById("modelSelect");
-    if (select) select.innerHTML = '<option value="">Loading models...</option>';
+    var list = document.getElementById("modelDropdownList");
+    if (list) list.innerHTML = '<div class="cr-combobox-item loading">Loading models...</div>';
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "refreshAllModels" });
       return;
@@ -948,107 +990,120 @@
     checkHealth();
   }
 
-  function renderModelOptions() {
-    var select = document.getElementById("modelSelect");
-    if (!select) return;
-    select.innerHTML = "";
+  function getProviderLabel(providerName) {
+    var displayLabel = providerName;
+    if (providerName.startsWith('compatible:')) {
+      var name = providerName.substring(11);
+      var saved = (state.savedProviderConfigs || {})[providerName] || {};
+      var type = saved.apiType || 'openai';
+      var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+      displayLabel = name + ' (' + typeLabel + ')';
+    } else {
+      displayLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+    }
+    return displayLabel;
+  }
 
-    if (!state.models.length) {
-      select.innerHTML = '<option value="">No models available</option>';
+  function renderModelOptions() {
+    var list = document.getElementById("modelDropdownList");
+    if (!list) return;
+    list.innerHTML = "";
+
+    var providers = Object.keys(state.modelsByProvider || {});
+    if (!providers.length) {
+      list.innerHTML = '<div class="cr-combobox-item empty">No models available</div>';
       state.selectedModel = "";
       updateModelBadge();
       return;
     }
 
-    var providers = Object.keys(state.modelsByProvider);
     for (var p = 0; p < providers.length; p++) {
       var providerName = providers[p];
       var models = state.modelsByProvider[providerName];
       if (!models || !models.length) continue;
-      var group = document.createElement("optgroup");
-      
-      var displayLabel = providerName;
-      if (providerName.startsWith('compatible:')) {
-        var name = providerName.substring(11);
-        var saved = (state.savedProviderConfigs || {})[providerName] || {};
-        var type = saved.apiType || 'openai';
-        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
-        displayLabel = name + ' (' + typeLabel + ')';
-      } else {
-        displayLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
-      }
-      group.label = displayLabel + " models";
+
+      var groupContainer = document.createElement("div");
+      groupContainer.className = "cr-combobox-group";
+
+      var header = document.createElement("div");
+      header.className = "cr-combobox-group-header";
+      header.dataset.provider = providerName;
+
+      header.innerHTML = '<span class="cr-group-arrow">▶</span> ' + getProviderLabel(providerName) + ' models';
+      header.onclick = handleGroupHeaderClick;
+      groupContainer.appendChild(header);
+
+      var itemsContainer = document.createElement("div");
+      itemsContainer.className = "cr-combobox-group-items";
+      itemsContainer.style.display = "none";
 
       for (var i = 0; i < models.length; i++) {
-        var option = document.createElement("option");
-        option.value = models[i];
-        option.textContent = models[i];
-        option.title = models[i];
-        option.dataset.provider = providerName;
-        group.appendChild(option);
+        var item = document.createElement("div");
+        item.className = "cr-combobox-item";
+        item.textContent = models[i];
+        item.dataset.model = models[i];
+        item.dataset.provider = providerName;
+        item.onclick = handleModelItemClick;
+        itemsContainer.appendChild(item);
       }
-      select.appendChild(group);
+      groupContainer.appendChild(itemsContainer);
+      list.appendChild(groupContainer);
     }
 
-    if (!state.selectedModel || !optionExists(select, state.selectedModel)) {
-      state.selectedModel = select.options[0] ? select.options[0].value : "";
-      state.selectedProvider = select.options[0] ? (select.options[0].dataset?.provider || '') : '';
+    // Determine current model
+    if (!state.selectedModel || !modelExists(state.selectedModel)) {
+      var foundModel = "";
+      var foundProvider = "";
+      for (var p = 0; p < providers.length; p++) {
+        var mList = state.modelsByProvider[providers[p]];
+        if (mList && mList.length) {
+          foundModel = mList[0];
+          foundProvider = providers[p];
+          break;
+        }
+      }
+      state.selectedModel = foundModel;
+      state.selectedProvider = foundProvider;
       saveSelectedModel();
     }
+
     updateModelSelectValue();
     updateModelBadge();
   }
 
-  function optionExists(select, value) {
-    for (var i = 0; i < select.options.length; i++) {
-      if (select.options[i].value === value) return true;
+  function handleGroupHeaderClick(e) {
+    if (e) e.stopPropagation();
+    var items = this.nextElementSibling;
+    var arrow = this.querySelector(".cr-group-arrow");
+    if (items && arrow) {
+      var isHidden = items.style.display === "none";
+      items.style.display = isHidden ? "block" : "none";
+      arrow.textContent = isHidden ? "▼" : "▶";
+    }
+  }
+
+  function modelExists(value) {
+    if (!state.models) return false;
+    for (var i = 0; i < state.models.length; i++) {
+      if (state.models[i] === value) return true;
     }
     return false;
   }
 
   function updateModelSelectValue() {
-    var select = document.getElementById("modelSelect");
-    if (!select || !state.selectedModel) return;
-
-    if (!optionExists(select, state.selectedModel)) {
-      var provider = state.selectedProvider || 'ollama';
-      
-      var displayLabel = provider;
-      if (provider.startsWith('compatible:')) {
-        var name = provider.substring(11);
-        var saved = (state.savedProviderConfigs || {})[provider] || {};
-        var type = saved.apiType || 'openai';
-        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
-        displayLabel = name + ' (' + typeLabel + ')';
+    var modelInput = document.getElementById("modelInput");
+    if (modelInput) {
+      var hasModels = state.models && state.models.length > 0;
+      if (!hasModels) {
+        modelInput.value = "";
+        modelInput.placeholder = "Model not available";
+        modelInput.disabled = true;
       } else {
-        displayLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+        modelInput.value = state.selectedModel || "";
+        modelInput.placeholder = "Select model...";
+        modelInput.disabled = false;
       }
-      var groupLabel = displayLabel + " models";
-      
-      var optgroup = null;
-      var groups = select.getElementsByTagName("optgroup");
-      for (var i = 0; i < groups.length; i++) {
-        if (groups[i].label === groupLabel) {
-          optgroup = groups[i];
-          break;
-        }
-      }
-      
-      if (!optgroup) {
-        optgroup = document.createElement("optgroup");
-        optgroup.label = groupLabel;
-        select.appendChild(optgroup);
-      }
-      
-      var option = document.createElement("option");
-      option.value = state.selectedModel;
-      option.textContent = state.selectedModel;
-      option.title = state.selectedModel;
-      option.dataset.provider = provider;
-      optgroup.appendChild(option);
     }
-
-    select.value = state.selectedModel;
   }
 
   function updateModelBadge() {
@@ -1486,10 +1541,10 @@
       } else {
         if (dot) dot.className = "cr-status-dot offline";
         if (text) text.textContent = "Offline";
-        var select = document.getElementById("modelSelect");
+        var list = document.getElementById("modelDropdownList");
         var errorMsg = message.error || "Unable to load models";
-        if (select && (!state.models || !state.models.length)) {
-          select.innerHTML = '<option value="">No models available</option>';
+        if (list && (!state.models || !state.models.length)) {
+          list.innerHTML = '<div class="cr-combobox-item empty">No models available</div>';
         }
         console.error("[CODERUN] Health check failed:", errorMsg, "Provider:", message.provider);
       }

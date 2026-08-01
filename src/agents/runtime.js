@@ -171,18 +171,17 @@ export function updatePlan(plan) {
     fullyCompleted = allDone;
   }
 
-  if (fullyCompleted) {
-    console.log('[RUNTIME] Plan ' + plan.id + ' fully completed. Deleting.');
-    removePlan(plan.id);
-  } else {
-    _plans[plan.id] = plan;
-    // Emit a runtime event so any listeners can react
-    events.emit('runtime:plan_updated', {
-      planId: plan.id,
-      plan: plan,
-      state: _state
-    });
+  if (fullyCompleted && plan.status !== 'completed') {
+    plan.status = 'completed';
+    plan.updatedAt = Date.now();
   }
+  _plans[plan.id] = plan;
+  // Emit a runtime event so any listeners can react
+  events.emit('runtime:plan_updated', {
+    planId: plan.id,
+    plan: plan,
+    state: _state
+  });
 
   // Notify subscribers about the plan change
   if (_state.currentPlanId === plan.id || fullyCompleted) {

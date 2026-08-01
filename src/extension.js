@@ -36,7 +36,14 @@ let currentAbortController = null;
 
 function handlePlanChangeSave() {
   try {
-    var activePlans = runtime.getAllPlans();
+    var allPlans = runtime.getAllPlans();
+    var activePlans = [];
+    for (var i = 0; i < allPlans.length; i++) {
+      var p = allPlans[i];
+      if (p && p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled') {
+        activePlans.push(p);
+      }
+    }
     if (extensionContext) {
       extensionContext.workspaceState.update('coderun_active_plans', activePlans);
     }

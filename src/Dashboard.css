@@ -356,7 +356,7 @@ textarea {
   font-size: 12px;
 }
 
-#modelSelect,
+#modelInput,
 .cr-input-group input[type="text"],
 .cr-input-group input[type="password"],
 .cr-input-group input[type="number"],
@@ -370,18 +370,108 @@ textarea {
   color: var(--vscode-input-foreground, #cccccc);
   background: var(--vscode-input-background, #242424);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-size: 12px;
 }
 
-#modelSelect {
-  flex: 1;
-  max-width: 520px;
-}
-
-#modelSelect:focus,
+#modelInput:focus,
 .cr-input-group input:focus,
 .cr-input-group select:focus {
   border-color: var(--vscode-focusBorder, #007fd4);
   box-shadow: 0 0 0 1px rgba(0, 127, 212, 0.25);
+}
+
+#modelInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 24px !important;
+  cursor: pointer;
+}
+
+.cr-combobox {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 520px;
+}
+
+.cr-combobox-arrow {
+  position: absolute;
+  right: 8px;
+  font-size: 8px;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cr-combobox-list {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+  border-radius: 4px;
+  background: var(--vscode-dropdown-background, #252526);
+  z-index: 1000;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.cr-combobox-group {
+  border-bottom: 1px solid var(--vscode-sideBar-border, #2b2b2b);
+}
+
+.cr-combobox-group:last-child {
+  border-bottom: none;
+}
+
+.cr-combobox-group-header {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  background: var(--vscode-sideBar-background, #252526);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cr-combobox-group-header:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  color: var(--vscode-list-hoverForeground, #ffffff);
+}
+
+.cr-group-arrow {
+  display: inline-block;
+  width: 10px;
+  font-size: 8px;
+  color: var(--vscode-descriptionForeground, #858585);
+  text-align: center;
+}
+
+.cr-combobox-group-items {
+  background: var(--vscode-dropdown-background, #1e1e1e);
+}
+
+.cr-combobox-item {
+  padding: 6px 12px 6px 24px;
+  font-size: 12px;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cr-combobox-item:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  color: var(--vscode-list-hoverForeground, #ffffff);
 }
 
 .cr-stop-gen-btn {

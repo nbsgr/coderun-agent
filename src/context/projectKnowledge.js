@@ -19,6 +19,7 @@ import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as crypto from 'crypto';
 import initSqlJs from 'sql.js';
+import { parseSymbols } from './symbolParser.js';
 
 // ── Internal state ───────────────────────────────────────────
 var _SQL = null;             // sql.js init result
@@ -38,6 +39,7 @@ var _ready = false;
 var _indexing = false;
 var _fileWatcher = null;
 var _disposables = [];
+var _saveTimer = null;
 
 var _REGISTRY_VERSION = 1;
 var _INDEX_DB_VERSION = 1;
@@ -503,7 +505,11 @@ export function save() {
  * Dispose (cleanup on deactivate).
  */
 export function dispose() {
-  saveProjectDb();
+  if (_saveTimer) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  saveProjectDbNow();
   saveRegistry();
   for (var i = 0; i < _disposables.length; i++) {
     _disposables[i].dispose();
@@ -668,13 +674,34 @@ async function openProjectDb() {
     )
   `);
 
+  _projectDb.run(`
+    CREATE TABLE IF NOT EXISTS symbols (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      line INTEGER NOT NULL,
+      FOREIGN KEY (file_id) REFERENCES files(id)
+    )
+  `);
+
   _projectDb.run('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', ['db_version', String(_INDEX_DB_VERSION)]);
 
-  saveProjectDb();
+  saveProjectDbNow();
   console.log('[PK] Project database ready');
 }
 
-async function saveProjectDb() {
+function handleSaveTimeout() {
+  _saveTimer = null;
+  saveProjectDbNow();
+}
+
+export function saveProjectDb() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(handleSaveTimeout, 2000);
+}
+
+export async function saveProjectDbNow() {
   if (!_projectDb || !_projectDbPath) return;
   try {
     var data = _projectDb.export();
@@ -828,10 +855,27 @@ async function indexSingleFile(relPath) {
         var chunkText = content.substring(ci, ci + 1000);
         insertChunk.bind([fileId, Math.floor(ci / 1000), chunkText]);
         insertChunk.step();
-        insertChunk.free();
-        insertChunk = _projectDb.prepare('INSERT INTO chunks (file_id, chunk_index, content) VALUES (?, ?, ?)');
+        insertChunk.reset();
       }
       insertChunk.free();
+    }
+
+    // Delete old symbols, parse and insert new ones
+    _projectDb.run('DELETE FROM symbols WHERE file_id = ?', [fileId]);
+    try {
+      var symbols = parseSymbols(content, relPath);
+      if (symbols && symbols.length) {
+        var insertSymbol = _projectDb.prepare('INSERT INTO symbols (file_id, name, type, line) VALUES (?, ?, ?, ?)');
+        for (var si = 0; si < symbols.length; si++) {
+          var sym = symbols[si];
+          insertSymbol.bind([fileId, sym.name || '', sym.type || '', sym.line || 1]);
+          insertSymbol.step();
+          insertSymbol.reset();
+        }
+        insertSymbol.free();
+      }
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
     }
 
     return true;
@@ -951,4 +995,29 @@ function simpleHash(text) {
     hash |= 0;
   }
   return String(Math.abs(hash));
+}
+
+export function queryProjectDb(sqlQuery, params) {
+  if (!_projectDb || !_ready) return [];
+  var trimmed = String(sqlQuery || '').trim();
+  if (!trimmed.toLowerCase().startsWith('select')) {
+    throw new Error('Only read-only SELECT queries are allowed on the project database.');
+  }
+  try {
+    var stmt = _projectDb.prepare(trimmed);
+    if (params && params.length) {
+      stmt.bind(params);
+    }
+    var results = [];
+    try {
+      while (stmt.step()) {
+        results.push(stmt.getAsObject());
+      }
+    } finally {
+      stmt.free();
+    }
+    return results;
+  } catch (e) {
+    throw new Error('SQL execution failed: ' + e.message);
+  }
 }

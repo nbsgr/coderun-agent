@@ -39,7 +39,7 @@ export async function reviewChanges(workspaceRoot, modifiedFiles) {
       }
 
       // 2. Check for empty catch blocks (Poor Error Handling)
-      var emptyCatchRegex = /catch\s*\(\s*\w*\s*\)\s*\{\s*\}/g;
+      var emptyCatchRegex = /catch\s*(?:\(\s*\w*\s*\))?\s*\{\s*\}/g;
       if (emptyCatchRegex.test(content)) {
         issues.push(relPath + ': Contains empty catch blocks. Silent failures should be avoided.');
         passed = false;

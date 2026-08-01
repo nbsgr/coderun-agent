@@ -4,6 +4,7 @@
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 var _activeTrace = {
   sessionId: '',
@@ -60,18 +61,20 @@ export function recordDecision(tool, decision, reason) {
 }
 
 /**
- * Serialize and save the trace to .agents/traces/trace_<sessionId>.json.
+ * Serialize and save the trace to ~/.coderun/traces/trace_<sessionId>.json.
  *
- * @param {string} workspaceRoot - Absolute workspace root path
+ * @param {string} workspaceRoot - Absolute workspace root path (unused)
  * @returns {Promise<string>} Path of the written trace file, or empty string
  */
 export async function saveTrace(workspaceRoot) {
-  if (!workspaceRoot || !_activeTrace.sessionId) return '';
+  if (!_activeTrace.sessionId) return '';
 
+  _activeTrace.workspace = workspaceRoot || '';
   _activeTrace.completedAt = Date.now();
   _activeTrace.duration = _activeTrace.completedAt - _activeTrace.startedAt;
 
-  var agentsDir = path.join(workspaceRoot, '.agents');
+  var homeDir = os.homedir();
+  var agentsDir = path.join(homeDir, '.coderun');
   var tracesDir = path.join(agentsDir, 'traces');
 
   try {

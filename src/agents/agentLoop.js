@@ -67,6 +67,10 @@ function forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx) {
   }
 }
 
+function formatReviewIssueItem(iss) {
+  return '- ' + iss;
+}
+
 function handleExecResult(resolve, error, stdout, stderr) {
   if (error) {
     resolve({ success: false, output: stderr || error.message });
@@ -561,6 +565,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       try {
         var stream = provider.chat(config, messages, getDefinitions());
         for await (var chunk of stream) {
+          if (signal && signal.stopped) {
+            break;
+          }
           console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
           dbg('[AGENT LOOP] AGENT RECEIVED =', JSON.stringify(chunk).substring(0, 500));
           // Handle thinking tokens
@@ -651,12 +658,26 @@ export async function runAgentLoop(userPrompt, config, options) {
         throw err;
       }
 
+      if (signal && signal.stopped) {
+        console.log('[AGENT LOOP] Stop requested after/during stream');
+        agentState.transition('stopped');
+        sendEvent({
+          type: EVENT_TYPES.AGENT_DONE,
+          reason: 'stopped',
+          content: fullContent,
+          thinking: fullThinking
+        });
+        return { content: fullContent, thinking: fullThinking, done: false, stopped: true };
+      }
+
       // Flush remaining buffer
       if (streamBuffer.length > 0) {
         if (inThinkTag) {
+          iterationThinking += streamBuffer;
           fullThinking += streamBuffer;
           sendEvent({ message: { role: 'assistant', thinking: streamBuffer } });
         } else {
+          iterationContent += streamBuffer;
           fullContent += streamBuffer;
           sendEvent({ message: { role: 'assistant', content: streamBuffer } });
         }
@@ -697,6 +718,41 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       if (completedToolCalls.length === 0) {
+        // If the last message was a tool message, let's force the LLM to write a final concluding message!
+        if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim())) {
+          console.log('[AGENT LOOP] Forcing a concluding response from LLM...');
+          try {
+            var concludingMessages = messages.slice();
+            concludingMessages.push({
+              role: 'user',
+              content: 'The verification tool execution is completed. Please write a brief concluding response to the user confirming the final outcome of the task.'
+            });
+            var stream = provider.chat(config, concludingMessages, getDefinitions());
+            var concludingThinking = '';
+            var concludingContent = '';
+            for await (var chunk of stream) {
+              if (chunk.content) {
+                concludingContent += chunk.content;
+                sendEvent({ message: { role: 'assistant', content: chunk.content } });
+              }
+              if (chunk.thinking) {
+                concludingThinking += chunk.thinking;
+              }
+            }
+            if (concludingContent.trim()) {
+              iterationContent = concludingContent;
+              fullContent += concludingContent;
+              if (concludingThinking) {
+                iterationThinking += concludingThinking;
+                fullThinking += concludingThinking;
+              }
+            }
+          } catch (e) {
+            console.error('[AGENT LOOP] Failed to generate concluding response:', e);
+          }
+        }
+
+        var hasReviewIssues = false;
         try {
           var fromReview = agentState.getState();
           agentState.transition('reviewing');
@@ -705,11 +761,44 @@ export async function runAgentLoop(userPrompt, config, options) {
 
           var modifiedFiles = memoryManager.getFilesModified();
           var reviewReport = await reviewEngine.reviewChanges(workspace, modifiedFiles);
-          if (reviewReport && reviewReport.report) {
+          if (reviewReport && !reviewReport.passed) {
             sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'reviewing' });
+
+            // Fixation protection & refinement check
+            var limitExceeded = false;
+            var failedFiles = [];
+            for (var fi = 0; fi < reviewReport.issues.length; fi++) {
+              var issue = reviewReport.issues[fi];
+              var filePath = issue.split(':')[0].trim();
+              sessionCtx.reviewCounts = sessionCtx.reviewCounts || {};
+              sessionCtx.reviewCounts[filePath] = (sessionCtx.reviewCounts[filePath] || 0) + 1;
+              if (sessionCtx.reviewCounts[filePath] > 2) {
+                limitExceeded = true;
+                failedFiles.push(filePath);
+              }
+            }
+
+            if (!limitExceeded) {
+              hasReviewIssues = true;
+              console.log('[AGENT LOOP] Review failed. Injecting feedback and repeating iteration.');
+              var feedbackMsg = {
+                role: 'user',
+                content: '## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
+                         reviewReport.issues.map(formatReviewIssueItem).join('\n') +
+                         '\n\nPlease address these issues (such as removing placeholders, resolving empty catch blocks, fixing syntax, or correcting credential leaks) in the next iteration.'
+              };
+              messages.push(feedbackMsg);
+              sendHistoryUpdate();
+            } else {
+              console.warn('[AGENT LOOP] Fixation protection triggered for files: ' + failedFiles.join(', ') + '. Skipping further refinement.');
+            }
           }
         } catch (_) {
           // Intentionally ignored to allow safe execution fallback
+        }
+
+        if (hasReviewIssues) {
+          continue;
         }
 
         try {

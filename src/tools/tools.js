@@ -11,6 +11,7 @@ import * as planningManager from '../context/planningManager.js';
 import * as runtime from '../agents/runtime.js';
 import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import { parseSymbols } from '../context/symbolParser.js';
+import * as projectKnowledge from '../context/projectKnowledge.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
@@ -49,7 +50,9 @@ function sleep(ms) {
 function _safePath(workspace, relPath) {
   var base = path.resolve(workspace);
   var target = path.resolve(path.join(base, relPath));
-  if (!target.startsWith(base)) {
+  var isSame = (target === base);
+  var isSub = target.startsWith(base + path.sep);
+  if (!isSame && !isSub) {
     throw new Error('Path traversal blocked: ' + relPath);
   }
   return target;
@@ -911,6 +914,14 @@ async function* get_plan(args, workspace) {
           }
         }
       }
+    } else if (result.steps) {
+      for (var si = 0; si < result.steps.length; si++) {
+        var st = result.steps[si].status;
+        if (st === 'completed') completedCount++;
+        else if (st === 'pending' || st === 'blocked') pendingCount++;
+        else if (st === 'failed') failedCount++;
+        else if (st === 'skipped') skippedCount++;
+      }
     }
 
     var serializedPhases = [];
@@ -966,33 +977,22 @@ async function* get_plan(args, workspace) {
   }
 }
 
-// ── invoke_subagent — Delegate to specialized sub-agent role ─────
-async function* invoke_subagent(args, workspace) {
-  var role = args.role || 'coding';
-  var task = args.task || args.prompt || args.goal || '';
-
-  yield { type: 'action', action: 'invoke_subagent', message: 'Delegating task to sub-agent [' + role + ']: ' + task };
-
-  if (!task) {
+// ── query_project_db — Execute a SELECT query on the SQLite project database ─────
+async function* query_project_db(args, workspace) {
+  var sqlQuery = args.sql_query || '';
+  yield { type: 'action', action: 'query_project_db', message: 'Querying project database: ' + sqlQuery };
+  try {
+    var results = projectKnowledge.queryProjectDb(sqlQuery);
     yield {
       type: 'tool_result',
-      tool: 'invoke_subagent',
-      success: false,
-      message: 'Sub-agent task description is required.'
+      tool: 'query_project_db',
+      success: true,
+      results: results,
+      message: 'Executed SQL query successfully. Returned ' + results.length + ' rows.'
     };
-    return;
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'query_project_db', success: false, message: e.message };
   }
-
-  var rolePrompt = multiAgentRuntime.getRolePrompt(role);
-
-  yield {
-    type: 'tool_result',
-    tool: 'invoke_subagent',
-    success: true,
-    role: role,
-    task: task,
-    message: 'Sub-agent [' + role + '] delegated task: "' + task + '". Role instructions:\n' + rolePrompt
-  };
 }
 
 // =====================================================
@@ -1164,15 +1164,14 @@ export function registerAllTools() {
     required: []
   });
 
-  // ── Multi-Agent ────────────────────────────────────
-  reg('invoke_subagent', invoke_subagent, {
-    category: 'multiagent',
-    description: 'Delegate a specialized task to a sub-agent role (research, coding, testing, review, planner, documentation). Uses the configured LLM model instance with specialized role prompts.',
+  // ── Database Queries ───────────────────────────────
+  reg('query_project_db', query_project_db, {
+    category: 'database',
+    description: 'Query the SQLite project knowledge database containing file index, text chunks, and code symbols (functions, classes, logic structure) of the project workspace. Use SELECT read-only SQL queries.',
     parameters: {
-      role: { type: 'string', description: 'Sub-agent role: research, coding, testing, review, planner, documentation' },
-      task: { type: 'string', description: 'Clear, specific description of what the sub-agent should accomplish' }
+      sql_query: { type: 'string', description: 'Read-only SELECT query to run (e.g. SELECT * FROM symbols WHERE type = \'function\')' }
     },
-    required: ['role', 'task']
+    required: ['sql_query']
   });
 
   console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');
