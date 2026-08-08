@@ -648,334 +648,39 @@ async function* web_request(args, workspace) {
 async function* update_plan(args, workspace) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
 
-  var planId = args.plan_id || args.planId || '';
-  var taskId = args.task_id != null ? args.task_id : (args.taskId != null ? args.taskId : (args.step_id != null ? args.step_id : (args.stepId != null ? args.stepId : (args.step != null ? args.step : (args.order != null ? args.order : (args.task != null ? args.task : ''))))));
-  var status = args.status || args.new_status || args.newStatus || args.task_status || '';
-  var tasks = args.tasks || args.steps || [];
-
-  if (!planId) {
-    planId = discoverCurrentPlanId();
-  }
-
-  if (planId && taskId && status) {
-    var observation = args.observation ? {
-      type: status === 'completed' ? 'success' : status === 'failed' ? 'failure' : 'info',
-      detail: args.observation || '',
-      source: 'update_plan_tool',
-      output: args.output || ''
-    } : null;
-
-    var result = planningManager.updateTaskStatus(planId, taskId, status, observation);
-    var enginePlan = result.plan || planningManager.getPlan(planId);
-
-    if (enginePlan) runtime.updatePlan(enginePlan);
-
-    var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
-    if (enginePlan && enginePlan.phases) {
-      for (var pi = 0; pi < enginePlan.phases.length; pi++) {
-        var ph = enginePlan.phases[pi];
-        if (ph.tasks) {
-          for (var ti = 0; ti < ph.tasks.length; ti++) {
-            var st = ph.tasks[ti].status;
-            if (st === 'completed') completedCount++;
-            else if (st === 'pending' || st === 'blocked') pendingCount++;
-            else if (st === 'failed') failedCount++;
-            else if (st === 'skipped') skippedCount++;
-          }
-        }
-      }
-    }
-
-    var success = result.success !== false;
-    yield {
-      type: 'tool_result',
-      tool: 'update_plan',
-      success: success,
-      planId: planId,
-      taskId: taskId,
-      newStatus: status,
-      completedCount: completedCount,
-      pendingCount: pendingCount,
-      failedCount: failedCount,
-      skippedCount: skippedCount,
-      totalTasks: completedCount + pendingCount + failedCount + skippedCount,
-      message: success ? ('Task ' + taskId + ' updated to ' + status + ' (plan: ' + planId + '). Progress: ' + completedCount + '/' + (completedCount + pendingCount + failedCount + skippedCount) + ' done.') : 'Failed to update task ' + taskId + ' in plan ' + planId,
-      plan: enginePlan ? enginePlan : null,
-      readyTasks: result.readyTasks || [],
-      blockedTasks: result.blockedTasks || []
-    };
+  var plan = args.plan || '';
+  if (!plan) {
+    yield { type: 'tool_result', tool: 'update_plan', success: false, message: 'Missing required parameter: plan' };
     return;
   }
 
-  if (planId && !taskId) {
-    var enginePlan = planningManager.getPlan(planId);
-    if (enginePlan) {
-      var planSummary = 'Plan ' + planId + ': ' + (enginePlan.summary || enginePlan.goal || '') + ' [' + enginePlan.status + ']';
-      yield {
-        type: 'tool_result',
-        tool: 'update_plan',
-        success: true,
-        plan: enginePlan,
-        message: planSummary + '\nUse update_plan with task_id to update individual tasks.'
-      };
-      return;
-    }
-  }
-
-  if (tasks && !Array.isArray(tasks)) tasks = [tasks];
   yield {
     type: 'tool_result',
     tool: 'update_plan',
     success: true,
-    message: 'Plan updated successfully.' + (planId ? ' (plan: ' + planId + ')' : ''),
-    steps: tasks
+    plan: plan,
+    message: 'Plan updated successfully.'
   };
-}
-
-function discoverCurrentPlanId() {
-  try {
-    var activePlanId = runtime.getActivePlanId();
-    if (activePlanId) return activePlanId;
-
-    var activePlan = runtime.getCurrentPlan();
-    if (activePlan && activePlan.id) return activePlan.id;
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  try {
-    var allPlans = runtime.getAllPlans();
-    if (allPlans && allPlans.length) {
-      var best = allPlans[0];
-      for (var i = 1; i < allPlans.length; i++) {
-        if (allPlans[i].updatedAt > best.updatedAt) best = allPlans[i];
-      }
-      if (best && best.status !== 'completed' && best.status !== 'failed' && best.status !== 'cancelled') {
-        return best.id;
-      }
-      return best.id;
-    }
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  return '';
 }
 
 async function* create_plan(args, workspace) {
   yield { type: 'action', action: 'create_plan', message: 'Creating execution plan' };
 
-  var goal = args.goal || args.description || '';
-  var steps = args.steps || args.tasks || [];
-
-  if (goal && workspace) {
-    var analysis = planningManager.analyzeRequest(goal, null, workspace);
-    var sessionId = args.session_id || 'session_' + Date.now();
-    var plan = planningManager.buildPlan(analysis, sessionId);
-
-    runtime.registerPlan(plan);
-    runtime.setActivePlanId(plan.id);
-
-    var taskIds = [];
-    var totalTasks = 0;
-    var pendingTasks = 0;
-    if (plan.phases) {
-      for (var pi = 0; pi < plan.phases.length; pi++) {
-        var ph = plan.phases[pi];
-        if (ph.tasks) {
-          for (var ti = 0; ti < ph.tasks.length; ti++) {
-            var t = ph.tasks[ti];
-            taskIds.push(t.id);
-            totalTasks++;
-            if (t.status === 'pending') pendingTasks++;
-          }
-        }
-      }
-    }
-
-    var serializedPhases = [];
-    for (var pi = 0; pi < plan.phases.length; pi++) {
-      var ph = plan.phases[pi];
-      var serializedTasks = [];
-      for (var ti = 0; ti < ph.tasks.length; ti++) {
-        var t = ph.tasks[ti];
-        serializedTasks.push({
-          id: t.id,
-          description: t.description,
-          status: t.status,
-          complexity: t.complexity,
-          action: t.action,
-          dependsOn: t.dependsOn,
-          parallelWith: t.parallelWith
-        });
-      }
-      serializedPhases.push({
-        id: ph.id,
-        name: ph.name,
-        description: ph.description,
-        order: ph.order,
-        status: ph.status,
-        tasks: serializedTasks,
-        parallelGroups: ph.parallelGroups
-      });
-    }
-
-    yield {
-      type: 'tool_result',
-      tool: 'create_plan',
-      success: true,
-      message: 'Structured plan created with ' + plan.phases.length + ' phases and ' +
-               totalTasks + ' tasks. Complexity: ' + plan.complexity.label +
-               '. Estimated ~' + plan.estimatedIterations + ' iterations.',
-      planId: plan.id,
-      taskIds: taskIds,
-      totalTasks: totalTasks,
-      pendingTasks: pendingTasks,
-      plan: {
-        id: plan.id,
-        goal: plan.goal,
-        summary: plan.summary,
-        phases: serializedPhases,
-        status: plan.status,
-        complexity: plan.complexity,
-        risks: plan.risks,
-        estimatedIterations: plan.estimatedIterations,
-        executionGraph: plan.executionGraph
-      }
-    };
+  var plan = args.plan || '';
+  if (!plan) {
+    yield { type: 'tool_result', tool: 'create_plan', success: false, message: 'Missing required parameter: plan' };
     return;
   }
 
-  if (steps && !Array.isArray(steps)) steps = [steps];
-  var serializedSteps = [];
-  for (var idx = 0; idx < steps.length; idx++) {
-    var st = steps[idx];
-    serializedSteps.push({
-      id: String(idx + 1),
-      order: idx + 1,
-      description: typeof st === 'string' ? st : (st.description || st.step || ''),
-      status: (typeof st === 'object' && st.status) ? st.status : 'pending'
-    });
-  }
-
-  var fallbackPlan = {
-    id: '1',
-    goal: goal || 'Execution Plan',
-    status: 'active',
-    steps: serializedSteps
-  };
   yield {
     type: 'tool_result',
     tool: 'create_plan',
     success: true,
-    message: 'Plan created successfully with ' + steps.length + ' steps.',
-    plan: fallbackPlan,
-    steps: steps
+    plan: plan,
+    message: 'Plan created successfully.'
   };
 }
 
-// ── get_plan — Query current plan status ─────────────
-async function* get_plan(args, workspace) {
-  yield { type: 'action', action: 'get_plan', message: 'Getting plan status' };
-  try {
-    var planId = args.plan_id || args.planId || '';
-
-    if (!planId) {
-      var activePlan = runtime.getCurrentPlan();
-      if (activePlan) planId = activePlan.id;
-    }
-
-    var result = planId ? (runtime.getPlan(planId) || planningManager.getPlan(planId))
-                        : runtime.getCurrentPlan();
-
-    if (!result) {
-      var allPlans = planningManager.getActivePlansContext();
-      var activeId = runtime.getActivePlanId();
-      var activeInfo = activeId ? (' Active plan: ' + activeId) : '';
-      yield {
-        type: 'tool_result', tool: 'get_plan', success: true,
-        message: (allPlans || 'No active plans found.') + activeInfo,
-        plan: null
-      };
-      return;
-    }
-
-    var completedCount = 0, pendingCount = 0, failedCount = 0, skippedCount = 0;
-    if (result.phases) {
-      for (var pi = 0; pi < result.phases.length; pi++) {
-        var ph = result.phases[pi];
-        if (ph.tasks) {
-          for (var ti = 0; ti < ph.tasks.length; ti++) {
-            var st = ph.tasks[ti].status;
-            if (st === 'completed') completedCount++;
-            else if (st === 'pending' || st === 'blocked') pendingCount++;
-            else if (st === 'failed') failedCount++;
-            else if (st === 'skipped') skippedCount++;
-          }
-        }
-      }
-    } else if (result.steps) {
-      for (var si = 0; si < result.steps.length; si++) {
-        var st = result.steps[si].status;
-        if (st === 'completed') completedCount++;
-        else if (st === 'pending' || st === 'blocked') pendingCount++;
-        else if (st === 'failed') failedCount++;
-        else if (st === 'skipped') skippedCount++;
-      }
-    }
-
-    var serializedPhases = [];
-    if (result.phases) {
-      for (var pi = 0; pi < result.phases.length; pi++) {
-        var ph = result.phases[pi];
-        var serializedTasks = [];
-        for (var ti = 0; ti < ph.tasks.length; ti++) {
-          var t = ph.tasks[ti];
-          serializedTasks.push({
-            id: t.id,
-            description: t.description,
-            status: t.status,
-            complexity: t.complexity,
-            action: t.action,
-            dependsOn: t.dependsOn,
-            parallelWith: t.parallelWith
-          });
-        }
-        serializedPhases.push({
-          id: ph.id,
-          name: ph.name,
-          order: ph.order,
-          status: ph.status,
-          tasks: serializedTasks
-        });
-      }
-    }
-
-    yield {
-      type: 'tool_result', tool: 'get_plan', success: true,
-      planId: result.id,
-      status: result.status,
-      completedCount: completedCount,
-      pendingCount: pendingCount,
-      failedCount: failedCount,
-      skippedCount: skippedCount,
-      totalTasks: completedCount + pendingCount + failedCount + skippedCount,
-      plan: {
-        id: result.id, goal: result.goal, summary: result.summary,
-        status: result.status,
-        phases: serializedPhases,
-        complexity: result.complexity,
-        estimatedIterations: result.estimatedIterations,
-        executionGraph: result.executionGraph
-      },
-      message: 'Plan ' + result.id + ': ' + result.status + ' | ' +
-               completedCount + '/' + (completedCount + pendingCount + failedCount + skippedCount) +
-               ' done | ' + result.summary
-    };
-  } catch (e) {
-    yield { type: 'tool_result', tool: 'get_plan', success: false, message: e.message };
-  }
-}
 
 // ── query_project_db — Execute a SELECT query on the SQLite project database ─────
 async function* query_project_db(args, workspace) {
@@ -1147,21 +852,15 @@ export function registerAllTools() {
   // ── Planning ───────────────────────────────────────
   reg('create_plan', create_plan, {
     category: 'planning',
-    description: 'Create a structured execution plan. Provide goal for auto-analysis, or manual steps.',
-    parameters: { goal: { type: 'string' }, session_id: { type: 'string' }, steps: { type: 'array' } },
-    required: []
+    description: "Sets up and initializes the initial checklist goals plan card string. The plan MUST contain a bulleted list of tasks, where each task starts with '- [ ]' (or '- [/]' or '- [x]') followed by a unique numeric ID (e.g. '1', '2', '3') and description, so that the tasks can be referenced and updated later using their IDs.",
+    parameters: { plan: { type: 'string', description: 'Checklist card contents description' } },
+    required: ['plan']
   });
   reg('update_plan', update_plan, {
     category: 'planning',
-    description: 'Update individual task statuses in an execution plan. Call this after completing a task to mark it done and advance. Provide observation with what you accomplished.',
-    parameters: { plan_id: { type: 'string', description: 'The plan ID (e.g., plan_xxx). Required.' }, task_id: { type: 'string', description: 'The task ID to update (e.g., t1_1). Required.' }, status: { type: 'string', description: 'New status: pending, active, completed, failed, skipped.' }, observation: { type: 'string', description: 'Brief note about what was done or why it failed.' }, output: { type: 'string', description: 'Summary of the output/results.' } },
-    required: ['plan_id', 'task_id', 'status']
-  });
-  reg('get_plan', get_plan, {
-    category: 'planning',
-    description: 'Get the current execution plan status. Use without plan_id to list all plans. Use with plan_id to get a specific plan with full task details.',
-    parameters: { plan_id: { type: 'string', description: 'Optional plan ID. Omit to list all plans.' } },
-    required: []
+    description: "Modifies and updates the active checklist goals plan card string status. Provide the complete updated plan containing the task checklist items with sequential numeric IDs (e.g. '1', '2', '3') and status boxes updated as necessary (e.g. changing '[ ]' to '[/]' or '[x]').",
+    parameters: { plan: { type: 'string', description: 'Checklist card contents description' } },
+    required: ['plan']
   });
 
   // ── Database Queries ───────────────────────────────

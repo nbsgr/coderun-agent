@@ -217,123 +217,16 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
 
   if (lastResult) {
     // Verify tool result
-    if (toolName === 'create_plan' && (lastResult.plan || lastResult.steps)) {
+    if (toolName === 'create_plan' && lastResult.plan) {
       try {
-        if (lastResult.plan) {
-          sessionCtx.plan = lastResult.plan;
-          runtime.setCurrentPlan(sessionCtx.plan);
-          goalTracker.syncWithPlan(sessionCtx.plan);
-          sendEvent({ type: 'plan_created', plan: sessionCtx.plan });
-        } else if (lastResult.steps) {
-          var analysis = planningManager.analyzeRequest(userPrompt, null, workspace);
-          var newPlan = planningManager.buildPlan(analysis, sessionId);
-          sessionCtx.plan = newPlan;
-          runtime.setCurrentPlan(sessionCtx.plan);
-          goalTracker.syncWithPlan(sessionCtx.plan);
-          sendEvent({ type: 'plan_created', plan: sessionCtx.plan });
-        }
+        sessionCtx.plan = lastResult.plan;
+        sendEvent({ type: 'plan_created', plan: sessionCtx.plan });
       } catch (_) {
         // Intentionally ignored to allow safe execution fallback
       }
     } else if (toolName === 'update_plan' && lastResult.plan) {
       try {
         sessionCtx.plan = lastResult.plan;
-        var totalT = 0, compT = 0;
-        if (sessionCtx.plan.phases) {
-          for (var cpi = 0; cpi < sessionCtx.plan.phases.length; cpi++) {
-            if (sessionCtx.plan.phases[cpi].tasks) {
-              totalT += sessionCtx.plan.phases[cpi].tasks.length;
-              for (var ti = 0; ti < sessionCtx.plan.phases[cpi].tasks.length; ti++) {
-                if (sessionCtx.plan.phases[cpi].tasks[ti].status === 'completed') {
-                  compT++;
-                }
-              }
-            }
-          }
-        } else if (sessionCtx.plan.steps) {
-          totalT = sessionCtx.plan.steps.length;
-          for (var si = 0; si < sessionCtx.plan.steps.length; si++) {
-            if (sessionCtx.plan.steps[si].status === 'completed') {
-              compT++;
-            }
-          }
-        }
-        if (totalT > 0 && compT === totalT) {
-          sessionCtx.plan.status = 'completed';
-          runtime.setCurrentPlan(null);
-          goalTracker.syncWithPlan(null);
-          sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
-          sessionCtx.plan = null;
-        } else {
-          runtime.setCurrentPlan(sessionCtx.plan);
-          goalTracker.syncWithPlan(sessionCtx.plan);
-          sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
-        }
-      } catch (_) {
-        // Intentionally ignored to allow safe execution fallback
-      }
-    } else if (toolName === 'update_plan' && lastResult.steps) {
-      try {
-        if (!sessionCtx.plan) {
-          sessionCtx.plan = {
-            id: 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-            session_id: history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
-                                            : 'session_' + Date.now(),
-            goal: userPrompt,
-            steps: [],
-            status: 'draft',
-            created_at: Date.now()
-          };
-          runtime.setCurrentPlan(sessionCtx.plan);
-        }
-        if (sessionCtx.plan && sessionCtx.plan.steps) {
-          for (var ui = 0; ui < lastResult.steps.length; ui++) {
-            var upd = lastResult.steps[ui];
-            var step = null;
-            for (var si = 0; si < sessionCtx.plan.steps.length; si++) {
-              if (sessionCtx.plan.steps[si].order === upd.order) {
-                step = sessionCtx.plan.steps[si];
-                break;
-              }
-            }
-            if (step) {
-              if (upd.status) step.status = upd.status;
-              if (upd.description) step.description = upd.description;
-            } else {
-              sessionCtx.plan.steps.push(upd);
-            }
-          }
-          var allCompleted = sessionCtx.plan.steps.length > 0;
-          if (allCompleted) {
-            for (var si = 0; si < sessionCtx.plan.steps.length; si++) {
-              if (sessionCtx.plan.steps[si].status !== 'completed') {
-                allCompleted = false;
-                break;
-              }
-            }
-          }
-          if (allCompleted) {
-            sessionCtx.plan.status = 'completed';
-            runtime.setCurrentPlan(null);
-            goalTracker.syncWithPlan(null);
-            sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
-            sessionCtx.plan = null;
-          } else {
-            goalTracker.syncWithPlan(sessionCtx.plan);
-            sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
-            try { planningManager.storePlan(sessionCtx.plan); } catch (_) {
-              // Intentionally ignored to allow safe execution fallback
-            }
-          }
-        }
-      } catch (_) {
-        // Intentionally ignored to allow safe execution fallback
-      }
-    } else if (toolName === 'get_plan') {
-      try {
-        sessionCtx.plan = lastResult.plan || null;
-        runtime.setCurrentPlan(sessionCtx.plan);
-        goalTracker.syncWithPlan(sessionCtx.plan);
         sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
       } catch (_) {
         // Intentionally ignored to allow safe execution fallback
@@ -910,12 +803,9 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (currentPlan) {
         try {
-          var planStatusContext = planningManager.getActivePlansContext();
-          if (planStatusContext) {
-            var lastMsg = messages[messages.length - 1];
-            if (lastMsg && lastMsg.role === 'tool') {
-              lastMsg.content = (lastMsg.content || '') + '\n\n[PLAN STATUS]\n' + planStatusContext;
-            }
+          var lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === 'tool') {
+            lastMsg.content = (lastMsg.content || '') + '\n\n[CURRENT PLAN]\n' + currentPlan;
           }
         } catch (_) {
           // Intentionally ignored to allow safe execution fallback

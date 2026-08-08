@@ -256,30 +256,34 @@ function defaultFormatResult(toolName, result) {
 
   if (res.plan !== undefined && res.plan !== null) {
     var plan = res.plan;
-    parts.push('Plan ID: ' + (plan.id || 'unknown'));
-    parts.push('Goal: ' + (plan.goal || plan.summary || ''));
-    parts.push('Status: ' + (plan.status || 'unknown'));
-    parts.push('Complexity: ' + ((plan.complexity && plan.complexity.label) || 'unknown'));
-    if (plan.phases && plan.phases.length) {
-      parts.push('Phases:');
-      for (var pi = 0; pi < plan.phases.length; pi++) {
-        var ph = plan.phases[pi];
-        parts.push('  Phase ' + (pi + 1) + ': ' + ph.name + ' [' + ph.status + ']');
-        if (ph.tasks && ph.tasks.length) {
-          for (var ti = 0; ti < ph.tasks.length; ti++) {
-            var t = ph.tasks[ti];
-            parts.push('    Task ' + t.id + ': ' + t.description + ' [' + t.status + ']' +
-              (t.dependsOn && t.dependsOn.length ? ' (depends: ' + t.dependsOn.join(',') + ')' : '') +
-              (t.parallelWith && t.parallelWith.length ? ' (parallel: ' + t.parallelWith.join(',') + ')' : ''));
+    if (typeof plan === 'string') {
+      parts.push('Plan:\n' + plan);
+    } else {
+      parts.push('Plan ID: ' + (plan.id || 'unknown'));
+      parts.push('Goal: ' + (plan.goal || plan.summary || ''));
+      parts.push('Status: ' + (plan.status || 'unknown'));
+      parts.push('Complexity: ' + ((plan.complexity && plan.complexity.label) || 'unknown'));
+      if (plan.phases && plan.phases.length) {
+        parts.push('Phases:');
+        for (var pi = 0; pi < plan.phases.length; pi++) {
+          var ph = plan.phases[pi];
+          parts.push('  Phase ' + (pi + 1) + ': ' + ph.name + ' [' + ph.status + ']');
+          if (ph.tasks && ph.tasks.length) {
+            for (var ti = 0; ti < ph.tasks.length; ti++) {
+              var t = ph.tasks[ti];
+              parts.push('    Task ' + t.id + ': ' + t.description + ' [' + t.status + ']' +
+                (t.dependsOn && t.dependsOn.length ? ' (depends: ' + t.dependsOn.join(',') + ')' : '') +
+                (t.parallelWith && t.parallelWith.length ? ' (parallel: ' + t.parallelWith.join(',') + ')' : ''));
+            }
           }
         }
       }
-    }
-    if (plan.executionGraph && plan.executionGraph.entryPoints) {
-      parts.push('Entry Points: ' + plan.executionGraph.entryPoints.join(', '));
-    }
-    if (plan.executionGraph && plan.executionGraph.criticalPath) {
-      parts.push('Critical Path: ' + plan.executionGraph.criticalPath.join(' -> '));
+      if (plan.executionGraph && plan.executionGraph.entryPoints) {
+        parts.push('Entry Points: ' + plan.executionGraph.entryPoints.join(', '));
+      }
+      if (plan.executionGraph && plan.executionGraph.criticalPath) {
+        parts.push('Critical Path: ' + plan.executionGraph.criticalPath.join(' -> '));
+      }
     }
   }
   return parts.join('\n');

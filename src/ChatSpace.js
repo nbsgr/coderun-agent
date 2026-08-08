@@ -216,6 +216,64 @@
     if (chatCtx.controlsPanel) chatCtx.controlsPanel.style.display = 'none';
   }
 
+  function parseChecklistItems(planStr) {
+    if (typeof planStr !== 'string') return [];
+    var items = [];
+    var lines = planStr.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      var match = line.match(/^-\s*\[([ \/xX])\]\s*(\d+)\s+(.*)/);
+      if (match) {
+        items.push({
+          mark: match[1],
+          id: match[2],
+          desc: match[3]
+        });
+      }
+    }
+    return items;
+  }
+
+  function mergeChatPlan(existingPlan, newPlan) {
+    if (!existingPlan) return newPlan;
+    if (typeof newPlan !== 'string') return existingPlan;
+    if (typeof existingPlan !== 'string') return newPlan;
+
+    var existingItems = parseChecklistItems(existingPlan);
+    var newItems = parseChecklistItems(newPlan);
+
+    if (!existingItems.length) return newPlan;
+    if (!newItems.length) return existingPlan;
+
+    var mergedMap = {};
+    var orderList = [];
+
+    for (var i = 0; i < existingItems.length; i++) {
+      var item = existingItems[i];
+      mergedMap[item.id] = item;
+      orderList.push(item.id);
+    }
+
+    for (var j = 0; j < newItems.length; j++) {
+      var newItem = newItems[j];
+      if (mergedMap[newItem.id]) {
+        mergedMap[newItem.id].mark = newItem.mark;
+        mergedMap[newItem.id].desc = newItem.desc;
+      } else {
+        mergedMap[newItem.id] = newItem;
+        orderList.push(newItem.id);
+      }
+    }
+
+    var lines = [];
+    for (var k = 0; k < orderList.length; k++) {
+      var key = orderList[k];
+      var itm = mergedMap[key];
+      lines.push('- [' + itm.mark + '] ' + itm.id + ' ' + itm.desc);
+    }
+    return lines.join('\n');
+  }
+
   function renderTodos(chatCtx, plan) {
     if (!chatCtx.todosPanel) return;
     if (!plan) {
@@ -224,7 +282,22 @@
     }
 
     var steps = [];
-    if (plan.phases && plan.phases.length) {
+    if (typeof plan === 'string') {
+      var lines = plan.split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        var match = line.match(/^-\s*\[([ \/xX])\]\s*(\d+)\s+(.*)/);
+        if (match) {
+          var mark = match[1];
+          var id = match[2];
+          var desc = match[3];
+          var status = 'pending';
+          if (mark === '/') status = 'active';
+          if (mark === 'x' || mark === 'X') status = 'completed';
+          steps.push({ id: id, description: desc, status: status });
+        }
+      }
+    } else if (plan.phases && plan.phases.length) {
       for (var pi = 0; pi < plan.phases.length; pi++) {
         var ph = plan.phases[pi];
         if (ph.tasks) {
@@ -254,6 +327,11 @@
       }
     }
     var totalCount = steps.length;
+
+    if (totalCount > 0 && completedCount === totalCount) {
+      chatCtx.todosPanel.style.display = 'none';
+      return;
+    }
 
     chatCtx.todosPanel.style.display = 'block';
     var isCollapsed = chatCtx.todosPanel.dataset.collapsed === 'true';
@@ -289,7 +367,9 @@
       '</div>';
 
     var header = chatCtx.todosPanel.querySelector('.cr-todos-header');
-    header.onclick = handleTodosHeaderClick.bind(null, chatCtx, plan);
+    header.onclick = function() {
+      handleTodosHeaderClick(chatCtx, plan);
+    };
   }
 
   function handleTodosHeaderClick(chatCtx, plan) {
@@ -955,7 +1035,9 @@
 
       clearStreamTurn(chatCtx);
       S.fullResponse = '';
-      S.botBody = appendBotWrapper(msgList);
+      if (!S.botBody || !S.botBody.parentNode) {
+        S.botBody = appendBotWrapper(msgList);
+      }
       appendTyping(S.botBody);
       setStreaming(chatCtx, true);
       scrollBottom(msgList);
@@ -1098,13 +1180,11 @@
       switch (ev.type) {
         case 'plan_created':
         case 'plan_updated': {
-          if (ev.plan) {
-            chatCtx.conversation.plan = ev.plan;
-            renderTodos(chatCtx, ev.plan);
+            chatCtx.conversation.plan = mergeChatPlan(chatCtx.conversation.plan, ev.plan);
+            renderTodos(chatCtx, chatCtx.conversation.plan);
             if (window.saveConversationMessageBatch) {
-              window.saveConversationMessageBatch(chatCtx.convId, null, ev.plan);
+              window.saveConversationMessageBatch(chatCtx.convId, null, chatCtx.conversation.plan);
             }
-          }
           break;
         }
         case 'chat_history_update': {
@@ -2407,6 +2487,11 @@
 
   function formatToolResultText(toolName, result) {
     if (!result) return '';
+    if (toolName === 'create_plan' || toolName === 'update_plan') {
+      if (result.plan) {
+        return typeof result.plan === 'string' ? result.plan : JSON.stringify(result.plan, null, 2);
+      }
+    }
     if (toolName === 'run_terminal') {
       var parts = [];
       parts.push('Shell: ' + (result.shell || 'unknown'));

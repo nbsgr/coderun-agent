@@ -45,35 +45,36 @@ export function buildMessages(userPrompt, options) {
   systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
 
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
-    'You may use `create_plan`, `update_plan`, and `get_plan` when the user request genuinely benefits from structured tracking. Decide yourself whether planning is useful; do not create plans for simple answers or short single-step tasks.\n' +
+    'You may use `create_plan` and `update_plan` when the user request genuinely benefits from structured tracking. ' +
+    'Decide yourself whether planning is useful; do not create plans for simple answers or short single-step tasks.\n' +
     '\n' +
-    '### Goal-based planning:\n' +
-    'Call `create_plan` with a `goal` description. The Planning Engine will automatically:\n' +
-    '  - Analyze the user request and detect intent (code_generation, refactoring, debugging, etc.)\n' +
-    '  - Estimate complexity (low/medium/high/very_high)\n' +
-    '  - Identify required tools\n' +
-    '  - Build a hierarchical plan with phases, tasks, and dependency DAG\n' +
-    '  - Detect tasks that can run in parallel (parallel groups)\n' +
-    '  - Assess risks\n' +
-    '  - Return an execution graph with entry points and critical path\n' +
+    '### Creating a plan:\n' +
+    'Call `create_plan` with a `plan` string containing a bulleted checklist. Each task MUST start with ' +
+    '\'- [ ]\' followed by a unique sequential numeric ID and description.\n' +
+    'Example:\n' +
+    '```\n' +
+    '- [ ] 1 Analyze the project structure\n' +
+    '- [ ] 2 Create the component files\n' +
+    '- [ ] 3 Write unit tests\n' +
+    '- [ ] 4 Update documentation\n' +
+    '```\n' +
     '\n' +
-    '### Task-level updates (REQUIRED for plan progression):\n' +
-    'After you complete a tool call that fulfills the current active task, **you MUST call `update_plan`** to mark it as completed and advance to the next task.\n' +
-    'Use `update_plan` with `plan_id` (always "1"), `task_id` (e.g. "1", "2"), and `status` to update individual tasks.\n' +
-    'Task IDs are simple sequential numbers (e.g., 1, 2, 3, 4...).\n' +
-    'Status values: pending, active, completed, failed, skipped.\n' +
-    'You can also include an `observation` explaining why the task succeeded or failed.\n' +
+    '### Updating a plan:\n' +
+    'Call `update_plan` with the complete updated `plan` string. Change status boxes as you progress:\n' +
+    '- `[ ]` = pending (not started)\n' +
+    '- `[/]` = in progress (currently working on)\n' +
+    '- `[x]` = completed (done)\n' +
+    'You MUST include ALL tasks in the updated plan (not just the changed ones).\n' +
+    'Example after completing task 1 and starting task 2:\n' +
+    '```\n' +
+    '- [x] 1 Analyze the project structure\n' +
+    '- [/] 2 Create the component files\n' +
+    '- [ ] 3 Write unit tests\n' +
+    '- [ ] 4 Update documentation\n' +
+    '```\n' +
     '\n' +
-    '**Important:** The current plan status (todos list and task states) is automatically appended to the end of every tool result message so you always see fresh progress. If the active task is done, call `update_plan` right away to mark it completed. Do NOT move on to the next task without updating the plan first.' +
-    '\n' +
-    '### DAG-aware execution:\n' +
-    '- A task can start only when ALL its dependencies are completed.\n' +
-    '- Tasks in the same parallel group can be executed concurrently.\n' +
-    '- If a task fails, check blocked tasks and decide whether to re-plan.\n' +
-    '- Complete tasks in critical path order for optimal throughput.\n' +
-    '\n' +
-    '### Flat checklist (fallback):\n' +
-    'If you prefer manual control, use `create_plan` with a `steps` array. Use `update_plan` with `steps` to update order-based checklists.';
+    '**Important:** After completing a tool call that fulfills a task, call `update_plan` immediately to mark progress. ' +
+    'The current plan is automatically appended to tool results so you always see fresh progress.';
   if (skills.length) {
     systemContent += '\n\n## SKILLS\n' + skills.join('\n');
   }

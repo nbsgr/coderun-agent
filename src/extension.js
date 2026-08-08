@@ -34,23 +34,7 @@ let currentAbortController = null;
 // TOP LEVEL EVENT HANDLERS / HELPER FUNCTIONS
 // =====================================================
 
-function handlePlanChangeSave() {
-  try {
-    var allPlans = runtime.getAllPlans();
-    var activePlans = [];
-    for (var i = 0; i < allPlans.length; i++) {
-      var p = allPlans[i];
-      if (p && p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled') {
-        activePlans.push(p);
-      }
-    }
-    if (extensionContext) {
-      extensionContext.workspaceState.update('coderun_active_plans', activePlans);
-    }
-  } catch (e) {
-    console.error('[CODERUN] Failed to persist active plans:', e);
-  }
-}
+
 
 function handleOpenSidebarCommand() {
   vscode.commands.executeCommand('coderun.chatView.focus');
@@ -192,28 +176,7 @@ export async function activate(context) {
     console.error('[CODERUN] projectKnowledge init failed:', err);
   }
 
-  // Hydrate active plans from VS Code workspaceState
-  try {
-    var savedPlans = context.workspaceState.get('coderun_active_plans');
-    if (savedPlans) {
-      var planList = Array.isArray(savedPlans) ? savedPlans : Object.values(savedPlans);
-      var hydratedCount = 0;
-      for (var i = 0; i < planList.length; i++) {
-        var plan = planList[i];
-        if (plan && plan.id) {
-          runtime.registerPlan(plan);
-          hydratedCount++;
-        }
-      }
-      console.log('[CODERUN] Hydrated active plans from workspaceState:', hydratedCount);
-    }
-  } catch (e) {
-    console.error('[CODERUN] Failed to hydrate plans:', e);
-  }
 
-  // Subscribe to plan events to save active plans to workspaceState
-  events.on('runtime:plan_updated', handlePlanChangeSave);
-  events.on('runtime:plan_removed', handlePlanChangeSave);
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());
@@ -472,10 +435,6 @@ async function handleFrontendMessage(message, webview) {
       var history = message.history;
       var workspaceFolder = message.workspaceFolder;
       var plan = message.plan;
-      if (plan && plan.id) {
-        runtime.registerPlan(plan);
-        runtime.setActivePlanId(plan.id);
-      }
       if (!history || history.length === 0) {
         terminalManager.resetTerminal();
         permissions.resetChatDecisions();
