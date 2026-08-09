@@ -515,7 +515,6 @@
                       '<div id="modelDropdownList" class="cr-combobox-list" style="display:none"></div>' +
                     '</div>' +
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
-                    '<button id="stopGenerationBtn" class="cr-stop-gen-btn" title="Stop generation" style="display:none">Stop</button>' +
                   '</div>' +
                   '<div id="chat-area-container"></div>' +
                 '</section>' +
@@ -569,7 +568,6 @@
 
     document.getElementById("clearAllConvBtn").onclick = handleClearAllConvClick;
 
-    document.getElementById("stopGenerationBtn").onclick = handleStopGenerationClick;
 
     document.addEventListener("keydown", handleDocumentKeyDown);
 
@@ -898,10 +896,6 @@
     if (confirm("Delete all conversations?")) performClearAll();
   }
 
-  function handleStopGenerationClick() {
-    if (window.stopCurrentChatStream) window.stopCurrentChatStream();
-    showStopButton(false);
-  }
 
   function handleDocumentKeyDown(event) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "l") {
@@ -1186,15 +1180,12 @@
   }
 
   function handleChatStreamStart() {
-    showStopButton(true);
   }
 
   function handleChatStreamEnd() {
-    showStopButton(false);
   }
 
   function handleChatStreamError() {
-    showStopButton(false);
   }
 
   function selectConversation(id) {
@@ -1313,10 +1304,7 @@
   window.performDeleteConversation = performDelete;
   window.performClearAllConversations = performClearAll;
 
-  function showStopButton(show) {
-    var button = document.getElementById("stopGenerationBtn");
-    if (button) button.style.display = show ? "inline-flex" : "none";
-  }
+
 
   function updateAgentTimelineStub() {}
   function clearAgentTimelineStub() {}

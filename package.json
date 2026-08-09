@@ -52,7 +52,7 @@
       "activitybar": [
         {
           "id": "coderunSidebar",
-          "title": "CodeRun",
+          "title": "AI-AGENT",
           "icon": "$(comment-discussion)"
         }
       ]
