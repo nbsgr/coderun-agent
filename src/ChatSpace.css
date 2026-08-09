@@ -1196,41 +1196,40 @@ select {
 
 .cr-tool-card-title {
   flex: 1;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #cccccc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e1e1e1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cr-tool-card-status {
-  font-size: 9.5px;
-  padding: 1px 5px;
+  font-size: 9px;
+  padding: 2px 6px;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
-.cr-tool-card-status--running {
-  color: #cca700;
-  background: rgba(204, 167, 0, 0.1);
-}
-
-.cr-tool-card-status--success {
-  color: #3fb950;
-  background: rgba(63, 185, 80, 0.08);
-}
-
-.cr-tool-card-status--error {
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.08);
-}
-
+.cr-tool-card-status--running,
 .cr-tool-card-status--pending {
-  color: #569cd6;
-  background: rgba(86, 156, 214, 0.08);
+  color: #cca700;
+  background: rgba(204, 167, 0, 0.15);
+}
+
+.cr-tool-card-status--success,
+.cr-tool-card-status--completed {
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.cr-tool-card-status--error,
+.cr-tool-card-status--failed {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.12);
 }
 
 .cr-tool-card-chevron {

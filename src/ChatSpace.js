@@ -146,26 +146,45 @@
   // ── Tool name formatter ──────────────────────────────
   function formatToolName(name) {
     var map = {
-      'read_file': 'Read File',
-      'write_file': 'Write File',
-      'edit_file': 'Edit File',
-      'delete_file': 'Delete File',
-      'create_folder': 'Create Folder',
-      'delete_folder': 'Delete Folder',
-      'list_directory': 'Read Directory',
-      'search_files': 'Search Files',
-      'get_file_info': 'File Info',
-      'run_terminal': 'Execute Terminal Command',
-      'get_current_datetime': 'Get DateTime'
+      'read_file': 'READ FILE',
+      'write_file': 'WRITE FILE',
+      'edit_file': 'EDIT FILE',
+      'delete_file': 'DELETE FILE',
+      'create_folder': 'CREATE DIR',
+      'delete_folder': 'DELETE DIR',
+      'list_directory': 'READ DIR',
+      'search_files': 'SEARCH FILES',
+      'get_file_info': 'FILE INFO',
+      'run_terminal': 'RUN COMMAND',
+      'terminal_input': 'TERM INPUT',
+      'stop_terminal': 'STOP TERMINAL',
+      'create_plan': 'CREATE PLAN',
+      'update_plan': 'UPDATE PLAN',
+      'get_current_datetime': 'GET DATETIME'
     };
-    return map[name] || name.replace(/_/g, ' ').replace(/\b\w/g, toUpperCaseChar);
+    return map[name] || (name ? name.replace(/_/g, ' ').toUpperCase() : 'TOOL');
   }
 
   // ── Tool icon selector ───────────────────────────────
   function getToolIcon(name) {
-    if (name === 'run_terminal') return I.terminal;
-    if (name === 'list_directory' || name === 'create_folder' || name === 'delete_folder') return I.folder;
-    return I.tool;
+    var iconMap = {
+      'read_file': '📄',
+      'write_file': '✏️',
+      'edit_file': '📝',
+      'delete_file': '🗑️',
+      'create_folder': '📁',
+      'delete_folder': '🗑️',
+      'list_directory': '📂',
+      'search_files': '🔍',
+      'get_file_info': 'ℹ️',
+      'run_terminal': '💻',
+      'terminal_input': '⌨️',
+      'stop_terminal': '🛑',
+      'create_plan': '📋',
+      'update_plan': '📋',
+      'get_current_datetime': '🕒'
+    };
+    return iconMap[name] || '🛠️';
   }
 
   function toUpperCaseChar(c) {
@@ -1287,10 +1306,10 @@
           var action = ev.action;
           if (action === 'terminal_input' || action === 'stop_terminal') break;
           if (action === 'run_terminal') {
-            var termCard = getLastPendingCard(S);
+            var termCard = findPendingCardByToolName(S, 'run_terminal', ev.toolCallId) || findPendingCardByToolName(S, 'run_terminal');
             if (termCard) {
               var statusEl = termCard.querySelector('.cr-tool-card-status');
-              if (statusEl) statusEl.textContent = 'Running…';
+              if (statusEl) statusEl.textContent = 'PENDING';
               if (ev.toolCallId) S.toolCards[ev.toolCallId] = termCard;
             }
             break;
@@ -1302,9 +1321,6 @@
           }
           if (!pendingCard) {
             pendingCard = findPendingCardByToolName(S, action, ev.toolCallId) || findPendingCardByToolName(S, action);
-            if (!pendingCard) {
-              pendingCard = getLastPendingCard(S);
-            }
             if (pendingCard && ev.toolCallId) {
               S.toolCards[ev.toolCallId] = pendingCard;
             }
@@ -2488,8 +2504,9 @@
   function formatToolResultText(toolName, result) {
     if (!result) return '';
     if (toolName === 'create_plan' || toolName === 'update_plan') {
-      if (result.plan) {
-        return typeof result.plan === 'string' ? result.plan : JSON.stringify(result.plan, null, 2);
+      var planVal = (result && result.plan) || (result && result.args && result.args.plan) || '';
+      if (planVal) {
+        return typeof planVal === 'string' ? planVal : JSON.stringify(planVal, null, 2);
       }
     }
     if (toolName === 'run_terminal') {
@@ -2549,7 +2566,7 @@
     if (!body) return null;
     status = status || 'running';
     var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
-    card.open = (status !== 'success');
+    card.open = (toolName === 'create_plan' || toolName === 'update_plan') ? true : (status !== 'success');
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = toolName;
     card.dataset.status = status;
@@ -2557,38 +2574,7 @@
     var displayName = formatToolName(toolName);
     var iconHtml = getToolIcon(toolName);
 
-    var diffStats = calculateDiffStats(toolName, args, result);
-    var statusLabel = status === 'running' ? 'Running…' : status === 'success' ? 'Completed' : 'Failed';
-    if (status === 'success' && diffStats) {
-      statusLabel = '+' + diffStats.added;
-      if (diffStats.removed > 0) statusLabel += ' -' + diffStats.removed;
-      statusLabel += ' lines';
-    }
-
-    var argsSummary = '';
-    var isFile = false;
-    if (args) {
-      if (args.file_path) {
-        argsSummary = args.file_path;
-        isFile = true;
-      }
-      else if (args.command) argsSummary = truncate(args.command, 60);
-      else if (args.folder_path) {
-        argsSummary = args.folder_path;
-        isFile = true;
-      }
-      else if (args.pattern) argsSummary = args.pattern;
-      else {
-        try {
-          var argsStr = JSON.stringify(args);
-          argsSummary = truncate(argsStr, 60);
-        } catch (_) {
-          // Intentionally ignore and set arguments summary to empty on serialization failure
-          argsSummary = '';
-        }
-      }
-    }
-
+    var statusLabel = (status === 'running' || status === 'pending') ? 'PENDING' : status === 'success' ? 'COMPLETED' : 'FAILED';
     var statusClass = 'cr-tool-card-status--' + status;
     var iconClass = 'cr-tool-card-icon--' + status;
 
@@ -2596,15 +2582,9 @@
     head.innerHTML =
       '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
       '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
-      (argsSummary ? (isFile ? '<span class="cr-tool-card-args cr-clickable-file" data-file-path="' + esc(argsSummary) + '" title="Open file in editor">' + esc(argsSummary) + '</span>' : '<span class="cr-tool-card-args">' + esc(argsSummary) + '</span>') : '') +
       '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
       '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
     card.appendChild(head);
-
-    var fileEl = head.querySelector('.cr-clickable-file');
-    if (fileEl) {
-      fileEl.addEventListener('click', handleFileElClick.bind(null, fileEl));
-    }
 
     var cardBody = mk('div', 'cr-tool-card-body');
     cardBody.style.display = 'block';
@@ -2631,15 +2611,16 @@
 
     var resultContainer = mk('div', 'cr-tool-card-result');
     resultContainer.style.display = 'none';
-    if (result) {
-      var resText = formatToolResultText(toolName, result);
+    var planFromArgs = (toolName === 'create_plan' || toolName === 'update_plan') && args && args.plan ? args.plan : '';
+    if (result || planFromArgs) {
+      var resText = formatToolResultText(toolName, result) || planFromArgs;
       if (resText) {
         resultContainer.style.display = 'block';
         resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
       }
       if (status === 'error') {
         resultContainer.style.display = 'block';
-        resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result.message || result.error || 'Unknown error') + '</div>';
+        resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result ? (result.message || result.error || 'Unknown error') : 'Error') + '</div>';
       }
     }
     cardBody.appendChild(resultContainer);
@@ -2667,29 +2648,24 @@
     var oldStatus = card.dataset.status;
     card.className = 'cr-tool-card cr-tool-card--' + status;
     card.dataset.status = status;
-    card.open = (status !== 'success');
-
     var toolName = card.dataset.toolName;
+    if (toolName === 'create_plan' || toolName === 'update_plan') {
+      card.open = true;
+    } else {
+      card.open = (status !== 'success');
+    }
 
     var iconEl = card.querySelector('.cr-tool-card-icon');
     if (iconEl) {
       iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + status;
-      iconEl.innerHTML = status === 'success' ? I.check : status === 'error' ? I.err : I.spin;
+      var iconHtml = getToolIcon(toolName);
+      iconEl.innerHTML = status === 'success' ? iconHtml : status === 'error' ? iconHtml : I.spin;
     }
 
     var statusEl = card.querySelector('.cr-tool-card-status');
     if (statusEl) {
       statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + status;
-      if (status === 'success' && result) {
-        var diffStats = calculateDiffStats(toolName, null, result);
-        if (diffStats) {
-          statusEl.textContent = '+' + diffStats.added + (diffStats.removed > 0 ? ' -' + diffStats.removed : '') + ' lines';
-        } else {
-          statusEl.textContent = 'Completed';
-        }
-      } else {
-        statusEl.textContent = status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : status;
-      }
+      statusEl.textContent = status === 'success' ? 'COMPLETED' : status === 'error' ? 'FAILED' : 'PENDING';
     }
 
     if (result) {
