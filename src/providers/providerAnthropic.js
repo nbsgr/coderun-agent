@@ -66,7 +66,10 @@ export async function* chat(config, messages, tools) {
       if (!line || !line.startsWith('data: ')) continue;
       try {
         var data = JSON.parse(line.slice(6));
-        yield parseChunk(data);
+        var parsed = parseChunk(data);
+        if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
+          yield parsed;
+        }
       } catch (e) { console.warn('[Anthropic] Failed to parse SSE chunk:', e.message); }
     }
   }
@@ -159,8 +162,24 @@ function convertMessages(messages) {
 
 function parseChunk(data) {
   var result = {};
+  if (data.type === 'message_start' && data.message && data.message.usage) {
+    result.usage = {
+      prompt_tokens: data.message.usage.input_tokens || 0,
+      completion_tokens: data.message.usage.output_tokens || 0,
+      total_tokens: (data.message.usage.input_tokens || 0) + (data.message.usage.output_tokens || 0)
+    };
+  } else if (data.type === 'message_delta' && data.usage) {
+    result.usage = {
+      prompt_tokens: 0,
+      completion_tokens: data.usage.output_tokens || 0,
+      total_tokens: data.usage.output_tokens || 0
+    };
+  }
   if (data.type === 'content_block_delta') {
-    if (data.delta.thinking) result.thinking = data.delta.thinking;
+    if (data.delta.thinking) {
+      result.thinking = data.delta.thinking;
+      result.thinkingKey = 'thinking';
+    }
     if (data.delta.text) result.content = data.delta.text;
     if (data.delta.type === 'input_json_delta' && data.delta.partial_json) {
       result.tool_calls = [{

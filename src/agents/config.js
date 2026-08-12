@@ -15,7 +15,7 @@ export function getConfig() {
   var cfg = vscode.workspace.getConfiguration('coderun');
   _cached = {
     provider: cfg.get('provider', 'ollama'),
-    baseUrl: cfg.get('baseUrl', 'http://localhost:11434'),
+    baseUrl: cfg.get('baseUrl', 'http://localhost:11434/v1'),
     model: cfg.get('model', ''),
     maxIterations: cfg.get('maxIterations', 20),
     streaming: cfg.get('streaming', true),
@@ -98,7 +98,7 @@ export async function deleteApiKey(context, provider) {
 
 export function getOllamaUrl() {
   var cfg = getConfig();
-  return String(cfg.baseUrl || 'http://localhost:11434').replace(/\/+$/, '');
+  return String(cfg.baseUrl || 'http://localhost:11434/v1').replace(/\/+$/, '');
 }
 
 export function getMaxIterations() {

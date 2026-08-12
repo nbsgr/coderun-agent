@@ -1,104 +1,103 @@
-import { handleApiResponseError, safeReadJson } from '../agents/utils.js';
+import OpenAI from 'openai';
+
+function createClient(config) {
+  var options = {
+    baseURL: config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.openai.com/v1',
+    apiKey: config.apiKey || '',
+    dangerouslyAllowBrowser: true
+  };
+  if (config.organization) options.organization = config.organization;
+  if (config.project) options.project = config.project;
+  return new OpenAI(options);
+}
 
 export async function* chat(config, messages, tools) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
-  var headers = {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + config.apiKey
-  };
-  if (config.organization) headers['OpenAI-Organization'] = config.organization;
-  if (config.project) headers['OpenAI-Project'] = config.project;
-
+  var client = createClient(config);
   var body = {
     model: config.model,
     messages: convertMessages(messages),
-    stream: true
+    stream: true,
+    stream_options: { include_usage: true }
   };
   if (tools && tools.length) body.tools = tools;
 
-  var response = await fetch(url, {
-    method: 'POST',
-    headers: headers,
-    body: JSON.stringify(body)
-  });
+  var stream = await client.chat.completions.create(body);
 
-  if (!response.ok) {
-    throw await handleApiResponseError(response, 'OpenAI');
-  }
-
-  var reader = response.body.getReader();
-  var decoder = new TextDecoder('utf-8');
-  var buffer = '';
-
-  while (true) {
-    var chunk = await reader.read();
-    if (chunk.done) break;
-    buffer += decoder.decode(chunk.value, { stream: true });
-    var lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line || line === 'data: [DONE]') continue;
-      if (line.startsWith('data: ')) {
-        try {
-          var data = JSON.parse(line.slice(6));
-          yield parseChunk(data);
-        } catch (e) {
-          // Intentionally ignored to allow safe execution fallback
-        }
-      }
+  for await (var chunk of stream) {
+    var parsed = parseChunk(chunk);
+    if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
+      yield parsed;
     }
   }
 }
 
 export async function listModels(config) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/models';
-  var res = await fetch(url, {
-    headers: { 'Authorization': 'Bearer ' + config.apiKey }
-  });
-  if (!res.ok) throw await handleApiResponseError(res, 'OpenAI');
-  var data = await safeReadJson(res, 'OpenAI');
+  var client = createClient(config);
+  var response = await client.models.list();
   var models = [];
-  if (data.data) {
-    for (var i = 0; i < data.data.length; i++) {
-      models.push(data.data[i].id);
+  if (response && response.data) {
+    for (var i = 0; i < response.data.length; i++) {
+      models.push(response.data[i].id);
     }
   }
   return models;
 }
 
 export async function embeddings(config, texts) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/embeddings';
-  var res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + config.apiKey
-    },
-    body: JSON.stringify({ model: config.model || 'text-embedding-3-small', input: texts })
+  var client = createClient(config);
+  var response = await client.embeddings.create({
+    model: config.model || 'text-embedding-3-small',
+    input: texts
   });
-  var data = await safeReadJson(res, 'OpenAI');
   var embeddingList = [];
-  if (data.data) {
-    for (var i = 0; i < data.data.length; i++) {
-      embeddingList.push(data.data[i].embedding);
+  if (response && response.data) {
+    for (var i = 0; i < response.data.length; i++) {
+      embeddingList.push(response.data[i].embedding);
     }
   }
   return embeddingList;
 }
 
 export async function images(config, prompt) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/images/generations';
-  var res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + config.apiKey
-    },
-    body: JSON.stringify({ model: config.model || 'dall-e-3', prompt: prompt, n: 1 })
+  var client = createClient(config);
+  var response = await client.images.generate({
+    model: config.model || 'dall-e-3',
+    prompt: prompt,
+    n: 1
   });
-  var data = await safeReadJson(res, 'OpenAI');
-  return data.data ? data.data[0].url : null;
+  return response && response.data && response.data[0] ? response.data[0].url : null;
+}
+
+function parseChunk(data) {
+  var result = {};
+  if (data && data.usage) {
+    result.usage = {
+      prompt_tokens: data.usage.prompt_tokens || 0,
+      completion_tokens: data.usage.completion_tokens || 0,
+      total_tokens: data.usage.total_tokens || 0
+    };
+  }
+  var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
+  if (!delta) return result;
+
+  if (delta.content) result.content = delta.content;
+
+  if (delta.reasoning) {
+    result.thinking = delta.reasoning;
+    result.thinkingKey = 'reasoning';
+  } else if (delta.reasoning_content) {
+    result.thinking = delta.reasoning_content;
+    result.thinkingKey = 'reasoning_content';
+  } else if (delta.thinking) {
+    result.thinking = delta.thinking;
+    result.thinkingKey = 'thinking';
+  } else if (delta.thought) {
+    result.thinking = delta.thought;
+    result.thinkingKey = 'thought';
+  }
+
+  if (delta.tool_calls) result.tool_calls = delta.tool_calls;
+  return result;
 }
 
 function convertMessages(messages) {
@@ -108,6 +107,15 @@ function convertMessages(messages) {
     var msg = { role: m.role, content: m.content || '' };
     if (m.tool_calls) msg.tool_calls = m.tool_calls;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+
+    if (m.thinking) {
+      var tKey = m.thinkingKey || 'reasoning_content';
+      msg[tKey] = m.thinking;
+    }
+    if (m.reasoning) msg.reasoning = m.reasoning;
+    if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
+    if (m.thought) msg.thought = m.thought;
+
     var rawImages = m.images || (m.image ? [m.image] : null);
     if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
     if (rawImages && rawImages.length) {
@@ -123,17 +131,4 @@ function convertMessages(messages) {
     converted.push(msg);
   }
   return converted;
-}
-
-function parseChunk(data) {
-  var result = {};
-  var delta = data.choices?.[0]?.delta;
-  if (!delta) return result;
-  if (delta.content) result.content = delta.content;
-  if (delta.thinking) result.thinking = delta.thinking;
-  if (delta.reasoning_content) result.thinking = delta.reasoning_content;
-  if (delta.reasoning) result.thinking = delta.reasoning;
-  if (delta.thought) result.thinking = delta.thought;
-  if (delta.tool_calls) result.tool_calls = delta.tool_calls;
-  return result;
 }

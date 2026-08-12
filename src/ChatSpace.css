@@ -541,9 +541,120 @@ select {
 .cr-composer-footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  position: relative;
   padding: 4px 4px 0;
   font-size: 11px;
   color: #5a5a5a;
+}
+
+/* ── Token Usage Badge & Floating Hover Card ───────────────── */
+.cr-usage-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cr-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground, #cccccc));
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 0.15s ease-in-out;
+}
+
+.cr-usage-badge:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.16));
+}
+
+.cr-usage-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.cr-usage-card {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 210px;
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #3c3c3c);
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 11px;
+  pointer-events: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cr-usage-wrapper:hover .cr-usage-card {
+  display: flex;
+  pointer-events: auto;
+}
+
+.cr-usage-card-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground, #ffffff);
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
+  padding-bottom: 4px;
+}
+
+.cr-usage-card-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.cr-usage-card-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #aaaaaa);
+}
+
+.cr-usage-val-total {
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.cr-usage-card-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--vscode-input-background, rgba(0, 0, 0, 0.25));
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.cr-usage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.cr-usage-sublabel {
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.cr-usage-val-input,
+.cr-usage-val-output {
+  font-weight: 500;
+  color: var(--vscode-foreground, #e0e0e0);
 }
 
 /* ── Markdown inside .cr-content-block ───────────────── */

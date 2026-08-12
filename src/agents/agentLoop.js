@@ -390,6 +390,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   var iteration = 0;
   var fullThinking = '';
   var fullContent = '';
+  var sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
   try {
     while (iteration < maxIterations) {
@@ -454,6 +455,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       var iterationContent = '';
       var toolCalls = [];
 
+      var iterationThinkingKey = null;
+
       // Stream from provider
       try {
         var stream = provider.chat(config, messages, getDefinitions());
@@ -463,8 +466,22 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
           console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
           dbg('[AGENT LOOP] AGENT RECEIVED =', JSON.stringify(chunk).substring(0, 500));
+          // Handle usage stats
+          if (chunk.usage) {
+            if (chunk.usage.prompt_tokens) sessionUsage.prompt_tokens += chunk.usage.prompt_tokens;
+            if (chunk.usage.completion_tokens) sessionUsage.completion_tokens += chunk.usage.completion_tokens;
+            if (chunk.usage.total_tokens) sessionUsage.total_tokens += chunk.usage.total_tokens;
+            sendEvent({
+              type: 'usage',
+              usage: chunk.usage,
+              totalUsage: sessionUsage
+            });
+          }
           // Handle thinking tokens
           if (chunk.thinking) {
+            if (chunk.thinkingKey && !iterationThinkingKey) {
+              iterationThinkingKey = chunk.thinkingKey;
+            }
             iterationThinking += chunk.thinking;
             fullThinking += chunk.thinking;
             sendEvent({ message: { role: 'assistant', thinking: chunk.thinking } });
@@ -781,6 +798,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       var assistantMsg = { role: 'assistant', content: iterationContent || '' };
       if (iterationThinking) assistantMsg.thinking = iterationThinking;
+      if (iterationThinkingKey) assistantMsg.thinkingKey = iterationThinkingKey;
       if (assistantToolCalls.length) assistantMsg.tool_calls = assistantToolCalls;
       messages.push(assistantMsg);
       sendHistoryUpdate();

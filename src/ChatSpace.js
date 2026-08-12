@@ -1249,7 +1249,7 @@
             if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
             var lbl = S.thinkBlock.querySelector('.cr-think-label');
             if (lbl) lbl.textContent = 'Thought process';
-            S.thinkBlock.open = true;
+            S.thinkBlock.open = false;
           }
           S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
           break;
@@ -1279,6 +1279,7 @@
             appendPermissionRequestBlock(chatCtx, S.botBody, ev.tool, ev.arguments, ev.id);
             updateAgentControlsPanel(chatCtx);
           }
+          S.contentDiv = null; S.contentText = '';
           break;
         }
         case 'tool_call': {
@@ -1292,12 +1293,14 @@
           if (toolName === 'run_terminal') {
             reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
             S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+            S.contentDiv = null; S.contentText = '';
           } else {
             var card = reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
             if (card) {
               S.toolCallBlocks[ev.id || card.dataset.cardKey || ('tool_' + S._toolIdCounter)] = card;
             }
             S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+            S.contentDiv = null; S.contentText = '';
           }
           break;
         }
@@ -1401,6 +1404,7 @@
             var fallbackKey = 'tr_' + Date.now();
             appendToolCard(S, chatCtx.msgList, S.botBody, fallbackKey, resTool, {}, resStatus, ev);
           }
+          S.contentDiv = null; S.contentText = '';
           break;
         }
         case 'agent_status': {
@@ -1463,6 +1467,22 @@
           appendStatusLine(S, S.botBody, ev.message);
           break;
         }
+        case 'usage': {
+          if (ev.totalUsage) {
+            S.sessionUsage = ev.totalUsage;
+            updateUsageDisplay(chatCtx, ev.totalUsage);
+          } else if (ev.usage) {
+            S.sessionUsage = S.sessionUsage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+            S.sessionUsage.prompt_tokens += (ev.usage.prompt_tokens || 0);
+            S.sessionUsage.completion_tokens += (ev.usage.completion_tokens || 0);
+            S.sessionUsage.total_tokens += (ev.usage.total_tokens || 0);
+            updateUsageDisplay(chatCtx, S.sessionUsage);
+          }
+          if (typeof window.updateConversationUsage === 'function' && chatCtx.convId && S.sessionUsage) {
+            window.updateConversationUsage(chatCtx.convId, S.sessionUsage);
+          }
+          break;
+        }
         case 'keepalive': {
           break;
         }
@@ -1484,6 +1504,7 @@
         case 'request_diff': {
           removeTyping(S.botBody);
           appendDiffCard(chatCtx, S.botBody, ev);
+          S.contentDiv = null; S.contentText = '';
           break;
         }
         case 'terminal_start': {
@@ -1530,6 +1551,7 @@
             var oldCard = S._terminalCards[S._terminalCardOrder[tci]];
             if (oldCard) oldCard.open = false;
           }
+          S.contentDiv = null; S.contentText = '';
           break;
         }
         case 'terminal_output': {
@@ -1642,7 +1664,7 @@
   function appendThinkBlock(body) {
     if (!body) return null;
     var det = mk('details', 'cr-think-block');
-    det.open = true;
+    det.open = false;
     det.innerHTML =
       '<summary class="cr-think-summary">' +
         I.think +
@@ -1714,7 +1736,7 @@
       if (cardBody) {
         targetParent = cardBody;
         isEmbedded = true;
-        pendingCard.open = true;
+        pendingCard.open = false;
       }
     }
 
@@ -1909,7 +1931,7 @@
     status = status || 'pending';
 
     var card = mk('details', 'cr-terminal-details');
-    card.open = true;
+    card.open = false;
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = 'run_terminal';
     card.dataset.status = status;
@@ -1987,11 +2009,7 @@
     }
 
     if (execStatus !== 'running' && execStatus !== 'waiting' && execStatus !== 'pending') {
-      if (execStatus === 'success') {
-        card.open = false;
-      } else {
-        card.open = true;
-      }
+      card.open = false;
     }
   }
 
@@ -2156,7 +2174,7 @@
     card.appendChild(head);
 
     var details = mk('details', 'cr-diff-details');
-    details.open = true;
+    details.open = false;
 
     var summary = mk('summary', 'cr-diff-summary');
     summary.textContent = isNew ? 'New File' : 'View Changes';
@@ -2566,7 +2584,7 @@
     if (!body) return null;
     status = status || 'running';
     var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
-    card.open = (toolName === 'create_plan' || toolName === 'update_plan') ? true : (status !== 'success');
+    card.open = false;
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = toolName;
     card.dataset.status = status;
@@ -2649,11 +2667,7 @@
     card.className = 'cr-tool-card cr-tool-card--' + status;
     card.dataset.status = status;
     var toolName = card.dataset.toolName;
-    if (toolName === 'create_plan' || toolName === 'update_plan') {
-      card.open = true;
-    } else {
-      card.open = (status !== 'success');
-    }
+    card.open = false;
 
     var iconEl = card.querySelector('.cr-tool-card-icon');
     if (iconEl) {
@@ -2689,7 +2703,7 @@
 
         if (toolName === 'write_file' || toolName === 'edit_file') {
           var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
-          if (argsBlock) argsBlock.open = true;
+          if (argsBlock) argsBlock.open = false;
         }
       }
     }
@@ -2743,6 +2757,31 @@
     return d;
   }
 
+  function updateUsageDisplay(chatCtx, usage) {
+    if (!chatCtx || !chatCtx.container || !usage) return;
+    var promptTokens = usage.prompt_tokens || 0;
+    var completionTokens = usage.completion_tokens || 0;
+    var totalTokens = usage.total_tokens || (promptTokens + completionTokens);
+
+    function fmtNum(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    var badgeText = chatCtx.container.querySelector('.cr-usage-text');
+    if (badgeText) badgeText.textContent = fmtNum(totalTokens) + ' tokens';
+
+    var valTotal = chatCtx.container.querySelector('.cr-usage-val-total');
+    if (valTotal) valTotal.textContent = totalTokens.toLocaleString() + ' tokens';
+
+    var valInput = chatCtx.container.querySelector('.cr-usage-val-input');
+    if (valInput) valInput.textContent = promptTokens.toLocaleString();
+
+    var valOutput = chatCtx.container.querySelector('.cr-usage-val-output');
+    if (valOutput) valOutput.textContent = completionTokens.toLocaleString();
+  }
+
   function buildShell(title) {
     return (
       '<div class="cr-root">' +
@@ -2765,6 +2804,25 @@
             '<button type="button" class="cr-stop-btn" title="Stop generation" style="display:none">' + I.stop + '</button>' +
           '</div>' +
           '<div class="cr-composer-footer">' +
+            '<div class="cr-usage-wrapper">' +
+              '<div class="cr-usage-badge">' +
+                '<span class="cr-usage-icon">📊</span>' +
+                '<span class="cr-usage-text">0 tokens</span>' +
+              '</div>' +
+              '<div class="cr-usage-card">' +
+                '<div class="cr-usage-card-title">Session Info</div>' +
+                '<div class="cr-usage-card-section">' +
+                  '<div class="cr-usage-card-label-row">' +
+                    '<span>Context Usage</span>' +
+                    '<span class="cr-usage-val-total">0 tokens</span>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="cr-usage-card-breakdown">' +
+                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Input / System:</span><span class="cr-usage-val-input">0</span></div>' +
+                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Output / Response:</span><span class="cr-usage-val-output">0</span></div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
             '<span class="cr-char-count">0</span>' +
             '<span class="cr-hint">Shift+Enter · new line</span>' +
           '</div>' +
@@ -2780,7 +2838,7 @@
       options = options || {};
 
       var convId = conversation.id;
-      var baseUrl = options.baseUrl || (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : 'http://localhost:11434');
+      var baseUrl = options.baseUrl || (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : 'http://localhost:11434/v1');
       var model = options.model || (window.getDashboardModel ? window.getDashboardModel() : '');
       var workspace = options.workspaceFolder || (window.getDashboardWorkspace ? window.getDashboardWorkspace() : '');
       var onStreamStart = options.onStreamStart || noop;
@@ -2858,6 +2916,13 @@
         abortCtrl: null,
         S: S
       };
+
+      if (conversation.usage) {
+        S.sessionUsage = conversation.usage;
+      } else {
+        S.sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      }
+      updateUsageDisplay(chatCtx, S.sessionUsage);
 
       window.stopCurrentChatStream = stopCurrentChatStream.bind(null, chatCtx);
 

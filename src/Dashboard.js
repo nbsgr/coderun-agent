@@ -5,7 +5,7 @@
 (function() {
   "use strict";
 
-  var DEFAULT_BASE_URL = "http://localhost:11434";
+  var DEFAULT_BASE_URL = "http://localhost:11434/v1";
   var STORAGE_KEY = "coderun_conversations";
   var SETTINGS_KEY = "coderun_settings";
   var MODEL_KEY = "coderun_selected_model";
@@ -653,10 +653,10 @@
     }
 
     var defaults = {
-      ollama: "http://localhost:11434",
+      ollama: "http://localhost:11434/v1",
       openai: "https://api.openai.com/v1",
       anthropic: "https://api.anthropic.com/v1",
-      gemini: "https://generativelanguage.googleapis.com/v1beta",
+      gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
       openrouter: "https://openrouter.ai/api/v1",
       xai: "https://api.x.ai/v1",
       groq: "https://api.groq.com/openai/v1",
@@ -1444,6 +1444,18 @@
     renderSidebar();
   }
   window.saveConversationMessageBatch = saveConversationMessageBatch;
+
+  function updateConversationUsage(convId, usage) {
+    if (!convId || !usage) return;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === convId) {
+        state.conversations[i].usage = usage;
+        saveConversations();
+        break;
+      }
+    }
+  }
+  window.updateConversationUsage = updateConversationUsage;
 
   function updateConversationTitle(convId, title) {
     var conversation = null;

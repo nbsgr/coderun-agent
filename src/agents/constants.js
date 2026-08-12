@@ -29,10 +29,10 @@ export const PROVIDER_LABELS = {
 };
 
 export const PROVIDER_DEFAULTS = {
-  ollama: { baseUrl: 'http://localhost:11434', needsKey: false },
+  ollama: { baseUrl: 'http://localhost:11434/v1', needsKey: false },
   openai: { baseUrl: 'https://api.openai.com/v1', needsKey: true },
   anthropic: { baseUrl: 'https://api.anthropic.com/v1', needsKey: true },
-  gemini: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', needsKey: true },
+  gemini: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/', needsKey: true },
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', needsKey: true },
   xai: { baseUrl: 'https://api.x.ai/v1', needsKey: true },
   groq: { baseUrl: 'https://api.groq.com/openai/v1', needsKey: true },

@@ -95,7 +95,7 @@
         },
         "coderun.baseUrl": {
           "type": "string",
-          "default": "http://localhost:11434",
+          "default": "http://localhost:11434/v1",
           "description": "Provider base URL (Ollama, OpenAI-compatible, LM Studio, etc.)"
         },
         "coderun.model": {
@@ -153,6 +153,7 @@
     "@vscode/vsce": "^3.9.2"
   },
   "dependencies": {
+    "openai": "^7.4.0",
     "sql.js": "^1.14.1"
   }
 }

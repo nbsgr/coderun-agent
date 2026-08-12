@@ -1,11 +1,58 @@
+import OpenAI from 'openai';
 import { handleApiResponseError, safeReadJson } from '../agents/utils.js';
 
-export async function* chat(config, messages, tools) {
-  var model = config.model || 'gemini-1.5-pro';
-  var url = config.baseUrl.replace(/\/+$/, '') + '/models/' + model + ':streamGenerateContent?key=' + config.apiKey;
+function getGeminiOpenAiBaseUrl(baseUrl) {
+  var url = String(baseUrl || 'https://generativelanguage.googleapis.com/v1beta/openai/').replace(/\/+$/, '');
+  if (!url.endsWith('/openai')) {
+    if (url.endsWith('/v1beta')) {
+      url += '/openai';
+    } else if (url.includes('/v1beta/')) {
+      url = url.split('/v1beta')[0] + '/v1beta/openai';
+    }
+  }
+  return url;
+}
 
-  var contents = convertMessages(messages);
-  var body = { contents: contents };
+function createClient(config) {
+  return new OpenAI({
+    baseURL: getGeminiOpenAiBaseUrl(config.baseUrl),
+    apiKey: config.apiKey || '',
+    dangerouslyAllowBrowser: true
+  });
+}
+
+export async function* chat(config, messages, tools) {
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : '';
+  
+  if (baseUrl.includes('/openai') || !baseUrl.includes('streamGenerateContent')) {
+    try {
+      var client = createClient(config);
+      var body = {
+        model: config.model || 'gemini-1.5-flash',
+        messages: convertMessagesOpenAI(messages),
+        stream: true,
+        stream_options: { include_usage: true }
+      };
+      if (tools && tools.length) body.tools = tools;
+
+      var stream = await client.chat.completions.create(body);
+      for await (var chunk of stream) {
+        var parsedOpenAI = parseChunkOpenAI(chunk);
+        if (parsedOpenAI.content || parsedOpenAI.thinking || parsedOpenAI.tool_calls || parsedOpenAI.usage) {
+          yield parsedOpenAI;
+        }
+      }
+      return;
+    } catch (e) {
+      console.warn('[GEMINI] OpenAI endpoint failed, trying native REST endpoint fallback:', e.message);
+    }
+  }
+
+  var model = config.model || 'gemini-1.5-pro';
+  var url = baseUrl + '/models/' + model + ':streamGenerateContent?key=' + config.apiKey;
+
+  var contents = convertMessagesNative(messages);
+  var nativeBody = { contents: contents };
   if (tools && tools.length) {
     var functionDeclarations = [];
     for (var ti = 0; ti < tools.length; ti++) {
@@ -16,20 +63,14 @@ export async function* chat(config, messages, tools) {
         parameters: t.function.parameters
       });
     }
-    body.tools = [{ function_declarations: functionDeclarations }];
+    nativeBody.tools = [{ function_declarations: functionDeclarations }];
   }
-
-  console.log('[GEMINI] Provider Selected: gemini');
-  console.log('[GEMINI] Request URL:', url);
-  console.log('[GEMINI] Request Body:', JSON.stringify(body).substring(0, 500));
 
   var response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(nativeBody)
   });
-
-  console.log('[GEMINI] HTTP Status:', response.status, response.statusText);
 
   if (!response.ok) {
     throw await handleApiResponseError(response, 'Gemini');
@@ -38,10 +79,10 @@ export async function* chat(config, messages, tools) {
   if (!response.body) {
     throw new Error('Gemini API Error: Response body is empty. The server may have returned an incomplete response.');
   }
+
   var reader = response.body.getReader();
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
-  var chunkCount = 0;
 
   while (true) {
     var raw = await reader.read();
@@ -61,108 +102,98 @@ export async function* chat(config, messages, tools) {
         break;
       }
 
-      var eventText = buffer.substring(0, delimStart);
+      var rawChunk = buffer.substring(0, delimStart).trim();
       buffer = buffer.substring(delimStart + delimLen);
 
-      var trimmed = (eventText || '').trim();
-      if (!trimmed) continue;
+      if (!rawChunk) continue;
 
-      var normalized = trimmed.replace(/\r\n/g, '\n');
-      var eventLines = normalized.split('\n');
-      var jsonParts = [];
-      for (var ei = 0; ei < eventLines.length; ei++) {
-        var l = eventLines[ei].trim();
-        if (l.startsWith('data: ')) {
-          jsonParts.push(l.slice(6));
-        } else if (l.length > 0) {
-          jsonParts.push(l);
+      var jsonStr = rawChunk;
+      if (jsonStr.startsWith('data: ')) {
+        jsonStr = jsonStr.substring(6).trim();
+      }
+      if (jsonStr === '[DONE]') continue;
+
+      try {
+        var parsedNativeData = JSON.parse(jsonStr);
+        var parsedChunk = parseChunkNative(parsedNativeData);
+        if (parsedChunk.content || parsedChunk.thinking || parsedChunk.tool_calls || parsedChunk.usage) {
+          yield parsedChunk;
         }
-      }
-      var jsonStr = jsonParts.join('');
-
-      if (!jsonStr || jsonStr === '[DONE]') continue;
-
-      try {
-        var data = JSON.parse(jsonStr);
-        chunkCount++;
-        console.log('[GEMINI] Event #' + chunkCount + ':', jsonStr.substring(0, 300));
-        var parsed = parseChunk(data);
-        console.log('[GEMINI] YIELD =', JSON.stringify(parsed).substring(0, 500));
-        if (parsed.content) console.log('[GEMINI] Yielded content:', parsed.content.substring(0, 100));
-        if (parsed.thinking) console.log('[GEMINI] Yielded thinking:', parsed.thinking.substring(0, 100));
-        if (parsed.tool_calls) console.log('[GEMINI] Yielded tool_calls:', parsed.tool_calls.length);
-        yield parsed;
-      } catch (e) {
-        console.error('[GEMINI] Parse error:', jsonStr.substring(0, 200), e);
+      } catch (err) {
+        console.warn('[GEMINI] SSE JSON parse warning:', err.message);
       }
     }
   }
-
-  var remaining = buffer.trim();
-  if (remaining) {
-    var jsonStr = remaining;
-    if (jsonStr.startsWith('data: ')) jsonStr = jsonStr.slice(6);
-    if (jsonStr && jsonStr !== '[DONE]') {
-      try {
-        var data = JSON.parse(jsonStr);
-        chunkCount++;
-        console.log('[GEMINI] Final event:', jsonStr.substring(0, 300));
-        var parsed = parseChunk(data);
-        console.log('[GEMINI] YIELD =', JSON.stringify(parsed).substring(0, 500));
-        yield parsed;
-      } catch (e) {
-        console.error('[GEMINI] Parse error for final buffer:', jsonStr.substring(0, 200), e);
-      }
-    }
-  }
-
-  console.log('[GEMINI] Stream complete, total chunks:', chunkCount);
 }
 
 export async function listModels(config) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/models?key=' + config.apiKey;
-  var res;
   try {
-    res = await fetch(url);
-  } catch (e) {
-    console.warn('[CODERUN] Failed to reach Gemini endpoint:', e.message);
-    return config.model ? [config.model] : ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp'];
+    var client = createClient(config);
+    var response = await client.models.list();
+    var models = [];
+    if (response && response.data) {
+      for (var i = 0; i < response.data.length; i++) {
+        models.push(response.data[i].id || response.data[i].name);
+      }
+      if (models.length) return models;
+    }
+  } catch (_) {
+    // Fallback to native REST API
   }
 
-  if (!res.ok) {
-    throw await handleApiResponseError(res, 'Gemini');
-  }
-
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  var url = baseUrl + '/models?key=' + config.apiKey;
+  var res = await fetch(url);
+  if (!res.ok) throw await handleApiResponseError(res, 'Gemini');
   var data = await safeReadJson(res, 'Gemini');
-  var models = [];
+  var nativeModels = [];
   if (data.models) {
-    for (var i = 0; i < data.models.length; i++) {
-      models.push(data.models[i].name.split('/').pop());
+    for (var j = 0; j < data.models.length; j++) {
+      var name = data.models[j].name || '';
+      nativeModels.push(name.replace(/^models\//, ''));
     }
   }
-  return models;
+  return nativeModels;
 }
 
 export async function embeddings(config, texts) {
-  var model = config.model || 'text-embedding-004';
-  var url = config.baseUrl.replace(/\/+$/, '') + '/models/' + model + ':batchEmbedContents?key=' + config.apiKey;
-  
-  var requests = [];
-  for (var i = 0; i < texts.length; i++) {
-    requests.push({ content: { parts: [{ text: texts[i] }] } });
+  try {
+    var client = createClient(config);
+    var response = await client.embeddings.create({
+      model: config.model || 'text-embedding-004',
+      input: texts
+    });
+    var embeddingList = [];
+    if (response && response.data) {
+      for (var i = 0; i < response.data.length; i++) {
+        embeddingList.push(response.data[i].embedding);
+      }
+      return embeddingList;
+    }
+  } catch (_) {
+    // Fallback to native REST API
   }
 
-  var res = await fetch(url, {
+  var model = config.model || 'embedding-001';
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  var url = baseUrl + '/models/' + model + ':batchEmbedContents?key=' + config.apiKey;
+
+  var requests = [];
+  for (var k = 0; k < texts.length; k++) {
+    requests.push({ content: { parts: [{ text: texts[k] }] } });
+  }
+
+  var resNative = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requests: requests })
   });
-  if (!res.ok) throw await handleApiResponseError(res, 'Gemini');
-  var data = await safeReadJson(res, 'Gemini');
+  if (!resNative.ok) throw await handleApiResponseError(resNative, 'Gemini');
+  var dataNative = await safeReadJson(resNative, 'Gemini');
   var embeddingsList = [];
-  if (data.embeddings) {
-    for (var i = 0; i < data.embeddings.length; i++) {
-      embeddingsList.push(data.embeddings[i].values);
+  if (dataNative.embeddings) {
+    for (var m = 0; m < dataNative.embeddings.length; m++) {
+      embeddingsList.push(dataNative.embeddings[m].values);
     }
   }
   return embeddingsList;
@@ -172,7 +203,72 @@ export async function images(config, prompt) {
   throw new Error('Image generation not supported by Gemini in this provider');
 }
 
-function convertMessages(messages) {
+function parseChunkOpenAI(data) {
+  var result = {};
+  if (data && data.usage) {
+    result.usage = {
+      prompt_tokens: data.usage.prompt_tokens || 0,
+      completion_tokens: data.usage.completion_tokens || 0,
+      total_tokens: data.usage.total_tokens || 0
+    };
+  }
+  var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
+  if (!delta) return result;
+
+  if (delta.content) result.content = delta.content;
+
+  if (delta.reasoning) {
+    result.thinking = delta.reasoning;
+    result.thinkingKey = 'reasoning';
+  } else if (delta.reasoning_content) {
+    result.thinking = delta.reasoning_content;
+    result.thinkingKey = 'reasoning_content';
+  } else if (delta.thinking) {
+    result.thinking = delta.thinking;
+    result.thinkingKey = 'thinking';
+  } else if (delta.thought) {
+    result.thinking = delta.thought;
+    result.thinkingKey = 'thought';
+  }
+
+  if (delta.tool_calls) result.tool_calls = delta.tool_calls;
+  return result;
+}
+
+function convertMessagesOpenAI(messages) {
+  var converted = [];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    var msg = { role: m.role, content: m.content || '' };
+    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+
+    if (m.thinking) {
+      var tKey = m.thinkingKey || 'reasoning_content';
+      msg[tKey] = m.thinking;
+    }
+    if (m.reasoning) msg.reasoning = m.reasoning;
+    if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
+    if (m.thought) msg.thought = m.thought;
+
+    var rawImages = m.images || (m.image ? [m.image] : null);
+    if (rawImages && !Array.isArray(rawImages)) rawImages = [rawImages];
+    if (rawImages && rawImages.length) {
+      var parts = [];
+      if (m.content) parts.push({ type: 'text', text: m.content });
+      for (var imgIdx = 0; imgIdx < rawImages.length; imgIdx++) {
+        var img = rawImages[imgIdx];
+        var dataUri = String(img).startsWith('data:') ? img : 'data:image/png;base64,' + img;
+        parts.push({ type: 'image_url', image_url: { url: dataUri } });
+      }
+      msg.content = parts;
+    }
+    converted.push(msg);
+  }
+  return converted;
+}
+
+function convertMessagesNative(messages) {
   var contents = [];
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
@@ -213,21 +309,16 @@ function convertMessages(messages) {
   return contents;
 }
 
-function parseChunk(data) {
+function parseChunkNative(data) {
   var result = {};
-  console.log('[GEMINI PARSER] typeof data:', typeof data);
-  console.log('[GEMINI PARSER] Array.isArray(data):', Array.isArray(data));
+  if (data && data.usageMetadata) {
+    result.usage = {
+      prompt_tokens: data.usageMetadata.promptTokenCount || 0,
+      completion_tokens: data.usageMetadata.candidatesTokenCount || 0,
+      total_tokens: data.usageMetadata.totalTokenCount || 0
+    };
+  }
   if (Array.isArray(data)) {
-    console.log('[GEMINI PARSER] data.length:', data.length);
-    for (var di = 0; di < data.length; di++) {
-      console.log('[GEMINI PARSER] data[' + di + '] type:', typeof data[di], 'has candidates:', !!data[di].candidates, 'has content:', !!(data[di].candidates && data[di].candidates[0] && data[di].candidates[0].content));
-      if (data[di].candidates && data[di].candidates[0] && data[di].candidates[0].content && data[di].candidates[0].content.parts) {
-        for (var pi = 0; pi < data[di].candidates[0].content.parts.length; pi++) {
-          var p = data[di].candidates[0].content.parts[pi];
-          console.log('[GEMINI PARSER] data[' + di + '].candidates[0].content.parts[' + pi + ']: text="' + (p.text || '').substring(0, 100) + '", thought:', p.thought, 'functionCall:', !!p.functionCall);
-        }
-      }
-    }
     for (var di2 = 0; di2 < data.length; di2++) {
       var item = data[di2];
       if (!item.candidates || !item.candidates[0]) continue;
@@ -239,6 +330,7 @@ function parseChunk(data) {
         var thoughtVal = typeof part.thought === 'string' ? part.thought : '';
         if (part.thought === true || thoughtVal) {
           result.thinking = (result.thinking || '') + (textVal || thoughtVal);
+          result.thinkingKey = 'thought';
         } else {
           result.content = (result.content || '') + textVal;
         }
@@ -251,40 +343,28 @@ function parseChunk(data) {
         }
       }
     }
-  } else {
-    console.log('[GEMINI PARSER] Single object, has candidates:', !!data.candidates);
-    if (data.candidates && data.candidates[0]) {
-      console.log('[GEMINI PARSER] candidate[0] has content:', !!data.candidates[0].content);
-      if (data.candidates[0].content && data.candidates[0].content.parts) {
-        for (var pi3 = 0; pi3 < data.candidates[0].content.parts.length; pi3++) {
-          var p3 = data.candidates[0].content.parts[pi3];
-          console.log('[GEMINI PARSER] part[' + pi3 + ']: text="' + (p3.text || '').substring(0, 100) + '", thought:', p3.thought);
+  } else if (data && data.candidates && data.candidates[0]) {
+    var candidate2 = data.candidates[0];
+    if (candidate2.content && candidate2.content.parts) {
+      for (var pi4 = 0; pi4 < candidate2.content.parts.length; pi4++) {
+        var part2 = candidate2.content.parts[pi4];
+        var textVal2 = part2.text || '';
+        var thoughtVal2 = typeof part2.thought === 'string' ? part2.thought : '';
+        if (part2.thought === true || thoughtVal2) {
+          result.thinking = (result.thinking || '') + (textVal2 || thoughtVal2);
+          result.thinkingKey = 'thought';
+        } else {
+          result.content = (result.content || '') + textVal2;
         }
-      }
-    }
-    if (data.candidates && data.candidates[0]) {
-      var candidate = data.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        for (var pi4 = 0; pi4 < candidate.content.parts.length; pi4++) {
-          var part = candidate.content.parts[pi4];
-          var textVal = part.text || '';
-          var thoughtVal = typeof part.thought === 'string' ? part.thought : '';
-          if (part.thought === true || thoughtVal) {
-            result.thinking = (result.thinking || '') + (textVal || thoughtVal);
-          } else {
-            result.content = (result.content || '') + textVal;
-          }
-          if (part.functionCall) {
-            result.tool_calls = result.tool_calls || [];
-            result.tool_calls.push({
-              id: part.functionCall.name + '_' + Date.now(),
-              function: { name: part.functionCall.name, arguments: part.functionCall.args || {} }
-            });
-          }
+        if (part2.functionCall) {
+          result.tool_calls = result.tool_calls || [];
+          result.tool_calls.push({
+            id: part2.functionCall.name + '_' + Date.now(),
+            function: { name: part2.functionCall.name, arguments: part2.functionCall.args || {} }
+          });
         }
       }
     }
   }
-  console.log('[GEMINI PARSER] Final result:', JSON.stringify(result).substring(0, 300));
   return result;
 }

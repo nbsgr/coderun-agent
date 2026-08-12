@@ -338,6 +338,7 @@ async function* run_terminal(args, workspace) {
   var command = args.command || '';
   var timeout = args.timeout || 30;
   var background = args.background || false;
+  var isInteractive = args.is_interactive === true || args.interactive === true;
 
   if (!command) {
     yield { type: 'action', action: 'run_terminal', message: 'Checking terminal output...' };
@@ -367,7 +368,7 @@ async function* run_terminal(args, workspace) {
 
   try {
     dbg('[TOOLS] run_terminal: calling terminalManager.executeCommand');
-    var result = await terminalManager.executeCommand(command, timeout, background);
+    var result = await terminalManager.executeCommand(command, timeout, background, isInteractive);
     dbg('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
     var toolSuccess = result.exitCode === 0 || (result.exitCode == null && result.success !== false);
@@ -816,7 +817,12 @@ export function registerAllTools() {
     aliases: ['bash', 'execute_command'],
     category: 'terminal',
     description: 'Execute a shell command. Pass empty command to check terminal output.',
-    parameters: { command: { type: 'string', description: 'The command to execute' }, timeout: { type: 'integer', description: 'Max seconds (default 30)' }, background: { type: 'boolean', description: 'Run without waiting' } },
+    parameters: {
+      command: { type: 'string', description: 'The command to execute' },
+      is_interactive: { type: 'boolean', description: 'Set true ONLY if the command is interactive and expects prompt/user input (e.g. Read-Host, npm init, prompts). Set false (default) for self-executing commands (e.g. builds, tests, scripts, git commands) that run to completion.' },
+      timeout: { type: 'integer', description: 'Max seconds (default 30)' },
+      background: { type: 'boolean', description: 'Run without waiting' }
+    },
     required: [],
     dangerous: true,
     needsPermission: true,

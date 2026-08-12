@@ -539,7 +539,7 @@ function createExecFilePromise(shellExe, fullArgs, cwd, timeout) {
   return new Promise(executeFilePromise.bind(null, shellExe, fullArgs, cwd, timeout));
 }
 
-export async function executeCommand(command, timeout, background) {
+export async function executeCommand(command, timeout, background, isInteractive) {
   timeout = timeout || 30;
   var terminal = getTerminal();
   terminal.show(true);
@@ -548,6 +548,7 @@ export async function executeCommand(command, timeout, background) {
   var platformName = getPlatform();
   var cwd = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || '';
   var startedAt = Date.now();
+  var useInteractiveTimeout = isInteractive === true || (isInteractive !== false && checkInteractiveCommand(command));
 
   if (background) {
     console.log('[TERMINAL] Running command in background:', command);
@@ -589,7 +590,7 @@ export async function executeCommand(command, timeout, background) {
   }
 
   if (shellIntegration) {
-    console.log('[TERMINAL] Executing via shell integration:', command);
+    console.log('[TERMINAL] Executing via shell integration:', command, 'useInteractiveTimeout:', useInteractiveTimeout);
     var stdout = '';
     var stderr = '';
     try {
@@ -623,19 +624,36 @@ export async function executeCommand(command, timeout, background) {
       var idleDetected = false;
 
       try {
-        var IDLE_TIMEOUT_MS = 3000;
+        var IDLE_TIMEOUT_MS = useInteractiveTimeout ? 3000 : (timeout * 1000 + 5000);
 
         while (true) {
           var nextPromise = reader.next();
-          var timerCtx = { id: null };
-          var raceResult = await Promise.race([
-            nextPromise.then(handleNextPromiseResolve.bind(null, timerCtx)),
-            createIdleTimeoutPromise(timerCtx, IDLE_TIMEOUT_MS)
-          ]);
+          var raceResult = null;
+          if (useInteractiveTimeout) {
+            var timerCtx = { id: null };
+            raceResult = await Promise.race([
+              nextPromise.then(handleNextPromiseResolve.bind(null, timerCtx)),
+              createIdleTimeoutPromise(timerCtx, IDLE_TIMEOUT_MS)
+            ]);
+          } else {
+            var remainingMs = timeoutAt - Date.now();
+            if (remainingMs <= 0) {
+              throw new Error('Command timed out after ' + timeout + ' seconds.');
+            }
+            var timerCtx2 = { id: null };
+            raceResult = await Promise.race([
+              nextPromise.then(handleNextPromiseResolve.bind(null, timerCtx2)),
+              createIdleTimeoutPromise(timerCtx2, Math.max(remainingMs, 1000))
+            ]);
+          }
 
           if (raceResult._idleTimeout) {
-            idleDetected = true;
-            break;
+            if (useInteractiveTimeout) {
+              idleDetected = true;
+              break;
+            } else {
+              throw new Error('Command timed out after ' + timeout + ' seconds.');
+            }
           }
 
           if (raceResult.done) break;
