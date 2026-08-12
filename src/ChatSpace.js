@@ -2813,7 +2813,7 @@
                 '<div class="cr-usage-card-title">Session Info</div>' +
                 '<div class="cr-usage-card-section">' +
                   '<div class="cr-usage-card-label-row">' +
-                    '<span>Context Usage</span>' +
+                    '<span>Total Tokens</span>' +
                     '<span class="cr-usage-val-total">0 tokens</span>' +
                   '</div>' +
                 '</div>' +
