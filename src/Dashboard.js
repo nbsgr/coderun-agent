@@ -1564,4 +1564,15 @@
     selectConversation(id);
   }
   window.selectDashboardConversation = selectDashboardConversation;
+
+  function getDashboardConversations() {
+    return state.conversations;
+  }
+  window.getDashboardConversations = getDashboardConversations;
+
+  function saveDashboardConversations(convs) {
+    if (convs) state.conversations = convs;
+    saveConversations();
+  }
+  window.saveDashboardConversations = saveDashboardConversations;
 }());

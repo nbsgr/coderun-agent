@@ -151,8 +151,17 @@ export function buildMessages(userPrompt, options) {
 
   messages.push({ role: 'system', content: systemContent });
 
-  // 2. History (skip system messages)
-  for (var i = 0; i < history.length; i++) {
+  // 2. Compact checkpoint (if present, inject summary and skip compacted messages)
+  var compactCheckpoint = options.compactCheckpoint || null;
+  var historyStartIndex = 0;
+
+  if (compactCheckpoint && compactCheckpoint.content && compactCheckpoint.compactedUpTo >= 0) {
+    messages.push({ role: 'user', content: compactCheckpoint.content });
+    historyStartIndex = compactCheckpoint.compactedUpTo + 1;
+  }
+
+  // 3. History (skip system messages, start after checkpoint boundary)
+  for (var i = historyStartIndex; i < history.length; i++) {
     var msg = history[i];
     if (msg.role === 'system') continue;
     var historyMsg = {
@@ -166,7 +175,7 @@ export function buildMessages(userPrompt, options) {
     messages.push(historyMsg);
   }
 
-  // 3. Tool results (if any from previous iteration)
+  // 4. Tool results (if any from previous iteration)
   for (var j = 0; j < toolResults.length; j++) {
     var tr = toolResults[j];
     messages.push({
@@ -176,7 +185,7 @@ export function buildMessages(userPrompt, options) {
     });
   }
 
-  // 4. Current user prompt
+  // 5. Current user prompt
   if (userPrompt) {
     var userMsg = { role: 'user', content: userPrompt };
     var currentImages = options.images || [];

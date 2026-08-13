@@ -522,7 +522,11 @@
     if (!msgList || !messages) return;
     msgList.innerHTML = '';
 
-    console.log('[LOAD_HISTORY] ═══ LOADING', messages.length, 'MESSAGES ═══');
+    var checkpoint = (chatCtx && chatCtx.conversation && chatCtx.conversation.compactCheckpoint) ? chatCtx.conversation.compactCheckpoint : null;
+    var checkpointRendered = false;
+    var compactedUpToIndex = (checkpoint && checkpoint.compactedUpTo >= 0) ? checkpoint.compactedUpTo : -1;
+
+    console.log('[LOAD_HISTORY] ═══ LOADING', messages.length, 'MESSAGES ═══, checkpoint compactedUpTo:', compactedUpToIndex);
     for (var i = 0; i < messages.length; i++) {
       var m = messages[i];
       var summary = 'msg[' + i + '] role=' + m.role;
@@ -567,15 +571,18 @@
       turns.push(currentTurn);
     }
 
+    var msgIndexTracker = -1;
     for (var ti = 0; ti < turns.length; ti++) {
       var turn = turns[ti];
       if (turn.user) {
+        msgIndexTracker++;
         appendUserBubble(msgList, turn.user.content, turn.user.image || (turn.user.images ? turn.user.images[0] : null));
       }
 
       if (turn.botMessages && turn.botMessages.length) {
         var body = appendBotWrapper(msgList);
         for (var mi = 0; mi < turn.botMessages.length; mi++) {
+          msgIndexTracker++;
           var m = turn.botMessages[mi];
           if (m.role === 'assistant') {
             var content = m.content || '';
@@ -663,6 +670,16 @@
           }
         }
       }
+
+      if (checkpoint && !checkpointRendered && msgIndexTracker >= compactedUpToIndex) {
+        appendCompactCheckpoint(msgList, checkpoint);
+        checkpointRendered = true;
+      }
+    }
+
+    if (checkpoint && !checkpointRendered) {
+      appendCompactCheckpoint(msgList, checkpoint);
+      checkpointRendered = true;
     }
 
     scrollBottom(msgList);
@@ -1612,6 +1629,98 @@
     } else if (chatCtx.todosPanel) {
       chatCtx.todosPanel.style.display = 'none';
       chatCtx.todosPanel.innerHTML = '';
+    }
+  }
+
+  function appendCompactCheckpoint(msgList, checkpoint) {
+    try {
+      if (!msgList || !checkpoint) return null;
+
+      var row = mk('div', 'cr-row cr-row--checkpoint');
+      var outerDetails = mk('details', 'cr-checkpoint-bubble');
+
+      var outerSummary = mk('summary', 'cr-checkpoint-summary');
+      var iconSpan = mk('span', 'cr-checkpoint-icon');
+      iconSpan.textContent = '📋';
+      var labelSpan = mk('span', 'cr-checkpoint-label');
+      labelSpan.textContent = 'Compact Context Checkpoint (' + (checkpoint.turnRange || '') + ')';
+      var chevronSpan = mk('span', 'cr-checkpoint-chevron');
+
+      outerSummary.appendChild(iconSpan);
+      outerSummary.appendChild(labelSpan);
+      outerSummary.appendChild(chevronSpan);
+      outerDetails.appendChild(outerSummary);
+
+      var body = mk('div', 'cr-checkpoint-body');
+
+      // Sub-dropdown 1: User Messages
+      var userSection = mk('details', 'cr-checkpoint-section');
+      var userSummary = mk('summary', 'cr-checkpoint-section-summary');
+      var userPrompts = Array.isArray(checkpoint.userPrompts) ? checkpoint.userPrompts : [];
+      userSummary.innerHTML = '<span>User Messages (' + userPrompts.length + ')</span><span class="cr-checkpoint-section-chevron"></span>';
+      userSection.appendChild(userSummary);
+
+      var userBody = mk('div', 'cr-checkpoint-section-body');
+      for (var u = 0; u < userPrompts.length; u++) {
+        var promptDiv = mk('div', 'cr-checkpoint-prompt');
+        promptDiv.textContent = String(userPrompts[u] || '');
+        userBody.appendChild(promptDiv);
+      }
+      userSection.appendChild(userBody);
+      body.appendChild(userSection);
+
+      // Sub-dropdown 2: Thinking
+      var thinkSection = mk('details', 'cr-checkpoint-section');
+      var thinkSummary = mk('summary', 'cr-checkpoint-section-summary');
+      thinkSummary.innerHTML = '<span>Thinking</span><span class="cr-checkpoint-section-chevron"></span>';
+      thinkSection.appendChild(thinkSummary);
+
+      var thinkBody = mk('div', 'cr-checkpoint-section-body');
+      var thinkPre = mk('pre', 'cr-checkpoint-thinking-pre');
+      thinkPre.textContent = String(checkpoint.thinkingSummary || 'No thinking content recorded.');
+      thinkBody.appendChild(thinkPre);
+      thinkSection.appendChild(thinkBody);
+      body.appendChild(thinkSection);
+
+      // Sub-dropdown 3: Response Summary
+      var responseSection = mk('details', 'cr-checkpoint-section');
+      var responseSummary = mk('summary', 'cr-checkpoint-section-summary');
+      responseSummary.innerHTML = '<span>Response Summary</span><span class="cr-checkpoint-section-chevron"></span>';
+      responseSection.appendChild(responseSummary);
+
+      var responseBody = mk('div', 'cr-checkpoint-section-body');
+      var responseDiv = mk('div', 'cr-checkpoint-response');
+      responseDiv.textContent = String(checkpoint.responseSummary || checkpoint.assistantSummary || '');
+      responseBody.appendChild(responseDiv);
+      responseSection.appendChild(responseBody);
+      body.appendChild(responseSection);
+
+      // Sub-dropdown 4: Tool Executions
+      var toolSection = mk('details', 'cr-checkpoint-section');
+      var toolSummary = mk('summary', 'cr-checkpoint-section-summary');
+      var toolLog = Array.isArray(checkpoint.toolLog) ? checkpoint.toolLog : [];
+      toolSummary.innerHTML = '<span>Tool Executions (' + toolLog.length + ')</span><span class="cr-checkpoint-section-chevron"></span>';
+      toolSection.appendChild(toolSummary);
+
+      var toolBody = mk('div', 'cr-checkpoint-section-body');
+      for (var t = 0; t < toolLog.length; t++) {
+        var toolDiv = mk('div');
+        var logEntry = String(toolLog[t] || '');
+        var isError = logEntry.indexOf('❌') >= 0 || logEntry.toLowerCase().indexOf('failed') >= 0;
+        toolDiv.className = 'cr-checkpoint-tool ' + (isError ? 'cr-checkpoint-tool--error' : 'cr-checkpoint-tool--success');
+        toolDiv.textContent = logEntry;
+        toolBody.appendChild(toolDiv);
+      }
+      toolSection.appendChild(toolBody);
+      body.appendChild(toolSection);
+
+      outerDetails.appendChild(body);
+      row.appendChild(outerDetails);
+      msgList.appendChild(row);
+      return row;
+    } catch (err) {
+      console.error('[CHATSPACE] Failed to append compact checkpoint:', err);
+      return null;
     }
   }
 
@@ -2821,6 +2930,7 @@
                   '<div class="cr-usage-row"><span class="cr-usage-sublabel">Input / System:</span><span class="cr-usage-val-input">0</span></div>' +
                   '<div class="cr-usage-row"><span class="cr-usage-sublabel">Output / Response:</span><span class="cr-usage-val-output">0</span></div>' +
                 '</div>' +
+                '<button type="button" class="cr-compact-btn" id="cr-compact-btn">📦 Compact Conversation</button>' +
               '</div>' +
             '</div>' +
             '<span class="cr-char-count">0</span>' +
@@ -2948,6 +3058,41 @@
         clearImg.addEventListener('click', handleClearImgClick.bind(null, chatCtx));
       }
 
+      var usageBadge = container.querySelector('.cr-usage-badge');
+      var usageCard  = container.querySelector('.cr-usage-card');
+      if (usageBadge && usageCard) {
+        usageBadge.addEventListener('click', function handleBadgeClick(evt) {
+          evt.stopPropagation();
+          usageCard.classList.toggle('cr-usage-card--open');
+        });
+      }
+
+      var compactBtn = container.querySelector('#cr-compact-btn');
+      if (compactBtn) {
+        compactBtn.addEventListener('click', function handleCompactClick() {
+          if (!chatCtx.conversation || !chatCtx.conversation.messages || chatCtx.conversation.messages.length < 2) {
+            return;
+          }
+          compactBtn.disabled = true;
+          compactBtn.textContent = '⏳ Compacting...';
+
+          var cpNum = 1;
+          if (chatCtx.conversation.compactCheckpoint && chatCtx.conversation.compactCheckpoint.id) {
+            cpNum = parseInt(chatCtx.conversation.compactCheckpoint.id.replace('cp', ''), 10) + 1;
+            if (isNaN(cpNum)) cpNum = 1;
+          }
+
+          if (window.VSCODE_API) {
+            window.VSCODE_API.postMessage({
+              type: 'compactConversation',
+              conversationId: chatCtx.conversation.id,
+              messages: chatCtx.conversation.messages,
+              checkpointNumber: cpNum
+            });
+          }
+        });
+      }
+
     } catch (e) {
       console.error("[CHATSPACE] Error inside renderChatSpace:", e);
     }
@@ -2982,6 +3127,40 @@
     if (message.type === 'undoCheckpointResult' && message.filePath) {
       if (window.updateActionsBarStatus) {
         window.updateActionsBarStatus(message.filePath, message.success ? 'Restored' : 'Failed');
+      }
+    }
+
+    if (message.type === 'compactCheckpoint' && message.checkpoint) {
+      var cpData = message.checkpoint;
+      if (typeof window.getDashboardConversations === 'function') {
+        var convs = window.getDashboardConversations() || [];
+        for (var ci = 0; ci < convs.length; ci++) {
+          if (convs[ci].id === message.conversationId || (window.getDashboardActiveConversationId && convs[ci].id === window.getDashboardActiveConversationId())) {
+            convs[ci].compactCheckpoint = cpData;
+            break;
+          }
+        }
+        if (typeof window.saveDashboardConversations === 'function') {
+          window.saveDashboardConversations(convs);
+        }
+      }
+      var msgListEl = document.querySelector('.cr-msg-list');
+      if (msgListEl) {
+        appendCompactCheckpoint(msgListEl, cpData);
+        msgListEl.scrollTop = msgListEl.scrollHeight;
+      }
+      var cBtn = document.querySelector('#cr-compact-btn');
+      if (cBtn) {
+        cBtn.disabled = false;
+        cBtn.textContent = '📦 Compact Conversation';
+      }
+    }
+
+    if (message.type === 'compactError') {
+      var cBtnErr = document.querySelector('#cr-compact-btn');
+      if (cBtnErr) {
+        cBtnErr.disabled = false;
+        cBtnErr.textContent = '📦 Compact Conversation';
       }
     }
   }

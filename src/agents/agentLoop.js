@@ -377,6 +377,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   var messages = buildMessages(userPrompt, {
     workspace: workspace,
     history: history,
+    compactCheckpoint: options.compactCheckpoint || null,
     knowledge: knowledge,
     images: options.images || [],
     shellName: terminalManager.getShellName(),

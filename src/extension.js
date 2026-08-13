@@ -20,6 +20,7 @@ import * as workspaceIntelligence from './context/workspaceIntelligence.js';
 import { PROVIDER_DEFAULTS } from './agents/constants.js';
 import * as runtime from './agents/runtime.js';
 import * as events from './agents/events.js';
+import { buildCompactCheckpoint } from './context/compactionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -564,6 +565,40 @@ async function handleFrontendMessage(message, webview) {
         } catch (e) {
           console.error('[CODERUN] Failed to save conversations:', e);
         }
+      }
+      break;
+    }
+
+    case 'compactConversation': {
+      var compactMessages = message.messages || [];
+      var compactCheckpointNum = message.checkpointNumber || 1;
+      var conversationId = message.conversationId || '';
+
+      if (compactMessages.length < 2) {
+        webview.postMessage({
+          type: 'compactError',
+          error: 'Not enough messages to compact.'
+        });
+        break;
+      }
+
+      try {
+        var checkpoint = buildCompactCheckpoint(compactMessages, compactCheckpointNum);
+        checkpoint.conversationId = conversationId;
+
+        console.log('[CODERUN] Compact checkpoint created locally:', checkpoint.id, 'compactedUpTo:', checkpoint.compactedUpTo);
+
+        webview.postMessage({
+          type: 'compactCheckpoint',
+          conversationId: conversationId,
+          checkpoint: checkpoint
+        });
+      } catch (compactErr) {
+        console.error('[CODERUN] Compaction failed:', compactErr);
+        webview.postMessage({
+          type: 'compactError',
+          error: 'Compaction failed: ' + compactErr.message
+        });
       }
       break;
     }

@@ -583,7 +583,7 @@ select {
 .cr-usage-card {
   display: none;
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 4px);
   left: 0;
   min-width: 210px;
   background: var(--vscode-editorHoverWidget-background, #252526);
@@ -599,7 +599,20 @@ select {
   gap: 8px;
 }
 
-.cr-usage-wrapper:hover .cr-usage-card {
+/* Invisible hover bridge connecting badge to floating card */
+.cr-usage-card::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: -10px;
+  right: -10px;
+  height: 14px;
+  background: transparent;
+}
+
+.cr-usage-wrapper:hover .cr-usage-card,
+.cr-usage-card:hover,
+.cr-usage-card.cr-usage-card--open {
   display: flex;
   pointer-events: auto;
 }
@@ -2068,4 +2081,175 @@ select {
 
 .cr-clickable-file:hover {
   color: #58a6ff !important;
+}
+
+/* ── Compact Checkpoint Bubble ─────────────────────────── */
+.cr-row--checkpoint {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  margin: 6px 0;
+  width: 100%;
+}
+
+.cr-checkpoint-bubble {
+  width: 100%;
+  max-width: 100%;
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #3c3c3c);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0;
+}
+
+.cr-checkpoint-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #cca700;
+  background: rgba(204, 167, 0, 0.08);
+  user-select: none;
+  list-style: none;
+  white-space: nowrap;
+}
+.cr-checkpoint-summary::-webkit-details-marker { display: none; }
+
+.cr-checkpoint-icon { font-size: 14px; flex-shrink: 0; }
+
+.cr-checkpoint-label {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cr-checkpoint-chevron {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+  color: #cca700;
+  font-size: 8px;
+}
+.cr-checkpoint-chevron::before { content: '▶'; }
+.cr-checkpoint-bubble[open] > .cr-checkpoint-summary .cr-checkpoint-chevron {
+  transform: rotate(90deg);
+}
+
+.cr-checkpoint-body {
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* Sub-section dropdowns */
+.cr-checkpoint-section {
+  border: 0;
+  border-left: 2px solid #3c3c3c;
+  margin: 2px 0;
+  padding-left: 8px;
+}
+
+.cr-checkpoint-section-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: #b0b0b0;
+  font-weight: 500;
+  user-select: none;
+  list-style: none;
+}
+.cr-checkpoint-section-summary::-webkit-details-marker { display: none; }
+
+.cr-checkpoint-section-chevron {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+  color: #888;
+  font-size: 7px;
+}
+.cr-checkpoint-section-chevron::before { content: '▶'; }
+.cr-checkpoint-section[open] > .cr-checkpoint-section-summary .cr-checkpoint-section-chevron {
+  transform: rotate(90deg);
+}
+
+.cr-checkpoint-section-body {
+  padding: 4px 0 4px 4px;
+  font-size: 11.5px;
+}
+
+.cr-checkpoint-prompt {
+  color: #cccccc;
+  padding: 2px 0;
+  line-height: 1.5;
+}
+
+.cr-checkpoint-thinking-pre {
+  margin: 4px 0;
+  padding: 6px 8px;
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+  font-size: 11.5px;
+  color: #858585;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.cr-checkpoint-response {
+  color: #cccccc;
+  line-height: 1.5;
+  padding: 2px 0;
+}
+
+.cr-checkpoint-tool {
+  padding: 2px 0;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+  line-height: 1.6;
+}
+.cr-checkpoint-tool--success { color: #3fb950; }
+.cr-checkpoint-tool--error { color: #f85149; }
+
+/* Compact button in Session Info */
+.cr-compact-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 4px;
+  background: rgba(204, 167, 0, 0.08);
+  color: #cca700;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.cr-compact-btn:hover {
+  background: rgba(204, 167, 0, 0.16);
+}
+.cr-compact-btn:active {
+  background: rgba(204, 167, 0, 0.24);
+}
+.cr-compact-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

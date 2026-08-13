@@ -3,8 +3,9 @@
 export const EXTENSION_ID = 'coderun';
 export const EXTENSION_NAME = 'CodeRun AI Agent';
 
-export const MAX_ITERATIONS = 20;
-export const DEFAULT_TIMEOUT = 30;
+export var MAX_ITERATIONS = 20;
+export var DEFAULT_TIMEOUT = 30;
+export var COMPACT_TURN_THRESHOLD = 5;
 
 export const PROVIDERS = {
   OLLAMA: 'ollama',
@@ -75,7 +76,11 @@ export const EVENT_TYPES = {
   TERMINAL_OUTPUT: 'terminal_output',
   TERMINAL_EXIT: 'terminal_exit',
   TERMINAL_ERROR: 'terminal_error',
-  TERMINAL_LINE: 'terminal_line'
+  TERMINAL_LINE: 'terminal_line',
+  // Compaction events
+  COMPACT_START: 'compact_start',
+  COMPACT_COMPLETE: 'compact_complete',
+  COMPACT_ERROR: 'compact_error'
 };
 
 export const SYSTEM_PROMPT = `You are an autonomous AI coding agent integrated into a VS Code extension. You operate inside a user's workspace and have access to tools for reading, writing, editing, deleting files, listing directories, searching files, and running terminal commands.
