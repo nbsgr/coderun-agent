@@ -54,6 +54,14 @@ Whether you are running completely offline with local models (Ollama), leveragin
 *   **Single-Click Restore:** An **Undo** button appears under assistant responses that modified your files. Click it to restore files instantly.
 *   **Command Palette Integration:** Run `CodeRun: Undo Last Edit` at any time to roll back changes.
 
+### 📦 Compact Conversation & Context Management
+*   **Deterministic Tool Compaction:** Automatically compacts verbose file operations, directory listings, and tool outputs into concise, human-readable status one-liners (`Read file`, `Wrote file`, `Patched file`, `Deleted file`).
+*   **Smart Terminal Output Compaction:** Strips raw stdout output on successful terminal commands (since the LLM already knows the result) while preserving stdout/stderr output on command failures for accurate LLM error diagnosis.
+*   **Zero-Loss Re-Compaction:** Always re-compacts history from original messages to avoid summary-of-summary degradation, injecting `compact-context-cp1`, `compact-context-cp2` checkpoints into prompt context.
+*   **Full-Width Collapsible Timeline Checkpoint UI:** Renders full-width collapsible checkpoint bubbles directly along the chronological conversation flow, featuring 4 inner sub-dropdowns: **User Messages**, **Thinking**, **Response Summary**, and **Tool Executions**.
+*   **0ms Instant Local Execution:** Executes compaction 100% locally with zero API calls, zero network latency, and zero provider dependencies.
+*   **Pinnable Session Info & Manual Compaction:** Access detailed token breakdowns and trigger manual compaction anytime via the hoverable/pinnable **Session Info** card (`📦 Compact Conversation`).
+
 ### 📁 SQLite Project Knowledge Base
 *   **SQLite-Powered Index:** Uses `sql.js` to run a local SQLite database (`index.db`) in your global storage, keeping track of file metadata, chunk hashes, and project metrics.
 *   **Symbol Outlines:** The `list_symbols` tool parses files to outline functions, classes, and structs with line numbers.
@@ -134,7 +142,9 @@ src/
 ├── agentLoop.js              ← Core agentic loop (gathers context, plans steps, streams LLM output)
 ├── promptBuilder.js          ← Assembles system prompt with workspace, planning, and memory contexts
 │
-├── contextManager.js         ← Identifies request intent, extracts editor state & active file details
+├── context/
+│   ├── contextManager.js     ← Identifies request intent, extracts editor state & active file details
+│   └── compactionManager.js  ← Pure local 0ms conversation compaction engine & checkpoint generator
 ├── planningManager.js        ← Generates step-by-step plans written to a database-backed plan file
 ├── verificationManager.js    ← Runs post-execution tests (build checks, syntax checks, output matches)
 ├── learningManager.js        ← Automates style guidelines discovery (indentation, framework syntax)
