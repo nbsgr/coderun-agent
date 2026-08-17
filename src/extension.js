@@ -355,10 +355,13 @@ async function sendCurrentSettings(webview) {
     var saved = config.getSavedProviderConfig(extensionContext, activeProvider) || {};
     var isCompatible = activeProvider.startsWith('compatible');
     var defaults = isCompatible ? PROVIDER_DEFAULTS.compatible : (PROVIDER_DEFAULTS[activeProvider] || PROVIDER_DEFAULTS.ollama);
+    var currentSelectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
+    var selectedProv = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
+    var modelToUse = saved.model || (selectedProv === activeProvider ? currentSelectedModel : '');
     cfg = {
       provider: activeProvider,
       baseUrl: saved.baseUrl || defaults.baseUrl,
-      model: saved.model || '',
+      model: modelToUse,
       maxIterations: config.getConfig().maxIterations,
       streaming: config.getConfig().streaming,
       showThinking: config.getConfig().showThinking,
@@ -616,6 +619,15 @@ async function handleFrontendMessage(message, webview) {
           await extensionContext.globalState.update('coderun_selected_provider', message.provider);
         } catch (e) {
           console.error('[CODERUN] Failed to save provider:', e);
+        }
+      }
+      if (message.provider && message.model && extensionContext) {
+        try {
+          var existingCfg = config.getSavedProviderConfig(extensionContext, message.provider) || {};
+          existingCfg.model = message.model;
+          await config.saveProviderConfig(extensionContext, message.provider, existingCfg);
+        } catch (e) {
+          console.error('[CODERUN] Failed to update provider model config:', e);
         }
       }
       await sendCurrentSettings(webview);

@@ -6,6 +6,16 @@
   "use strict";
 
   var DEFAULT_BASE_URL = "http://localhost:11434/v1";
+  var PROVIDER_DEFAULT_URLS = {
+    ollama: "http://localhost:11434/v1",
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com/v1",
+    gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    openrouter: "https://openrouter.ai/api/v1",
+    xai: "https://api.x.ai/v1",
+    groq: "https://api.groq.com/openai/v1",
+    compatible: ""
+  };
   var STORAGE_KEY = "coderun_conversations";
   var SETTINGS_KEY = "coderun_settings";
   var MODEL_KEY = "coderun_selected_model";
@@ -238,6 +248,9 @@
     var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
     var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
 
+    var currentProvider = state.settings.provider || 'ollama';
+    var isCompatible = currentProvider === 'compatible' || currentProvider.startsWith('compatible:');
+
     if (providerEl) {
       // Re-populate dropdown dynamically
       var configs = state.savedProviderConfigs || {};
@@ -262,27 +275,24 @@
           var type = cfg.apiType || 'openai';
           var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
           html += '<option value="' + esc(key) + '">' + esc(name) + ' (' + typeLabel + ')</option>';
-          if (key === state.settings.provider) {
+          if (key === currentProvider) {
             hasCurrentAsCustom = true;
           }
         }
       }
       
       // If the current provider is compatible:XYZ but not saved yet
-      if (state.settings.provider && state.settings.provider.startsWith('compatible:') && !hasCurrentAsCustom) {
-        var name = state.settings.provider.substring(11);
+      if (currentProvider && currentProvider.startsWith('compatible:') && !hasCurrentAsCustom) {
+        var name = currentProvider.substring(11);
         var type = state.settings.apiType || 'openai';
         var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
-        html += '<option value="' + esc(state.settings.provider) + '">' + esc(name) + ' (' + typeLabel + ')</option>';
+        html += '<option value="' + esc(currentProvider) + '">' + esc(name) + ' (' + typeLabel + ')</option>';
       }
       
       html += '<option value="compatible">OpenAI/Anthropic/Gemini Compatible (New...)</option>';
       providerEl.innerHTML = html;
-      providerEl.value = state.settings.provider || 'ollama';
+      providerEl.value = currentProvider;
     }
-
-    var currentProvider = state.settings.provider || 'ollama';
-    var isCompatible = currentProvider === 'compatible' || currentProvider.startsWith('compatible:');
 
     if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
       if (isCompatible) {
@@ -291,10 +301,10 @@
         if (currentProvider.startsWith('compatible:')) {
           compNameEl.value = currentProvider.substring(11);
           var saved = (state.savedProviderConfigs || {})[currentProvider] || {};
-          compApiTypeEl.value = saved.apiType || 'openai';
+          compApiTypeEl.value = state.settings.apiType || saved.apiType || 'openai';
         } else {
           compNameEl.value = '';
-          compApiTypeEl.value = 'openai';
+          compApiTypeEl.value = state.settings.apiType || 'openai';
         }
       } else {
         compNameGroup.style.display = 'none';
@@ -304,7 +314,10 @@
       }
     }
 
-    if (baseUrlEl) baseUrlEl.value = state.settings.baseUrl;
+    var defaultUrl = PROVIDER_DEFAULT_URLS[currentProvider] !== undefined ? PROVIDER_DEFAULT_URLS[currentProvider] : '';
+    if (baseUrlEl) {
+      baseUrlEl.value = (state.settings.baseUrl !== undefined && state.settings.baseUrl !== null && state.settings.baseUrl !== '') ? state.settings.baseUrl : defaultUrl;
+    }
 
     // Check if the current selected provider has a saved key, otherwise show empty
     var configs = state.savedProviderConfigs || {};
@@ -316,11 +329,44 @@
     }
     if (apiKeyEl) apiKeyEl.value = hasApiKeyForCurrent ? "••••••••" : "";
 
-    if (modelEl) modelEl.value = state.settings.model;
-    if (maxIterEl) maxIterEl.value = state.settings.maxIterations;
-    if (streamingEl) streamingEl.checked = state.settings.streaming;
-    if (showThinkingEl) showThinkingEl.checked = state.settings.showThinking;
-    if (confirmEl) confirmEl.checked = state.settings.confirmDangerous;
+    var modelVal = state.settings.model || '';
+    if (!modelVal && configs[currentProvider] && configs[currentProvider].model) {
+      modelVal = configs[currentProvider].model;
+    } else if (!modelVal && state.selectedProvider === currentProvider && state.selectedModel) {
+      modelVal = state.selectedModel;
+    }
+    if (modelEl) modelEl.value = modelVal;
+    if (maxIterEl) maxIterEl.value = state.settings.maxIterations || 20;
+    if (streamingEl) streamingEl.checked = state.settings.streaming !== false;
+    if (showThinkingEl) showThinkingEl.checked = state.settings.showThinking !== false;
+    if (confirmEl) confirmEl.checked = state.settings.confirmDangerous !== false;
+  }
+
+  function handleLoadProviderBtnClick(e) {
+    e.stopPropagation();
+    var btn = e.currentTarget;
+    var item = btn.closest('.cr-saved-provider-item');
+    var prov = item ? item.dataset.provider : '';
+    var configs = state.savedProviderConfigs || {};
+    if (prov && configs[prov]) {
+      loadProviderToForm(prov, configs[prov]);
+    }
+  }
+
+  function handleRemoveProviderBtnClick(e) {
+    e.stopPropagation();
+    var btn = e.currentTarget;
+    var item = btn.closest('.cr-saved-provider-item');
+    var prov = item ? item.dataset.provider : '';
+    var configs = state.savedProviderConfigs || {};
+    if (prov) {
+      delete configs[prov];
+      state.savedProviderConfigs = configs;
+      renderSavedProviders();
+      if (state.isVsCode && window.VSCODE_API) {
+        window.VSCODE_API.postMessage({ type: 'removeProviderConfig', provider: prov });
+      }
+    }
   }
 
   /**
@@ -349,10 +395,12 @@
         label = prov.charAt(0).toUpperCase() + prov.slice(1);
       }
       var hasKey = cfg.apiKey ? '🔑' : '○';
-      var url = cfg.baseUrl ? cfg.baseUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
+      var defaultUrl = PROVIDER_DEFAULT_URLS[prov] || '';
+      var rawUrl = cfg.baseUrl || defaultUrl;
+      var url = rawUrl ? rawUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
       html += '<div class="cr-saved-provider-item" data-provider="' + esc(prov) + '">' +
-        '<span class="cr-saved-provider-name">' + hasKey + ' ' + esc(label) + '</span>' +
-        '<span class="cr-saved-provider-url" title="' + esc(cfg.baseUrl || '') + '">' + esc(url) + '</span>' +
+        '<span class="cr-saved-provider-name" title="' + esc(label) + '">' + hasKey + ' ' + esc(label) + '</span>' +
+        '<span class="cr-saved-provider-url" title="' + esc(rawUrl || '') + '">' + esc(url) + '</span>' +
         '<button class="cr-saved-provider-load" title="Load this provider\'s settings">Load</button>' +
         '<button class="cr-saved-provider-remove" title="Remove this provider config">✕</button>' +
         '</div>';
@@ -361,37 +409,12 @@
 
     var loadBtns = section.querySelectorAll('.cr-saved-provider-load');
     for (var li = 0; li < loadBtns.length; li++) {
-      loadBtns[li].onclick = handleLoadProviderClick.bind(null, configs);
+      loadBtns[li].onclick = handleLoadProviderBtnClick;
     }
 
     var removeBtns = section.querySelectorAll('.cr-saved-provider-remove');
     for (var ri = 0; ri < removeBtns.length; ri++) {
-      removeBtns[ri].onclick = handleRemoveProviderClick.bind(null, configs);
-    }
-  }
-
-  function handleLoadProviderClick(configs, e) {
-    e.stopPropagation();
-    var btn = e.currentTarget;
-    var item = btn.closest('.cr-saved-provider-item');
-    var prov = item ? item.dataset.provider : '';
-    if (prov && configs[prov]) {
-      loadProviderToForm(prov, configs[prov]);
-    }
-  }
-
-  function handleRemoveProviderClick(configs, e) {
-    e.stopPropagation();
-    var btn = e.currentTarget;
-    var item = btn.closest('.cr-saved-provider-item');
-    var prov = item ? item.dataset.provider : '';
-    if (prov) {
-      delete configs[prov];
-      state.savedProviderConfigs = configs;
-      renderSavedProviders();
-      if (state.isVsCode && window.VSCODE_API) {
-        window.VSCODE_API.postMessage({ type: 'removeProviderConfig', provider: prov });
-      }
+      removeBtns[ri].onclick = handleRemoveProviderBtnClick;
     }
   }
 
@@ -399,17 +422,24 @@
    * Load a saved provider's config into the settings form fields.
    */
   function loadProviderToForm(provider, cfg) {
-    var providerEl = document.getElementById("cfgProvider");
-    var baseUrlEl = document.getElementById("cfgBaseUrl");
-    var apiKeyEl = document.getElementById("cfgApiKey");
-    var modelEl = document.getElementById("cfgModel");
-    if (providerEl) providerEl.value = provider;
-    if (baseUrlEl) baseUrlEl.value = cfg.baseUrl || '';
-    if (apiKeyEl) apiKeyEl.value = cfg.apiKey ? '••••••••' : '';
-    if (modelEl) modelEl.value = cfg.model || '';
+    if (!cfg) cfg = {};
+    var defaultUrl = PROVIDER_DEFAULT_URLS[provider] !== undefined ? PROVIDER_DEFAULT_URLS[provider] : '';
+    state.provider = provider;
     state.settings.provider = provider;
-    state.settings.baseUrl = cfg.baseUrl || '';
+    state.settings.baseUrl = cfg.baseUrl || defaultUrl;
+    state.settings.apiKey = cfg.apiKey || '';
     state.hasApiKey = !!cfg.apiKey;
+    state.settings.model = cfg.model || '';
+    state.settings.apiType = cfg.apiType || 'openai';
+
+    if (cfg.model) {
+      state.selectedModel = cfg.model;
+      state.selectedProvider = provider;
+      updateModelBadge();
+      updateModelSelectValue();
+    }
+
+    updateSettingsUI();
   }
 
   function renderDashboard(container) {
@@ -612,9 +642,15 @@
     var provider = this.dataset.provider;
     state.selectedModel = model;
     state.selectedProvider = provider;
+    state.settings.model = model;
 
     var modelInput = document.getElementById("modelInput");
     if (modelInput) modelInput.value = model;
+
+    var cfgModelEl = document.getElementById("cfgModel");
+    if (cfgModelEl && (state.settings.provider === provider || (!state.settings.provider && provider === 'ollama'))) {
+      cfgModelEl.value = model;
+    }
 
     var list = document.getElementById("modelDropdownList");
     if (list) list.style.display = "none";
@@ -626,76 +662,28 @@
   function handleCfgProviderChange() {
     var providerEl = document.getElementById("cfgProvider");
     var provider = providerEl ? providerEl.value : '';
-    var compNameGroup = document.getElementById("cfgCompatibleNameGroup");
-    var compNameEl = document.getElementById("cfgCompatibleName");
-    var compApiTypeGroup = document.getElementById("cfgCompatibleApiTypeGroup");
-    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
-    
-    var isCompatible = provider === 'compatible' || provider.startsWith('compatible:');
-    if (compNameGroup && compNameEl && compApiTypeGroup && compApiTypeEl) {
-      if (isCompatible) {
-        compNameGroup.style.display = 'flex';
-        compApiTypeGroup.style.display = 'flex';
-        if (provider.startsWith('compatible:')) {
-          compNameEl.value = provider.substring(11);
-          var saved = (state.savedProviderConfigs || {})[provider] || {};
-          compApiTypeEl.value = saved.apiType || 'openai';
-        } else {
-          compNameEl.value = '';
-          compApiTypeEl.value = 'openai';
-        }
-      } else {
-        compNameGroup.style.display = 'none';
-        compApiTypeGroup.style.display = 'none';
-        compNameEl.value = '';
-        compApiTypeEl.value = 'openai';
-      }
+    var configs = state.savedProviderConfigs || {};
+    var saved = configs[provider] || null;
+    var defaultUrl = PROVIDER_DEFAULT_URLS[provider] !== undefined ? PROVIDER_DEFAULT_URLS[provider] : '';
+
+    state.settings.provider = provider;
+    state.provider = provider;
+
+    if (saved) {
+      state.settings.baseUrl = saved.baseUrl || defaultUrl;
+      state.settings.apiKey = saved.apiKey || '';
+      state.settings.model = saved.model || '';
+      state.settings.apiType = saved.apiType || 'openai';
+      state.hasApiKey = !!saved.apiKey;
+    } else {
+      state.settings.baseUrl = defaultUrl;
+      state.settings.apiKey = '';
+      state.settings.model = '';
+      state.settings.apiType = 'openai';
+      state.hasApiKey = false;
     }
 
-    var defaults = {
-      ollama: "http://localhost:11434/v1",
-      openai: "https://api.openai.com/v1",
-      anthropic: "https://api.anthropic.com/v1",
-      gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
-      openrouter: "https://openrouter.ai/api/v1",
-      xai: "https://api.x.ai/v1",
-      groq: "https://api.groq.com/openai/v1",
-      compatible: ""
-    };
-    
-    var baseUrlEl = document.getElementById("cfgBaseUrl");
-    if (baseUrlEl) {
-      if (provider.startsWith('compatible:')) {
-        var configs = state.savedProviderConfigs || {};
-        if (configs[provider] && configs[provider].baseUrl) {
-          baseUrlEl.value = configs[provider].baseUrl;
-        } else {
-          baseUrlEl.value = '';
-        }
-      } else if (defaults[provider] !== undefined) {
-        baseUrlEl.value = defaults[provider];
-      }
-    }
-
-    var apiKeyEl = document.getElementById("cfgApiKey");
-    if (apiKeyEl) {
-      if (provider.startsWith('compatible:')) {
-        var configs = state.savedProviderConfigs || {};
-        apiKeyEl.value = (configs[provider] && configs[provider].apiKey) ? "••••••••" : "";
-      } else {
-        apiKeyEl.value = "";
-      }
-    }
-
-    var modelEl = document.getElementById("cfgModel");
-    if (modelEl) {
-      if (provider.startsWith('compatible:')) {
-        var configs = state.savedProviderConfigs || {};
-        modelEl.value = (configs[provider] && configs[provider].model) ? configs[provider].model : "";
-      } else {
-        modelEl.value = "";
-      }
-    }
+    updateSettingsUI();
   }
 
   function handleSaveSettingsClick() {
@@ -713,6 +701,7 @@
       }
     }
 
+    var defaultUrl = PROVIDER_DEFAULT_URLS[newProvider] !== undefined ? PROVIDER_DEFAULT_URLS[newProvider] : DEFAULT_BASE_URL;
     var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
     var newApiKey = document.getElementById("cfgApiKey").value.trim();
     var newModel = document.getElementById("cfgModel").value.trim();
@@ -722,9 +711,9 @@
     var newConfirm = document.getElementById("cfgConfirmDangerous").checked;
 
     state.provider = newProvider;
-    state.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.baseUrl = newBaseUrl || defaultUrl;
     state.settings.provider = newProvider;
-    state.settings.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
+    state.settings.baseUrl = newBaseUrl || defaultUrl;
     state.settings.model = newModel;
     state.settings.maxIterations = newMaxIter;
     state.settings.streaming = newStreaming;
@@ -752,7 +741,7 @@
         type: "saveSettings",
         settings: {
           provider: newProvider,
-          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          baseUrl: newBaseUrl || defaultUrl,
           model: newModel,
           maxIterations: newMaxIter,
           streaming: newStreaming,
@@ -772,7 +761,7 @@
       try {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify({
           provider: newProvider,
-          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
+          baseUrl: newBaseUrl || defaultUrl,
           apiKey: newApiKey,
           model: newModel
         }));
@@ -785,107 +774,17 @@
     var button = document.getElementById("saveSettingsBtn");
     if (button) {
       button.textContent = "Saved";
-      setTimeout(handleSaveSettingsTimeout.bind(null, button), 1200);
+      setTimeout(resetSaveSettingsButton, 1200);
     }
     updateModelBadge();
     updateModelSelectValue();
   }
 
-  function handleSaveSettingsClick() {
-    var newProvider = document.getElementById("cfgProvider").value;
-    var compNameEl = document.getElementById("cfgCompatibleName");
-    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
-    var customApiType = 'openai';
-    if (newProvider === 'compatible' || newProvider.startsWith('compatible:')) {
-      var customName = compNameEl ? compNameEl.value.trim() : '';
-      customApiType = compApiTypeEl ? compApiTypeEl.value : 'openai';
-      if (customName) {
-        newProvider = 'compatible:' + customName;
-      } else {
-        newProvider = 'compatible';
-      }
-    }
-
-    var newBaseUrl = document.getElementById("cfgBaseUrl").value.trim();
-    var newApiKey = document.getElementById("cfgApiKey").value.trim();
-    var newModel = document.getElementById("cfgModel").value.trim();
-    var newMaxIter = parseInt(document.getElementById("cfgMaxIterations").value) || 20;
-    var newStreaming = document.getElementById("cfgStreaming").checked;
-    var newShowThinking = document.getElementById("cfgShowThinking").checked;
-    var newConfirm = document.getElementById("cfgConfirmDangerous").checked;
-
-    state.provider = newProvider;
-    state.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
-    state.settings.provider = newProvider;
-    state.settings.baseUrl = newBaseUrl || DEFAULT_BASE_URL;
-    state.settings.model = newModel;
-    state.settings.maxIterations = newMaxIter;
-    state.settings.streaming = newStreaming;
-    state.settings.showThinking = newShowThinking;
-    state.settings.confirmDangerous = newConfirm;
-    state.settings.apiType = customApiType;
-
-    if (newModel) {
-      state.selectedModel = newModel;
-      state.selectedProvider = newProvider;
-    }
-
-    if (state.isVsCode && window.VSCODE_API) {
-      var apiKeyToSend = newApiKey;
-      var savedConfigs = state.savedProviderConfigs || {};
-      var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
-
-      if (hasExistingKey && newApiKey === "") {
-        apiKeyToSend = "";
-      } else if (hasExistingKey && newApiKey === "••••••••") {
-        apiKeyToSend = "••••••••";
-      }
-
-      window.VSCODE_API.postMessage({
-        type: "saveSettings",
-        settings: {
-          provider: newProvider,
-          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
-          model: newModel,
-          maxIterations: newMaxIter,
-          streaming: newStreaming,
-          showThinking: newShowThinking,
-          confirmDangerous: newConfirm,
-          apiType: customApiType
-        },
-        apiKey: apiKeyToSend
-      });
-
-      if (newApiKey && newApiKey !== "••••••••") {
-        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
-      } else if (newApiKey === "" && hasExistingKey) {
-        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
-      }
-    } else {
-      try {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-          provider: newProvider,
-          baseUrl: newBaseUrl || DEFAULT_BASE_URL,
-          apiKey: newApiKey,
-          model: newModel
-        }));
-      } catch (_) {
-        // Intentionally ignore localStorage quota/access restrictions when saving settings
-      }
-      loadModels();
-    }
-
+  function resetSaveSettingsButton() {
     var button = document.getElementById("saveSettingsBtn");
     if (button) {
-      button.textContent = "Saved";
-      setTimeout(handleSaveSettingsTimeout.bind(null, button), 1200);
+      button.textContent = "Save Settings";
     }
-    updateModelBadge();
-    updateModelSelectValue();
-  }
-
-  function handleSaveSettingsTimeout(button) {
-    button.textContent = "Save Settings";
   }
 
   function handleClearAllConvClick() {
