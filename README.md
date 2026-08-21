@@ -62,6 +62,11 @@ Whether you are running completely offline with local models (Ollama), leveragin
 *   **0ms Instant Local Execution:** Executes compaction 100% locally with zero API calls, zero network latency, and zero provider dependencies.
 *   **Pinnable Session Info & Manual Compaction:** Access detailed token breakdowns and trigger manual compaction anytime via the hoverable/pinnable **Session Info** card (`📦 Compact Conversation`).
 
+### ⏱️ Workspace Activity Timeline & Context Separation
+*   **Thread-Isolated Chat History:** Full conversation dialogue, assistant responses, thinking traces, and reasoning tokens are strictly isolated per chat thread. Opening a **New Chat** or deleting a conversation starts with a clean dialogue history (`messages: []`).
+*   **SQLite Workspace Activity Feed:** CodeRun maintains a lightweight, chronological workspace activity feed in its local SQLite database (`timeline_data`), recording recent workspace events: task starts (`▶`), file creations (`+`), file edits (`∼`), file deletions (`−`), file reads (`→`), terminal executions (`$`), and tool results (`✓`).
+*   **Cross-Chat Situational Awareness:** The 6 most recent workspace activity events are injected as high-level metadata into the agent's background system prompt (`## RECENT TIMELINE`). This gives the AI immediate awareness of recently touched files, run commands, and active workspace tasks across sessions without bloating the prompt with full past chat transcripts.
+
 ### 📁 SQLite Project Knowledge Base
 *   **SQLite-Powered Index:** Uses `sql.js` to run a local SQLite database (`index.db`) in your global storage, keeping track of file metadata, chunk hashes, and project metrics.
 *   **Symbol Outlines:** The `list_symbols` tool parses files to outline functions, classes, and structs with line numbers.
