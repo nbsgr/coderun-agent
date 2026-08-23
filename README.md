@@ -4,12 +4,13 @@
   <img src="./logo.png" width="160" alt="CodeRun Logo"/>
 </p>
 
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue?logo=visual-studio-code)](https://github.com/nbsgr/coderun-agent.git)
+[![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code&label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
+[![VS Code Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/nbsgr/coderun-agent/pulls)
 
-**CodeRun AI Agent** is a professional, multi-provider AI coding companion for Visual Studio Code. Operating as a state-of-the-art agentic loop, CodeRun acts as a decision-maker to read, write, and edit files, index codebases in a local SQLite database, and run terminal processes using VS Code's integrated terminal. 
+**CodeRun AI Agent** (`AI-AGENT`) is a professional, multi-provider AI coding companion for Visual Studio Code. Operating as a state-of-the-art agentic loop, CodeRun acts as a decision-maker to read, write, and edit files, index codebases in a local SQLite database, and run terminal processes using VS Code's integrated terminal. 
 
 Whether you are running completely offline with local models (Ollama), leveraging official API keys (OpenAI, Anthropic, Gemini, Groq, OpenRouter), or routing custom endpoints (Cloudflare Workers AI, Aero Link), CodeRun delivers an exceptionally integrated and secure developer experience.
 
@@ -188,44 +189,55 @@ src/
 | Shortcut | Action |
 | :--- | :--- |
 | `Enter` | Send message |
-### Prerequisites
+| `Shift + Enter` | Insert new line in chat input |
+| `Ctrl + V` / `Cmd + V` | Paste image directly into chat |
+| `Ctrl + Shift + P` → `CodeRun: Open Sidebar` | Focus the CodeRun agent sidebar |
+| `Ctrl + Shift + P` → `CodeRun: New Chat` | Start a fresh isolated conversation |
+| `Ctrl + Shift + P` → `CodeRun: Undo Last Edit` | Restore previous workspace snapshot |
 
+---
+
+## 🛠️ Development & Building
+
+### Prerequisites
 - [Node.js](https://nodejs.org) >= 18.x
 - [VS Code](https://code.visualstudio.com) >= 1.80.0
 
 ### Setup
-
 ```bash
 git clone https://github.com/nbsgr/coderun-agent.git
 cd coderun-agent
 npm install
 ```
 
-### Debug
+### Debugging
+1. Open the project folder in VS Code.
+2. Press `F5` to open the **Extension Development Host**.
+3. Click the **AI-AGENT** chat icon in the Activity Bar.
 
-1. Open the project in VS Code
-2. Press `F5` — the Extension Development Host window opens
-3. Click the chat icon in the activity bar
-
-### Package for Marketplace
-
+### Packaging
 ```bash
 npm install -g @vscode/vsce
 vsce package
 ```
 
-This creates a `.vsix` file that can be installed via:
+Install the generated `.vsix`:
+```bash
+code --install-extension ai-agent-1.3.0.vsix
 ```
-code --install-extension ai-agent-<version>.vsix
-```
 
-## License
+---
 
-MIT
+## 📄 License
 
-## Links
+[MIT](LICENSE)
 
-- [GitHub Repository](https://github.com/nbsgr/coderun-agent)
-- [Issue Tracker](https://github.com/nbsgr/coderun-agent/issues)
-- [VS Code Marketplace](https://github.com/nbsgr/coderun-agent.git) *(pending)*
+---
+
+## 🔗 Official Links
+
+- 🏪 **VS Code Marketplace:** [Bala-Siva-Ganesh.ai-agent](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
+- 🐙 **GitHub Repository:** [nbsgr/coderun-agent](https://github.com/nbsgr/coderun-agent)
+- 🐛 **Issue Tracker:** [GitHub Issues](https://github.com/nbsgr/coderun-agent/issues)
+
 
