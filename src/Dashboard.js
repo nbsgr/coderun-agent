@@ -1255,6 +1255,7 @@
     if (extra.tool_call_id) message.tool_call_id = extra.tool_call_id;
     if (extra.tool_name) message.tool_name = extra.tool_name;
     if (extra.result) message.result = extra.result;
+    if (extra.error) message.error = extra.error;
 
     var last = conversation.messages[conversation.messages.length - 1];
     if (last && last.role === role) {
@@ -1264,6 +1265,7 @@
       if (message.tool_calls) last.tool_calls = message.tool_calls;
       if (message.tool_name) last.tool_name = message.tool_name;
       if (message.result) last.result = message.result;
+      if (message.error) last.error = message.error;
     } else {
       conversation.messages.push(message);
     }

@@ -616,6 +616,10 @@
             if (content) {
               var d = appendContentBlock(body);
               d.innerHTML = md(content);
+            } else if (m.error) {
+              var errDiv = mk('div', 'cr-error-line');
+              errDiv.innerHTML = I.err + ' ' + esc(m.error);
+              body.appendChild(errDiv);
             }
             if (m.tool_calls && m.tool_calls.length) {
               for (var tci = 0; tci < m.tool_calls.length; tci++) {
@@ -817,10 +821,16 @@
   function handleStreamError(chatCtx, err) {
     var S = chatCtx.S;
     removeTyping(S.botBody);
+    var errMsg = err && err.message ? err.message : String(err || 'Unknown error');
     var errorLine = mk('div', 'cr-error-line');
-    errorLine.innerHTML = I.err + ' Error: ' + esc(err && err.message || String(err));
+    errorLine.innerHTML = I.err + ' Error: ' + esc(errMsg);
     if (S.botBody) S.botBody.appendChild(errorLine);
     setStreaming(chatCtx, false);
+
+    if (typeof window.saveConversationMessage === 'function') {
+      window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: errMsg });
+    }
+
     scrollBottom(chatCtx.msgList);
   }
 

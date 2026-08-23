@@ -23,6 +23,9 @@ export async function* chat(config, messages, tools) {
 
   for await (var chunk of stream) {
     var parsed = parseChunk(chunk);
+    if (parsed.error) {
+      throw new Error(parsed.error);
+    }
     if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
       yield parsed;
     }
@@ -94,6 +97,10 @@ export async function images(config, prompt) {
 
 function parseChunk(data) {
   var result = {};
+  if (data && data.error) {
+    result.error = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+    return result;
+  }
   if (data && data.usage) {
     result.usage = {
       prompt_tokens: data.usage.prompt_tokens || 0,
@@ -101,7 +108,12 @@ function parseChunk(data) {
       total_tokens: data.usage.total_tokens || 0
     };
   }
-  var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
+  var choice = data && data.choices && data.choices[0];
+  if (choice && choice.finish_reason === 'network_error') {
+    result.error = 'API response finished with reason: network_error';
+    return result;
+  }
+  var delta = choice ? choice.delta : null;
   if (!delta) return result;
 
   if (delta.content) result.content = delta.content;

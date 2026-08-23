@@ -594,6 +594,12 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
       }
 
+      if (!iterationContent && !iterationThinking && toolCalls.length === 0 && (!signal || !signal.stopped)) {
+        var emptyMsg = 'The model returned an empty response. It may have closed the connection prematurely or does not support tool calling.';
+        sendEvent({ type: EVENT_TYPES.AGENT_ERROR, message: emptyMsg });
+        throw new Error(emptyMsg);
+      }
+
       var completedToolCalls = [];
       for (var tcIndex = 0; tcIndex < toolCalls.length; tcIndex++) {
         var t = toolCalls[tcIndex];
