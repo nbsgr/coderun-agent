@@ -161,31 +161,28 @@
     return '<blockquote class="md-blockquote">' + block.replace(/^> /gm, '').trim() + '</blockquote>\n';
   }
 
-  function renderTableRow(row, i) {
-    if (i === 1) return '';
-    var rawCells = row.split('|');
-    var cells = [];
-    for (var ci = 0; ci < rawCells.length; ci++) {
-      var trimmed = rawCells[ci].trim();
-      if (trimmed !== '') {
-        cells.push(trimmed);
-      }
-    }
-    var tag = i === 0 ? 'th' : 'td';
-    var cols = [];
-    for (var cj = 0; cj < cells.length; cj++) {
-      cols.push('<' + tag + '>' + cells[cj] + '</' + tag + '>');
-    }
-    return '<tr>' + cols.join('') + '</tr>';
-  }
-
   function replaceTable(table) {
-    var rows = table.trim().split('\n');
-    var html = '<table class="md-table">';
-    for (var i = 0; i < rows.length; i++) {
-      html += renderTableRow(rows[i], i);
+    var rawRows = table.trim().split('\n');
+    var html = '<div class="md-table-wrap"><table class="md-table">';
+    var isHeader = true;
+    for (var i = 0; i < rawRows.length; i++) {
+      var row = rawRows[i].trim();
+      if (!row) continue;
+      if (/^\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?$/.test(row)) {
+        isHeader = false;
+        continue;
+      }
+      var rawCells = row.replace(/^\|/, '').replace(/\|$/, '').split('|');
+      var tag = isHeader ? 'th' : 'td';
+      var cols = [];
+      for (var ci = 0; ci < rawCells.length; ci++) {
+        var cellText = rawCells[ci].trim();
+        cols.push('<' + tag + '>' + cellText + '</' + tag + '>');
+      }
+      html += '<tr>' + cols.join('') + '</tr>';
+      if (isHeader) isHeader = false;
     }
-    html += '</table>';
+    html += '</table></div>';
     return html;
   }
 
@@ -235,7 +232,7 @@
   function renderMarkdown(raw) {
     if (!raw) return '';
     bindCopyHandler();
-    var t = String(raw);
+    var t = String(raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     t = esc(t);
 
     // Fenced code blocks
@@ -253,6 +250,9 @@
 
     // Strikethrough
     t = t.replace(/~~(.+?)~~/g, replaceStrikethrough);
+
+    // Tables
+    t = t.replace(/(^\|[^\n]+\|\n\|[ \t]*[-|: ]+\|\n(?:\|[^\n]+\|\n?)+)/gm, replaceTable);
 
     // Headings
     t = t.replace(/^###### (.+)$/gm, replaceHeading6);

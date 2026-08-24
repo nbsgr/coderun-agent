@@ -283,6 +283,26 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     }
   }
 
+  try {
+    var toolDuration = Date.now() - startTime;
+    var isToolSuccess = lastResult ? lastResult.success !== false : false;
+    var toolResText = lastResult ? (lastResult.message || lastResult.content || (isToolSuccess ? 'Success' : 'Failed')) : 'Completed';
+    var updatedToolTrace = executionTrace.recordToolCall(sessionId, iteration, {
+      id: tcId,
+      toolName: toolName,
+      command: args.command || args.file_path || args.folder_path || args.pattern || '',
+      input: args,
+      output: toolResText,
+      success: isToolSuccess,
+      durationMs: toolDuration
+    });
+    if (updatedToolTrace) {
+      sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: updatedToolTrace });
+    }
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+
   return {
     tool_name: toolName,
     tool_call_id: tcId,
@@ -297,8 +317,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   var history = options.history || [];
 
   // Initialize Runtime execution context
-  var sessionId = history.length > 0 ? String(history[0].session_id || 'session_' + Date.now())
-                                      : 'session_' + Date.now();
+  var sessionId = options.sessionId || (history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
   runtime.initSession(userPrompt, sessionId);
 
   // Wrap sendEvent to also emit through the events.js bus.
@@ -347,7 +366,13 @@ export async function runAgentLoop(userPrompt, config, options) {
   // ── Session Startup ──────────────────────────────────────────
   try {
     events.emit('TaskStarted', { goal: userPrompt, sessionId: sessionId });
-    executionTrace.startTrace(sessionId, userPrompt);
+    var runContext = {
+      images: options.images || [],
+      workspaceFolder: workspace || '',
+      openFiles: (knowledge && knowledge.openFiles) || []
+    };
+    var activeTrace = executionTrace.startRun(sessionId, null, userPrompt, runContext, config.model, config.provider);
+    sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: activeTrace });
     goalTracker.initGoals(userPrompt);
     memoryManager.clear();
     memoryManager.setCurrentGoal(userPrompt);
@@ -634,6 +659,44 @@ export async function runAgentLoop(userPrompt, config, options) {
         });
       }
 
+      try {
+        var sysMsg = '';
+        var toolResMsg = '';
+        for (var mIdx = 0; mIdx < messages.length; mIdx++) {
+          if (messages[mIdx].role === 'system') sysMsg = messages[mIdx].content;
+          if (messages[mIdx].role === 'tool') toolResMsg += messages[mIdx].content + '\n';
+        }
+
+        var decisionList = [];
+        for (var dt = 0; dt < completedToolCalls.length; dt++) {
+          var dtName = completedToolCalls[dt].function && completedToolCalls[dt].function.name;
+          if (dtName) decisionList.push('Call ' + dtName);
+        }
+        var decisionText = decisionList.length ? decisionList.join(', ') : (iterationContent ? 'Generate response' : 'Thinking');
+
+        var updatedLlmTrace = executionTrace.recordLLMCall(sessionId, iteration + 1, {
+          model: config.model,
+          provider: config.provider,
+          messages: {
+            system: sysMsg ? 'System instructions (' + Math.round(sysMsg.length / 4) + ' tokens)' : '',
+            user: userPrompt,
+            toolResults: toolResMsg ? toolResMsg.trim() : null
+          },
+          thinking: iterationThinking || fullThinking,
+          decision: decisionText,
+          tokens: {
+            input: sessionUsage.prompt_tokens || Math.round(JSON.stringify(messages).length / 4),
+            output: sessionUsage.completion_tokens || Math.round(((iterationContent || '').length + (iterationThinking || '').length) / 4)
+          },
+          durationMs: 0
+        });
+        if (updatedLlmTrace) {
+          sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: updatedLlmTrace });
+        }
+      } catch (_) {
+        // Intentionally ignored to allow safe execution fallback
+      }
+
       if (completedToolCalls.length === 0) {
         // If the last message was a tool message, let's force the LLM to write a final concluding message!
         if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim())) {
@@ -735,6 +798,23 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
         messages.push(assistantMsg);
         sendHistoryUpdate();
+
+        try {
+          executionTrace.recordFinalResponse(sessionId, {
+            text: fullContent,
+            thinking: fullThinking,
+            durationMs: 0
+          });
+          var finishedTrace = executionTrace.finishRun(sessionId, 'completed', {
+            totalTokens: sessionUsage
+          });
+          executionTrace.saveTraceToDisk(null, sessionId);
+          if (finishedTrace) {
+            sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: finishedTrace });
+          }
+        } catch (_) {
+          // Intentionally ignored to allow safe execution fallback
+        }
 
         var executionReportText = formatExecutionReport();
         sendEvent({
@@ -840,6 +920,28 @@ export async function runAgentLoop(userPrompt, config, options) {
       sendHistoryUpdate();
       dbg('[AGENT LOOP] End of iteration', iteration, '- next iteration starting...');
     }
+  } catch (err) {
+    console.error('[AGENT LOOP] Error in loop:', err);
+    try {
+      var errText = err ? (err.message || String(err)) : 'Unknown error';
+      executionTrace.recordFinalResponse(sessionId, {
+        text: errText,
+        thinking: fullThinking,
+        error: errText,
+        durationMs: 0
+      });
+      var failedTrace = executionTrace.finishRun(sessionId, 'failed', {
+        error: errText,
+        totalTokens: sessionUsage
+      });
+      executionTrace.saveTraceToDisk(null, sessionId);
+      if (failedTrace) {
+        sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: failedTrace });
+      }
+    } catch (_) {
+      // Intentionally ignored to allow safe execution fallback
+    }
+    throw err;
   } finally {
     console.log('[AGENT LOOP] While loop exited. finally block.');
     if (!agentState.isTerminal()) {
@@ -851,6 +953,24 @@ export async function runAgentLoop(userPrompt, config, options) {
   if (!agentState.isTerminal()) {
     agentState.transition('completed');
   }
+
+  try {
+    executionTrace.recordFinalResponse(sessionId, {
+      text: fullContent,
+      thinking: fullThinking,
+      durationMs: 0
+    });
+    var maxTrace = executionTrace.finishRun(sessionId, 'max_iterations', {
+      totalTokens: sessionUsage
+    });
+    executionTrace.saveTraceToDisk(null, sessionId);
+    if (maxTrace) {
+      sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: maxTrace });
+    }
+  } catch (_) {
+    // Intentionally ignored to allow safe execution fallback
+  }
+
   sendEvent({
     type: EVENT_TYPES.AGENT_DONE,
     reason: 'max_iterations',

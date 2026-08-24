@@ -636,6 +636,9 @@
       if (tracesArea) {
         tracesArea.style.display = "flex";
         renderTracesView(tracesArea);
+        if (state.activeConversationId && state.isVsCode && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: "getTraces", sessionId: state.activeConversationId });
+        }
       }
     } else {
       if (chatsBtn) chatsBtn.classList.add("active");
@@ -653,9 +656,31 @@
       if (activeId) {
         traces = JSON.parse(localStorage.getItem("coderun_traces_" + activeId) || "[]");
       }
-      if (!traces.length) {
-        var allTraces = JSON.parse(localStorage.getItem("coderun_all_traces") || "[]");
-        if (allTraces.length) traces = allTraces;
+
+      var hasValidTraces = false;
+      if (traces && traces.length > 0) {
+        for (var vi = 0; vi < traces.length; vi++) {
+          if (traces[vi] && traces[vi].user && traces[vi].user.query) {
+            hasValidTraces = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasValidTraces && activeId && state.conversations) {
+        for (var c = 0; c < state.conversations.length; c++) {
+          if (state.conversations[c].id === activeId) {
+            traces = reconstructTracesFromConversation(state.conversations[c]);
+            if (traces && traces.length) {
+              try {
+                localStorage.setItem("coderun_traces_" + activeId, JSON.stringify(traces));
+              } catch (_) {
+                // Intentionally ignore storage write errors
+              }
+            }
+            break;
+          }
+        }
       }
     } catch (_) {
       traces = [];
@@ -666,26 +691,490 @@
         '<div class="cr-traces-empty">' +
           '<div class="cr-traces-empty-icon">🪵</div>' +
           '<div class="cr-traces-empty-title">No Traces Recorded Yet</div>' +
-          '<div class="cr-traces-empty-desc">Execution traces, LLM decisions, tool calls, and results for this chat will appear here.</div>' +
+          '<div class="cr-traces-empty-desc">Execution traces, LLM decisions, tool calls, and results for this chat will appear here in real time.</div>' +
         '</div>';
       return;
     }
 
-    var html = '<div class="cr-traces-list">';
-    for (var i = 0; i < traces.length; i++) {
-      var t = traces[i];
-      var treeText = t.asciiTree || t.summary || 'Trace #' + (i + 1);
-      html += 
-        '<div class="cr-trace-card">' +
-          '<div class="cr-trace-header">' +
-            '<span class="cr-trace-title">Run #' + (i + 1) + ' (' + esc(t.status || 'completed') + ')</span>' +
-            '<span class="cr-trace-time">' + (t.durationMs ? (t.durationMs / 1000).toFixed(1) + 's' : '') + '</span>' +
-          '</div>' +
-          '<pre class="cr-trace-tree">' + esc(treeText) + '</pre>' +
+    if (state.activeTraceRunIndex === undefined || state.activeTraceRunIndex == null || state.activeTraceRunIndex >= traces.length) {
+      state.activeTraceRunIndex = traces.length - 1;
+    }
+
+    var activeIndex = state.activeTraceRunIndex >= 0 ? state.activeTraceRunIndex : 0;
+    var activeTrace = traces[activeIndex] || traces[0];
+
+    // Reconcile status if trace is running but conversation ended with an error
+    if (activeTrace && activeTrace.status === 'running' && activeId && state.conversations) {
+      for (var ci = 0; ci < state.conversations.length; ci++) {
+        if (state.conversations[ci].id === activeId) {
+          var convMsgs = state.conversations[ci].messages || [];
+          if (convMsgs.length > 0) {
+            var lastMsg = convMsgs[convMsgs.length - 1];
+            if (lastMsg.error || (typeof lastMsg.content === 'string' && (lastMsg.content.indexOf('Error from provider') !== -1 || lastMsg.content.indexOf('Error: ') === 0 || lastMsg.content.indexOf('Upstream request failed') !== -1))) {
+              activeTrace.status = 'failed';
+              activeTrace.error = lastMsg.error || lastMsg.content;
+              if (!activeTrace.finalResponse) activeTrace.finalResponse = {};
+              activeTrace.finalResponse.text = lastMsg.error || lastMsg.content;
+              activeTrace.finalResponse.error = lastMsg.error || lastMsg.content;
+              try {
+                localStorage.setItem("coderun_traces_" + activeId, JSON.stringify(traces));
+              } catch (_) {}
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    var prevTabsEl = container.querySelector(".cr-trace-run-tabs");
+    var prevScrollLeft = prevTabsEl ? prevTabsEl.scrollLeft : null;
+
+    container.innerHTML = buildTraceHtml(activeTrace, activeIndex, traces.length);
+
+    var newTabsEl = container.querySelector(".cr-trace-run-tabs");
+    if (newTabsEl) {
+      if (prevScrollLeft !== null) {
+        newTabsEl.scrollLeft = prevScrollLeft;
+      }
+      var activeTabBtn = newTabsEl.querySelector(".cr-trace-run-tab.active");
+      if (activeTabBtn && typeof activeTabBtn.scrollIntoView === "function") {
+        activeTabBtn.scrollIntoView({ behavior: "auto", block: "nearest", inline: "nearest" });
+      }
+    }
+
+    var tabButtons = container.querySelectorAll(".cr-trace-run-tab");
+    for (var i = 0; i < tabButtons.length; i++) {
+      tabButtons[i].onclick = handleTraceRunTabClick;
+    }
+
+    var copyButtons = container.querySelectorAll(".cr-trace-copy-btn");
+    for (var j = 0; j < copyButtons.length; j++) {
+      copyButtons[j].onclick = handleCopyTraceCardClick;
+    }
+
+    var fullCopyBtn = container.querySelector(".cr-trace-copy-full-btn");
+    if (fullCopyBtn) {
+      fullCopyBtn.onclick = handleCopyFullTraceClick;
+    }
+  }
+
+  function handleTraceRunTabClick() {
+    var idx = parseInt(this.dataset.runIndex, 10);
+    if (!isNaN(idx)) {
+      state.activeTraceRunIndex = idx;
+      var container = document.getElementById("traces-area-container");
+      if (container) renderTracesView(container);
+    }
+  }
+
+  function handleCopyTraceCardClick(e) {
+    if (e) e.stopPropagation();
+    var card = this.closest("[data-copy]");
+    if (card) {
+      var copyData = card.getAttribute("data-copy") || "";
+      copyTextToClipboard(copyData, this);
+    }
+  }
+
+  function handleCopyFullTraceClick(e) {
+    if (e) e.stopPropagation();
+    var fullData = this.getAttribute("data-full-copy") || "";
+    copyTextToClipboard(fullData, this);
+  }
+
+  function copyTextToClipboard(text, btnElement) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      if (btnElement) {
+        var originalText = btnElement.textContent;
+        btnElement.textContent = "✓ Copied!";
+        setTimeout(function() {
+          btnElement.textContent = originalText;
+        }, 1500);
+      }
+    } catch (_) {
+      // Intentionally ignore clipboard write errors
+    }
+  }
+
+  function buildLlmCallCardHtml(llmCall, stepIndex) {
+    if (!llmCall) return '';
+    var rawJson = '';
+    try { rawJson = JSON.stringify(llmCall, null, 2); } catch (_) { rawJson = ''; }
+
+    var messagesHtml = '';
+    if (llmCall.messages) {
+      if (llmCall.messages.system) {
+        messagesHtml += '<div class="cr-trace-msg-item"><span class="cr-trace-msg-label">System:</span> <span class="cr-trace-msg-val">' + esc(llmCall.messages.system) + '</span></div>';
+      }
+      if (llmCall.messages.user) {
+        messagesHtml += '<div class="cr-trace-msg-item"><span class="cr-trace-msg-label">User:</span> <span class="cr-trace-msg-val">' + esc(llmCall.messages.user) + '</span></div>';
+      }
+      if (llmCall.messages.toolResults) {
+        messagesHtml += '<div class="cr-trace-msg-item"><span class="cr-trace-msg-label">Tool results:</span> <span class="cr-trace-msg-val">' + esc(llmCall.messages.toolResults) + '</span></div>';
+      }
+    }
+
+    var responseHtml = '';
+    if (llmCall.thinking) {
+      responseHtml += '<div class="cr-trace-thought-box"><span class="cr-trace-thought-title">🧠 Thinking</span><p class="cr-trace-thought-text">' + esc(llmCall.thinking) + '</p></div>';
+    }
+    if (llmCall.decision) {
+      responseHtml += '<div class="cr-trace-decision-box"><span class="cr-trace-decision-label">Decision:</span> ' + esc(llmCall.decision) + '</div>';
+    }
+
+    var tokensHtml = '';
+    if (llmCall.tokens) {
+      tokensHtml = 
+        '<div class="cr-trace-tokens-grid">' +
+          '<div><span class="cr-trace-token-label">Input:</span> ' + (llmCall.tokens.input ? llmCall.tokens.input.toLocaleString() : '0') + '</div>' +
+          '<div><span class="cr-trace-token-label">Output:</span> ' + (llmCall.tokens.output ? llmCall.tokens.output.toLocaleString() : '0') + '</div>' +
         '</div>';
     }
-    html += '</div>';
-    container.innerHTML = html;
+
+    return (
+      '<div class="cr-trace-llm-card" data-copy="' + esc(rawJson) + '">' +
+        '<div class="cr-trace-card-topbar">' +
+          '<div class="cr-trace-card-title"><span class="cr-trace-card-icon">🤖</span> LLM Call #' + stepIndex + '</div>' +
+          '<button type="button" class="cr-trace-copy-btn" title="Copy LLM Call">📋</button>' +
+        '</div>' +
+        '<div class="cr-trace-field">' +
+          '<span class="cr-trace-field-label">Model:</span> ' + esc(llmCall.model || 'Unknown') +
+        '</div>' +
+        (messagesHtml ? '<div class="cr-trace-section"><div class="cr-trace-section-title">Messages</div>' + messagesHtml + '</div>' : '') +
+        (responseHtml ? '<div class="cr-trace-section"><div class="cr-trace-section-title">Response</div>' + responseHtml + '</div>' : '') +
+        (tokensHtml ? '<div class="cr-trace-section"><div class="cr-trace-section-title">Tokens</div>' + tokensHtml + '</div>' : '') +
+      '</div>'
+    );
+  }
+
+  function buildToolCallCardHtml(toolCall) {
+    if (!toolCall) return '';
+    var rawJson = '';
+    try { rawJson = JSON.stringify(toolCall, null, 2); } catch (_) { rawJson = ''; }
+
+    var inputStr = '';
+    try { inputStr = JSON.stringify(toolCall.input || {}, null, 2); } catch (_) { inputStr = String(toolCall.input || ''); }
+
+    var durationText = toolCall.durationMs ? (toolCall.durationMs >= 1000 ? (toolCall.durationMs / 1000).toFixed(1) + 's' : toolCall.durationMs + 'ms') : '';
+    var successMark = toolCall.success ? '✓' : '✗';
+    var statusClass = toolCall.success ? 'success' : 'failed';
+
+    return (
+      '<div class="cr-trace-tool-card" data-copy="' + esc(rawJson) + '">' +
+        '<div class="cr-trace-card-topbar">' +
+          '<div class="cr-trace-card-title"><span class="cr-trace-card-icon">🔧</span> ' + esc(toolCall.toolName || 'tool') + '</div>' +
+          '<button type="button" class="cr-trace-copy-btn" title="Copy Tool Call">📋</button>' +
+        '</div>' +
+        (toolCall.command ? '<div class="cr-trace-field"><div class="cr-trace-field-label">Command:</div><pre class="cr-trace-command-box">' + esc(toolCall.command) + '</pre></div>' : '') +
+        (inputStr && inputStr !== '{}' ? '<div class="cr-trace-field"><div class="cr-trace-field-label">Input:</div><pre class="cr-trace-input-box">' + esc(inputStr) + '</pre></div>' : '') +
+        '<div class="cr-trace-field">' +
+          '<div class="cr-trace-field-label">Output:</div>' +
+          '<div class="cr-trace-output-box ' + statusClass + '">' +
+            '<span class="cr-trace-status-mark">' + successMark + '</span> ' + esc(toolCall.output || 'No output') +
+          '</div>' +
+        '</div>' +
+        (durationText ? '<div class="cr-trace-field"><span class="cr-trace-field-label">Duration:</span> ' + esc(durationText) + '</div>' : '') +
+      '</div>'
+    );
+  }
+
+  function buildTraceHtml(trace, activeRunIndex, totalRuns) {
+    if (!trace) return '';
+    var rawTraceJson = '';
+    try { rawTraceJson = JSON.stringify(trace, null, 2); } catch (_) { rawTraceJson = ''; }
+
+    var statusBadge = trace.status === 'completed' ? '<span class="cr-trace-badge completed">✓ COMPLETED</span>' :
+                      trace.status === 'failed' ? '<span class="cr-trace-badge failed">✗ FAILED</span>' :
+                      '<span class="cr-trace-badge running">● RUNNING</span>';
+
+    var durationBadge = trace.durationMs ? '<span class="cr-trace-badge duration">⏱ ' + (trace.durationMs / 1000).toFixed(1) + 's</span>' : '';
+    var modelBadge = trace.model ? '<span class="cr-trace-badge model">' + esc(trace.model) + '</span>' : '';
+    var totalTokens = (trace.metrics && trace.metrics.totalTokens && trace.metrics.totalTokens.total) ? trace.metrics.totalTokens.total : 0;
+    var tokensBadge = totalTokens ? '<span class="cr-trace-badge tokens">📊 ' + totalTokens.toLocaleString() + ' tokens</span>' : '';
+
+    var runTabsHtml = '';
+    if (totalRuns > 1) {
+      runTabsHtml = '<div class="cr-trace-run-tabs">';
+      for (var r = 0; r < totalRuns; r++) {
+        var tabActive = (r === activeRunIndex) ? ' active' : '';
+        runTabsHtml += '<button type="button" class="cr-trace-run-tab' + tabActive + '" data-run-index="' + r + '">Run #' + (r + 1) + '</button>';
+      }
+      runTabsHtml += '</div>';
+    }
+
+    var timelineHtml = '';
+
+    // 1. User Input & Injected Context
+    timelineHtml += 
+      '<div class="cr-trace-node">' +
+        '<div class="cr-trace-node-header"><span class="cr-trace-dot">●</span> User Input</div>' +
+        '<div class="cr-trace-user-box">' +
+          '<p class="cr-trace-user-prompt">' + esc(trace.user ? trace.user.query : '') + '</p>' +
+          (trace.user && trace.user.context && trace.user.context.workspaceFolder ? '<div class="cr-trace-context-tag">📂 ' + esc(trace.user.context.workspaceFolder) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+
+    // 2. Steps Flow
+    if (trace.steps && trace.steps.length) {
+      for (var s = 0; s < trace.steps.length; s++) {
+        var step = trace.steps[s];
+        timelineHtml += '<div class="cr-trace-connector">▼</div>';
+        timelineHtml += buildLlmCallCardHtml(step.llmCall, step.stepIndex || (s + 1));
+
+        if (step.toolCalls && step.toolCalls.length) {
+          for (var t = 0; t < step.toolCalls.length; t++) {
+            timelineHtml += '<div class="cr-trace-connector">▼</div>';
+            timelineHtml += buildToolCallCardHtml(step.toolCalls[t]);
+          }
+        }
+      }
+    }
+
+    // 3. Error Card or Final Response
+    if (trace.error || trace.status === 'failed') {
+      var errDisplay = trace.error || (trace.finalResponse && (trace.finalResponse.error || trace.finalResponse.text)) || 'An error occurred during execution.';
+      timelineHtml += '<div class="cr-trace-connector">▼</div>';
+      timelineHtml += 
+        '<div class="cr-trace-node cr-trace-node-error">' +
+          '<div class="cr-trace-node-header"><span class="cr-trace-error-icon">❌</span> Error Response</div>' +
+          '<div class="cr-trace-error-box">' +
+            '<div class="cr-trace-error-banner">' +
+              '<span class="cr-trace-error-symbol">⚠️</span> ' + esc(errDisplay) +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    } else if (trace.finalResponse && (trace.finalResponse.text || trace.status === 'completed')) {
+      var finalRespText = trace.finalResponse.text || '(Task completed)';
+      var finalHtml = (typeof window.renderMarkdown === 'function') 
+        ? window.renderMarkdown(finalRespText) 
+        : '<p class="cr-trace-final-text">' + esc(finalRespText) + '</p>';
+      timelineHtml += '<div class="cr-trace-connector">▼</div>';
+      timelineHtml += 
+        '<div class="cr-trace-node">' +
+          '<div class="cr-trace-node-header"><span class="cr-trace-bot-icon">🤖</span> Final Response</div>' +
+          '<div class="cr-trace-final-box md-content cr-content-block">' +
+            finalHtml +
+          '</div>' +
+        '</div>';
+    }
+
+    return (
+      '<div class="cr-trace-container">' +
+        runTabsHtml +
+        '<div class="cr-trace-run-header">' +
+          '<div class="cr-trace-header-left">' +
+            '<span class="cr-trace-run-title">Agent Run #' + (activeRunIndex + 1) + '</span>' +
+            modelBadge +
+            statusBadge +
+            durationBadge +
+            tokensBadge +
+          '</div>' +
+          '<button type="button" class="cr-trace-copy-full-btn" data-full-copy="' + esc(rawTraceJson) + '">📋 Copy Run</button>' +
+        '</div>' +
+        '<div class="cr-trace-flow">' +
+          timelineHtml +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function saveTraceToLocalStorage(sessionId, trace) {
+    if (!sessionId || !trace) return;
+    try {
+      var existing = JSON.parse(localStorage.getItem("coderun_traces_" + sessionId) || "[]");
+      var foundIdx = -1;
+      for (var i = 0; i < existing.length; i++) {
+        if (existing[i].id === trace.id) {
+          foundIdx = i;
+          break;
+        }
+      }
+
+      // If exact ID not matched, check if the last run in existing is the current running turn
+      if (foundIdx === -1 && existing.length > 0) {
+        var lastIdx = existing.length - 1;
+        var lastRun = existing[lastIdx];
+        if (lastRun.status === 'running' || (lastRun.user && trace.user && lastRun.user.query && lastRun.user.query === trace.user.query)) {
+          foundIdx = lastIdx;
+        }
+      }
+
+      // Ensure any previous runs in this conversation are not stuck in running
+      for (var k = 0; k < existing.length; k++) {
+        if (k !== foundIdx && existing[k].status === "running") {
+          existing[k].status = existing[k].error ? "failed" : "completed";
+          if (!existing[k].completedAt) existing[k].completedAt = Date.now();
+          if (!existing[k].durationMs) existing[k].durationMs = existing[k].completedAt - (existing[k].startedAt || existing[k].completedAt);
+        }
+      }
+
+      if (foundIdx >= 0) {
+        existing[foundIdx] = trace;
+      } else {
+        existing.push(trace);
+      }
+      localStorage.setItem("coderun_traces_" + sessionId, JSON.stringify(existing));
+
+      var allTraces = JSON.parse(localStorage.getItem("coderun_all_traces") || "[]");
+      var gIdx = -1;
+      for (var j = 0; j < allTraces.length; j++) {
+        if (allTraces[j].id === trace.id) {
+          gIdx = j;
+          break;
+        }
+      }
+      var summaryRecord = {
+        id: trace.id,
+        sessionId: trace.sessionId,
+        startedAt: trace.startedAt,
+        durationMs: trace.durationMs,
+        status: trace.status,
+        model: trace.model,
+        query: trace.user ? trace.user.query : ''
+      };
+      if (gIdx >= 0) {
+        allTraces[gIdx] = summaryRecord;
+      } else {
+        allTraces.push(summaryRecord);
+      }
+      localStorage.setItem("coderun_all_traces", JSON.stringify(allTraces));
+    } catch (_) {
+      // Intentionally ignore storage write errors
+    }
+  }
+
+  function reconstructTracesFromConversation(conv) {
+    if (!conv || !conv.messages || !conv.messages.length) return [];
+    var runs = [];
+    var currentRun = null;
+    var currentStep = null;
+    var convModel = conv.model || (conv.provider ? conv.provider : 'Model');
+
+    for (var i = 0; i < conv.messages.length; i++) {
+      var msg = conv.messages[i];
+      if (msg.role === 'user') {
+        if (currentRun) {
+          runs.push(currentRun);
+        }
+        var runModel = msg.model || convModel;
+        currentRun = {
+          id: 'run_hist_' + (runs.length + 1),
+          sessionId: conv.id,
+          startedAt: msg.timestamp || Date.now(),
+          completedAt: 0,
+          durationMs: 0,
+          status: 'running',
+          provider: conv.provider || 'ollama',
+          model: runModel,
+          user: {
+            query: msg.content || '',
+            images: msg.images || [],
+            context: { workspaceFolder: state.workspaceFolder || '' }
+          },
+          steps: [],
+          finalResponse: { text: '', thinking: '', durationMs: 0 },
+          metrics: { totalDurationMs: 0, totalTokens: { input: 0, output: 0, total: 0 }, toolsExecuted: 0, filesTouched: [] }
+        };
+        currentStep = null;
+      } else if (currentRun) {
+        if (msg.role === 'assistant') {
+          if (msg.model) currentRun.model = msg.model;
+          if (msg.tool_calls && msg.tool_calls.length) {
+            currentRun.status = 'completed';
+            currentRun.completedAt = msg.timestamp || Date.now();
+            currentRun.durationMs = currentRun.completedAt - currentRun.startedAt;
+            var stepIndex = currentRun.steps.length + 1;
+            var stepTools = [];
+            for (var t = 0; t < msg.tool_calls.length; t++) {
+              var tc = msg.tool_calls[t];
+              var parsedArgs = {};
+              try {
+                parsedArgs = typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+              } catch (_) {
+                parsedArgs = tc.function.arguments || {};
+              }
+              stepTools.push({
+                id: tc.id || 'tool_' + t,
+                toolName: tc.function.name,
+                command: (parsedArgs && (parsedArgs.command || parsedArgs.file_path || parsedArgs.folder_path || parsedArgs.pattern)) || '',
+                input: parsedArgs,
+                output: '',
+                success: true,
+                durationMs: 0
+              });
+              currentRun.metrics.toolsExecuted += 1;
+            }
+            currentStep = {
+              stepIndex: stepIndex,
+              llmCall: {
+                model: currentRun.model,
+                provider: currentRun.provider,
+                messages: { system: 'System context', user: currentRun.user.query, toolResults: null },
+                thinking: msg.thinking || '',
+                decision: stepTools.map(function(st) { return 'Call ' + st.toolName; }).join(', '),
+                tokens: { input: 0, output: 0, total: 0 },
+                durationMs: 0
+              },
+              toolCalls: stepTools
+            };
+            currentRun.steps.push(currentStep);
+          } else {
+            var isErrMsg = !!(msg.error || (typeof msg.content === 'string' && (msg.content.indexOf('Error from provider') !== -1 || msg.content.indexOf('Error: ') === 0 || msg.content.indexOf('Upstream request failed') !== -1)));
+            currentRun.completedAt = msg.timestamp || Date.now();
+            currentRun.durationMs = currentRun.completedAt - currentRun.startedAt;
+            if (isErrMsg) {
+              currentRun.status = 'failed';
+              currentRun.error = msg.error || msg.content;
+              currentRun.finalResponse.text = msg.content || msg.error;
+              currentRun.finalResponse.error = msg.error || msg.content;
+            } else {
+              currentRun.status = 'completed';
+              currentRun.finalResponse.text = msg.content || '';
+              currentRun.finalResponse.thinking = msg.thinking || '';
+              if (msg.thinking || msg.content) {
+                currentRun.steps.push({
+                  stepIndex: currentRun.steps.length + 1,
+                  llmCall: {
+                    model: currentRun.model,
+                    provider: currentRun.provider,
+                    messages: { system: 'System context', user: currentRun.user.query, toolResults: null },
+                    thinking: msg.thinking || '',
+                    decision: 'Generate response',
+                    tokens: { input: 0, output: 0, total: 0 },
+                    durationMs: 0
+                  },
+                  toolCalls: []
+                });
+              }
+            }
+          }
+        } else if (msg.role === 'tool' && currentStep) {
+          for (var st = 0; st < currentStep.toolCalls.length; st++) {
+            if (currentStep.toolCalls[st].id === msg.tool_call_id || !currentStep.toolCalls[st].output) {
+              currentStep.toolCalls[st].output = msg.content || 'Completed';
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (currentRun) {
+      runs.push(currentRun);
+    }
+
+    return runs;
   }
 
   function handleRailChatClick() {
@@ -1334,8 +1823,16 @@
     }
     if (!conversation) return;
     if (!conversation.messages) conversation.messages = [];
+    if (!conversation.model && state.selectedModel) conversation.model = state.selectedModel;
+    if (!conversation.provider && state.selectedProvider) conversation.provider = state.selectedProvider;
 
-    var message = { role: role, content: content || "", timestamp: Date.now() };
+    var message = { 
+      role: role, 
+      content: content || "", 
+      timestamp: Date.now(),
+      model: extra.model || state.selectedModel || '',
+      provider: extra.provider || state.selectedProvider || ''
+    };
     if (extra.thinking) message.thinking = extra.thinking;
     if (extra.sources) message.sources = extra.sources;
     if (extra.image) message.image = extra.image;
@@ -1378,6 +1875,8 @@
     }
     if (!conversation) return;
     if (!conversation.messages) conversation.messages = [];
+    if (!conversation.model && state.selectedModel) conversation.model = state.selectedModel;
+    if (!conversation.provider && state.selectedProvider) conversation.provider = state.selectedProvider;
 
     console.log('[SAVE_BATCH] convId:', convId, 'newMessages count:', newMessages ? newMessages.length : 0);
     if (newMessages) {
@@ -1542,6 +2041,62 @@
     if (message.type === "permissionState") {
       state.alwaysDecisions = message.decisions || {};
     }
+    if (message.type === "agentEvent" && message.event && message.event.type === "trace_updated") {
+      var evTrace = message.event.trace;
+      var evSessionId = message.event.sessionId || (evTrace && evTrace.sessionId);
+      if (evTrace && evSessionId) {
+        saveTraceToLocalStorage(evSessionId, evTrace);
+        var tracesContainer = document.getElementById("traces-area-container");
+        if (tracesContainer && tracesContainer.style.display !== "none" && state.activeConversationId === evSessionId) {
+          var allSessionTraces = JSON.parse(localStorage.getItem("coderun_traces_" + evSessionId) || "[]");
+          if (allSessionTraces.length > 0) {
+            state.activeTraceRunIndex = allSessionTraces.length - 1;
+          }
+          renderTracesView(tracesContainer);
+        }
+      }
+    }
+    if (message.type === "agentEvent" && message.event && message.event.type === "stream_error") {
+      var activeId = state.activeConversationId;
+      var errMsg = message.event.error || "An error occurred";
+      if (activeId) {
+        try {
+          var currentTraces = JSON.parse(localStorage.getItem("coderun_traces_" + activeId) || "[]");
+          if (currentTraces.length > 0) {
+            var lastTrace = currentTraces[currentTraces.length - 1];
+            if (lastTrace.status === "running") {
+              lastTrace.status = "failed";
+              lastTrace.error = errMsg;
+              if (!lastTrace.finalResponse) lastTrace.finalResponse = {};
+              lastTrace.finalResponse.text = "❌ " + errMsg;
+              lastTrace.finalResponse.error = errMsg;
+              lastTrace.completedAt = Date.now();
+              lastTrace.durationMs = lastTrace.completedAt - lastTrace.startedAt;
+              localStorage.setItem("coderun_traces_" + activeId, JSON.stringify(currentTraces));
+              var tc = document.getElementById("traces-area-container");
+              if (tc && tc.style.display !== "none") {
+                renderTracesView(tc);
+              }
+            }
+          }
+        } catch (_) {
+          // Intentionally ignore storage write errors
+        }
+      }
+    }
+    if (message.type === "loadedTraces") {
+      if (message.sessionId && message.traces && Array.isArray(message.traces)) {
+        try {
+          localStorage.setItem("coderun_traces_" + message.sessionId, JSON.stringify(message.traces));
+          var tContainer = document.getElementById("traces-area-container");
+          if (tContainer && tContainer.style.display !== "none" && state.activeConversationId === message.sessionId) {
+            renderTracesView(tContainer);
+          }
+        } catch (_) {
+          // Intentionally ignore storage write errors
+        }
+      }
+    }
   }
   window.addEventListener("message", handleWindowMessage);
 
@@ -1565,4 +2120,5 @@
     saveConversations();
   }
   window.saveDashboardConversations = saveDashboardConversations;
+  window.renderDashboardTraces = renderTracesView;
 }());

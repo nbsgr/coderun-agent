@@ -21,6 +21,7 @@ import { PROVIDER_DEFAULTS } from './agents/constants.js';
 import * as runtime from './agents/runtime.js';
 import * as events from './agents/events.js';
 import { buildCompactCheckpoint } from './context/compactionManager.js';
+import * as executionTrace from './execution/executionTrace.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -476,17 +477,29 @@ async function handleFrontendMessage(message, webview) {
 
       terminalManager.setSendEventCallback(sendAgentEventToWebview.bind(null, webview));
 
+      var convSessionId = message.conversationId || message.sessionId || (history && history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
+
       currentAbortController = { stopped: false };
       var abortCtrl = currentAbortController;
 
       try {
-        console.log('[EXTENSION] Calling runAgent...');
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage });
+        console.log('[EXTENSION] Calling runAgent for sessionId:', convSessionId);
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage, sessionId: convSessionId });
         console.log('[EXTENSION] runAgent completed');
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
         console.error('[EXTENSION] Agent error:', err);
-        webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: err.message } });
+        var errMsg = err ? (err.message || String(err)) : 'Unknown error';
+        var activeTraceSessionId = convSessionId;
+        if (activeTraceSessionId) {
+          try {
+            var failedTrace = executionTrace.finishRun(activeTraceSessionId, 'failed', { error: errMsg });
+            if (failedTrace) {
+              webview.postMessage({ type: 'agentEvent', event: { type: 'trace_updated', sessionId: activeTraceSessionId, trace: failedTrace } });
+            }
+          } catch (_) {}
+        }
+        webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: errMsg } });
       } finally {
         console.log('[EXTENSION] runAgent finally block');
         if (currentAbortController === abortCtrl) currentAbortController = null;
@@ -602,6 +615,35 @@ async function handleFrontendMessage(message, webview) {
           type: 'compactError',
           error: 'Compaction failed: ' + compactErr.message
         });
+      }
+      break;
+    }
+
+    case 'saveTrace': {
+      if (message.sessionId && extensionContext) {
+        try {
+          var storagePath = extensionContext.globalStorageUri.fsPath;
+          await executionTrace.saveTraceToDisk(storagePath, message.sessionId);
+        } catch (e) {
+          console.error('[CODERUN] Failed to save trace to disk:', e);
+        }
+      }
+      break;
+    }
+
+    case 'getTraces': {
+      if (message.sessionId && extensionContext) {
+        try {
+          var storagePath = extensionContext.globalStorageUri.fsPath;
+          var traces = await executionTrace.loadTracesFromDisk(storagePath, message.sessionId);
+          webview.postMessage({
+            type: 'loadedTraces',
+            sessionId: message.sessionId,
+            traces: traces
+          });
+        } catch (e) {
+          console.error('[CODERUN] Failed to load traces from disk:', e);
+        }
       }
       break;
     }

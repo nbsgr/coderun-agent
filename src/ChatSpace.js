@@ -831,6 +831,29 @@
       window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: errMsg });
     }
 
+    try {
+      var convTraces = JSON.parse(localStorage.getItem('coderun_traces_' + chatCtx.convId) || '[]');
+      if (convTraces.length > 0) {
+        var lastT = convTraces[convTraces.length - 1];
+        if (lastT.status === 'running') {
+          lastT.status = 'failed';
+          lastT.error = errMsg;
+          if (!lastT.finalResponse) lastT.finalResponse = {};
+          lastT.finalResponse.text = errMsg;
+          lastT.finalResponse.error = errMsg;
+          lastT.completedAt = Date.now();
+          lastT.durationMs = lastT.completedAt - lastT.startedAt;
+          localStorage.setItem('coderun_traces_' + chatCtx.convId, JSON.stringify(convTraces));
+          var tContainer = document.getElementById('traces-area-container');
+          if (tContainer && tContainer.style.display !== 'none' && typeof window.renderDashboardTraces === 'function') {
+            window.renderDashboardTraces(tContainer);
+          }
+        }
+      }
+    } catch (_) {
+      // Intentionally ignore storage write errors
+    }
+
     scrollBottom(chatCtx.msgList);
   }
 
@@ -845,6 +868,28 @@
       setStreaming(chatCtx, false);
       chatCtx.onStreamEnd();
       saveBotResponse(chatCtx, S);
+
+      try {
+        var endTraces = JSON.parse(localStorage.getItem('coderun_traces_' + chatCtx.convId) || '[]');
+        if (endTraces.length > 0) {
+          var lastTraceObj = endTraces[endTraces.length - 1];
+          if (lastTraceObj.status === 'running') {
+            lastTraceObj.status = 'completed';
+            lastTraceObj.completedAt = Date.now();
+            lastTraceObj.durationMs = lastTraceObj.completedAt - lastTraceObj.startedAt;
+            if (!lastTraceObj.finalResponse) lastTraceObj.finalResponse = {};
+            lastTraceObj.finalResponse.text = S.fullResponse || lastTraceObj.finalResponse.text || '';
+            localStorage.setItem('coderun_traces_' + chatCtx.convId, JSON.stringify(endTraces));
+            var endContainer = document.getElementById('traces-area-container');
+            if (endContainer && endContainer.style.display !== 'none' && typeof window.renderDashboardTraces === 'function') {
+              window.renderDashboardTraces(endContainer);
+            }
+          }
+        }
+      } catch (_) {
+        // Intentionally ignore storage write errors
+      }
+
       if (S._currentCheckpoints && S._currentCheckpoints.length) {
         var lastRow = msgList.querySelector('.cr-row--bot:last-child');
         var lastBody = lastRow ? lastRow.querySelector('.cr-bot-body') : null;
@@ -1006,12 +1051,50 @@
         }
       }
 
+      try {
+        var existingTraces = JSON.parse(localStorage.getItem('coderun_traces_' + chatCtx.convId) || '[]');
+        for (var pi = 0; pi < existingTraces.length; pi++) {
+          if (existingTraces[pi].status === 'running') {
+            existingTraces[pi].status = existingTraces[pi].error ? 'failed' : 'completed';
+            if (!existingTraces[pi].completedAt) existingTraces[pi].completedAt = Date.now();
+          }
+        }
+        var newRunTrace = {
+          id: 'run_' + Date.now(),
+          sessionId: chatCtx.convId,
+          startedAt: Date.now(),
+          completedAt: 0,
+          durationMs: 0,
+          status: 'running',
+          provider: currentProvider,
+          model: currentModel,
+          user: {
+            query: text,
+            images: imgB64 ? [imgB64] : [],
+            context: { workspaceFolder: currentWorkspace }
+          },
+          steps: [],
+          finalResponse: { text: '', thinking: '', durationMs: 0 },
+          metrics: { totalDurationMs: 0, totalTokens: { input: 0, output: 0, total: 0 }, toolsExecuted: 0, filesTouched: [] }
+        };
+        existingTraces.push(newRunTrace);
+        localStorage.setItem('coderun_traces_' + chatCtx.convId, JSON.stringify(existingTraces));
+        var tContainer = document.getElementById('traces-area-container');
+        if (tContainer && tContainer.style.display !== 'none' && typeof window.renderDashboardTraces === 'function') {
+          window.renderDashboardTraces(tContainer);
+        }
+      } catch (_) {
+        // Intentionally ignore storage write errors
+      }
+
       if (window.VSCODE && window.VSCODE_API) {
         onStreamStart();
         window.activeChatStreamCallback = handleActiveChatStream.bind(null, chatCtx);
 
         window.VSCODE_API.postMessage({
           type: "startChat",
+          conversationId: chatCtx.convId,
+          sessionId: chatCtx.convId,
           message: text,
           image: imgB64,
           model: currentModel,
@@ -1108,6 +1191,8 @@
 
         window.VSCODE_API.postMessage({
           type: "startChat",
+          conversationId: chatCtx.convId,
+          sessionId: chatCtx.convId,
           message: null,
           image: null,
           model: currentModel,
