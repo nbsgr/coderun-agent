@@ -546,7 +546,12 @@
                     '</div>' +
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
                   '</div>' +
+                  '<div class="cr-view-nav">' +
+                    '<button id="viewNavChatsBtn" class="cr-view-nav-btn active">Chats</button>' +
+                    '<button id="viewNavTracesBtn" class="cr-view-nav-btn">Traces</button>' +
+                  '</div>' +
                   '<div id="chat-area-container"></div>' +
+                  '<div id="traces-area-container" style="display:none;"></div>' +
                 '</section>' +
               '</div>' +
             '</section>' +
@@ -599,9 +604,88 @@
     document.getElementById("clearAllConvBtn").onclick = handleClearAllConvClick;
 
 
+    var chatsBtn = document.getElementById("viewNavChatsBtn");
+    if (chatsBtn) chatsBtn.onclick = handleViewNavChatsClick;
+
+    var tracesBtn = document.getElementById("viewNavTracesBtn");
+    if (tracesBtn) tracesBtn.onclick = handleViewNavTracesClick;
+
     document.addEventListener("keydown", handleDocumentKeyDown);
 
     updateSettingsUI();
+  }
+
+  function handleViewNavChatsClick() {
+    switchSubView("chats");
+  }
+
+  function handleViewNavTracesClick() {
+    switchSubView("traces");
+  }
+
+  function switchSubView(viewName) {
+    var chatsBtn = document.getElementById("viewNavChatsBtn");
+    var tracesBtn = document.getElementById("viewNavTracesBtn");
+    var chatArea = document.getElementById("chat-area-container");
+    var tracesArea = document.getElementById("traces-area-container");
+
+    if (viewName === "traces") {
+      if (chatsBtn) chatsBtn.classList.remove("active");
+      if (tracesBtn) tracesBtn.classList.add("active");
+      if (chatArea) chatArea.style.display = "none";
+      if (tracesArea) {
+        tracesArea.style.display = "flex";
+        renderTracesView(tracesArea);
+      }
+    } else {
+      if (chatsBtn) chatsBtn.classList.add("active");
+      if (tracesBtn) tracesBtn.classList.remove("active");
+      if (chatArea) chatArea.style.display = "flex";
+      if (tracesArea) tracesArea.style.display = "none";
+    }
+  }
+
+  function renderTracesView(container) {
+    if (!container) return;
+    var activeId = state.activeConversationId;
+    var traces = [];
+    try {
+      if (activeId) {
+        traces = JSON.parse(localStorage.getItem("coderun_traces_" + activeId) || "[]");
+      }
+      if (!traces.length) {
+        var allTraces = JSON.parse(localStorage.getItem("coderun_all_traces") || "[]");
+        if (allTraces.length) traces = allTraces;
+      }
+    } catch (_) {
+      traces = [];
+    }
+
+    if (!traces.length) {
+      container.innerHTML = 
+        '<div class="cr-traces-empty">' +
+          '<div class="cr-traces-empty-icon">🪵</div>' +
+          '<div class="cr-traces-empty-title">No Traces Recorded Yet</div>' +
+          '<div class="cr-traces-empty-desc">Execution traces, LLM decisions, tool calls, and results for this chat will appear here.</div>' +
+        '</div>';
+      return;
+    }
+
+    var html = '<div class="cr-traces-list">';
+    for (var i = 0; i < traces.length; i++) {
+      var t = traces[i];
+      var treeText = t.asciiTree || t.summary || 'Trace #' + (i + 1);
+      html += 
+        '<div class="cr-trace-card">' +
+          '<div class="cr-trace-header">' +
+            '<span class="cr-trace-title">Run #' + (i + 1) + ' (' + esc(t.status || 'completed') + ')</span>' +
+            '<span class="cr-trace-time">' + (t.durationMs ? (t.durationMs / 1000).toFixed(1) + 's' : '') + '</span>' +
+          '</div>' +
+          '<pre class="cr-trace-tree">' + esc(treeText) + '</pre>' +
+        '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
   }
 
   function handleRailChatClick() {
@@ -1122,6 +1206,11 @@
         onStreamEnd: handleChatStreamEnd,
         onStreamError: handleChatStreamError
       });
+    }
+
+    var tracesArea = document.getElementById("traces-area-container");
+    if (tracesArea && tracesArea.style.display !== "none") {
+      renderTracesView(tracesArea);
     }
   }
 
