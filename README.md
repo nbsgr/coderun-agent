@@ -85,6 +85,19 @@ Whether you are running completely offline with local models (Ollama), leveragin
 *   **Accurate Success Detection:** Exit code 0 → SUCCESS. Exit code non-zero → FAILED. No exit code but no errors → SUCCESS (shows "Exit code unavailable"). Never displays "Exit code ?".
 *   **Adaptive Scrolling:** Small outputs grow naturally with no internal scrollbar. Large outputs get a scrollbar with a 320px max-height.
 
+### 🪵 Real-Time Execution Traces & Visual Flow
+*   **Dual View Sub-Nav (`[Chats]` / `[Traces]`):** Seamlessly switch between the conversational chat interface and a dedicated visual execution trace inspector right below the model selector.
+*   **Multi-Run Timeline Navigation:** Horizontally scrollable `Run #1`, `Run #2`, ... tabs preserving scroll position upon selection, with immutable model badges reflecting the exact model used for each run.
+*   **Card-Based Timeline Nodes:**
+    *   **User Input & Context Node:** Displays user query, attached images, and workspace path.
+    *   **LLM Decision & Reasoning Card:** Tracks system prompt tokens, step reasoning, and decision intents.
+    *   **Tool Execution Card:** Inspect tool name, command, input arguments, execution duration, and formatted output.
+    *   **Rich Markdown Final Response:** Full GFM table rendering, headers, lists, code blocks, and formatted text.
+    *   **Error Response Alert Node:** Captures upstream provider 400/500 errors and stream failures with `✗ FAILED` status cards and exact diagnostics.
+*   **Live Parallel Event Streaming:** Stream traces parallel to the agent loop in real time (`trace_updated`).
+*   **Dual-Layer Persistent Storage:** Automatically saves trace history per-session in VS Code `globalStorage/traces/` and webview storage, with instant historical reconstruction for past sessions.
+*   **One-Click Clipboard Export:** Copy individual tool/LLM steps or export the complete run JSON (`📋 Copy Run`).
+
 ### 🔄 Tool Lifecycle State Sync
 *   **Reliable Lifecycle Transitions:** Every tool follows the exact lifecycle: PENDING → WAITING_FOR_PERMISSION → RUNNING → COMPLETED/FAILED/CANCELLED. No tool card remains stuck in RUNNING.
 *   **Provider-Compatible Card Linking:** Cards are stored under multiple key aliases (toolCallId, index key, toolName key), ensuring `tool_result` events find the correct card regardless of whether the LLM provider emits tool call IDs or not.
@@ -151,6 +164,8 @@ src/
 ├── context/
 │   ├── contextManager.js     ← Identifies request intent, extracts editor state & active file details
 │   └── compactionManager.js  ← Pure local 0ms conversation compaction engine & checkpoint generator
+├── execution/
+│   └── executionTrace.js     ← Real-time trace engine (LLM calls, tools, errors, disk persistence)
 ├── planningManager.js        ← Generates step-by-step plans written to a database-backed plan file
 ├── verificationManager.js    ← Runs post-execution tests (build checks, syntax checks, output matches)
 ├── learningManager.js        ← Automates style guidelines discovery (indentation, framework syntax)
@@ -173,12 +188,11 @@ src/
 ├── providerManager.js        ← Factory to instantiate the correct provider SDK
 ├── providerOllama.js / OpenAI.js / Anthropic.js / Gemini.js / Compatible.js ...
 │
-├── Dashboard.js / .css       ← Webview interface manager (sidebar, settings, model list)
-├── ChatSpace.js / .css       ← Chat message space: collapsible tool cards, inline terminal
-│                                cards with live streaming, permission dialogs, diff reviews,
-│                                thought process blocks, and task continuation buttons
-├── MarkdownRenderer.js       ← Client-side markdown processor with custom syntax highlighting
-├── webview-shared.js         ← Shared utilities (esc, truncate, stripAnsi) between Dashboard.js and ChatSpace.js
+├── Dashboard.js / .css       ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings
+├── ChatSpace.js / .css       ← Chat space: collapsible tool cards, inline terminal cards with live
+│                                streaming, permission dialogs, diff reviews, thought process
+├── MarkdownRenderer.js       ← Client-side markdown processor with tables, code & syntax highlighting
+├── webview-shared.js         ← Shared utilities (esc, truncate, stripAnsi) between Dashboard & ChatSpace
 └── agentState.js             ← Formal finite state machine for the agent loop (idle→thinking→executing→completed)
 ```
 
