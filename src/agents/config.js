@@ -44,6 +44,7 @@ export function getProviderConfig() {
     provider: cfg.provider,
     baseUrl: cfg.baseUrl || defaults.baseUrl,
     model: cfg.model,
+    maxIterations: cfg.maxIterations,
     needsKey: defaults.needsKey,
     organization: cfg.organization,
     project: cfg.project
@@ -226,6 +227,7 @@ export function getProviderApiKey(context, provider) {
  * with defaults. Used by extension.js when starting a chat with a specific provider.
  */
 export async function getProviderConfigByName(context, providerName) {
+  var cfg = getConfig();
   var saved = getSavedProviderConfig(context, providerName) || {};
   var isCompatible = providerName.startsWith('compatible');
   var defaults = isCompatible ? PROVIDER_DEFAULTS.compatible : (PROVIDER_DEFAULTS[providerName] || PROVIDER_DEFAULTS.ollama);
@@ -241,6 +243,7 @@ export async function getProviderConfigByName(context, providerName) {
     provider: providerName,
     baseUrl: saved.baseUrl || defaults.baseUrl,
     model: saved.model || '',
+    maxIterations: cfg.maxIterations,
     apiKey: apiKey,
     needsKey: defaults.needsKey,
     apiType: saved.apiType || 'openai'

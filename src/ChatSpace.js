@@ -655,11 +655,16 @@
                       status = 'error';
                     }
                   } else {
-                    resultObj = { content: resContent };
+                    resultObj = {
+                      content: resContent,
+                      message: resContent,
+                      error: status === 'error' ? resContent : undefined,
+                      success: status !== 'error'
+                    };
                   }
                 } else {
                   status = 'error';
-                  resultObj = { error: 'No result recorded' };
+                  resultObj = { error: 'No result recorded', message: 'No result recorded' };
                 }
 
                 var cardKey = 'card_' + toolId + '_' + Date.now();
@@ -1194,6 +1199,7 @@
           conversationId: chatCtx.convId,
           sessionId: chatCtx.convId,
           message: null,
+          isContinuation: true,
           image: null,
           model: currentModel,
           provider: currentProvider,
@@ -1209,6 +1215,7 @@
 
       var body = {
         message: null,
+        isContinuation: true,
         model: currentModel,
         session_id: chatCtx.convId,
         workspaceFolder: currentWorkspace,
@@ -2836,13 +2843,16 @@
     var planFromArgs = (toolName === 'create_plan' || toolName === 'update_plan') && args && args.plan ? args.plan : '';
     if (result || planFromArgs) {
       var resText = formatToolResultText(toolName, result) || planFromArgs;
-      if (resText) {
-        resultContainer.style.display = 'block';
-        resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
-      }
       if (status === 'error') {
         resultContainer.style.display = 'block';
-        resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result ? (result.message || result.error || 'Unknown error') : 'Error') + '</div>';
+        var errorMsg = (result && (result.message || result.error || result.content)) || (resText || 'Error');
+        resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
+        if (resText && resText !== errorMsg && !resText.includes(errorMsg)) {
+          resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        }
+      } else if (resText) {
+        resultContainer.style.display = 'block';
+        resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
       }
     }
     cardBody.appendChild(resultContainer);
@@ -2897,8 +2907,9 @@
         }
         resultContainer.style.display = 'block';
         if (status === 'error') {
-          resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(result.message || result.error || 'Unknown error') + '</div>';
-          if (resText) {
+          var errorMsg = (result && (result.message || result.error || result.content)) || (resText || 'Error');
+          resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
+          if (resText && resText !== errorMsg && !resText.includes(errorMsg)) {
             resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
           }
         } else if (resText) {

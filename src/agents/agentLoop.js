@@ -56,10 +56,15 @@ function emitAndForwardEvent(sendEventCallback, event) {
 
 function forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx) {
   try {
-    var newMsgs = messages.slice(initialLength);
+    var convMsgs = [];
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].role !== 'system') {
+        convMsgs.push(messages[i]);
+      }
+    }
     sendEvent({
       type: 'chat_history_update',
-      messages: newMsgs,
+      messages: convMsgs,
       plan: sessionCtx.plan
     });
   } catch (_) {
@@ -133,7 +138,12 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     return {
       tool_name: toolName,
       tool_call_id: tcId,
-      formattedResult: 'Permission denied.',
+      formattedResult: 'Permission denied by user.',
+      result: {
+        success: false,
+        message: 'Permission denied by user.',
+        error: 'Permission denied by user.'
+      },
       checkpoints: []
     };
   }
@@ -316,9 +326,33 @@ export async function runAgentLoop(userPrompt, config, options) {
   var workspace = options.workspace || '';
   var history = options.history || [];
 
+  var isContinuation = options.isContinuation || !userPrompt || userPrompt === 'Continue';
+  var effectivePrompt = userPrompt || '';
+  if (!effectivePrompt && history && history.length) {
+    for (var hi = history.length - 1; hi >= 0; hi--) {
+      if (history[hi].role === 'user' && history[hi].content) {
+        effectivePrompt = history[hi].content;
+        break;
+      }
+    }
+  }
+  if (!effectivePrompt) {
+    try {
+      effectivePrompt = runtime.getGoal() || 'Continue';
+    } catch (_) {
+      effectivePrompt = 'Continue';
+    }
+  }
+
   // Initialize Runtime execution context
   var sessionId = options.sessionId || (history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
-  runtime.initSession(userPrompt, sessionId);
+  if (isContinuation) {
+    if (!runtime.getGoal()) {
+      runtime.setGoal(effectivePrompt);
+    }
+  } else {
+    runtime.initSession(userPrompt, sessionId);
+  }
 
   // Wrap sendEvent to also emit through the events.js bus.
   var _sendEventCallback = options.sendEvent || noop;
@@ -332,7 +366,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   // Gather context via ContextManager
   var contextResult = null;
   try {
-    contextResult = await contextManager.gatherContext(userPrompt, workspace);
+    contextResult = await contextManager.gatherContext(effectivePrompt, workspace);
   } catch (_) {
     // Intentionally ignored to allow safe execution fallback
   }
@@ -357,25 +391,32 @@ export async function runAgentLoop(userPrompt, config, options) {
 
   // Record session start in timeline
   try {
-    var sessionLabel = String(userPrompt || '').substring(0, 60);
+    var sessionLabel = String(effectivePrompt || '').substring(0, 60);
     timelineManager.addEvent('session:start', sessionLabel);
   } catch (_) {
     // Intentionally ignored to allow safe execution fallback
   }
 
   // ── Session Startup ──────────────────────────────────────────
+  var activeTrace = null;
   try {
-    events.emit('TaskStarted', { goal: userPrompt, sessionId: sessionId });
+    events.emit('TaskStarted', { goal: effectivePrompt, sessionId: sessionId });
     var runContext = {
       images: options.images || [],
       workspaceFolder: workspace || '',
       openFiles: (knowledge && knowledge.openFiles) || []
     };
-    var activeTrace = executionTrace.startRun(sessionId, null, userPrompt, runContext, config.model, config.provider);
+    activeTrace = executionTrace.startRun(sessionId, null, userPrompt || effectivePrompt, runContext, config.model, config.provider, isContinuation);
     sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: activeTrace });
-    goalTracker.initGoals(userPrompt);
-    memoryManager.clear();
-    memoryManager.setCurrentGoal(userPrompt);
+    if (!isContinuation) {
+      goalTracker.initGoals(userPrompt);
+      memoryManager.clear();
+      memoryManager.setCurrentGoal(userPrompt);
+    } else {
+      if (!goalTracker.getActiveTask()) {
+        goalTracker.initGoals(effectivePrompt);
+      }
+    }
   } catch (e) {
     console.error('[AGENT LOOP] Failed to initialize trace/goals:', e);
   }
@@ -412,6 +453,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   var initialLength = messages.length;
   var sessionCtx = { plan: currentPlan };
   var sendHistoryUpdate = forwardHistoryUpdate.bind(null, messages, initialLength, sendEvent, sessionCtx);
+  var baseStepOffset = (isContinuation && activeTrace && activeTrace.steps) ? activeTrace.steps.length : 0;
 
   var iteration = 0;
   var fullThinking = '';
@@ -674,12 +716,13 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
         var decisionText = decisionList.length ? decisionList.join(', ') : (iterationContent ? 'Generate response' : 'Thinking');
 
-        var updatedLlmTrace = executionTrace.recordLLMCall(sessionId, iteration + 1, {
+        var traceStepIndex = baseStepOffset + iteration;
+        var updatedLlmTrace = executionTrace.recordLLMCall(sessionId, traceStepIndex, {
           model: config.model,
           provider: config.provider,
           messages: {
             system: sysMsg ? 'System instructions (' + Math.round(sysMsg.length / 4) + ' tokens)' : '',
-            user: userPrompt,
+            user: userPrompt || effectivePrompt,
             toolResults: toolResMsg ? toolResMsg.trim() : null
           },
           thinking: iterationThinking || fullThinking,
@@ -841,7 +884,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       events.emit('state_changed', { state: 'executing' });
       sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
 
-      var executeToolBound = executeSingleToolCall.bind(null, workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, _pendingDiffs, sessionCtx);
+      var traceStepIndex = baseStepOffset + iteration;
+      var executeToolBound = executeSingleToolCall.bind(null, workspace, sessionId, traceStepIndex, sendEvent, askPermission, userPrompt || effectivePrompt, history, _pendingDiffs, sessionCtx);
       var toolPromises = completedToolCalls.map(executeToolBound);
 
       dbg('[AGENT LOOP] Promise.all(toolPromises) RESOLVED. Count:', toolPromises.length);

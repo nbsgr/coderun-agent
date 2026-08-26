@@ -484,7 +484,7 @@ async function handleFrontendMessage(message, webview) {
 
       try {
         console.log('[EXTENSION] Calling runAgent for sessionId:', convSessionId);
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage, sessionId: convSessionId });
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: !!message.isContinuation });
         console.log('[EXTENSION] runAgent completed');
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {

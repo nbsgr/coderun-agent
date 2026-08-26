@@ -1889,25 +1889,29 @@
       }
     }
 
-    var lastUserIdx = -1;
-    for (var i = conversation.messages.length - 1; i >= 0; i--) {
-      if (conversation.messages[i].role === 'user') {
-        lastUserIdx = i;
-        break;
-      }
-    }
+    if (newMessages && newMessages.length) {
+      if (newMessages[0] && newMessages[0].role === 'user') {
+        conversation.messages = newMessages;
+      } else {
+        var lastUserIdx = -1;
+        for (var i = conversation.messages.length - 1; i >= 0; i--) {
+          if (conversation.messages[i].role === 'user') {
+            lastUserIdx = i;
+            break;
+          }
+        }
 
-    var msgsToAppend = [];
-    if (newMessages) {
-      for (var k = 0; k < newMessages.length; k++) {
-        if (newMessages[k]) msgsToAppend.push(newMessages[k]);
-      }
-    }
+        var msgsToAppend = [];
+        for (var k = 0; k < newMessages.length; k++) {
+          if (newMessages[k]) msgsToAppend.push(newMessages[k]);
+        }
 
-    if (lastUserIdx !== -1) {
-      conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(msgsToAppend);
-    } else {
-      conversation.messages = conversation.messages.concat(msgsToAppend);
+        if (lastUserIdx !== -1) {
+          conversation.messages = conversation.messages.slice(0, lastUserIdx + 1).concat(msgsToAppend);
+        } else {
+          conversation.messages = conversation.messages.concat(msgsToAppend);
+        }
+      }
     }
 
     var assistantMsgs = [];

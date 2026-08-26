@@ -49,11 +49,19 @@ function createNewRun(sessionId, runId, userQuery, contextData, model, provider)
   };
 }
 
-export function startRun(sessionId, runId, userQuery, contextData, model, provider) {
+export function startRun(sessionId, runId, userQuery, contextData, model, provider, isContinuation) {
   if (!sessionId) sessionId = 'session_' + Date.now();
 
   if (!_completedTracesBySession[sessionId]) {
     _completedTracesBySession[sessionId] = [];
+  }
+
+  // If continuing an active/paused trace, resume it to retain the entire execution
+  if (_activeTracesBySession[sessionId] && (isContinuation || !userQuery || userQuery === 'Continue')) {
+    var existingActive = _activeTracesBySession[sessionId];
+    existingActive.status = 'running';
+    existingActive.completedAt = 0;
+    return existingActive;
   }
 
   if (_activeTracesBySession[sessionId]) {
