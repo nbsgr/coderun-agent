@@ -488,6 +488,11 @@ async function handleFrontendMessage(message, webview) {
         console.log('[EXTENSION] Calling runAgent for sessionId:', convSessionId);
         await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: !!message.isContinuation });
         console.log('[EXTENSION] runAgent completed');
+        if (extensionContext && extensionContext.globalStorageUri) {
+          try {
+            await executionTrace.saveTraceToDisk(extensionContext.globalStorageUri.fsPath, convSessionId);
+          } catch (_) {}
+        }
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
       } catch (err) {
         console.error('[EXTENSION] Agent error:', err);
@@ -496,6 +501,9 @@ async function handleFrontendMessage(message, webview) {
         if (activeTraceSessionId) {
           try {
             var failedTrace = executionTrace.finishRun(activeTraceSessionId, 'failed', { error: errMsg });
+            if (extensionContext && extensionContext.globalStorageUri) {
+              await executionTrace.saveTraceToDisk(extensionContext.globalStorageUri.fsPath, activeTraceSessionId);
+            }
             if (failedTrace) {
               webview.postMessage({ type: 'agentEvent', event: { type: 'trace_updated', sessionId: activeTraceSessionId, trace: failedTrace } });
             }

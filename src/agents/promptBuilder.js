@@ -166,7 +166,9 @@ export function buildMessages(userPrompt, options) {
     if (msg.role === 'system') continue;
     var historyMsg = {
       role: msg.role,
-      content: msg.content || ''
+      content: msg.content || '',
+      model: msg.model || '',
+      provider: msg.provider || ''
     };
     if (msg.tool_calls) historyMsg.tool_calls = msg.tool_calls;
     if (msg.tool_call_id) historyMsg.tool_call_id = msg.tool_call_id;
@@ -187,7 +189,12 @@ export function buildMessages(userPrompt, options) {
 
   // 5. Current user prompt
   if (userPrompt) {
-    var userMsg = { role: 'user', content: userPrompt };
+    var userMsg = { 
+      role: 'user', 
+      content: userPrompt,
+      model: options.model || '',
+      provider: options.provider || ''
+    };
     var currentImages = options.images || [];
     if (currentImages && currentImages.length) {
       userMsg.images = currentImages;

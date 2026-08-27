@@ -862,6 +862,7 @@
         '</div>' +
         '<div class="cr-trace-field">' +
           '<span class="cr-trace-field-label">Model:</span> ' + esc(llmCall.model || 'Unknown') +
+          (llmCall.provider ? ' <span class="cr-trace-badge provider" style="font-size:10px; margin-left:6px; padding:1px 5px;">' + esc(llmCall.provider) + '</span>' : '') +
         '</div>' +
         (messagesHtml ? '<div class="cr-trace-section"><div class="cr-trace-section-title">Messages</div>' + messagesHtml + '</div>' : '') +
         (responseHtml ? '<div class="cr-trace-section"><div class="cr-trace-section-title">Response</div>' + responseHtml + '</div>' : '') +
@@ -911,6 +912,7 @@
                       '<span class="cr-trace-badge running">● RUNNING</span>';
 
     var durationBadge = trace.durationMs ? '<span class="cr-trace-badge duration">⏱ ' + (trace.durationMs / 1000).toFixed(1) + 's</span>' : '';
+    var providerBadge = trace.provider ? '<span class="cr-trace-badge provider">' + esc(trace.provider) + '</span>' : '';
     var modelBadge = trace.model ? '<span class="cr-trace-badge model">' + esc(trace.model) + '</span>' : '';
     var totalTokens = (trace.metrics && trace.metrics.totalTokens && trace.metrics.totalTokens.total) ? trace.metrics.totalTokens.total : 0;
     var tokensBadge = totalTokens ? '<span class="cr-trace-badge tokens">📊 ' + totalTokens.toLocaleString() + ' tokens</span>' : '';
@@ -987,6 +989,7 @@
         '<div class="cr-trace-run-header">' +
           '<div class="cr-trace-header-left">' +
             '<span class="cr-trace-run-title">Agent Run #' + (activeRunIndex + 1) + '</span>' +
+            providerBadge +
             modelBadge +
             statusBadge +
             durationBadge +
@@ -1013,27 +1016,17 @@
         }
       }
 
-      // If exact ID not matched, check if the last run in existing is the current running turn
-      if (foundIdx === -1 && existing.length > 0) {
-        var lastIdx = existing.length - 1;
-        var lastRun = existing[lastIdx];
-        if (lastRun.status === 'running' || (lastRun.user && trace.user && lastRun.user.query && lastRun.user.query === trace.user.query)) {
-          foundIdx = lastIdx;
-        }
-      }
-
-      // Ensure any previous runs in this conversation are not stuck in running
-      for (var k = 0; k < existing.length; k++) {
-        if (k !== foundIdx && existing[k].status === "running") {
-          existing[k].status = existing[k].error ? "failed" : "completed";
-          if (!existing[k].completedAt) existing[k].completedAt = Date.now();
-          if (!existing[k].durationMs) existing[k].durationMs = existing[k].completedAt - (existing[k].startedAt || existing[k].completedAt);
-        }
-      }
-
       if (foundIdx >= 0) {
         existing[foundIdx] = trace;
       } else {
+        // Mark any existing running turns as completed before pushing new run
+        for (var k = 0; k < existing.length; k++) {
+          if (existing[k].status === "running") {
+            existing[k].status = existing[k].error ? "failed" : "completed";
+            if (!existing[k].completedAt) existing[k].completedAt = Date.now();
+            if (!existing[k].durationMs) existing[k].durationMs = existing[k].completedAt - (existing[k].startedAt || existing[k].completedAt);
+          }
+        }
         existing.push(trace);
       }
       localStorage.setItem("coderun_traces_" + sessionId, JSON.stringify(existing));
@@ -1052,6 +1045,7 @@
         startedAt: trace.startedAt,
         durationMs: trace.durationMs,
         status: trace.status,
+        provider: trace.provider,
         model: trace.model,
         query: trace.user ? trace.user.query : ''
       };
@@ -1072,6 +1066,7 @@
     var currentRun = null;
     var currentStep = null;
     var convModel = conv.model || (conv.provider ? conv.provider : 'Model');
+    var convProvider = conv.provider || 'ollama';
 
     for (var i = 0; i < conv.messages.length; i++) {
       var msg = conv.messages[i];
@@ -1079,7 +1074,9 @@
         if (currentRun) {
           runs.push(currentRun);
         }
-        var runModel = msg.model || convModel;
+        var nextAssistantMsg = conv.messages[i + 1];
+        var runModel = msg.model || (nextAssistantMsg && nextAssistantMsg.model) || convModel;
+        var runProvider = msg.provider || (nextAssistantMsg && nextAssistantMsg.provider) || convProvider;
         currentRun = {
           id: 'run_hist_' + (runs.length + 1),
           sessionId: conv.id,
@@ -1087,7 +1084,7 @@
           completedAt: 0,
           durationMs: 0,
           status: 'running',
-          provider: conv.provider || 'ollama',
+          provider: runProvider,
           model: runModel,
           user: {
             query: msg.content || '',
@@ -1102,6 +1099,7 @@
       } else if (currentRun) {
         if (msg.role === 'assistant') {
           if (msg.model) currentRun.model = msg.model;
+          if (msg.provider) currentRun.provider = msg.provider;
           if (msg.tool_calls && msg.tool_calls.length) {
             currentRun.status = 'completed';
             currentRun.completedAt = msg.timestamp || Date.now();
@@ -2064,7 +2062,19 @@
 
     if (newMessages && newMessages.length) {
       if (newMessages[0] && newMessages[0].role === 'user') {
-        conversation.messages = newMessages;
+        var mergedAll = [];
+        for (var ma = 0; ma < newMessages.length; ma++) {
+          var nMsg = Object.assign({}, newMessages[ma]);
+          var oldMsg = (conversation.messages && conversation.messages[ma]) ? conversation.messages[ma] : null;
+          if (!nMsg.model) {
+            nMsg.model = (oldMsg && oldMsg.model) || (nMsg.role === 'user' ? state.selectedModel : '') || '';
+          }
+          if (!nMsg.provider) {
+            nMsg.provider = (oldMsg && oldMsg.provider) || (nMsg.role === 'user' ? state.selectedProvider : '') || '';
+          }
+          mergedAll.push(nMsg);
+        }
+        conversation.messages = mergedAll;
       } else {
         var lastUserIdx = -1;
         for (var i = conversation.messages.length - 1; i >= 0; i--) {
@@ -2076,7 +2086,12 @@
 
         var msgsToAppend = [];
         for (var k = 0; k < newMessages.length; k++) {
-          if (newMessages[k]) msgsToAppend.push(newMessages[k]);
+          if (newMessages[k]) {
+            var item = Object.assign({}, newMessages[k]);
+            if (!item.model) item.model = state.selectedModel || '';
+            if (!item.provider) item.provider = state.selectedProvider || '';
+            msgsToAppend.push(item);
+          }
         }
 
         if (lastUserIdx !== -1) {

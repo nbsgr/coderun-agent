@@ -54,12 +54,15 @@ function emitAndForwardEvent(sendEventCallback, event) {
   sendEventCallback(event);
 }
 
-function forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx) {
+function forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx, config) {
   try {
     var convMsgs = [];
     for (var i = 0; i < messages.length; i++) {
       if (messages[i].role !== 'system') {
-        convMsgs.push(messages[i]);
+        var m = Object.assign({}, messages[i]);
+        if (!m.model && config && config.model) m.model = config.model;
+        if (!m.provider && config && config.provider) m.provider = config.provider;
+        convMsgs.push(m);
       }
     }
     sendEvent({
@@ -446,13 +449,15 @@ export async function runAgentLoop(userPrompt, config, options) {
     compactCheckpoint: options.compactCheckpoint || null,
     knowledge: knowledge,
     images: options.images || [],
+    model: config.model,
+    provider: config.provider,
     shellName: terminalManager.getShellName(),
     platformName: terminalManager.getPlatformName()
   });
 
   var initialLength = messages.length;
   var sessionCtx = { plan: currentPlan };
-  var sendHistoryUpdate = forwardHistoryUpdate.bind(null, messages, initialLength, sendEvent, sessionCtx);
+  var sendHistoryUpdate = forwardHistoryUpdate.bind(null, messages, initialLength, sendEvent, sessionCtx, config);
   var baseStepOffset = (isContinuation && activeTrace && activeTrace.steps) ? activeTrace.steps.length : 0;
 
   var iteration = 0;

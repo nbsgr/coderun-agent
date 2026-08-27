@@ -519,6 +519,14 @@ textarea {
   border: 1px solid rgba(56, 139, 253, 0.3);
 }
 
+.cr-trace-badge.provider {
+  background: rgba(14, 99, 156, 0.2);
+  color: #58a6ff;
+  border: 1px solid rgba(56, 139, 253, 0.35);
+  text-transform: none;
+  font-weight: 500;
+}
+
 .cr-trace-badge.model,
 .cr-trace-badge.duration,
 .cr-trace-badge.tokens {

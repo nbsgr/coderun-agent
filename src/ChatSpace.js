@@ -1026,9 +1026,20 @@
 
       if (!conversation.messages) conversation.messages = [];
       if (window.saveConversationMessage) {
-        window.saveConversationMessage(chatCtx.convId, 'user', text, { image: imgB64 });
+        window.saveConversationMessage(chatCtx.convId, 'user', text, { 
+          image: imgB64,
+          model: currentModel,
+          provider: currentProvider
+        });
       } else {
-        conversation.messages.push({ role: 'user', content: text, image: imgB64, timestamp: Date.now() });
+        conversation.messages.push({ 
+          role: 'user', 
+          content: text, 
+          image: imgB64, 
+          timestamp: Date.now(),
+          model: currentModel,
+          provider: currentProvider
+        });
       }
 
       appendUserBubble(msgList, text, imgB64);
@@ -1046,7 +1057,12 @@
         var sliceLen = conversation.messages.length - 1;
         for (var hi = 0; hi < sliceLen; hi++) {
           var m = conversation.messages[hi];
-          var h = { role: m.role, content: m.content || '' };
+          var h = { 
+            role: m.role, 
+            content: m.content || '',
+            model: m.model || '',
+            provider: m.provider || ''
+          };
           if (m.thinking) h.thinking = m.thinking;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
@@ -1054,42 +1070,6 @@
           if (m.image && !h.images) h.images = [m.image];
           history.push(h);
         }
-      }
-
-      try {
-        var existingTraces = JSON.parse(localStorage.getItem('coderun_traces_' + chatCtx.convId) || '[]');
-        for (var pi = 0; pi < existingTraces.length; pi++) {
-          if (existingTraces[pi].status === 'running') {
-            existingTraces[pi].status = existingTraces[pi].error ? 'failed' : 'completed';
-            if (!existingTraces[pi].completedAt) existingTraces[pi].completedAt = Date.now();
-          }
-        }
-        var newRunTrace = {
-          id: 'run_' + Date.now(),
-          sessionId: chatCtx.convId,
-          startedAt: Date.now(),
-          completedAt: 0,
-          durationMs: 0,
-          status: 'running',
-          provider: currentProvider,
-          model: currentModel,
-          user: {
-            query: text,
-            images: imgB64 ? [imgB64] : [],
-            context: { workspaceFolder: currentWorkspace }
-          },
-          steps: [],
-          finalResponse: { text: '', thinking: '', durationMs: 0 },
-          metrics: { totalDurationMs: 0, totalTokens: { input: 0, output: 0, total: 0 }, toolsExecuted: 0, filesTouched: [] }
-        };
-        existingTraces.push(newRunTrace);
-        localStorage.setItem('coderun_traces_' + chatCtx.convId, JSON.stringify(existingTraces));
-        var tContainer = document.getElementById('traces-area-container');
-        if (tContainer && tContainer.style.display !== 'none' && typeof window.renderDashboardTraces === 'function') {
-          window.renderDashboardTraces(tContainer);
-        }
-      } catch (_) {
-        // Intentionally ignore storage write errors
       }
 
       if (window.VSCODE && window.VSCODE_API) {
@@ -1180,7 +1160,12 @@
       if (conversation.messages) {
         for (var hi = 0; hi < conversation.messages.length; hi++) {
           var m = conversation.messages[hi];
-          var h = { role: m.role, content: m.content || '' };
+          var h = { 
+            role: m.role, 
+            content: m.content || '',
+            model: m.model || '',
+            provider: m.provider || ''
+          };
           if (m.thinking) h.thinking = m.thinking;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
