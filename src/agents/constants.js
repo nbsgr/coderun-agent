@@ -51,7 +51,8 @@ export const DANGEROUS_TOOLS = new Set([
 ]);
 
 export const STORAGE_KEYS = {
-  PROVIDER_CONFIGS: 'coderun_provider_configs'
+  PROVIDER_CONFIGS: 'coderun_provider_configs',
+  PINNED_MODELS: 'coderun_pinned_models'
 };
 
 export const EVENT_TYPES = {

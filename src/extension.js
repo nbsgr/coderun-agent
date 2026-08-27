@@ -420,7 +420,9 @@ async function handleFrontendMessage(message, webview) {
         var stored = extensionContext?.globalState.get('coderun_conversations', '[]') || '[]';
         var selectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
         var selectedProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
+        var pinnedModels = extensionContext?.globalState.get('coderun_pinned_models', {}) || {};
         webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
+        webview.postMessage({ type: 'loadPinnedModels', pinnedModels: pinnedModels });
         webview.postMessage({
           type: 'permissionState',
           decisions: permissions.listAlwaysDecisions()
@@ -673,6 +675,17 @@ async function handleFrontendMessage(message, webview) {
         }
       }
       await sendCurrentSettings(webview);
+      break;
+    }
+
+    case 'savePinnedModels': {
+      if (message.pinnedModels && extensionContext) {
+        try {
+          await extensionContext.globalState.update('coderun_pinned_models', message.pinnedModels);
+        } catch (e) {
+          console.error('[CODERUN] Failed to save pinned models:', e);
+        }
+      }
       break;
     }
 

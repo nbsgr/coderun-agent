@@ -52,6 +52,9 @@
     // extension host via the 'permissionState' message on webviewReady and
     // after every change. ChatSpace can read it via getDashboardAlwaysDecisions.
     alwaysDecisions: {},
+    pinnedModels: {},
+    modelSearchFilter: "",
+    openProviderGroups: {},
     settings: {
       provider: "ollama",
       baseUrl: DEFAULT_BASE_URL,
@@ -64,6 +67,15 @@
       confirmDangerous: true
     }
   };
+
+  try {
+    var storedPinned = localStorage.getItem("coderun_pinned_models");
+    if (storedPinned) {
+      state.pinnedModels = JSON.parse(storedPinned);
+    }
+  } catch (_) {
+    state.pinnedModels = {};
+  }
 
   function saveStateToVscode() {
     if (state.isVsCode && window.VSCODE_API) {
@@ -1191,6 +1203,15 @@
     if (list) {
       var isHidden = list.style.display === "none";
       list.style.display = isHidden ? "block" : "none";
+      if (isHidden) {
+        var filterInput = document.getElementById("modelFilterInput");
+        if (filterInput) {
+          setTimeout(function() {
+            filterInput.focus();
+            filterInput.select();
+          }, 40);
+        }
+      }
     }
   }
 
@@ -1470,6 +1491,90 @@
     return displayLabel;
   }
 
+  function isModelPinned(provider, model) {
+    if (!state.pinnedModels || !state.pinnedModels[provider]) return false;
+    var list = state.pinnedModels[provider];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === model) return true;
+    }
+    return false;
+  }
+
+  function handlePinClick(e) {
+    if (e) e.stopPropagation();
+    var provider = this.dataset.provider;
+    var model = this.dataset.model;
+    if (!provider || !model) return;
+
+    if (!state.pinnedModels) state.pinnedModels = {};
+    var list = state.pinnedModels[provider] || [];
+    var idx = list.indexOf(model);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+    } else {
+      list.unshift(model);
+    }
+    state.pinnedModels[provider] = list;
+
+    try {
+      localStorage.setItem("coderun_pinned_models", JSON.stringify(state.pinnedModels));
+    } catch (_) {}
+
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "savePinnedModels",
+        pinnedModels: state.pinnedModels
+      });
+    }
+
+    renderModelOptions();
+    var dropdown = document.getElementById("modelDropdownList");
+    if (dropdown) dropdown.style.display = "block";
+  }
+
+  function handleModelFilterInput(e) {
+    if (e) e.stopPropagation();
+    state.modelSearchFilter = (e.target.value || "").trim().toLowerCase();
+    renderModelOptions();
+    var dropdown = document.getElementById("modelDropdownList");
+    if (dropdown) dropdown.style.display = "block";
+    var input = document.getElementById("modelFilterInput");
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  function handleSearchInputClick(e) {
+    if (e) e.stopPropagation();
+  }
+
+  function createModelItemElement(modelName, providerName, isPinned) {
+    var item = document.createElement("div");
+    var isSelected = state.selectedModel === modelName && (state.selectedProvider === providerName || (!state.selectedProvider && providerName === 'ollama'));
+    item.className = "cr-combobox-item" + (isSelected ? " active" : "") + (isPinned ? " is-pinned" : "");
+    item.dataset.model = modelName;
+    item.dataset.provider = providerName;
+    item.onclick = handleModelItemClick;
+
+    var nameSpan = document.createElement("span");
+    nameSpan.className = "cr-model-name";
+    nameSpan.textContent = modelName;
+    nameSpan.title = modelName;
+    item.appendChild(nameSpan);
+
+    var pinBtn = document.createElement("span");
+    pinBtn.className = "cr-model-pin-btn" + (isPinned ? " pinned" : "");
+    pinBtn.title = isPinned ? "Unpin model" : "Pin model to top";
+    pinBtn.textContent = isPinned ? "★" : "☆";
+    pinBtn.dataset.model = modelName;
+    pinBtn.dataset.provider = providerName;
+    pinBtn.onclick = handlePinClick;
+    item.appendChild(pinBtn);
+
+    return item;
+  }
+
   function renderModelOptions() {
     var list = document.getElementById("modelDropdownList");
     if (!list) return;
@@ -1483,37 +1588,100 @@
       return;
     }
 
+    // Sticky search filter input
+    var searchBox = document.createElement("div");
+    searchBox.className = "cr-model-search-box";
+    var searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.id = "modelFilterInput";
+    searchInput.className = "cr-model-search-input";
+    searchInput.placeholder = "🔍 Search models...";
+    searchInput.value = state.modelSearchFilter || "";
+    searchInput.oninput = handleModelFilterInput;
+    searchInput.onclick = handleSearchInputClick;
+    searchBox.appendChild(searchInput);
+    list.appendChild(searchBox);
+
+    var filterQuery = (state.modelSearchFilter || "").toLowerCase();
+    var totalMatches = 0;
+
     for (var p = 0; p < providers.length; p++) {
       var providerName = providers[p];
       var models = state.modelsByProvider[providerName];
       if (!models || !models.length) continue;
 
+      var filtered = [];
+      for (var m = 0; m < models.length; m++) {
+        if (!filterQuery || models[m].toLowerCase().indexOf(filterQuery) !== -1) {
+          filtered.push(models[m]);
+        }
+      }
+      if (!filtered.length) continue;
+      totalMatches += filtered.length;
+
       var groupContainer = document.createElement("div");
       groupContainer.className = "cr-combobox-group";
+
+      var isExpanded = filterQuery.length > 0 || !!state.openProviderGroups[providerName] || state.selectedProvider === providerName || (!state.selectedProvider && providerName === 'ollama');
 
       var header = document.createElement("div");
       header.className = "cr-combobox-group-header";
       header.dataset.provider = providerName;
-
-      header.innerHTML = '<span class="cr-group-arrow">▶</span> ' + getProviderLabel(providerName) + ' models';
+      header.innerHTML = '<span class="cr-group-arrow">' + (isExpanded ? "▼" : "▶") + '</span> ' + getProviderLabel(providerName) + ' <span class="cr-group-count">(' + filtered.length + ')</span>';
       header.onclick = handleGroupHeaderClick;
       groupContainer.appendChild(header);
 
       var itemsContainer = document.createElement("div");
       itemsContainer.className = "cr-combobox-group-items";
-      itemsContainer.style.display = "none";
+      itemsContainer.style.display = isExpanded ? "block" : "none";
 
-      for (var i = 0; i < models.length; i++) {
-        var item = document.createElement("div");
-        item.className = "cr-combobox-item";
-        item.textContent = models[i];
-        item.dataset.model = models[i];
-        item.dataset.provider = providerName;
-        item.onclick = handleModelItemClick;
-        itemsContainer.appendChild(item);
+      var pinnedList = (state.pinnedModels && state.pinnedModels[providerName]) || [];
+      var pinnedModels = [];
+      var otherModels = [];
+
+      for (var f = 0; f < filtered.length; f++) {
+        var modName = filtered[f];
+        if (isModelPinned(providerName, modName)) {
+          pinnedModels.push(modName);
+        } else {
+          otherModels.push(modName);
+        }
       }
+
+      // 1. Render Pinned Models (if any)
+      if (pinnedModels.length > 0) {
+        var pinTitle = document.createElement("div");
+        pinTitle.className = "cr-combobox-subgroup-title";
+        pinTitle.innerHTML = '<span>⭐ Pinned (' + pinnedModels.length + ')</span>';
+        itemsContainer.appendChild(pinTitle);
+
+        for (var pi = 0; pi < pinnedModels.length; pi++) {
+          itemsContainer.appendChild(createModelItemElement(pinnedModels[pi], providerName, true));
+        }
+      }
+
+      // 2. Render Other Models
+      if (otherModels.length > 0) {
+        if (pinnedModels.length > 0) {
+          var allTitle = document.createElement("div");
+          allTitle.className = "cr-combobox-subgroup-title";
+          allTitle.innerHTML = '<span>📁 All Models (' + otherModels.length + ')</span>';
+          itemsContainer.appendChild(allTitle);
+        }
+        for (var oi = 0; oi < otherModels.length; oi++) {
+          itemsContainer.appendChild(createModelItemElement(otherModels[oi], providerName, false));
+        }
+      }
+
       groupContainer.appendChild(itemsContainer);
       list.appendChild(groupContainer);
+    }
+
+    if (totalMatches === 0) {
+      var emptyItem = document.createElement("div");
+      emptyItem.className = "cr-combobox-item empty";
+      emptyItem.textContent = "No models match '" + filterQuery + "'";
+      list.appendChild(emptyItem);
     }
 
     // Determine current model
@@ -1539,12 +1707,17 @@
 
   function handleGroupHeaderClick(e) {
     if (e) e.stopPropagation();
+    var providerName = this.dataset.provider;
     var items = this.nextElementSibling;
     var arrow = this.querySelector(".cr-group-arrow");
     if (items && arrow) {
       var isHidden = items.style.display === "none";
       items.style.display = isHidden ? "block" : "none";
       arrow.textContent = isHidden ? "▼" : "▶";
+      if (providerName) {
+        state.openProviderGroups = state.openProviderGroups || {};
+        state.openProviderGroups[providerName] = isHidden;
+      }
     }
   }
 
@@ -1979,6 +2152,15 @@
     var message = event.data || {};
     if (message.type === "loadConversations") {
       window.loadConversationsFromExtension(message.conversations, message.selectedModel, message.selectedProvider);
+    }
+    if (message.type === "loadPinnedModels") {
+      if (message.pinnedModels && typeof message.pinnedModels === 'object') {
+        state.pinnedModels = message.pinnedModels;
+        try {
+          localStorage.setItem("coderun_pinned_models", JSON.stringify(state.pinnedModels));
+        } catch (_) {}
+        renderModelOptions();
+      }
     }
     if (message.type === "workspaceFolder") {
       window.setDashboardWorkspace(message.path);
