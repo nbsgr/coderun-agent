@@ -105,6 +105,34 @@ Whether you are running completely offline with local models (Ollama), leveragin
 
 ---
 
+## 🧰 Tool System & Capabilities
+
+CodeRun exposes a curated set of **19 active tools** organized across 5 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+
+| Category | Tool | Description | Dangerous / Permissions |
+| :--- | :--- | :--- | :--- |
+| **📁 File Operations** | `read_file` | Read complete file contents at a relative path | No |
+| | `write_file` | Create or overwrite a file with full diff preview | ⚠️ Yes |
+| | `edit_file` | Find and replace a single exact string occurrence | ⚠️ Yes |
+| | `patch_file` | Apply multiple search-and-replace edit blocks | ⚠️ Yes |
+| | `delete_file` | Permanently delete a specified file | ⚠️ Yes |
+| | `create_folder` | Create directory structure including parents | No |
+| | `delete_folder` | Recursively delete a directory and its contents | ⚠️ Yes |
+| | `get_file_info` | Get file metadata (size, lines, modified date, MIME) | No |
+| **🔍 Search & Navigation** | `search_files` | Find files matching glob patterns (e.g. `*.py`, `src/**`) | No |
+| | `find_in_files` | Search workspace file contents for text queries | No |
+| | `list_symbols` | Parse classes, functions, and symbols from a file | No |
+| | `list_directory` | List folder contents with recursive depth controls | No |
+| **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal | ⚠️ Yes |
+| | `terminal_input` | Send input to an active interactive terminal session | ⚠️ Yes |
+| | `stop_terminal` | Send `Ctrl+C` to abort a running terminal command | No |
+| **📋 Planning & Progress** | `create_plan` | Set up a structured task checklist card | No |
+| | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
+| **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
+| | `get_current_datetime` | Retrieve current date and time in ISO format | No |
+
+---
+
 ## 🛠️ Supported Providers
 
 | Provider | Default Base URL | Keys Required | Vision Support | Common Models |
@@ -179,8 +207,8 @@ src/
 │                                and live output streaming through shell integration events
 │
 ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
-├── toolRegistry.js           ← Maps tool calls to implementations and aliases custom proxy commands
-├── tools.js                  ← 18 async generators: file I/O (read/write/edit/delete),
+├── toolRegistry.js           ← Unified tool registry with alias mapping, validation, and hidden filtering
+├── tools.js                  ← 19 active async generators: file operations (read/write/edit/patch/delete),
 │                                directory (list/create/delete), search (files/content/symbols),
 │                                terminal (run_terminal + aliases bash/execute_command),
 │                                utility (datetime, web_request), planning (create/update_plan)
