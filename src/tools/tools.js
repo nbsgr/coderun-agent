@@ -715,9 +715,11 @@ function reg(name, handler, opts) {
     description: opts.description || '',
     parameters: opts.parameters || {},
     required: opts.required || [],
+    hidden: opts.hidden || false,
     metadata: {
       dangerous: opts.dangerous || false,
       needsPermission: opts.needsPermission || opts.dangerous || false,
+      hidden: opts.hidden || false,
       category: opts.category || 'utility',
       timeout: opts.timeout || 30000
     }
@@ -872,6 +874,7 @@ export function registerAllTools() {
   // ── Database Queries ───────────────────────────────
   reg('query_project_db', query_project_db, {
     category: 'database',
+    hidden: true,
     description: 'Query the SQLite project knowledge database containing file index, text chunks, and code symbols (functions, classes, logic structure) of the project workspace. Use SELECT read-only SQL queries.',
     parameters: {
       sql_query: { type: 'string', description: 'Read-only SELECT query to run (e.g. SELECT * FROM symbols WHERE type = \'function\')' }

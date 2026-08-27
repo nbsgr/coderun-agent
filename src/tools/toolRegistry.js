@@ -25,6 +25,7 @@ export function register(descriptor) {
   if (!descriptor.metadata) descriptor.metadata = {};
   if (descriptor.metadata.dangerous === undefined) descriptor.metadata.dangerous = descriptor.dangerous || false;
   if (descriptor.metadata.needsPermission === undefined) descriptor.metadata.needsPermission = descriptor.metadata.dangerous;
+  if (descriptor.metadata.hidden === undefined) descriptor.metadata.hidden = descriptor.hidden || false;
   if (!descriptor.metadata.category) descriptor.metadata.category = descriptor.category || 'utility';
   if (!descriptor.metadata.timeout) descriptor.metadata.timeout = 30000;
 
@@ -187,6 +188,9 @@ export function getDefinition(name) {
 function rebuildDefinitions() {
   _definitions = [];
   for (var name in _tools) {
+    if (_tools[name].metadata && _tools[name].metadata.hidden) {
+      continue;
+    }
     _definitions.push(buildDefinition(_tools[name]));
   }
   _dirty = false;
