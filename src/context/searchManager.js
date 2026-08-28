@@ -20,9 +20,6 @@ import * as projectKnowledge from './projectKnowledge.js';
  * Search for files matching a glob pattern.
  * Uses SQLite index when ready, falls back to filesystem walk.
  *
- * @param {string} pattern - Glob pattern (e.g. "*.js", "src/**&#47;*.js")
- * @param {string} rootDir - Absolute workspace root
- * @param {string} subDir  - Relative subdirectory to scope search (optional)
  * @returns {Promise<string[]>} Array of relative paths
  */
 export async function searchFiles(pattern, rootDir, subDir) {
@@ -36,7 +33,14 @@ export async function searchFiles(pattern, rootDir, subDir) {
       var sqlLike = patternToLike(likePattern);
       var results = projectKnowledge.searchByGlob(sqlLike, subDir || '');
       if (results && results.length) {
-        return results;
+        var existing = [];
+        for (var ri = 0; ri < results.length; ri++) {
+          var checkFull = path.resolve(rootDir, results[ri]);
+          if (existsSync(checkFull)) {
+            existing.push(results[ri]);
+          }
+        }
+        return existing;
       }
     } catch (_) {
       // Intentionally ignored to allow safe execution fallback
@@ -54,8 +58,6 @@ export async function searchFiles(pattern, rootDir, subDir) {
  * Search file contents for a query string.
  * Uses SQLite chunks table when ready, falls back to filesystem grep.
  *
- * @param {string} query   - Text to search for in file contents
- * @param {string} rootDir - Absolute workspace root
  * @returns {Promise<Array<{path: string, matches: number, snippet: string}>>}
  */
 export async function searchContent(query, rootDir) {
@@ -66,7 +68,14 @@ export async function searchContent(query, rootDir) {
     try {
       var results = projectKnowledge.searchChunks(query);
       if (results && results.length) {
-        return results;
+        var existingChunks = [];
+        for (var ci = 0; ci < results.length; ci++) {
+          var checkFullChunk = path.resolve(rootDir, results[ci].path);
+          if (existsSync(checkFullChunk)) {
+            existingChunks.push(results[ci]);
+          }
+        }
+        return existingChunks;
       }
     } catch (_) {
       // Intentionally ignored to allow safe execution fallback
@@ -120,12 +129,28 @@ function globToRegex(pat) {
   return new RegExp('^' + wildcards + '$', 'i');
 }
 
+function isWithinBoundary(targetPath, rootDir) {
+  var t = path.resolve(targetPath).toLowerCase();
+  var r = path.resolve(rootDir).toLowerCase();
+  return t === r || t.startsWith(r + path.sep);
+}
+
 async function walkFilesFallback(dir, regex, searchDir, matches) {
   try {
     var list = await fs.readdir(dir, { withFileTypes: true });
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
       var fullPath = path.resolve(dir, item.name);
+
+      if (item.isSymbolicLink()) {
+        try {
+          var real = await fs.realpath(fullPath);
+          if (!isWithinBoundary(real, searchDir)) continue;
+        } catch (_) {
+          continue;
+        }
+      }
+
       if (item.isDirectory()) {
         if (item.name === 'node_modules' || item.name === '.git' || item.name === '.venv' || item.name === '__pycache__') continue;
         if (item.name.startsWith('.')) continue;
@@ -190,6 +215,16 @@ async function walkGrepFallback(dir, lowerQuery, rootDir, results) {
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
       var fullPath = path.resolve(dir, entry.name);
+
+      if (entry.isSymbolicLink()) {
+        try {
+          var real = await fs.realpath(fullPath);
+          if (!isWithinBoundary(real, rootDir)) continue;
+        } catch (_) {
+          continue;
+        }
+      }
+
       if (entry.isDirectory()) {
         if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.venv' || entry.name.startsWith('.')) continue;
         await walkGrepFallback(fullPath, lowerQuery, rootDir, results);

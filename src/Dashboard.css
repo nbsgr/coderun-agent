@@ -1430,3 +1430,73 @@ textarea {
   background: rgba(248, 81, 73, 0.2);
   color: #f85149;
 }
+
+/* Rules panel */
+.cr-rules-heading {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.cr-rules-desc {
+  margin: 0 0 16px 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  line-height: 1.4;
+}
+
+.cr-rules-section {
+  margin-bottom: 16px;
+}
+
+.cr-rules-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.cr-rules-sublabel {
+  display: block;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888888);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.cr-rules-textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 300px;
+  resize: vertical;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  padding: 8px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  background: var(--vscode-input-background, #1e1e1e);
+  color: var(--vscode-input-foreground, #cccccc);
+  border-radius: 4px;
+  box-sizing: border-box;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.cr-rules-textarea:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  outline: none;
+}
+
+.cr-rules-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--vscode-input-disabledBackground, rgba(30, 30, 30, 0.5));
+}
+
+.cr-rules-divider {
+  border: none;
+  border-top: 1px solid var(--vscode-input-border, #3c3c3c);
+  margin: 20px 0;
+  opacity: 0.5;
+}

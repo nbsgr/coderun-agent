@@ -2,40 +2,50 @@
 // Each tool is an async generator that yields action + result events
 
 import * as fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import * as dns from 'dns/promises';
+import * as net from 'net';
 import * as toolRegistry from './toolRegistry.js';
 import * as terminalManager from './terminalManager.js';
 import * as searchManager from '../context/searchManager.js';
 import * as planningManager from '../context/planningManager.js';
+import * as planningEngine from '../context/planningEngine.js';
+import * as goalTracker from '../context/goalTracker.js';
 import * as runtime from '../agents/runtime.js';
 import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import { parseSymbols } from '../context/symbolParser.js';
 import * as projectKnowledge from '../context/projectKnowledge.js';
+import * as pathSecurity from './pathSecurity.js';
+import * as fileLockManager from './fileLockManager.js';
+import * as checkpointManager from './checkpointManager.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
+
+function computeSha256(content) {
+  return crypto.createHash('sha256').update(content || '', 'utf8').digest('hex');
+}
 
 function escapeStringForRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function executeDeferredPromise(deferred, resolve) {
-  deferred.resolve = resolve;
-}
-
 function createDeferredPromise() {
   var deferred = {};
-  deferred.promise = new Promise(executeDeferredPromise.bind(null, deferred));
+  function deferredPromise(resolve) {
+    deferred.resolve = resolve;
+  }
+  deferred.promise = new Promise(deferredPromise);
   return deferred;
 }
 
-function executeSleepPromise(ms, resolve) {
-  setTimeout(resolve, ms);
-}
-
 function sleep(ms) {
-  return new Promise(executeSleepPromise.bind(null, ms));
+  function sleepPromise(resolve) {
+    setTimeout(resolve, ms);
+  }
+  return new Promise(sleepPromise);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -47,15 +57,8 @@ function sleep(ms) {
 // =====================================================
 // HELPER: SAFE PATH
 // =====================================================
-function _safePath(workspace, relPath) {
-  var base = path.resolve(workspace);
-  var target = path.resolve(path.join(base, relPath));
-  var isSame = (target === base);
-  var isSub = target.startsWith(base + path.sep);
-  if (!isSame && !isSub) {
-    throw new Error('Path traversal blocked: ' + relPath);
-  }
-  return target;
+function _safePath(workspace, relOrAbsPath) {
+  return pathSecurity.assertSafePath(relOrAbsPath, workspace);
 }
 
 // =====================================================
@@ -78,17 +81,21 @@ async function* read_file(args, workspace) {
   }
 }
 
-async function* write_file(args, workspace) {
+async function* write_file(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var content = args.content || '';
   yield { type: 'action', action: 'write_file', message: 'Writing file: ' + filePath };
   try {
     var target = _safePath(workspace, filePath);
+    var existed = existsSync(target);
 
     var originalContent = '';
-    if (existsSync(target)) {
+    if (existed) {
       originalContent = await fs.readFile(target, 'utf-8');
     }
+    var originalHash = computeSha256(originalContent);
 
     var deferred = createDeferredPromise();
     var diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -100,25 +107,78 @@ async function* write_file(args, workspace) {
       file_path: filePath,
       original_content: originalContent,
       new_content: content,
-      is_new_file: !originalContent,
-      deferred: deferred
+      is_new_file: !existed,
+      deferred: deferred,
+      sessionId: sessionId
     };
 
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
-      yield { type: 'tool_result', tool: 'write_file', success: false, file_path: filePath, message: 'Write rejected by user.', rejected: true };
+      var rejectMsg = diffResult && diffResult.message ? diffResult.message : 'Write rejected by user.';
+      yield { type: 'tool_result', tool: 'write_file', success: false, file_path: filePath, message: rejectMsg, rejected: true };
       return;
     }
 
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, content, 'utf-8');
-    yield { type: 'tool_result', tool: 'write_file', success: true, file_path: filePath, message: 'File written: ' + filePath };
+    async function performLockedWrite() {
+      var currentDiskContent = '';
+      var currentExisted = existsSync(target);
+      if (currentExisted) {
+        try {
+          currentDiskContent = await fs.readFile(target, 'utf-8');
+        } catch (readErr) {
+          return { success: false, message: 'Failed to read file under lock: ' + readErr.message };
+        }
+      } else if (existed) {
+        return { success: false, conflict: true, message: 'Conflict: ' + filePath + ' was deleted on disk before write.' };
+      }
+
+      var currentHash = computeSha256(currentDiskContent);
+      if (currentHash !== originalHash) {
+        return {
+          success: false,
+          conflict: true,
+          message: 'Conflict: ' + filePath + ' has changed on disk since this diff was created. Please review the newest file content.'
+        };
+      }
+
+      var cpLabel = (existed ? 'Edited: ' : 'Created: ') + filePath;
+      var cpId = null;
+      try {
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, cpLabel);
+      } catch (cpErr) {
+        return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
+      }
+
+      if (existed && !cpId) {
+        return { success: false, message: 'Checkpoint creation failed for existing file: ' + filePath + '; write aborted for safety.' };
+      }
+
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, content, 'utf-8');
+
+      try {
+        await projectKnowledge.touchFile(filePath);
+      } catch (_) {}
+
+      return { success: true, checkpointId: cpId };
+    }
+
+    var writeResult = await fileLockManager.withFileLock(target, performLockedWrite);
+    if (!writeResult || !writeResult.success) {
+      var writeErrMsg = writeResult && writeResult.message ? writeResult.message : 'Write failed under file lock.';
+      yield { type: 'tool_result', tool: 'write_file', success: false, file_path: filePath, message: writeErrMsg, conflict: writeResult && writeResult.conflict };
+      return;
+    }
+
+    yield { type: 'tool_result', tool: 'write_file', success: true, file_path: filePath, message: 'File written: ' + filePath, checkpoint_id: writeResult.checkpointId };
   } catch (e) {
     yield { type: 'tool_result', tool: 'write_file', success: false, message: e.message };
   }
 }
 
-async function* edit_file(args, workspace) {
+async function* edit_file(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var oldString = args.old_string || '';
   var newString = args.new_string || '';
@@ -130,6 +190,7 @@ async function* edit_file(args, workspace) {
       return;
     }
     var content = await fs.readFile(target, 'utf-8');
+    var originalHash = computeSha256(content);
     var newContent = '';
 
     var idx = content.indexOf(oldString);
@@ -176,17 +237,65 @@ async function* edit_file(args, workspace) {
       original_content: content,
       new_content: newContent,
       is_new_file: false,
-      deferred: deferred
+      deferred: deferred,
+      sessionId: sessionId
     };
 
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
-      yield { type: 'tool_result', tool: 'edit_file', success: false, file_path: filePath, message: 'Edit rejected by user.', rejected: true };
+      var editRejectMsg = diffResult && diffResult.message ? diffResult.message : 'Edit rejected by user.';
+      yield { type: 'tool_result', tool: 'edit_file', success: false, file_path: filePath, message: editRejectMsg, rejected: true };
       return;
     }
 
-    await fs.writeFile(target, newContent, 'utf-8');
-    yield { type: 'tool_result', tool: 'edit_file', success: true, file_path: filePath, message: 'File edited: ' + filePath };
+    async function performLockedEdit() {
+      if (!existsSync(target)) {
+        return { success: false, conflict: true, message: 'Conflict: ' + filePath + ' was deleted on disk before edit.' };
+      }
+      var currentDiskContent = '';
+      try {
+        currentDiskContent = await fs.readFile(target, 'utf-8');
+      } catch (readErr) {
+        return { success: false, message: 'Failed to read file under lock: ' + readErr.message };
+      }
+
+      var currentHash = computeSha256(currentDiskContent);
+      if (currentHash !== originalHash) {
+        return {
+          success: false,
+          conflict: true,
+          message: 'Conflict: ' + filePath + ' has changed on disk since this diff was created. Please review the newest file content.'
+        };
+      }
+
+      var cpId = null;
+      try {
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Edited: ' + filePath);
+      } catch (cpErr) {
+        return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
+      }
+
+      if (!cpId) {
+        return { success: false, message: 'Checkpoint creation failed for ' + filePath + '; edit aborted for safety.' };
+      }
+
+      await fs.writeFile(target, newContent, 'utf-8');
+
+      try {
+        await projectKnowledge.touchFile(filePath);
+      } catch (_) {}
+
+      return { success: true, checkpointId: cpId };
+    }
+
+    var editResult = await fileLockManager.withFileLock(target, performLockedEdit);
+    if (!editResult || !editResult.success) {
+      var editErrMsg = editResult && editResult.message ? editResult.message : 'Edit failed under file lock.';
+      yield { type: 'tool_result', tool: 'edit_file', success: false, file_path: filePath, message: editErrMsg, conflict: editResult && editResult.conflict };
+      return;
+    }
+
+    yield { type: 'tool_result', tool: 'edit_file', success: true, file_path: filePath, message: 'File edited: ' + filePath, checkpoint_id: editResult.checkpointId };
   } catch (e) {
     yield { type: 'tool_result', tool: 'edit_file', success: false, message: e.message };
   }
@@ -218,7 +327,9 @@ async function _safeRmDir(target) {
   }
 }
 
-async function* delete_file(args, workspace) {
+async function* delete_file(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'delete_file', message: 'Deleting file: ' + filePath };
   try {
@@ -227,8 +338,35 @@ async function* delete_file(args, workspace) {
       yield { type: 'tool_result', tool: 'delete_file', success: false, message: 'File not found: ' + filePath };
       return;
     }
-    await _safeUnlink(target);
-    yield { type: 'tool_result', tool: 'delete_file', success: true, file_path: filePath, message: 'File deleted: ' + filePath };
+
+    async function performLockedDelete() {
+      if (!existsSync(target)) {
+        return { success: false, message: 'File already deleted or missing: ' + filePath };
+      }
+      var cpId = null;
+      try {
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Deleted: ' + filePath);
+      } catch (cpErr) {
+        return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
+      }
+      if (!cpId) {
+        return { success: false, message: 'Checkpoint creation failed for ' + filePath + '; deletion aborted for safety.' };
+      }
+      await _safeUnlink(target);
+      try {
+        projectKnowledge.deleteFile(filePath);
+      } catch (_) {}
+      return { success: true, checkpointId: cpId };
+    }
+
+    var delResult = await fileLockManager.withFileLock(target, performLockedDelete);
+    if (!delResult || !delResult.success) {
+      var delErrMsg = delResult && delResult.message ? delResult.message : 'Delete failed under file lock.';
+      yield { type: 'tool_result', tool: 'delete_file', success: false, file_path: filePath, message: delErrMsg };
+      return;
+    }
+
+    yield { type: 'tool_result', tool: 'delete_file', success: true, file_path: filePath, message: 'File deleted: ' + filePath, checkpoint_id: delResult.checkpointId };
   } catch (e) {
     yield { type: 'tool_result', tool: 'delete_file', success: false, message: e.message };
   }
@@ -243,7 +381,10 @@ async function* create_folder(args, workspace) {
   yield { type: 'action', action: 'create_folder', message: 'Creating folder: ' + folderPath };
   try {
     var target = _safePath(workspace, folderPath);
-    await fs.mkdir(target, { recursive: true });
+    async function performLockedCreateFolder() {
+      await fs.mkdir(target, { recursive: true });
+    }
+    await fileLockManager.withFileLock(target, performLockedCreateFolder);
     yield { type: 'tool_result', tool: 'create_folder', success: true, folder_path: folderPath, message: 'Folder created: ' + folderPath };
   } catch (e) {
     yield { type: 'tool_result', tool: 'create_folder', success: false, message: e.message };
@@ -259,7 +400,10 @@ async function* delete_folder(args, workspace) {
       yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
       return;
     }
-    await _safeRmDir(target);
+    async function performLockedDeleteFolder() {
+      await _safeRmDir(target);
+    }
+    await fileLockManager.withFileLock(target, performLockedDeleteFolder);
     yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
   } catch (e) {
     yield { type: 'tool_result', tool: 'delete_folder', success: false, message: e.message };
@@ -290,16 +434,20 @@ async function* search_files(args, workspace) {
   try {
     var target = _safePath(workspace, folderPath);
     var matches = [];
+    var searchError = null;
 
     try {
       var results = await searchManager.searchFiles(pattern, workspace, folderPath === '.' ? '' : folderPath);
       matches = results || [];
-    } catch (_) {
-      // Intentionally fall back to empty list on search execution error
-      matches = [];
+    } catch (err) {
+      searchError = err ? (err.message || String(err)) : 'Search execution failed';
     }
 
-    yield { type: 'tool_result', tool: 'search_files', success: true, pattern: pattern, folder_path: folderPath, matches: matches };
+    if (searchError) {
+      yield { type: 'tool_result', tool: 'search_files', success: false, pattern: pattern, folder_path: folderPath, message: searchError, matches: [] };
+    } else {
+      yield { type: 'tool_result', tool: 'search_files', success: true, pattern: pattern, folder_path: folderPath, matches: matches };
+    }
   } catch (e) {
     yield { type: 'tool_result', tool: 'search_files', success: false, message: e.message };
   }
@@ -334,7 +482,9 @@ async function* get_file_info(args, workspace) {
 // TERMINAL TOOLS — Uses VS Code Terminal Shell Integration
 // =====================================================
 
-async function* run_terminal(args, workspace) {
+async function* run_terminal(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
   var command = args.command || '';
   var timeout = args.timeout || 30;
   var background = args.background || false;
@@ -342,7 +492,7 @@ async function* run_terminal(args, workspace) {
 
   if (!command) {
     yield { type: 'action', action: 'run_terminal', message: 'Checking terminal output...' };
-    var checkResult = await terminalManager.checkTerminalOutput();
+    var checkResult = await terminalManager.checkTerminalOutput(sessionId);
     yield {
       type: 'tool_result',
       tool: 'run_terminal',
@@ -354,7 +504,7 @@ async function* run_terminal(args, workspace) {
       interactive: checkResult.interactive === true,
       prompt_detected: checkResult.promptDetected === true,
       waiting_for_input: checkResult.waitingForInput === true,
-      shell: checkResult.shell || terminalManager.getShellName(),
+      shell: checkResult.shell || terminalManager.getShellName(sessionId),
       platform: checkResult.platform || terminalManager.getPlatformName(),
       working_directory: workspace,
       exit_code: checkResult.exitCode,
@@ -368,7 +518,7 @@ async function* run_terminal(args, workspace) {
 
   try {
     dbg('[TOOLS] run_terminal: calling terminalManager.executeCommand');
-    var result = await terminalManager.executeCommand(command, timeout, background, isInteractive);
+    var result = await terminalManager.executeCommand(command, timeout, background, isInteractive, sessionId, workspace);
     dbg('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
     var toolSuccess = result.exitCode === 0 || (result.exitCode == null && result.success !== false);
@@ -475,21 +625,31 @@ async function* find_in_files(args, workspace) {
 // INTERACTIVE TERMINAL TOOLS
 // =═══════════════════════════════════════════════════
 
-async function* terminal_input(args, workspace) {
+async function* terminal_input(args, context) {
   var text = args.text || '';
+  var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
   yield { type: 'action', action: 'terminal_input', message: 'Sending input to terminal: ' + text };
   try {
-    var result = terminalManager.sendTerminalInput(text);
-    yield { type: 'tool_result', tool: 'terminal_input', success: true, message: result.message };
+    var result = await terminalManager.sendTerminalInput(text, sessionId);
+    yield {
+      type: 'tool_result',
+      tool: 'terminal_input',
+      success: result.success !== false,
+      stdout: result.stdout || '',
+      output: result.output || '',
+      interactive: result.interactive === true,
+      message: result.message
+    };
   } catch (e) {
     yield { type: 'tool_result', tool: 'terminal_input', success: false, message: e.message };
   }
 }
 
-async function* stop_terminal(args, workspace) {
+async function* stop_terminal(args, context) {
+  var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
   yield { type: 'action', action: 'stop_terminal', message: 'Stopping terminal process (Ctrl+C)' };
   try {
-    var result = await terminalManager.stopTerminal();
+    var result = await terminalManager.stopTerminal(sessionId);
     yield { type: 'tool_result', tool: 'stop_terminal', success: true, message: result.message };
   } catch (e) {
     yield { type: 'tool_result', tool: 'stop_terminal', success: false, message: e.message };
@@ -517,7 +677,9 @@ async function* list_symbols(args, workspace) {
   }
 }
 
-async function* patch_file(args, workspace) {
+async function* patch_file(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var patches = args.patches || [];
   yield { type: 'action', action: 'patch_file', message: 'Patching file: ' + filePath + ' (' + patches.length + ' blocks)' };
@@ -528,6 +690,7 @@ async function* patch_file(args, workspace) {
       return;
     }
     var content = await fs.readFile(target, 'utf-8');
+    var originalHash = computeSha256(content);
     var newContent = content;
 
     for (var i = 0; i < patches.length; i++) {
@@ -581,33 +744,189 @@ async function* patch_file(args, workspace) {
       original_content: content,
       new_content: newContent,
       is_new_file: false,
-      deferred: deferred
+      deferred: deferred,
+      sessionId: sessionId
     };
 
     var diffResult = await deferred.promise;
     if (!diffResult || !diffResult.accepted) {
-      yield { type: 'tool_result', tool: 'patch_file', success: false, file_path: filePath, message: 'Patch rejected by user.', rejected: true };
+      var patchRejectMsg = diffResult && diffResult.message ? diffResult.message : 'Patch rejected by user.';
+      yield { type: 'tool_result', tool: 'patch_file', success: false, file_path: filePath, message: patchRejectMsg, rejected: true };
       return;
     }
 
-    await fs.writeFile(target, newContent, 'utf-8');
-    yield { type: 'tool_result', tool: 'patch_file', success: true, file_path: filePath, message: 'File patched successfully: ' + filePath };
+    async function performLockedPatch() {
+      if (!existsSync(target)) {
+        return { success: false, conflict: true, message: 'Conflict: ' + filePath + ' was deleted on disk before patch.' };
+      }
+      var currentDiskContent = '';
+      try {
+        currentDiskContent = await fs.readFile(target, 'utf-8');
+      } catch (readErr) {
+        return { success: false, message: 'Failed to read file under lock: ' + readErr.message };
+      }
+
+      var currentHash = computeSha256(currentDiskContent);
+      if (currentHash !== originalHash) {
+        return {
+          success: false,
+          conflict: true,
+          message: 'Conflict: ' + filePath + ' has changed on disk since this diff was created. Please review the newest file content.'
+        };
+      }
+
+      var cpId = null;
+      try {
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Patched: ' + filePath);
+      } catch (cpErr) {
+        return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
+      }
+
+      if (!cpId) {
+        return { success: false, message: 'Checkpoint creation failed for ' + filePath + '; patch aborted for safety.' };
+      }
+
+      await fs.writeFile(target, newContent, 'utf-8');
+
+      try {
+        await projectKnowledge.touchFile(filePath);
+      } catch (_) {}
+
+      return { success: true, checkpointId: cpId };
+    }
+
+    var patchResult = await fileLockManager.withFileLock(target, performLockedPatch);
+    if (!patchResult || !patchResult.success) {
+      var patchErrMsg = patchResult && patchResult.message ? patchResult.message : 'Patch failed under file lock.';
+      yield { type: 'tool_result', tool: 'patch_file', success: false, file_path: filePath, message: patchErrMsg, conflict: patchResult && patchResult.conflict };
+      return;
+    }
+
+    yield { type: 'tool_result', tool: 'patch_file', success: true, file_path: filePath, message: 'File patched successfully: ' + filePath, checkpoint_id: patchResult.checkpointId };
   } catch (e) {
     yield { type: 'tool_result', tool: 'patch_file', success: false, message: e.message };
   }
 }
 
-async function* web_request(args, workspace) {
+function isPrivateIpAddress(ip) {
+  if (!ip) return true;
+  var cleanIp = ip.toLowerCase().replace(/^::ffff:/, '');
+
+  if (net.isIPv4(cleanIp)) {
+    var rawParts = cleanIp.split('.');
+    var parts = [];
+    for (var p = 0; p < rawParts.length; p++) {
+      parts.push(Number(rawParts[p]));
+    }
+    // 0.0.0.0/8
+    if (parts[0] === 0) return true;
+    // 10.0.0.0/8
+    if (parts[0] === 10) return true;
+    // 127.0.0.0/8 (loopback)
+    if (parts[0] === 127) return true;
+    // 169.254.0.0/16 (link-local & cloud metadata)
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    // 172.16.0.0/12 (private)
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    // 192.168.0.0/16 (private)
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    // 100.64.0.0/10 (CGNAT)
+    if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+    // Broadcast
+    if (parts[0] === 255 && parts[1] === 255 && parts[2] === 255 && parts[3] === 255) return true;
+    return false;
+  }
+
+  if (net.isIPv6(cleanIp)) {
+    // ::1 loopback, :: unspecified
+    if (cleanIp === '::1' || cleanIp === '::') return true;
+    // fe80::/10 link-local
+    if (cleanIp.startsWith('fe8') || cleanIp.startsWith('fe9') || cleanIp.startsWith('fea') || cleanIp.startsWith('feb')) return true;
+    // fc00::/7 unique local (ULA)
+    if (cleanIp.startsWith('fc') || cleanIp.startsWith('fd')) return true;
+    return false;
+  }
+
+  return true;
+}
+
+async function isSsrfBlockedUrl(urlString) {
+  try {
+    var parsed = new URL(urlString);
+    var protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'http:' && protocol !== 'https:') {
+      return { blocked: true, reason: 'Invalid protocol: ' + protocol };
+    }
+
+    var hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '0.0.0.0') {
+      return { blocked: true, reason: 'Localhost is blocked' };
+    }
+
+    // If hostname is directly an IP
+    if (net.isIP(hostname)) {
+      if (isPrivateIpAddress(hostname)) {
+        return { blocked: true, reason: 'Private IP (' + hostname + ') is blocked' };
+      }
+      return { blocked: false };
+    }
+
+    // Resolve DNS records to verify resolved destination IPs
+    var lookupRes = await dns.lookup(hostname, { all: true });
+    if (!lookupRes || lookupRes.length === 0) {
+      return { blocked: true, reason: 'DNS resolution failed for ' + hostname };
+    }
+
+    for (var i = 0; i < lookupRes.length; i++) {
+      var addr = lookupRes[i].address;
+      if (isPrivateIpAddress(addr)) {
+        return { blocked: true, reason: 'Resolved to private IP (' + addr + ')' };
+      }
+    }
+
+    return { blocked: false };
+  } catch (err) {
+    return { blocked: true, reason: 'URL/DNS validation error: ' + err.message };
+  }
+}
+
+async function* web_request(args, context) {
   var url = args.url || '';
-  var method = args.method || 'GET';
+  var method = (args.method || 'GET').toUpperCase();
   var headers = args.headers || {};
   var body = args.body || null;
 
   yield { type: 'action', action: 'web_request', message: 'HTTP Request: ' + method + ' ' + url };
+
+  var ssrfCheck = await isSsrfBlockedUrl(url);
+  if (ssrfCheck.blocked) {
+    yield { type: 'tool_result', tool: 'web_request', success: false, message: 'SSRF Protection: Access blocked (' + ssrfCheck.reason + ').' };
+    return;
+  }
+
+  var abortCtrl = new AbortController();
+  var timeoutTimer = setTimeout(function onNetTimeout() {
+    abortCtrl.abort();
+  }, 15000); // 15s bounded timeout
+
+  var sessionSignal = (context && context.signal) || null;
+  function handleSessionAbort() {
+    abortCtrl.abort();
+  }
+  if (sessionSignal) {
+    if (sessionSignal.aborted || sessionSignal.stopped) {
+      abortCtrl.abort();
+    } else if (sessionSignal.addEventListener) {
+      sessionSignal.addEventListener('abort', handleSessionAbort);
+    }
+  }
+
   try {
     var options = {
       method: method,
-      headers: headers
+      headers: headers,
+      redirect: 'manual',
+      signal: abortCtrl.signal
     };
     if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       options.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
@@ -616,7 +935,43 @@ async function* web_request(args, workspace) {
       }
     }
 
-    var res = await fetch(url, options);
+    var currentUrl = url;
+    var res = null;
+    var hops = 0;
+    var maxHops = 5;
+
+    while (hops <= maxHops) {
+      res = await fetch(currentUrl, options);
+
+      // Handle redirects manually to revalidate destination URL against SSRF
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        hops++;
+        var location = res.headers.get('location');
+        var redirectUrl = new URL(location, currentUrl).toString();
+
+        var redirectCheck = await isSsrfBlockedUrl(redirectUrl);
+        if (redirectCheck.blocked) {
+          yield { type: 'tool_result', tool: 'web_request', success: false, message: 'SSRF Protection: Redirect destination blocked (' + redirectCheck.reason + ').' };
+          return;
+        }
+
+        currentUrl = redirectUrl;
+        if (res.status === 307 || res.status === 308) {
+          // Preserve original method and body for 307 and 308 redirects
+        } else if (res.status === 303 || ((res.status === 301 || res.status === 302) && options.method === 'POST')) {
+          options.method = 'GET';
+          delete options.body;
+        }
+        continue;
+      }
+      break;
+    }
+
+    if (hops > maxHops) {
+      yield { type: 'tool_result', tool: 'web_request', success: false, message: 'Too many redirects (exceeded limit of ' + maxHops + ').' };
+      return;
+    }
+
     var resText = await res.text();
     var maxBodyLen = 8000;
     var truncated = false;
@@ -635,58 +990,130 @@ async function* web_request(args, workspace) {
       type: 'tool_result',
       tool: 'web_request',
       success: true,
-      url: url,
+      url: currentUrl,
       status: res.status,
       status_text: res.statusText,
       headers: resHeaders,
       content: resText + (truncated ? '\n\n[Response body truncated for brevity]' : '')
     };
   } catch (e) {
-    yield { type: 'tool_result', tool: 'web_request', success: false, message: e.message };
+    yield { type: 'tool_result', tool: 'web_request', success: false, message: 'HTTP Request failed: ' + e.message };
+  } finally {
+    clearTimeout(timeoutTimer);
+    if (sessionSignal && sessionSignal.removeEventListener) {
+      sessionSignal.removeEventListener('abort', handleSessionAbort);
+    }
   }
 }
 
-async function* update_plan(args, workspace) {
+async function* update_plan(args, context) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
 
-  var plan = args.plan || '';
-  if (!plan) {
+  var planText = args.plan || '';
+  if (!planText) {
     yield { type: 'tool_result', tool: 'update_plan', success: false, message: 'Missing required parameter: plan' };
     return;
   }
 
-  yield {
-    type: 'tool_result',
-    tool: 'update_plan',
-    success: true,
-    plan: plan,
-    message: 'Plan updated successfully.'
-  };
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
+
+  try {
+    var activePlan = runtime.getCurrentPlan(sessionId);
+    if (activePlan) {
+      var lines = planText.split('\n');
+      for (var l = 0; l < lines.length; l++) {
+        var line = lines[l].trim();
+        var doneMatch = line.match(/^[-*]\s*\[([ xX!→])\]\s*(?:#?([0-9a-zA-Z_-]+)\s*:?)?\s*(.*)$/);
+        if (doneMatch) {
+          var mark = doneMatch[1];
+          var taskId = doneMatch[2];
+          var desc = doneMatch[3];
+          var status = (mark === 'x' || mark === 'X') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
+          if (taskId) {
+            planningManager.updateTaskStatus(activePlan.id, taskId, status, desc, sessionId);
+            goalTracker.updateGoalStatus(taskId, status, sessionId);
+          }
+        }
+      }
+      activePlan.rawPlan = planText;
+      runtime.updatePlan(activePlan);
+    } else {
+      var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
+      var planObj = planningEngine.buildPlan(analysis, sessionId);
+      planObj.rawPlan = planText;
+      runtime.registerPlan(planObj);
+      runtime.setCurrentPlan(planObj, sessionId);
+      goalTracker.syncWithPlan(planObj, sessionId);
+    }
+
+    yield {
+      type: 'tool_result',
+      tool: 'update_plan',
+      success: true,
+      plan: planText,
+      message: 'Plan updated and synced with planning engine.'
+    };
+  } catch (e) {
+    yield {
+      type: 'tool_result',
+      tool: 'update_plan',
+      success: false,
+      message: 'Plan update failed: ' + e.message
+    };
+  }
 }
 
-async function* create_plan(args, workspace) {
+async function* create_plan(args, context) {
   yield { type: 'action', action: 'create_plan', message: 'Creating execution plan' };
 
-  var plan = args.plan || '';
-  if (!plan) {
+  var planText = args.plan || '';
+  if (!planText) {
     yield { type: 'tool_result', tool: 'create_plan', success: false, message: 'Missing required parameter: plan' };
     return;
   }
 
-  yield {
-    type: 'tool_result',
-    tool: 'create_plan',
-    success: true,
-    plan: plan,
-    message: 'Plan created successfully.'
-  };
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
+
+  try {
+    var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
+    var planObj = planningEngine.buildPlan(analysis, sessionId);
+    planObj.rawPlan = planText;
+    runtime.registerPlan(planObj);
+    runtime.setCurrentPlan(planObj, sessionId);
+    goalTracker.syncWithPlan(planObj, sessionId);
+
+    yield {
+      type: 'tool_result',
+      tool: 'create_plan',
+      success: true,
+      plan: planText,
+      planObject: planObj,
+      message: 'Plan created and registered in planning engine successfully.'
+    };
+  } catch (err) {
+    yield {
+      type: 'tool_result',
+      tool: 'create_plan',
+      success: false,
+      message: 'Plan creation failed: ' + err.message
+    };
+  }
 }
 
 
 // ── query_project_db — Execute a SELECT query on the SQLite project database ─────
 async function* query_project_db(args, workspace) {
-  var sqlQuery = args.sql_query || '';
+  var sqlQuery = String(args.sql_query || '').trim();
   yield { type: 'action', action: 'query_project_db', message: 'Querying project database: ' + sqlQuery };
+
+  var upper = sqlQuery.toUpperCase();
+  if (!upper.startsWith('SELECT') || upper.includes('INSERT ') || upper.includes('UPDATE ') || upper.includes('DELETE ') || upper.includes('DROP ') || upper.includes('ALTER ') || upper.includes('ATTACH ') || upper.includes('PRAGMA ')) {
+    yield { type: 'tool_result', tool: 'query_project_db', success: false, message: 'Only SELECT queries are permitted on the project database.' };
+    return;
+  }
+
   try {
     var results = projectKnowledge.queryProjectDb(sqlQuery);
     yield {
@@ -834,7 +1261,9 @@ export function registerAllTools() {
     category: 'terminal',
     description: 'Send text input to the active terminal command.',
     parameters: { text: { type: 'string', description: 'The text to send' } },
-    required: ['text']
+    required: ['text'],
+    dangerous: true,
+    needsPermission: true
   });
   reg('stop_terminal', stop_terminal, {
     category: 'terminal',
@@ -854,7 +1283,9 @@ export function registerAllTools() {
     category: 'utility',
     description: 'Perform an HTTP request.',
     parameters: { url: { type: 'string', description: 'The URL' }, method: { type: 'string', description: "GET/POST/PUT/DELETE" }, headers: { type: 'object', description: 'HTTP headers' }, body: { type: 'string', description: 'Request body' } },
-    required: ['url']
+    required: ['url'],
+    dangerous: true,
+    needsPermission: true
   });
 
   // ── Planning ───────────────────────────────────────

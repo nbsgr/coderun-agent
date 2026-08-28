@@ -5,8 +5,6 @@ import * as path from 'path';
 
 /**
  * Extract code symbols from a file string based on language extension.
- * @param {string} content - The file content
- * @param {string} filePath - Path of the file (to detect language)
  * @returns {Array<{name: string, type: string, line: number}>}
  */
 export function parseSymbols(content, filePath) {

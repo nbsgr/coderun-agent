@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agents/agent.js';
 import * as agentLoop from './agents/agentLoop.js';
@@ -16,12 +17,14 @@ import * as permissions from './tools/permissions.js';
 import * as projectKnowledge from './context/projectKnowledge.js';
 import * as checkpointManager from './tools/checkpointManager.js';
 import * as diffManager from './tools/diffManager.js';
+import * as pathSecurity from './tools/pathSecurity.js';
 import * as workspaceIntelligence from './context/workspaceIntelligence.js';
 import { PROVIDER_DEFAULTS } from './agents/constants.js';
 import * as runtime from './agents/runtime.js';
 import * as events from './agents/events.js';
 import { buildCompactCheckpoint } from './context/compactionManager.js';
 import * as executionTrace from './execution/executionTrace.js';
+import * as rulesLoader from './context/rulesLoader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,7 +33,7 @@ let statusBarItem;
 let currentWebview = null;
 let sidebarWebviewView = null;
 let extensionContext = null;
-let currentAbortController = null;
+var abortControllers = {};
 
 // =====================================================
 // TOP LEVEL EVENT HANDLERS / HELPER FUNCTIONS
@@ -91,8 +94,9 @@ function sendAgentEventToWebview(webview, event) {
   webview.postMessage({ type: 'agentEvent', event: event });
 }
 
-function handleAskPermission(webview, toolName, args, id) {
-  var chatDecision = permissions.getAlwaysDecision(toolName);
+function handleAskPermission(webview, toolName, args, id, sessionId) {
+  var sid = sessionId || 'default';
+  var chatDecision = permissions.getAlwaysDecision(toolName, sid);
   if (chatDecision) {
     webview.postMessage({
       type: 'agentEvent',
@@ -101,6 +105,7 @@ function handleAskPermission(webview, toolName, args, id) {
         tool: toolName,
         arguments: args,
         id: id,
+        sessionId: sid,
         autoResolved: true,
         decision: chatDecision
       }
@@ -113,10 +118,11 @@ function handleAskPermission(webview, toolName, args, id) {
       type: 'requestPermission',
       tool: toolName,
       arguments: args,
-      id: id
+      id: id,
+      sessionId: sid
     }
   });
-  return permissions.requestPermission(toolName, args, id, null);
+  return permissions.requestPermission(toolName, args, id, null, sid);
 }
 
 function handleAgentEvent(webview, event) {
@@ -196,8 +202,12 @@ export async function activate(context) {
     vscode.commands.registerCommand('coderun.openSidebar', handleOpenSidebarCommand)
   );
 
+  function onOpenPanelCommand() {
+    handleOpenPanelCommand(context);
+  }
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('coderun.openPanel', handleOpenPanelCommand.bind(null, context))
+    vscode.commands.registerCommand('coderun.openPanel', onOpenPanelCommand)
   );
 
   context.subscriptions.push(
@@ -225,14 +235,28 @@ export async function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(handleConfigurationChangeEvent)
   );
+
+  // Rules file watcher
+  var rulesWatcher = vscode.workspace.createFileSystemWatcher('**/.coderunrules');
+  rulesWatcher.onDidChange(handleRulesChanged);
+  rulesWatcher.onDidCreate(handleRulesChanged);
+  rulesWatcher.onDidDelete(handleRulesChanged);
+  context.subscriptions.push(rulesWatcher);
+}
+
+function handleRulesChanged() {
+  rulesLoader.invalidateCache();
 }
 
 // =====================================================
 // SIDEBAR WEBVIEW PROVIDER
 // =====================================================
 function createSidebarWebviewViewProvider(extensionUri) {
+  function resolveWebviewView(webviewView, context, token) {
+    handleResolveWebviewView(extensionUri, webviewView, context, token);
+  }
   return {
-    resolveWebviewView: handleResolveWebviewView.bind(null, extensionUri)
+    resolveWebviewView: resolveWebviewView
   };
 }
 
@@ -247,8 +271,10 @@ function handleResolveWebviewView(extensionUri, webviewView, context, token) {
 
   webviewView.webview.html = getWebviewHtml(webviewView.webview, extensionUri);
 
-  var receiveCb = handleFrontendMessageReceive.bind(null, webviewView.webview);
-  webviewView.webview.onDidReceiveMessage(receiveCb);
+  function onSidebarMessageReceive(msg) {
+    handleFrontendMessageReceive(webviewView.webview, msg);
+  }
+  webviewView.webview.onDidReceiveMessage(onSidebarMessageReceive);
 
   currentWebview = webviewView.webview;
 }
@@ -270,8 +296,10 @@ function createOrShowPanel(extensionUri) {
 
   panel.webview.html = getWebviewHtml(panel.webview, extensionUri);
 
-  var receiveCb = handleFrontendMessageReceive.bind(null, panel.webview);
-  panel.webview.onDidReceiveMessage(receiveCb);
+  function onPanelMessageReceive(msg) {
+    handleFrontendMessageReceive(panel.webview, msg);
+  }
+  panel.webview.onDidReceiveMessage(onPanelMessageReceive);
 
   currentWebview = panel.webview;
 }
@@ -338,12 +366,7 @@ function getWebviewHtml(webview, extensionUri) {
 }
 
 function getNonce() {
-  var text = '';
-  var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (var i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  return crypto.randomBytes(16).toString('hex');
 }
 
 // =====================================================
@@ -442,9 +465,11 @@ async function handleFrontendMessage(message, webview) {
       var history = message.history;
       var workspaceFolder = message.workspaceFolder;
       var plan = message.plan;
+      var convSessionId = message.conversationId || message.sessionId || (history && history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
+
       if (!history || history.length === 0) {
-        terminalManager.resetTerminal();
-        permissions.resetChatDecisions();
+        terminalManager.resetTerminal(convSessionId);
+        permissions.resetChatDecisions(convSessionId);
       }
 
       var providerName = message.provider || '';
@@ -477,16 +502,27 @@ async function handleFrontendMessage(message, webview) {
         break;
       }
 
-      terminalManager.setSendEventCallback(sendAgentEventToWebview.bind(null, webview));
+      function onSendTerminalEvent(ev) {
+        sendAgentEventToWebview(webview, ev);
+      }
+      terminalManager.setSendEventCallback(onSendTerminalEvent, convSessionId);
 
-      var convSessionId = message.conversationId || message.sessionId || (history && history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
-
-      currentAbortController = { stopped: false };
-      var abortCtrl = currentAbortController;
+      abortControllers[convSessionId] = new AbortController();
+      var abortCtrl = abortControllers[convSessionId];
+      abortCtrl.stopped = false;
 
       try {
         console.log('[EXTENSION] Calling runAgent for sessionId:', convSessionId);
-        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, handleAgentEvent.bind(null, webview), handleAskPermission.bind(null, webview), { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: !!message.isContinuation });
+
+        function onAgentEvent(ev) {
+          handleAgentEvent(webview, ev);
+        }
+
+        function onAskPermission(tool, args, tcId, sendEv, sId) {
+          return handleAskPermission(webview, tool, args, tcId, sId || convSessionId);
+        }
+
+        await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, onAgentEvent, onAskPermission, { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: !!message.isContinuation });
         console.log('[EXTENSION] runAgent completed');
         if (extensionContext && extensionContext.globalStorageUri) {
           try {
@@ -511,39 +547,57 @@ async function handleFrontendMessage(message, webview) {
         }
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: errMsg } });
       } finally {
-        console.log('[EXTENSION] runAgent finally block');
-        if (currentAbortController === abortCtrl) currentAbortController = null;
+        console.log('[EXTENSION] runAgent finally block for sessionId:', convSessionId);
+        delete abortControllers[convSessionId];
       }
       break;
     }
 
     case 'stopChat': {
-      if (currentAbortController) {
-        currentAbortController.stopped = true;
+      var stopSessionId = message.sessionId || message.conversationId || '';
+      if (stopSessionId) {
+        if (abortControllers[stopSessionId]) {
+          try { abortControllers[stopSessionId].abort(); } catch (_) {}
+          abortControllers[stopSessionId].stopped = true;
+        }
+        permissions.cancelSessionPending(stopSessionId);
+        diffManager.cancelSession(stopSessionId);
+        terminalManager.stopTerminal(stopSessionId);
+      } else {
+        for (var sidKey in abortControllers) {
+          if (abortControllers[sidKey]) {
+            try { abortControllers[sidKey].abort(); } catch (_) {}
+            abortControllers[sidKey].stopped = true;
+          }
+        }
+        permissions.cancelAllPermissions();
+        diffManager.cancelAll();
+        terminalManager.dispose();
       }
-      permissions.cancelAllPermissions();
-      diffManager.cancelAll();
       break;
     }
 
     case 'permissionResponse': {
+      var respSessionId = message.sessionId || message.conversationId || 'default';
       permissions.resolvePermission(
         message.toolCallId,
         !!message.approved,
-        { always: !!message.always, tool: message.tool }
+        { always: !!message.always, tool: message.tool, toolName: message.tool, sessionId: respSessionId },
+        respSessionId
       );
       break;
     }
 
     case 'clearPermissionDecision': {
+      var clearSessionId = message.sessionId || message.conversationId;
       if (message.tool) {
-        permissions.clearAlwaysDecision(message.tool);
+        permissions.clearAlwaysDecision(message.tool, clearSessionId);
       } else {
-        permissions.clearAlwaysDecision();
+        permissions.clearAlwaysDecision(null, clearSessionId);
       }
       webview.postMessage({
         type: 'permissionState',
-        decisions: permissions.listAlwaysDecisions()
+        decisions: permissions.listAlwaysDecisions(clearSessionId)
       });
       break;
     }
@@ -554,22 +608,26 @@ async function handleFrontendMessage(message, webview) {
     }
 
     case 'confirmDelete': {
-      var confirmCb = handleConfirmDeleteResult.bind(null, webview, message.id);
+      function onConfirmDelete(res) {
+        handleConfirmDeleteResult(webview, message.id, res);
+      }
       vscode.window.showWarningMessage(
         'Delete this conversation?',
         { modal: true },
         'Delete'
-      ).then(confirmCb);
+      ).then(onConfirmDelete);
       break;
     }
 
     case 'confirmClearAll': {
-      var clearCb = handleConfirmClearAllResult.bind(null, webview);
+      function onConfirmClearAll(res) {
+        handleConfirmClearAllResult(webview, res);
+      }
       vscode.window.showWarningMessage(
         'Delete ALL conversations? This cannot be undone.',
         { modal: true },
         'Delete All'
-      ).then(clearCb);
+      ).then(onConfirmClearAll);
       break;
     }
 
@@ -812,19 +870,24 @@ async function handleFrontendMessage(message, webview) {
     case 'openFile': {
       if (message.path) {
         var wsPath = getWorkspaceFolder();
-        var fullPath = path.join(wsPath, message.path);
-        vscode.workspace.openTextDocument(fullPath).then(handleOpenTextDocumentResolve, handleOpenTextDocumentReject);
+        var safe = pathSecurity.resolveSafePath(message.path, wsPath);
+        if (safe.safe) {
+          vscode.workspace.openTextDocument(safe.canonicalPath).then(handleOpenTextDocumentResolve, handleOpenTextDocumentReject);
+        } else {
+          console.warn('[CODERUN] Blocked unsafe openFile path:', message.path, safe.error);
+        }
       }
       break;
     }
 
     case 'undoFile': {
       var wsPath = getWorkspaceFolder();
+      var undoSessionId = message.sessionId || message.conversationId;
       var result;
       if (message.path) {
-        result = await checkpointManager.undoFile(message.path, wsPath, null);
+        result = await checkpointManager.undoFile(message.path, wsPath, undoSessionId);
       } else {
-        result = await checkpointManager.undoLast(wsPath, null);
+        result = await checkpointManager.undoLast(wsPath, undoSessionId);
       }
       if (result && result.success) {
         vscode.window.showInformationMessage(result.message);
@@ -840,7 +903,8 @@ async function handleFrontendMessage(message, webview) {
     case 'undoCheckpoint': {
       if (message.filePath) {
         var wsPath = getWorkspaceFolder();
-        var result = await checkpointManager.undoFile(message.filePath, wsPath, null);
+        var undoSessionId = message.sessionId || message.conversationId;
+        var result = await checkpointManager.undoFile(message.filePath, wsPath, undoSessionId);
         webview.postMessage({
           type: 'undoCheckpointResult',
           filePath: message.filePath,
@@ -856,9 +920,10 @@ async function handleFrontendMessage(message, webview) {
 
     case 'acceptDiff': {
       var wsPath = getWorkspaceFolder();
-      var result = await diffManager.applyPatch(message.diffId, wsPath);
+      var diffSessionId = message.sessionId || message.conversationId;
+      var result = await diffManager.applyPatch(message.diffId, wsPath, diffSessionId);
       if (result.success) {
-        agentLoop.resolveDiff(message.diffId, true);
+        agentLoop.resolveDiff(message.diffId, true, diffSessionId);
       }
       webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
       break;
@@ -866,11 +931,12 @@ async function handleFrontendMessage(message, webview) {
 
     case 'acceptAllDiffs': {
       var wsPath = getWorkspaceFolder();
-      var results = await diffManager.acceptAll(wsPath);
+      var diffSessionId = message.sessionId || message.conversationId;
+      var results = await diffManager.acceptAll(wsPath, diffSessionId);
       for (var ri = 0; ri < results.length; ri++) {
         var r = results[ri];
         if (r.success) {
-          agentLoop.resolveDiff(r.diffId || r.message, true);
+          agentLoop.resolveDiff(r.diffId || r.message, true, diffSessionId);
         }
       }
       webview.postMessage({ type: 'diffAllResult', results: results });
@@ -879,18 +945,20 @@ async function handleFrontendMessage(message, webview) {
 
     case 'rejectDiff': {
       if (message.diffId) {
-        var result = diffManager.rejectPatch(message.diffId);
-        agentLoop.resolveDiff(message.diffId, false);
+        var diffSessionId = message.sessionId || message.conversationId;
+        var result = diffManager.rejectPatch(message.diffId, diffSessionId);
+        agentLoop.resolveDiff(message.diffId, false, diffSessionId);
         webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
       }
       break;
     }
 
     case 'rejectAllDiffs': {
-      var results = diffManager.rejectAll();
+      var diffSessionId = message.sessionId || message.conversationId;
+      var results = diffManager.rejectAll(diffSessionId);
       for (var ri = 0; ri < results.length; ri++) {
         var r = results[ri];
-        agentLoop.resolveDiff(r.diffId, false);
+        agentLoop.resolveDiff(r.diffId, false, diffSessionId);
       }
       webview.postMessage({ type: 'diffAllResult', results: results });
       break;
@@ -899,7 +967,53 @@ async function handleFrontendMessage(message, webview) {
     case 'openDiffEditor': {
       if (message.diffId) {
         var wsPath = getWorkspaceFolder();
-        diffManager.openDiffEditor(message.diffId, wsPath);
+        var diffSessionId = message.sessionId || message.conversationId;
+        diffManager.openDiffEditor(message.diffId, wsPath, diffSessionId);
+      }
+      break;
+    }
+
+    case 'loadRules': {
+      var wsPath = getWorkspaceFolder();
+      var paths = rulesLoader.getRulesPaths(wsPath);
+      try {
+        var globalRules = await rulesLoader.readRulesFile(paths.globalPath);
+        var workspaceRules = wsPath ? await rulesLoader.readRulesFile(paths.workspacePath) : '';
+        webview.postMessage({
+          type: 'rulesLoaded',
+          globalRules: globalRules,
+          workspaceRules: workspaceRules,
+          globalPath: paths.globalPath,
+          workspacePath: paths.workspacePath,
+          hasWorkspace: !!wsPath
+        });
+      } catch (err) {
+        console.error('[CODERUN] Failed to load rules:', err);
+      }
+      break;
+    }
+
+    case 'saveRules': {
+      var wsPath = getWorkspaceFolder();
+      var paths = rulesLoader.getRulesPaths(wsPath);
+      var targetPath = message.level === 'global' ? paths.globalPath : paths.workspacePath;
+      if (targetPath) {
+        try {
+          await rulesLoader.writeRulesFile(targetPath, message.content);
+          webview.postMessage({
+            type: 'rulesSaved',
+            level: message.level,
+            success: true
+          });
+        } catch (err) {
+          console.error('[CODERUN] Failed to save rules:', err);
+          webview.postMessage({
+            type: 'rulesSaved',
+            level: message.level,
+            success: false,
+            error: err ? err.message : 'Unknown error'
+          });
+        }
       }
       break;
     }
@@ -1011,10 +1125,12 @@ async function refreshAllProviderModels(webview) {
 // =====================================================
 // DEACTIVATE
 // =====================================================
-export function deactivate() {
+export async function deactivate() {
   if (statusBarItem) statusBarItem.dispose();
   terminalManager.dispose();
   permissions.cancelAllPermissions();
-  projectKnowledge.dispose();
+  try {
+    await projectKnowledge.dispose();
+  } catch (_) {}
   currentAbortController = null;
 }

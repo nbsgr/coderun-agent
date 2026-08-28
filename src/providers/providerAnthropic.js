@@ -1,7 +1,8 @@
 import { handleApiResponseError, safeReadJson } from '../agents/utils.js';
 
-export async function* chat(config, messages, tools) {
-  var url = config.baseUrl.replace(/\/+$/, '') + '/messages';
+export async function* chat(config, messages, tools, reqOpts) {
+  var baseUrl = (config.baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
+  var url = baseUrl + '/messages';
   var headers = {
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey,
@@ -41,7 +42,8 @@ export async function* chat(config, messages, tools) {
   var response = await fetch(url, {
     method: 'POST',
     headers: headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: reqOpts && reqOpts.signal
   });
 
   if (!response.ok) {
@@ -77,7 +79,8 @@ export async function* chat(config, messages, tools) {
 
 export async function listModels(config) {
   if (config.provider && config.provider.startsWith('compatible')) {
-    var url = config.baseUrl.replace(/\/+$/, '') + '/models';
+    var baseUrl = (config.baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
+    var url = baseUrl + '/models';
     var headers = {};
     if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
     try {

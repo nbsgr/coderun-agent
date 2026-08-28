@@ -49,7 +49,7 @@ export function setStorageAdapter(adapter) {
 // ═══════════════════════════════════════════════════════════
 
 function generatePlanId() {
-  return '1';
+  return 'plan_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 }
 
 function generateTaskId(phaseOrder, taskOrder) {
@@ -71,9 +71,6 @@ var VALID_PHASE_STATUSES = new Set(['pending', 'active', 'completed', 'failed', 
  * Analyze a user request and produce a structured analysis result.
  * This is called BEFORE any plan is created.
  *
- * @param {string} goal - User's request text
- * @param {object} context - From contextManager.gatherContext()
- * @param {string} workspace - Absolute workspace path
  * @returns {object} AnalysisResult
  */
 export function analyzeRequest(goal, context, workspace) {
@@ -454,8 +451,6 @@ function reindexTasks(plan) {
 /**
  * Build a hierarchical Plan from an analysis result.
  *
- * @param {object} analysis  - Result from analyzeRequest()
- * @param {string} sessionId - Chat session ID
  * @returns {object} Plan
  */
 export function buildPlan(analysis, sessionId) {
@@ -525,7 +520,10 @@ export function updatePlanStatus(planId, status) {
  * Update a specific task's status and optionally record an observation.
  * Returns { success, blockedTasks, readyTasks }.
  */
-export function updateTaskStatus(planId, taskId, status, observation) {
+export function updateTaskStatus(planId, taskId, status, observation, sessionId) {
+  if (status === 'in_progress') {
+    status = 'active';
+  }
   if (!VALID_TASK_STATUSES.has(status)) {
     console.warn('[PLAN ENGINE] Invalid task status:', status);
     return { success: false, blockedTasks: [], readyTasks: [] };
@@ -534,7 +532,7 @@ export function updateTaskStatus(planId, taskId, status, observation) {
   var plan = loadPlan(planId);
   if (!plan) {
     try {
-      var currentRuntimePlan = runtime.getCurrentPlan();
+      var currentRuntimePlan = runtime.getCurrentPlan(sessionId);
       if (currentRuntimePlan && (currentRuntimePlan.id === planId || !planId)) {
         plan = currentRuntimePlan;
       }
@@ -724,11 +722,9 @@ function _getBlockedTasksFromPlan(plan) {
  * Re-plan based on execution observation.
  * Called when the current plan is invalidated by new information.
  *
- * @param {string} planId
- * @param {object} observation - { type, detail, source, revisedGoal? }
  * @returns {object|null} Revised plan or null
  */
-export function replanFromObservation(planId, observation) {
+export function replanFromObservation(planId, observation, workspace) {
   var plan = loadPlan(planId);
   if (!plan) return null;
 
@@ -744,7 +740,8 @@ export function replanFromObservation(planId, observation) {
   });
   // If a revised goal is provided, rebuild phases from the goal
   if (observation.revisedGoal) {
-    var analysis = analyzeRequest(observation.revisedGoal, null, plan.planId);
+    var ws = workspace || plan.workspace || '';
+    var analysis = analyzeRequest(observation.revisedGoal, null, ws);
     var newPhases = buildPhases(analysis);
     // Merge incomplete tasks from old plan with new phases
     plan.phases = mergePhases(plan, newPhases, analysis);

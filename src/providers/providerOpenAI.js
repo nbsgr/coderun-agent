@@ -11,7 +11,7 @@ function createClient(config) {
   return new OpenAI(options);
 }
 
-export async function* chat(config, messages, tools) {
+export async function* chat(config, messages, tools, reqOpts) {
   var client = createClient(config);
   var body = {
     model: config.model,
@@ -21,7 +21,8 @@ export async function* chat(config, messages, tools) {
   };
   if (tools && tools.length) body.tools = tools;
 
-  var stream = await client.chat.completions.create(body);
+  var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
+  var stream = await client.chat.completions.create(body, requestOptions);
 
   for await (var chunk of stream) {
     var parsed = parseChunk(chunk);

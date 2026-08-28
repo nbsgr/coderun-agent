@@ -1,14 +1,15 @@
-// goalTracker.js — Production-grade Goal Tracking Engine
+// goalTracker.js — Production-grade Goal Tracking Engine (Session Scoped)
 // Tracks parent goals, subgoals, active tasks, completion rate, and syncs with planning & memory.
 
 import * as projectKnowledge from './projectKnowledge.js';
 import * as runtime from '../agents/runtime.js';
 import * as memoryManager from './memoryManager.js';
 
-var GOALS_KEY = 'mem_goals';
+var GOALS_KEY = 'mem_goals_';
 
-function loadGoals() {
-  var raw = projectKnowledge.getSetting(GOALS_KEY);
+function loadGoals(sessionId) {
+  var sid = sessionId || 'default';
+  var raw = projectKnowledge.getSetting(GOALS_KEY + sid);
   if (!raw) return { primaryGoal: '', subgoals: [], activeTaskId: '' };
   try {
     return typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -17,14 +18,15 @@ function loadGoals() {
   }
 }
 
-function saveGoals(data) {
-  projectKnowledge.setSetting(GOALS_KEY, JSON.stringify(data));
+function saveGoals(data, sessionId) {
+  var sid = sessionId || 'default';
+  projectKnowledge.setSetting(GOALS_KEY + sid, JSON.stringify(data));
   try {
     var pct = calculateCompletionRate(data.subgoals);
-    runtime.setMemory('goal_completion_pct', pct);
-    runtime.setMemory('active_task_id', data.activeTaskId);
+    runtime.setMemory('goal_completion_pct', pct, sid);
+    runtime.setMemory('active_task_id', data.activeTaskId, sid);
   } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    // Intentionally ignored
   }
 }
 
@@ -43,19 +45,21 @@ function calculateCompletionRate(subgoals) {
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
 
-export function initGoals(primaryGoal) {
+export function initGoals(primaryGoal, sessionId) {
+  var sid = sessionId || 'default';
   var data = {
     primaryGoal: primaryGoal || '',
     subgoals: [],
     activeTaskId: ''
   };
-  saveGoals(data);
-  memoryManager.setCurrentGoal(primaryGoal);
+  saveGoals(data, sid);
+  memoryManager.setCurrentGoal(primaryGoal, sid);
 }
 
-export function syncWithPlan(plan) {
+export function syncWithPlan(plan, sessionId) {
   if (!plan) return;
-  var data = loadGoals();
+  var sid = sessionId || plan.sessionId || 'default';
+  var data = loadGoals(sid);
   data.primaryGoal = plan.goal || data.primaryGoal;
 
   var subgoals = [];
@@ -96,19 +100,20 @@ export function syncWithPlan(plan) {
     }
   }
   if (!active) {
-    for (var i = 0; i < subgoals.length; i++) {
-      if (subgoals[i].status === 'pending') {
-        active = subgoals[i];
+    for (var j = 0; j < subgoals.length; j++) {
+      if (subgoals[j].status === 'pending') {
+        active = subgoals[j];
         break;
       }
     }
   }
   if (active) data.activeTaskId = active.id;
-  saveGoals(data);
+  saveGoals(data, sid);
 }
 
-export function updateGoalStatus(goalId, status) {
-  var data = loadGoals();
+export function updateGoalStatus(goalId, status, sessionId) {
+  var sid = sessionId || 'default';
+  var data = loadGoals(sid);
   var goal = null;
   for (var i = 0; i < data.subgoals.length; i++) {
     if (data.subgoals[i].id === goalId) {
@@ -122,37 +127,38 @@ export function updateGoalStatus(goalId, status) {
       data.activeTaskId = goalId;
     } else if (data.activeTaskId === goalId && (status === 'completed' || status === 'failed' || status === 'skipped')) {
       var next = null;
-      for (var i = 0; i < data.subgoals.length; i++) {
-        var st = data.subgoals[i].status;
+      for (var k = 0; k < data.subgoals.length; k++) {
+        var st = data.subgoals[k].status;
         if (st === 'active' || st === 'in_progress') {
-          next = data.subgoals[i];
+          next = data.subgoals[k];
           break;
         }
       }
       if (!next) {
-        for (var i = 0; i < data.subgoals.length; i++) {
-          if (data.subgoals[i].status === 'pending') {
-            next = data.subgoals[i];
+        for (var m = 0; m < data.subgoals.length; m++) {
+          if (data.subgoals[m].status === 'pending') {
+            next = data.subgoals[m];
             break;
           }
         }
       }
       data.activeTaskId = next ? next.id : '';
     }
-    saveGoals(data);
+    saveGoals(data, sid);
   }
 }
 
-export function getActiveTask() {
-  return loadGoals().activeTaskId;
+export function getActiveTask(sessionId) {
+  return loadGoals(sessionId).activeTaskId;
 }
 
-export function getCompletionPercentage() {
-  return calculateCompletionRate(loadGoals().subgoals);
+export function getCompletionPercentage(sessionId) {
+  return calculateCompletionRate(loadGoals(sessionId).subgoals);
 }
 
-export function getStatusReport() {
-  var activePlan = runtime.getCurrentPlan();
+export function getStatusReport(sessionId) {
+  var sid = sessionId || 'default';
+  var activePlan = runtime.getCurrentPlan(sid);
   if (activePlan && activePlan.phases) {
     var allTasks = [];
     for (var pi = 0; pi < activePlan.phases.length; pi++) {
@@ -190,8 +196,8 @@ export function getStatusReport() {
 
     if (allTasks.length) {
       lines.push('\nTasks:');
-      for (var i = 0; i < allTasks.length; i++) {
-        var t = allTasks[i];
+      for (var j = 0; j < allTasks.length; j++) {
+        var t = allTasks[j];
         var mark = t.status === 'completed' ? '[x]' : t.status === 'failed' ? '[!]' : t.status === 'active' ? '[→]' : '[ ]';
         lines.push('  ' + mark + ' #' + t.id + ' (' + t.status + '): ' + t.description + ' [' + t.phaseName + ']');
       }
@@ -199,23 +205,24 @@ export function getStatusReport() {
     return lines.join('\n');
   }
 
-  var data = loadGoals();
-  var lines = ['## GOAL PROGRESS REPORT'];
-  lines.push('Primary Goal: ' + data.primaryGoal);
-  lines.push('Completion Rate: ' + calculateCompletionRate(data.subgoals) + '%');
-  lines.push('Active Task: ' + (data.activeTaskId ? '#' + data.activeTaskId : 'None'));
+  var data = loadGoals(sid);
+  var lines2 = ['## GOAL PROGRESS REPORT'];
+  lines2.push('Primary Goal: ' + data.primaryGoal);
+  lines2.push('Completion Rate: ' + calculateCompletionRate(data.subgoals) + '%');
+  lines2.push('Active Task: ' + (data.activeTaskId ? '#' + data.activeTaskId : 'None'));
 
   if (data.subgoals.length) {
-    lines.push('\nTasks:');
-    for (var i = 0; i < data.subgoals.length; i++) {
-      var g = data.subgoals[i];
-      var mark = g.status === 'completed' ? '[x]' : g.status === 'failed' ? '[!]' : '[ ]';
-      lines.push('  ' + mark + ' #' + g.id + ' (' + g.status + '): ' + g.text);
+    lines2.push('\nTasks:');
+    for (var k = 0; k < data.subgoals.length; k++) {
+      var g = data.subgoals[k];
+      var mark2 = g.status === 'completed' ? '[x]' : g.status === 'failed' ? '[!]' : '[ ]';
+      lines2.push('  ' + mark2 + ' #' + g.id + ' (' + g.status + '): ' + g.text);
     }
   }
-  return lines.join('\n');
+  return lines2.join('\n');
 }
 
-export function clear() {
-  projectKnowledge.setSetting(GOALS_KEY, null);
+export function clear(sessionId) {
+  var sid = sessionId || 'default';
+  projectKnowledge.setSetting(GOALS_KEY + sid, null);
 }

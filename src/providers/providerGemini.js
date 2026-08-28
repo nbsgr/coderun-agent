@@ -21,8 +21,9 @@ function createClient(config) {
   });
 }
 
-export async function* chat(config, messages, tools) {
+export async function* chat(config, messages, tools, reqOpts) {
   var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : '';
+  var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
   
   if (baseUrl.includes('/openai') || !baseUrl.includes('streamGenerateContent')) {
     try {
@@ -35,7 +36,7 @@ export async function* chat(config, messages, tools) {
       };
       if (tools && tools.length) body.tools = tools;
 
-      var stream = await client.chat.completions.create(body);
+      var stream = await client.chat.completions.create(body, requestOptions);
       for await (var chunk of stream) {
         var parsedOpenAI = parseChunkOpenAI(chunk);
         if (parsedOpenAI.content || parsedOpenAI.thinking || parsedOpenAI.tool_calls || parsedOpenAI.usage) {
@@ -69,7 +70,8 @@ export async function* chat(config, messages, tools) {
   var response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(nativeBody)
+    body: JSON.stringify(nativeBody),
+    signal: reqOpts && reqOpts.signal
   });
 
   if (!response.ok) {

@@ -540,6 +540,7 @@
             '<button id="rail-toggle" class="cr-rail-btn" title="Toggle chats">☰</button>' +
             '<button id="rail-chat" class="cr-rail-btn active" title="Chat">💬</button>' +
             '<button id="rail-settings" class="cr-rail-btn" title="Settings">⚙</button>' +
+            '<button id="rail-rules" class="cr-rail-btn" title="Rules">📋</button>' +
           '</nav>' +
           '<main class="cr-viewport">' +
             '<section id="panel-chat" class="cr-panel active">' +
@@ -585,6 +586,25 @@
                 '<div id="savedProvidersSection" class="cr-saved-providers"></div>' +
               '</div>' +
             '</section>' +
+            '<section id="panel-rules" class="cr-panel">' +
+              '<div class="cr-settings">' +
+                '<h3 class="cr-rules-heading">📋 Rules</h3>' +
+                '<p class="cr-rules-desc">Rules the agent ALWAYS follows. Both are combined — global first, then workspace.</p>' +
+                '<div class="cr-rules-section">' +
+                  '<label class="cr-rules-label">🌐 Global Rules</label>' +
+                  '<span class="cr-rules-sublabel" id="rulesGlobalPath">Apply to ALL your projects (stored at ~/.coderun/rules)</span>' +
+                  '<textarea id="rulesGlobalTextarea" class="cr-rules-textarea" placeholder="Enter rules that apply to every project...&#10;Example: Always use ES modules, never require()."></textarea>' +
+                  '<button id="saveGlobalRulesBtn" class="cr-save-btn">Save Global Rules</button>' +
+                '</div>' +
+                '<hr class="cr-rules-divider">' +
+                '<div class="cr-rules-section">' +
+                  '<label class="cr-rules-label">📂 Workspace Rules</label>' +
+                  '<span class="cr-rules-sublabel" id="rulesWorkspacePath">Apply to this project only (stored at .coderunrules)</span>' +
+                  '<textarea id="rulesWorkspaceTextarea" class="cr-rules-textarea" placeholder="Enter rules for this project only...&#10;Example: Use PostgreSQL syntax for all queries."></textarea>' +
+                  '<button id="saveWorkspaceRulesBtn" class="cr-save-btn">Save Workspace Rules</button>' +
+                '</div>' +
+              '</div>' +
+            '</section>' +
           '</main>' +
         '</div>' +
       '</div>'
@@ -595,6 +615,12 @@
     document.getElementById("rail-toggle").onclick = toggleSidebar;
     document.getElementById("rail-chat").onclick = handleRailChatClick;
     document.getElementById("rail-settings").onclick = handleRailSettingsClick;
+    var railRulesBtn = document.getElementById("rail-rules");
+    if (railRulesBtn) railRulesBtn.onclick = handleRailRulesClick;
+    var saveGlobalBtn = document.getElementById("saveGlobalRulesBtn");
+    if (saveGlobalBtn) saveGlobalBtn.onclick = handleSaveGlobalRules;
+    var saveWorkspaceBtn = document.getElementById("saveWorkspaceRulesBtn");
+    if (saveWorkspaceBtn) saveWorkspaceBtn.onclick = handleSaveWorkspaceRules;
     document.getElementById("newChatBtn").onclick = createNewChat;
     document.getElementById("newChatHeaderBtn").onclick = createNewChat;
     document.getElementById("refreshModelsBtn").onclick = loadModels;
@@ -1193,6 +1219,45 @@
 
   function handleRailSettingsClick() {
     switchPanel("panel-settings", this);
+  }
+
+  function handleRailRulesClick() {
+    switchPanel("panel-rules", this);
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "loadRules" });
+    }
+  }
+
+  function handleSaveGlobalRules() {
+    var textarea = document.getElementById("rulesGlobalTextarea");
+    var content = textarea ? textarea.value : '';
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "saveRules", level: "global", content: content });
+    }
+    showRulesSaveConfirmation("saveGlobalRulesBtn", "Save Global Rules");
+  }
+
+  function handleSaveWorkspaceRules() {
+    var textarea = document.getElementById("rulesWorkspaceTextarea");
+    var content = textarea ? textarea.value : '';
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "saveRules", level: "workspace", content: content });
+    }
+    showRulesSaveConfirmation("saveWorkspaceRulesBtn", "Save Workspace Rules");
+  }
+
+  function showRulesSaveConfirmation(btnId, originalText) {
+    var button = document.getElementById(btnId);
+    if (button) {
+      button.textContent = "Saved ✓";
+      function resetRulesSaveBtn() {
+        var btn = document.getElementById(btnId);
+        if (btn) {
+          btn.textContent = originalText;
+        }
+      }
+      setTimeout(resetRulesSaveBtn, 1500);
+    }
   }
 
   function handleModelInputClick(e) {
@@ -2295,6 +2360,33 @@
           }
         } catch (_) {
           // Intentionally ignore storage write errors
+        }
+      }
+    }
+    if (message.type === "rulesLoaded") {
+      var globalEl = document.getElementById("rulesGlobalTextarea");
+      var wsEl = document.getElementById("rulesWorkspaceTextarea");
+      var wsPathEl = document.getElementById("rulesWorkspacePath");
+      var globalPathEl = document.getElementById("rulesGlobalPath");
+      if (globalEl) globalEl.value = message.globalRules || '';
+      if (wsEl) wsEl.value = message.workspaceRules || '';
+      if (globalPathEl && message.globalPath) {
+        globalPathEl.textContent = 'Apply to ALL your projects (stored at: ' + message.globalPath + ')';
+      }
+      if (wsPathEl) {
+        if (message.hasWorkspace && message.workspacePath) {
+          wsPathEl.textContent = 'Apply to this project only (stored at: ' + message.workspacePath + ')';
+          if (wsEl) wsEl.disabled = false;
+          var wsBtn = document.getElementById("saveWorkspaceRulesBtn");
+          if (wsBtn) wsBtn.disabled = false;
+        } else {
+          wsPathEl.textContent = 'No workspace folder open. Open a workspace folder to set project rules.';
+          if (wsEl) {
+            wsEl.disabled = true;
+            wsEl.placeholder = 'Open a workspace folder to set project rules';
+          }
+          var wsBtnDisabled = document.getElementById("saveWorkspaceRulesBtn");
+          if (wsBtnDisabled) wsBtnDisabled.disabled = true;
         }
       }
     }

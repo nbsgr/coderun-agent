@@ -35,7 +35,6 @@ var ROLES = {
 /**
  * Get system prompt instruction for a specialized role.
  *
- * @param {string} roleName - 'planner' | 'research' | 'coding' | 'testing' | 'review' | 'documentation'
  * @returns {string} The role system prompt snippet
  */
 export function getRolePrompt(roleName) {
@@ -46,8 +45,6 @@ export function getRolePrompt(roleName) {
 /**
  * Map an agentState or active task action to a specialized agent role.
  *
- * @param {string} state      - Current agentState
- * @param {string} taskAction - Current plan task action (e.g. read, write, test, search)
  * @returns {string} Role name
  */
 export function mapStateToRole(state, taskAction) {

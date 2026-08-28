@@ -25,6 +25,9 @@
     "onCommand:coderun.newChat",
     "onCommand:coderun.undoLastEdit"
   ],
+  "scripts": {
+    "test": "node test/runAllTests.js"
+  },
   "main": "./src/extension.js",
   "contributes": {
     "commands": [

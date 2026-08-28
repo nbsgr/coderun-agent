@@ -42,7 +42,7 @@ var _disposables = [];
 var _saveTimer = null;
 
 var _REGISTRY_VERSION = 1;
-var _INDEX_DB_VERSION = 1;
+var _INDEX_DB_VERSION = 2;
 
 // ========================================================
 // PUBLIC API
@@ -95,12 +95,16 @@ export async function initialize(context) {
 export function getStats() {
   if (!_projectDb || !_ready) return { ready: false, tables: {} };
   try {
-    var tableStmt = _projectDb.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    var ALLOWED_TABLES = ['files', 'chunks', 'symbols', 'checkpoints', 'metadata'];
     var tables = {};
-    for (var i = 0; i < tableStmt.length; i++) {
-      var tName = tableStmt[i].values[0][0];
-      var countStmt = _projectDb.exec('SELECT COUNT(*) FROM "' + tName + '"');
-      tables[tName] = countStmt.length ? countStmt[0].values[0][0] : 0;
+    for (var i = 0; i < ALLOWED_TABLES.length; i++) {
+      var tName = ALLOWED_TABLES[i];
+      try {
+        var countStmt = _projectDb.exec('SELECT COUNT(*) FROM ' + tName);
+        tables[tName] = (countStmt.length && countStmt[0].values && countStmt[0].values.length) ? countStmt[0].values[0][0] : 0;
+      } catch (_) {
+        tables[tName] = 0;
+      }
     }
     return { ready: true, tables: tables, workspace: _workspace };
   } catch (e) {
@@ -181,26 +185,35 @@ export function getProjectMetadata() {
 // PLANNING API — DELETED (Plans/Todos are stored in VS Code workspaceState)
 // ═══════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════
-// CHECKPOINT API — consumed by checkpointManager.js
-// ═══════════════════════════════════════════════════════════
+var _fallbackCheckpoints = {};
 
 /**
  * Store a checkpoint.
  */
 export function addCheckpoint(cp) {
-  if (!_projectDb || !_ready || !cp || !cp.id) return;
+  if (!cp || !cp.id) return;
+  _fallbackCheckpoints[cp.id] = {
+    id: cp.id,
+    file_path: cp.file_path || '',
+    content: cp.content || '',
+    created_at: cp.created_at || Date.now(),
+    session_id: cp.session_id || '',
+    label: cp.label || '',
+    existed: cp.existed
+  };
+
+  if (!_projectDb || !_ready) return;
   try {
     var stmt = _projectDb.prepare(`
-      INSERT OR REPLACE INTO checkpoints (id, file_path, content, created_at, session_id, label)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO checkpoints (id, file_path, content, created_at, session_id, label, existed)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.bind([cp.id, cp.file_path || '', cp.content || '', cp.created_at || Date.now(), cp.session_id || '', cp.label || '']);
+    stmt.bind([cp.id, cp.file_path || '', cp.content || '', cp.created_at || Date.now(), cp.session_id || '', cp.label || '', cp.existed ? 1 : 0]);
     stmt.step();
     stmt.free();
     saveProjectDb();
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+  } catch (err) {
+    console.error('[PK] Failed to insert checkpoint into SQLite DB:', err.message);
   }
 }
 
@@ -208,63 +221,100 @@ export function addCheckpoint(cp) {
  * Get checkpoints for a specific file, most recent first.
  */
 export function getCheckpoints(filePath, sessionId) {
-  if (!_projectDb || !_ready || !filePath) return [];
-  try {
-    var sql = 'SELECT * FROM checkpoints WHERE file_path = ?';
-    var params = [filePath];
-    if (sessionId) {
-      sql += ' AND session_id = ?';
-      params.push(sessionId);
-    }
-    sql += ' ORDER BY created_at DESC';
-    var stmt = _projectDb.prepare(sql);
-    stmt.bind(params);
-    var results = [];
+  if (!filePath) return [];
+  var results = [];
+  var seenIds = {};
+
+  if (_projectDb && _ready) {
     try {
-      while (stmt.step()) {
-      results.push(stmt.getAsObject());
+      var sql = 'SELECT * FROM checkpoints WHERE (file_path = ? OR file_path = ?)';
+      var params = [filePath, path.basename(filePath)];
+      if (sessionId) {
+        sql += ' AND session_id = ?';
+        params.push(sessionId);
+      }
+      sql += ' ORDER BY created_at DESC';
+      var stmt = _projectDb.prepare(sql);
+      stmt.bind(params);
+      try {
+        while (stmt.step()) {
+          var row = stmt.getAsObject();
+          seenIds[row.id] = true;
+          results.push(row);
+        }
+      } finally {
+        stmt.free();
+      }
+    } catch (_) {}
+  }
+
+  for (var fId in _fallbackCheckpoints) {
+    if (!seenIds[fId]) {
+      var item = _fallbackCheckpoints[fId];
+      if (item.file_path === filePath || path.basename(item.file_path) === path.basename(filePath) || path.resolve(item.file_path) === path.resolve(filePath)) {
+        if (!sessionId || item.session_id === sessionId) {
+          results.push(item);
+        }
+      }
     }
-    } finally {
-    stmt.free();
-    }
-    return results;
-  } catch (_) { return []; }
+  }
+
+  results.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  return results;
 }
 
 /**
  * Get most recent checkpoints across all files.
  */
 export function getRecentCheckpoints(sessionId, limit) {
-  if (!_projectDb || !_ready) return [];
   limit = limit || 10;
-  try {
-    var sql = 'SELECT * FROM checkpoints';
-    var params = [];
-    if (sessionId) {
-      sql += ' WHERE session_id = ?';
-      params.push(sessionId);
-    }
-    sql += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(limit);
-    var stmt = _projectDb.prepare(sql);
-    stmt.bind(params);
-    var results = [];
+  var results = [];
+  var seenIds = {};
+
+  if (_projectDb && _ready) {
     try {
-      while (stmt.step()) {
-      results.push(stmt.getAsObject());
+      var sql = 'SELECT * FROM checkpoints';
+      var params = [];
+      if (sessionId) {
+        sql += ' WHERE session_id = ?';
+        params.push(sessionId);
+      }
+      sql += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+      var stmt = _projectDb.prepare(sql);
+      stmt.bind(params);
+      try {
+        while (stmt.step()) {
+          var row = stmt.getAsObject();
+          seenIds[row.id] = true;
+          results.push(row);
+        }
+      } finally {
+        stmt.free();
+      }
+    } catch (_) {}
+  }
+
+  for (var fId in _fallbackCheckpoints) {
+    if (!seenIds[fId]) {
+      var item = _fallbackCheckpoints[fId];
+      if (!sessionId || item.session_id === sessionId) {
+        results.push(item);
+      }
     }
-    } finally {
-    stmt.free();
-    }
-    return results;
-  } catch (_) { return []; }
+  }
+
+  results.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  return results.slice(0, limit);
 }
 
 /**
  * Delete a specific checkpoint by ID.
  */
 export function deleteCheckpoint(id) {
-  if (!_projectDb || !_ready || !id) return;
+  if (!id) return;
+  delete _fallbackCheckpoints[id];
+  if (!_projectDb || !_ready) return;
   try {
     _projectDb.run('DELETE FROM checkpoints WHERE id = ?', [id]);
     saveProjectDb();
@@ -312,16 +362,9 @@ export function trimOldestCheckpoints(count) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// FUTURE-PHASE STUBS — return empty / no-op until implemented
+// METADATA & SETTINGS (SQLite-backed)
 // ═══════════════════════════════════════════════════════════
 
-export function getMemoryPrompt() { return ''; }
-export function getDependencyGraph() { return ''; }
-export function getTimelinePrompt(limit) { return ''; }
-export function setMemory(key, value) {}
-export function getMemory(key) { return null; }
-export function addTimelineEntry(eventType, data) {}
-export function addDependency(fromPath, toPath, depType) {}
 export function setSetting(key, value) {
   if (!_projectDb || !_ready) return;
   try {
@@ -359,10 +402,11 @@ export function getSetting(key) {
 export function getIndexStatus() {
   if (!_ready || !_projectDb) return { ready: false, indexed: false };
   try {
-    var stmt = _registryDb.run("SELECT index_status FROM registry WHERE workspace_path = ?", [_workspace]);
+    var escapedWs = (_workspace || '').replace(/'/g, "''");
+    var res = _registryDb.exec("SELECT index_status FROM registry WHERE workspace_path = '" + escapedWs + "'");
     var status = 'pending';
-    if (stmt.length && stmt[0].values.length) {
-      status = stmt[0].values[0][0];
+    if (res && res.length && res[0].values && res[0].values.length) {
+      status = res[0].values[0][0];
     }
     return { ready: _ready, indexed: status === 'ready' };
   } catch (_) {
@@ -488,8 +532,9 @@ export async function touchFile(relPath) {
 export async function reindexWorkspace() {
   if (!_projectDb || !_ready) return;
   try {
-    _projectDb.run('DELETE FROM files');
+    _projectDb.run('DELETE FROM symbols');
     _projectDb.run('DELETE FROM chunks');
+    _projectDb.run('DELETE FROM files');
     saveProjectDb();
   } catch (_) {
     // Intentionally ignored to allow safe execution fallback
@@ -504,13 +549,13 @@ export function save() {
 /**
  * Dispose (cleanup on deactivate).
  */
-export function dispose() {
+export async function dispose() {
   if (_saveTimer) {
     clearTimeout(_saveTimer);
     _saveTimer = null;
   }
-  saveProjectDbNow();
-  saveRegistry();
+  await saveProjectDbNow();
+  await saveRegistry();
   for (var i = 0; i < _disposables.length; i++) {
     _disposables[i].dispose();
   }
@@ -541,6 +586,7 @@ async function openRegistry() {
 
   _registryDb.run('PRAGMA journal_mode=WAL');
   _registryDb.run('PRAGMA synchronous=NORMAL');
+  _registryDb.run('PRAGMA foreign_keys=ON');
   _registryDb.run(`
     CREATE TABLE IF NOT EXISTS registry (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -589,20 +635,20 @@ async function registerWorkspace() {
 
   var now = Date.now();
   var stmt = _registryDb.prepare(`
-    INSERT OR REPLACE INTO registry
-      (workspace_path, workspace_name, workspace_hash, project_folder, db_version, last_opened)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO registry
+      (workspace_path, workspace_name, workspace_hash, project_folder, db_version, first_indexed, last_opened)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_path) DO UPDATE SET
+      workspace_name = excluded.workspace_name,
+      workspace_hash = excluded.workspace_hash,
+      project_folder = excluded.project_folder,
+      db_version = excluded.db_version,
+      last_opened = excluded.last_opened
   `);
-  stmt.bind([_workspace, _projectName, _workspaceHash, _projectFolder, _INDEX_DB_VERSION, now]);
+  stmt.bind([_workspace, _projectName, _workspaceHash, _projectFolder, _INDEX_DB_VERSION, now, now]);
   stmt.step();
   stmt.free();
   saveRegistry();
-
-  var check = _registryDb.run('SELECT first_indexed FROM registry WHERE workspace_path = ?', [_workspace]);
-  if (check.length && check[0].values.length && !Number(check[0].values[0][0])) {
-    _registryDb.run('UPDATE registry SET first_indexed = ? WHERE workspace_path = ?', [now, _workspace]);
-    saveRegistry();
-  }
 }
 
 // ========================================================
@@ -630,6 +676,7 @@ async function openProjectDb() {
 
   _projectDb.run('PRAGMA journal_mode=WAL');
   _projectDb.run('PRAGMA synchronous=NORMAL');
+  _projectDb.run('PRAGMA foreign_keys=ON');
 
   _projectDb.run(`
     CREATE TABLE IF NOT EXISTS files (
@@ -661,8 +708,6 @@ async function openProjectDb() {
     )
   `);
 
-
-
   _projectDb.run(`
     CREATE TABLE IF NOT EXISTS checkpoints (
       id TEXT PRIMARY KEY,
@@ -670,9 +715,29 @@ async function openProjectDb() {
       content TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT 0,
       session_id TEXT NOT NULL DEFAULT '',
-      label TEXT NOT NULL DEFAULT ''
+      label TEXT NOT NULL DEFAULT '',
+      existed INTEGER NOT NULL DEFAULT 1
     )
   `);
+
+  try {
+    var cols = _projectDb.exec("PRAGMA table_info(checkpoints)");
+    var hasExisted = false;
+    if (cols.length && cols[0].values) {
+      for (var ci = 0; ci < cols[0].values.length; ci++) {
+        if (cols[0].values[ci][1] === 'existed') {
+          hasExisted = true;
+          break;
+        }
+      }
+    }
+    if (!hasExisted && cols.length && cols[0].values && cols[0].values.length > 0) {
+      _projectDb.run("ALTER TABLE checkpoints ADD COLUMN existed INTEGER NOT NULL DEFAULT 1");
+      console.log('[PK] Migrated checkpoints table: added existed column');
+    }
+  } catch (mErr) {
+    console.error('[PK] Checkpoints migration error:', mErr.message);
+  }
 
   _projectDb.run(`
     CREATE TABLE IF NOT EXISTS symbols (
@@ -691,6 +756,8 @@ async function openProjectDb() {
   console.log('[PK] Project database ready');
 }
 
+var _saveQueue = Promise.resolve();
+
 function handleSaveTimeout() {
   _saveTimer = null;
   saveProjectDbNow();
@@ -701,18 +768,25 @@ export function saveProjectDb() {
   _saveTimer = setTimeout(handleSaveTimeout, 2000);
 }
 
-export async function saveProjectDbNow() {
-  if (!_projectDb || !_projectDbPath) return;
-  try {
-    var data = _projectDb.export();
+export function saveProjectDbNow() {
+  if (!_projectDb || !_projectDbPath) return Promise.resolve();
+
+  async function performExportAndWrite() {
+    if (!_projectDb || !_projectDbPath) return;
     try {
-      await fs.writeFile(_projectDbPath, Buffer.from(data));
+      var data = _projectDb.export();
+      try {
+        await fs.writeFile(_projectDbPath, Buffer.from(data));
+      } catch (e) {
+        console.error('[PK] Failed to save project DB:', e.message);
+      }
     } catch (e) {
-      console.error('[PK] Failed to save project DB:', e.message);
+      console.error('[PK] Failed to export project DB:', e.message);
     }
-  } catch (e) {
-    console.error('[PK] Failed to export project DB:', e.message);
   }
+
+  _saveQueue = _saveQueue.then(performExportAndWrite, performExportAndWrite);
+  return _saveQueue;
 }
 
 // ========================================================
@@ -740,7 +814,8 @@ async function indexWorkspace() {
 
     if (_registryDb) {
       var now = Date.now();
-      _registryDb.run('UPDATE registry SET last_indexed = ?, index_status = ?, last_opened = ? WHERE workspace_path = ?', [now, 'ready', now, _workspace]);
+      var finalStatus = result.errors > 0 ? 'partial' : 'ready';
+      _registryDb.run('UPDATE registry SET last_indexed = ?, index_status = ?, last_opened = ? WHERE workspace_path = ?', [now, finalStatus, now, _workspace]);
       saveRegistry();
     }
 
@@ -758,9 +833,32 @@ async function indexWorkspace() {
   _indexing = false;
 }
 
+async function computeFullFileHash(fullPath) {
+  var fd = null;
+  try {
+    fd = await fs.open(fullPath, 'r');
+    var hash = crypto.createHash('sha256');
+    var buf = Buffer.alloc(65536);
+    var bytesRead = 0;
+    while ((bytesRead = (await fd.read(buf, 0, 65536, null)).bytesRead) > 0) {
+      hash.update(buf.subarray(0, bytesRead));
+    }
+    return hash.digest('hex');
+  } catch (_) {
+    return '';
+  } finally {
+    if (fd) {
+      try {
+        await fd.close();
+      } catch (_) {}
+    }
+  }
+}
+
 async function walkAndIndex(rootDir, dirPath) {
   var indexed = 0;
   var unchanged = 0;
+  var errors = 0;
 
   try {
     var entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -774,32 +872,50 @@ async function walkAndIndex(rootDir, dirPath) {
 
       var fullPath = path.join(dirPath, entry.name);
 
+      if (entry.isSymbolicLink()) {
+        try {
+          var real = await fs.realpath(fullPath);
+          var normReal = path.resolve(real).toLowerCase();
+          var normRoot = path.resolve(rootDir).toLowerCase();
+          if (normReal !== normRoot && !normReal.startsWith(normRoot + path.sep)) {
+            continue;
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+
       if (entry.isDirectory()) {
         var sub = await walkAndIndex(rootDir, fullPath);
         indexed += sub.indexed;
         unchanged += sub.unchanged;
+        errors += sub.errors;
         continue;
       }
 
       if (isBinaryExtension(entry.name)) continue;
 
       var relPath = path.relative(rootDir, fullPath);
-      if (await indexSingleFile(relPath)) {
-        indexed++;
-      } else {
-        unchanged++;
+      try {
+        if (await indexSingleFile(relPath)) {
+          indexed++;
+        } else {
+          unchanged++;
+        }
+      } catch (_) {
+        errors++;
       }
     }
   } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    errors++;
   }
 
-  return { indexed: indexed, unchanged: unchanged };
+  return { indexed: indexed, unchanged: unchanged, errors: errors };
 }
 
 /**
  * Index a single file. Returns true if indexed, false if unchanged.
- * Compares stored hash with current hash to skip unchanged files.
+ * Compares stored full-file SHA-256 hash to accurately detect modifications across the entire file.
  */
 async function indexSingleFile(relPath) {
   if (!_workspace || !_projectDb) return false;
@@ -811,30 +927,45 @@ async function indexSingleFile(relPath) {
 
     var size = stat.size;
     var modified = stat.mtime.toISOString();
-
-    var fd = await fs.open(fullPath, 'r');
-    try {
-      var readLen = Math.min(size, 32768);
-      var buffer = Buffer.alloc(readLen);
-      await fd.read(buffer, 0, readLen, 0);
-    } finally {
-      await fd.close();
+    var hash = await computeFullFileHash(fullPath);
+    if (!hash) {
+      hash = simpleHash(modified + '_' + size);
     }
 
-    var content = buffer.toString('utf-8');
-    var hash = simpleHash(content);
-    var ext = path.extname(relPath).toLowerCase();
-    var language = langFromExt(ext);
-
-    // Hash + mtime comparison — skip if unchanged
+    // Full-file hash + mtime comparison — skip if completely unchanged
     var existing = getFile(relPath);
     if (existing && existing.hash === hash && existing.last_modified === modified) {
       return false;
     }
 
+    var fd = null;
+    var content = '';
+    try {
+      fd = await fs.open(fullPath, 'r');
+      var maxIndexBytes = Math.min(size, 1048576); // Index up to 1MB of text chunks
+      var buffer = Buffer.alloc(maxIndexBytes);
+      await fd.read(buffer, 0, maxIndexBytes, 0);
+      content = buffer.toString('utf-8');
+    } finally {
+      if (fd) {
+        try {
+          await fd.close();
+        } catch (_) {}
+      }
+    }
+
+    var ext = path.extname(relPath).toLowerCase();
+    var language = langFromExt(ext);
+
     var upsertFile = _projectDb.prepare(`
-      INSERT OR REPLACE INTO files (path, language, size, hash, last_modified, last_indexed)
+      INSERT INTO files (path, language, size, hash, last_modified, last_indexed)
       VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        language = excluded.language,
+        size = excluded.size,
+        hash = excluded.hash,
+        last_modified = excluded.last_modified,
+        last_indexed = excluded.last_indexed
     `);
     upsertFile.bind([relPath, language, size, hash, modified, Date.now()]);
     upsertFile.step();
@@ -888,6 +1019,9 @@ async function indexSingleFile(relPath) {
 // INTERNAL: File watcher
 // ========================================================
 
+var _indexingTimers = {};
+var _indexingQueue = {};
+
 async function runIndexAndSave(relPath) {
   try {
     await indexSingleFile(relPath);
@@ -897,18 +1031,42 @@ async function runIndexAndSave(relPath) {
   }
 }
 
+function scheduleIndexAndSave(relPath) {
+  if (_indexingTimers[relPath]) {
+    clearTimeout(_indexingTimers[relPath]);
+  }
+
+  function onDebounceIndex() {
+    delete _indexingTimers[relPath];
+    var prev = _indexingQueue[relPath] || Promise.resolve();
+    function runNextIndex() {
+      return runIndexAndSave(relPath);
+    }
+    function cleanupQueue() {
+      if (_indexingQueue[relPath] === current) {
+        delete _indexingQueue[relPath];
+      }
+    }
+    var current = prev.then(runNextIndex, runNextIndex);
+    _indexingQueue[relPath] = current;
+    current.then(cleanupQueue, cleanupQueue);
+  }
+
+  _indexingTimers[relPath] = setTimeout(onDebounceIndex, 80);
+}
+
 function handleWatcherFileChange(uri) {
   if (!_projectDb || !_ready) return;
   var relPath = path.relative(_workspace, uri.fsPath);
   if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
-  runIndexAndSave(relPath);
+  scheduleIndexAndSave(relPath);
 }
 
 function handleWatcherFileCreate(uri) {
   if (!_projectDb || !_ready) return;
   var relPath = path.relative(_workspace, uri.fsPath);
   if (!relPath || relPath.startsWith('..') || isBinaryExtension(relPath)) return;
-  runIndexAndSave(relPath);
+  scheduleIndexAndSave(relPath);
 }
 
 function handleWatcherFileDelete(uri) {
@@ -916,6 +1074,13 @@ function handleWatcherFileDelete(uri) {
   var relPath = path.relative(_workspace, uri.fsPath);
   if (!relPath || relPath.startsWith('..')) return;
   try {
+    var escapedPath = relPath.replace(/'/g, "''");
+    var fileCheck = _projectDb.exec("SELECT id FROM files WHERE path = '" + escapedPath + "'");
+    if (fileCheck && fileCheck.length && fileCheck[0].values && fileCheck[0].values.length) {
+      var fileId = Number(fileCheck[0].values[0][0]);
+      _projectDb.run('DELETE FROM symbols WHERE file_id = ?', [fileId]);
+      _projectDb.run('DELETE FROM chunks WHERE file_id = ?', [fileId]);
+    }
     _projectDb.run('DELETE FROM files WHERE path = ?', [relPath]);
     saveProjectDb();
   } catch (_) {

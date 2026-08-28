@@ -1,121 +1,162 @@
-// memoryManager.js — Manages structured agent memory across execution runs
+// memoryManager.js — Manages structured agent memory across execution runs (Session Scoped)
 // Persisted in SQLite project metadata via projectKnowledge.
 
 import * as projectKnowledge from './projectKnowledge.js';
 import * as runtime from '../agents/runtime.js';
 
 var PREFIX = 'mem_';
+var _memCacheBySession = {}; // { [sessionId]: { [key]: value } }
 
-function getVal(key, fallback) {
-  var raw = projectKnowledge.getSetting(PREFIX + key);
+function getSessionCache(sessionId) {
+  var sid = sessionId || 'default';
+  if (!_memCacheBySession[sid]) {
+    _memCacheBySession[sid] = {};
+  }
+  return _memCacheBySession[sid];
+}
+
+function getVal(key, fallback, sessionId) {
+  var sid = sessionId || 'default';
+  var cache = getSessionCache(sid);
+  if (Object.prototype.hasOwnProperty.call(cache, key)) {
+    return cache[key];
+  }
+  var raw = null;
+  try {
+    raw = projectKnowledge.getSetting(PREFIX + sid + '_' + key);
+  } catch (_) {}
   if (raw === null || raw === undefined) return fallback;
   try {
-    return JSON.parse(raw);
+    var parsed = JSON.parse(raw);
+    cache[key] = parsed;
+    return parsed;
   } catch (_) {
+    cache[key] = raw;
     return raw;
   }
 }
 
-function setVal(key, value) {
+function setVal(key, value, sessionId) {
+  var sid = sessionId || 'default';
+  var cache = getSessionCache(sid);
+  cache[key] = value;
   var str = JSON.stringify(value);
-  projectKnowledge.setSetting(PREFIX + key, str);
-  // Synchronize with runtime memory state
   try {
-    runtime.setMemory(key, value);
+    projectKnowledge.setSetting(PREFIX + sid + '_' + key, str);
   } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    // Intentionally ignored
+  }
+  try {
+    runtime.setMemory(key, value, sid);
+  } catch (_) {
+    // Intentionally ignored
   }
 }
 
-export function getCurrentGoal() { return getVal('currentGoal', ''); }
-export function setCurrentGoal(goal) { setVal('currentGoal', goal); }
+export function getCurrentGoal(sessionId) { return getVal('currentGoal', '', sessionId); }
+export function setCurrentGoal(goal, sessionId) { setVal('currentGoal', goal, sessionId); }
 
-export function getTaskHistory() { return getVal('taskHistory', []); }
-export function recordTaskExecution(toolName, args, resultSummary) {
-  var history = getTaskHistory();
+export function getTaskHistory(sessionId) { return getVal('taskHistory', [], sessionId); }
+export function recordTaskExecution(toolName, args, resultSummary, sessionId) {
+  var history = getTaskHistory(sessionId);
   history.push({ tool: toolName, args: args, summary: resultSummary, ts: Date.now() });
-  setVal('taskHistory', history);
+  setVal('taskHistory', history, sessionId);
 }
 
-export function getCompletedSteps() { return getVal('completedSteps', []); }
-export function setCompletedSteps(steps) { setVal('completedSteps', steps); }
+export function getCompletedSteps(sessionId) { return getVal('completedSteps', [], sessionId); }
+export function setCompletedSteps(steps, sessionId) { setVal('completedSteps', steps, sessionId); }
 
-export function getRemainingSteps() { return getVal('remainingSteps', []); }
-export function setRemainingSteps(steps) { setVal('remainingSteps', steps); }
+export function getRemainingSteps(sessionId) { return getVal('remainingSteps', [], sessionId); }
+export function setRemainingSteps(steps, sessionId) { setVal('remainingSteps', steps, sessionId); }
 
-export function getFilesCreated() { return getVal('filesCreated', []); }
-export function recordFileCreated(filePath) {
-  var files = getFilesCreated();
+export function getFilesCreated(sessionId) { return getVal('filesCreated', [], sessionId); }
+export function recordFileCreated(filePath, sessionId) {
+  var files = getFilesCreated(sessionId);
   if (files.indexOf(filePath) === -1) {
     files.push(filePath);
-    setVal('filesCreated', files);
+    setVal('filesCreated', files, sessionId);
   }
 }
 
-export function getFilesModified() { return getVal('filesModified', []); }
-export function recordFileModified(filePath) {
-  var files = getFilesModified();
+export function getFilesModified(sessionId) { return getVal('filesModified', [], sessionId); }
+export function recordFileModified(filePath, sessionId) {
+  var files = getFilesModified(sessionId);
   if (files.indexOf(filePath) === -1) {
     files.push(filePath);
-    setVal('filesModified', files);
+    setVal('filesModified', files, sessionId);
   }
 }
 
-export function getCommandsExecuted() { return getVal('commandsExecuted', []); }
-export function recordCommandExecuted(command) {
-  var cmds = getCommandsExecuted();
+export function getAllChangedFiles(sessionId) {
+  var modified = getFilesModified(sessionId);
+  var created = getFilesCreated(sessionId);
+  var combined = [];
+  for (var i = 0; i < modified.length; i++) {
+    if (combined.indexOf(modified[i]) === -1) combined.push(modified[i]);
+  }
+  for (var j = 0; j < created.length; j++) {
+    if (combined.indexOf(created[j]) === -1) combined.push(created[j]);
+  }
+  return combined;
+}
+
+export function getCommandsExecuted(sessionId) { return getVal('commandsExecuted', [], sessionId); }
+export function recordCommandExecuted(command, sessionId) {
+  var cmds = getCommandsExecuted(sessionId);
   cmds.push({ command: command, ts: Date.now() });
-  setVal('commandsExecuted', cmds);
+  setVal('commandsExecuted', cmds, sessionId);
 }
 
-export function getErrors() { return getVal('errors', []); }
-export function recordError(errorMsg) {
-  var errs = getErrors();
+export function getErrors(sessionId) { return getVal('errors', [], sessionId); }
+export function recordError(errorMsg, sessionId) {
+  var errs = getErrors(sessionId);
   errs.push({ error: errorMsg, ts: Date.now() });
-  setVal('errors', errs);
+  setVal('errors', errs, sessionId);
 }
 
-export function getWarnings() { return getVal('warnings', []); }
-export function recordWarning(warningMsg) {
-  var warns = getWarnings();
+export function getWarnings(sessionId) { return getVal('warnings', [], sessionId); }
+export function recordWarning(warningMsg, sessionId) {
+  var warns = getWarnings(sessionId);
   warns.push({ warning: warningMsg, ts: Date.now() });
-  setVal('warnings', warns);
+  setVal('warnings', warns, sessionId);
 }
 
-export function getRetries() { return getVal('retries', {}); }
-export function recordRetry(key) {
-  var retries = getRetries();
+export function getRetries(sessionId) { return getVal('retries', {}, sessionId); }
+export function recordRetry(key, sessionId) {
+  var retries = getRetries(sessionId);
   retries[key] = (retries[key] || 0) + 1;
-  setVal('retries', retries);
+  setVal('retries', retries, sessionId);
 }
 
-export function getWorkspaceFacts() { return getVal('workspaceFacts', {}); }
-export function learnFact(key, value) {
-  var facts = getWorkspaceFacts();
+export function getWorkspaceFacts(sessionId) { return getVal('workspaceFacts', {}, sessionId); }
+export function learnFact(key, value, sessionId) {
+  var facts = getWorkspaceFacts(sessionId);
   facts[key] = value;
-  setVal('workspaceFacts', facts);
+  setVal('workspaceFacts', facts, sessionId);
 }
 
-export function getUserDecisions() { return getVal('userDecisions', []); }
-export function recordUserDecision(toolName, action, decision) {
-  var decs = getUserDecisions();
+export function getUserDecisions(sessionId) { return getVal('userDecisions', [], sessionId); }
+export function recordUserDecision(toolName, action, decision, sessionId) {
+  var decs = getUserDecisions(sessionId);
   decs.push({ tool: toolName, action: action, decision: decision, ts: Date.now() });
-  setVal('userDecisions', decs);
+  setVal('userDecisions', decs, sessionId);
 }
 
-export function clear() {
+export function clear(sessionId) {
+  var sid = sessionId || 'default';
+  delete _memCacheBySession[sid];
   var keys = [
     'currentGoal', 'taskHistory', 'completedSteps', 'remainingSteps',
     'filesCreated', 'filesModified', 'commandsExecuted', 'errors',
     'warnings', 'retries', 'workspaceFacts', 'userDecisions'
   ];
   for (var i = 0; i < keys.length; i++) {
-    projectKnowledge.setSetting(PREFIX + keys[i], null);
+    projectKnowledge.setSetting(PREFIX + sid + '_' + keys[i], null);
   }
 }
 
-export function getPromptFragment() {
-  var facts = getWorkspaceFacts();
+export function getPromptFragment(sessionId) {
+  var facts = getWorkspaceFacts(sessionId);
   var lines = [];
   var factKeys = Object.keys(facts);
   if (factKeys.length > 0) {
@@ -124,11 +165,11 @@ export function getPromptFragment() {
       lines.push('  - ' + factKeys[i] + ': ' + JSON.stringify(facts[factKeys[i]]));
     }
   }
-  var filesCreated = getFilesCreated();
+  var filesCreated = getFilesCreated(sessionId);
   if (filesCreated.length > 0) {
     lines.push('### CREATED FILES: ' + filesCreated.join(', '));
   }
-  var filesModified = getFilesModified();
+  var filesModified = getFilesModified(sessionId);
   if (filesModified.length > 0) {
     lines.push('### MODIFIED FILES: ' + filesModified.join(', '));
   }

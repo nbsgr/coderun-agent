@@ -1,31 +1,6 @@
-// agentState.js — Formal State Machine for the Agent Loop
-//
-// States:
-//   idle              — Ready, no active session
-//   thinking          — LLM provider is streaming a response
-//   workspace_analysis — Analyzing workspace structure
-//   planning          — Planning steps
-//   searching         — Searching files
-//   reading           — Reading file content
-//   writing           — Writing files
-//   editing           — Editing files
-//   executing         — Executing tool calls / commands
-//   testing           — Running tests
-//   reviewing         — Reviewing & reflecting on results
-//   waiting           — Waiting for user approval
-//   completed         — Agent finished successfully (terminal)
-//   failed            — Agent terminated with unrecoverable error
-//   cancelled         — Agent cancelled
-//   stopped           — User requested stop between iterations
-//
-// Valid transitions: any non-terminal state → any active state.
-// Terminal states (completed, failed, cancelled, stopped) are sink states.
-// * → failed (on error)
-// * → stopped (on user signal)
-//
-// Invalid transitions throw StateError.
+// agentState.js — Formal State Machine for the Agent Loop (Session Scoped)
 
-var _state = 'idle';
+var _stateBySession = {};
 
 export function StateError(from, to) {
   var err = new Error('Invalid state transition: ' + from + ' → ' + to);
@@ -38,7 +13,6 @@ export function StateError(from, to) {
 StateError.prototype = Object.create(Error.prototype);
 StateError.prototype.constructor = StateError;
 
-/** Map of valid transitions: [fromState] → Set of allowed toStates */
 var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped'];
 var TRANSITIONS = {
   idle:               new Set(ACTIVE_STATES),
@@ -60,7 +34,6 @@ var TRANSITIONS = {
   stopped:            new Set([])  // terminal
 };
 
-/** Human-readable labels for each state. */
 export var LABELS = {
   idle:               'Idle',
   thinking:           'Thinking',
@@ -81,50 +54,32 @@ export var LABELS = {
   stopped:            'Stopped'
 };
 
-/**
- * Transition to a new state. Throws StateError if the transition is invalid.
- * @param {string} to - Target state
- * @returns {string} The new state
- */
-export function transition(to) {
-  var allowed = TRANSITIONS[_state];
+export function transition(to, sessionId) {
+  var sid = sessionId || 'default';
+  var current = _stateBySession[sid] || 'idle';
+  var allowed = TRANSITIONS[current];
   if (!allowed || !allowed.has(to)) {
-    throw new StateError(_state, to);
+    throw new StateError(current, to);
   }
-  var from = _state;
-  _state = to;
-  return from;
+  _stateBySession[sid] = to;
+  return current;
 }
 
-/**
- * Get the current state.
- * @returns {string}
- */
-export function getState() {
-  return _state;
+export function getState(sessionId) {
+  var sid = sessionId || 'default';
+  return _stateBySession[sid] || 'idle';
 }
 
-/**
- * Reset to idle. Always allowed (used for session cleanup).
- */
-export function reset() {
-  _state = 'idle';
+export function isTerminal(sessionId) {
+  var sid = sessionId || 'default';
+  var s = _stateBySession[sid] || 'idle';
+  return s === 'completed' || s === 'failed' || s === 'cancelled' || s === 'stopped';
 }
 
-/**
- * Check if the current state allows transitioning to `to`.
- * @param {string} to - Target state to check
- * @returns {boolean}
- */
-export function canTransition(to) {
-  var allowed = TRANSITIONS[_state];
-  return !!allowed && allowed.has(to);
-}
-
-/**
- * Check if the current state is a terminal state (completed, failed, cancelled).
- * @returns {boolean}
- */
-export function isTerminal() {
-  return _state === 'completed' || _state === 'failed' || _state === 'cancelled' || _state === 'stopped';
+export function reset(sessionId) {
+  if (sessionId) {
+    delete _stateBySession[sessionId];
+  } else {
+    _stateBySession = {};
+  }
 }

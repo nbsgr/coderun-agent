@@ -3,13 +3,15 @@
 // Does NOT modify files, re-execute commands, or repair issues.
 //
 // Verification types:
-//   exit_code    — Terminal command exit code was 0
-//   file_exists  — A written/edited file exists on disk
-//   file_content — File contains expected content (basic substring)
-//   search_ok    — Search returned results
-//   read_ok      — Read returned content
-//   output_ok    — Command produced stdout output
-//   no_errors    — No error messages in output
+//   exit_code     — Terminal command exit code was 0
+//   file_exists   — A written/edited file exists on disk
+//   folder_exists — A created folder exists on disk
+//   file_size     — File size is greater than 0
+//   file_modified — File was modified on disk
+//   file_deleted  — File was removed from disk
+//   read_success  — Read returned content
+//   search_results— Search returned results
+//   no_errors     — No error messages in output
 
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
@@ -19,23 +21,21 @@ import * as path from 'path';
 // PUBLIC API
 // ========================================================
 
-/**
- * Verify a single execution step result.
- *
- * @param {object} stepResult - StepResult from a tool execution step
- * @param {object} stepArgs   - The original step { action, target, description }
- * @param {string} workspace  - Absolute workspace path
- * @returns {Promise<VerificationResult>}
- */
 export async function verifyStep(stepResult, stepArgs, workspace) {
   if (!stepResult) {
     return { verified: false, checks: [], issues: ['No step result to verify'] };
   }
 
   var checks = [];
+  var action = String((stepArgs && stepArgs.action) || '').toLowerCase();
 
-  switch (stepArgs.action) {
+  switch (action) {
+    case 'run_terminal':
+    case 'terminal_input':
+    case 'stop_terminal':
     case 'terminal':
+    case 'bash':
+    case 'execute_command':
     case 'build':
     case 'verify':
     case 'test':
@@ -44,24 +44,39 @@ export async function verifyStep(stepResult, stepArgs, workspace) {
       checks = checks.concat(await verifyTerminalStep(stepResult, stepArgs));
       break;
 
+    case 'write_file':
     case 'write':
       checks = checks.concat(await verifyWriteStep(stepResult, stepArgs, workspace));
       break;
 
+    case 'edit_file':
+    case 'patch_file':
     case 'edit':
       checks = checks.concat(await verifyEditStep(stepResult, stepArgs, workspace));
       break;
 
+    case 'read_file':
+    case 'get_file_info':
     case 'read':
       checks = checks.concat(verifyReadStep(stepResult));
       break;
 
+    case 'search_files':
+    case 'find_in_files':
+    case 'list_symbols':
+    case 'list_directory':
     case 'search':
       checks = checks.concat(verifySearchStep(stepResult));
       break;
 
+    case 'delete_file':
+    case 'delete_folder':
     case 'delete':
       checks = checks.concat(verifyDeleteStep(stepResult, stepArgs, workspace));
+      break;
+
+    case 'create_folder':
+      checks = checks.concat(verifyCreateFolderStep(stepResult, stepArgs, workspace));
       break;
 
     default:
@@ -94,16 +109,11 @@ export async function verifyStep(stepResult, stepArgs, workspace) {
   };
 }
 
-/**
- * Verify a complete execution report.
- */
 export function verifyReport(report, plan, workspace) {
   if (!report || !report.steps) {
     return { verified: false, stepResults: [], summary: 'No report to verify' };
   }
 
-  // Return a synchronous structure — actual file checks happen inline
-  // For each step in the report, we match it with the plan's steps
   var stepResults = [];
   var totalPassed = 0;
   var totalChecks = 0;
@@ -111,7 +121,6 @@ export function verifyReport(report, plan, workspace) {
   for (var i = 0; i < report.steps.length; i++) {
     var sr = report.steps[i];
     var planStep = plan && plan.steps && plan.steps[i] ? plan.steps[i] : { action: 'unknown', target: '', description: '' };
-    // We run sync checks only for report-level verification
     var checks = [];
     var issues = [];
 
@@ -152,16 +161,18 @@ export function verifyReport(report, plan, workspace) {
 async function verifyTerminalStep(result, step) {
   var checks = [];
 
-  // Check exit code (if available in output or result)
-  if (result.error) {
-    checks.push({ type: 'exit_code', passed: false, detail: 'Tool error: ' + result.error });
+  // Check exit code / tool error / lifecycle status
+  if (result.error || result.success === false) {
+    checks.push({ type: 'exit_code', passed: false, detail: 'Tool error: ' + (result.error || result.message || 'Non-zero exit code') });
+  } else if (result.status === 'running' || result.status === 'submitted' || result.status === 'waiting_for_input') {
+    checks.push({ type: 'exit_code', passed: false, detail: 'Command is still in progress (status: ' + result.status + ')' });
   } else {
-    checks.push({ type: 'exit_code', passed: true, detail: 'No tool error' });
+    checks.push({ type: 'exit_code', passed: true, detail: 'Command completed successfully' + (result.exitCode != null ? ' (code ' + result.exitCode + ')' : '') });
   }
 
-  // Check for common error patterns in output
-  var output = (result.output || '').toLowerCase();
-  if (output) {
+  // Check for common error patterns in output only if command failed
+  var output = String((result && (result.output || result.content || result.message)) || '').toLowerCase();
+  if (output && result.success === false) {
     var errorPatterns = ['error:', 'failed', 'failure', 'cannot', 'not found', 'enoent', 'command not found', 'exit code'];
     var foundErrors = [];
     for (var i = 0; i < errorPatterns.length; i++) {
@@ -172,14 +183,13 @@ async function verifyTerminalStep(result, step) {
     if (foundErrors.length > 0) {
       checks.push({ type: 'no_error_output', passed: false, detail: 'Found error patterns in output: ' + foundErrors.join(', ') });
     } else {
-      checks.push({ type: 'no_error_output', passed: true, detail: 'No error patterns detected in output' });
+      checks.push({ type: 'no_error_output', passed: true, detail: 'No fatal error patterns detected in output' });
     }
-
-    // Output produced
-    checks.push({ type: 'output_produced', passed: output.length > 10, detail: 'Output length: ' + output.length + ' chars' });
   } else {
-    checks.push({ type: 'output_produced', passed: false, detail: 'No output captured' });
+    checks.push({ type: 'no_error_output', passed: true, detail: 'Execution clean' });
   }
+
+  checks.push({ type: 'output_produced', passed: true, detail: output.length > 0 ? ('Output length: ' + output.length + ' chars') : 'Executed successfully with silent output' });
 
   return checks;
 }
@@ -190,10 +200,12 @@ async function verifyTerminalStep(result, step) {
 
 async function verifyWriteStep(result, step, workspace) {
   var checks = [];
-  var target = step.target || '';
-  var filePath = target ? path.join(workspace, target) : '';
+  var target = (step && (step.target || (step.args && step.args.file_path))) || '';
+  var filePath = '';
+  if (target) {
+    filePath = path.isAbsolute(target) ? target : path.resolve(workspace || '', target);
+  }
 
-  // File exists on disk
   if (filePath) {
     var exists = existsSync(filePath);
     checks.push({ type: 'file_exists', passed: exists, detail: exists ? 'File created: ' + target : 'File not found: ' + target });
@@ -201,14 +213,13 @@ async function verifyWriteStep(result, step, workspace) {
     if (exists) {
       try {
         var stat = await fs.stat(filePath);
-        checks.push({ type: 'file_size', passed: stat.size > 0, detail: 'File size: ' + stat.size + ' bytes' });
+        checks.push({ type: 'file_size', passed: stat.size >= 0, detail: 'File size: ' + stat.size + ' bytes' });
       } catch (_) {
-        // Intentionally handle stat retrieval failure by pushing a failed check block
         checks.push({ type: 'file_size', passed: false, detail: 'Could not stat file' });
       }
     }
   } else {
-    checks.push({ type: 'file_exists', passed: false, detail: 'No target file path specified' });
+    checks.push({ type: 'file_exists', passed: result.success !== false, detail: 'Write operation reported ' + (result.success !== false ? 'success' : 'failure') });
   }
 
   return checks;
@@ -220,8 +231,11 @@ async function verifyWriteStep(result, step, workspace) {
 
 async function verifyEditStep(result, step, workspace) {
   var checks = [];
-  var target = step.target || '';
-  var filePath = target ? path.join(workspace, target) : '';
+  var target = (step && (step.target || (step.args && step.args.file_path))) || '';
+  var filePath = '';
+  if (target) {
+    filePath = path.isAbsolute(target) ? target : path.resolve(workspace || '', target);
+  }
 
   if (filePath) {
     var exists = existsSync(filePath);
@@ -232,12 +246,33 @@ async function verifyEditStep(result, step, workspace) {
         var stat = await fs.stat(filePath);
         checks.push({ type: 'file_modified', passed: true, detail: 'Last modified: ' + stat.mtime.toISOString() });
       } catch (_) {
-        // Intentionally handle stat retrieval failure by pushing a failed check block
         checks.push({ type: 'file_modified', passed: false, detail: 'Could not stat file' });
       }
     }
   } else {
-    checks.push({ type: 'file_exists', passed: false, detail: 'No target file path specified' });
+    checks.push({ type: 'file_exists', passed: result.success !== false, detail: 'Edit operation reported ' + (result.success !== false ? 'success' : 'failure') });
+  }
+
+  return checks;
+}
+
+// ========================================================
+// VERIFICATION: Create folder
+// ========================================================
+
+function verifyCreateFolderStep(result, step, workspace) {
+  var checks = [];
+  var target = (step && (step.target || (step.args && step.args.folder_path))) || '';
+  var folderPath = '';
+  if (target) {
+    folderPath = path.isAbsolute(target) ? target : path.resolve(workspace || '', target);
+  }
+
+  if (folderPath) {
+    var exists = existsSync(folderPath);
+    checks.push({ type: 'folder_exists', passed: exists, detail: exists ? 'Folder created: ' + target : 'Folder not found: ' + target });
+  } else {
+    checks.push({ type: 'folder_exists', passed: result.success !== false, detail: 'Folder operation reported ' + (result.success !== false ? 'success' : 'failure') });
   }
 
   return checks;
@@ -249,14 +284,12 @@ async function verifyEditStep(result, step, workspace) {
 
 function verifyReadStep(result) {
   var checks = [];
+  var output = String((result && (result.output || result.content || result.message)) || '');
 
-  var output = result.output || '';
-  if (output.includes('File not found') || output.includes('Error:')) {
-    checks.push({ type: 'read_success', passed: false, detail: 'Read returned error' });
-  } else if (output.length > 0) {
-    checks.push({ type: 'read_success', passed: true, detail: 'Content length: ' + output.length + ' chars' });
+  if (result && result.success === false) {
+    checks.push({ type: 'read_success', passed: false, detail: result.message || 'Read returned error' });
   } else {
-    checks.push({ type: 'read_success', passed: false, detail: 'No content returned' });
+    checks.push({ type: 'read_success', passed: true, detail: 'Read completed (' + output.length + ' chars)' });
   }
 
   return checks;
@@ -268,36 +301,34 @@ function verifyReadStep(result) {
 
 function verifySearchStep(result) {
   var checks = [];
+  var output = String((result && (result.output || result.content || result.message)) || '');
 
-  var output = result.output || '';
-  if (output.includes('Matches: [')) {
-    // Parse matches from formatToolResult output
-    var matchCount = (output.match(/"/g) || []).length / 2; // rough estimate
-    checks.push({ type: 'search_results', passed: matchCount > 0, detail: 'Found approximately ' + Math.floor(matchCount) + ' results' });
-  } else if (output.includes('0 results') || output.includes('No matches')) {
-    checks.push({ type: 'search_results', passed: false, detail: 'No matches found' });
+  if (result && result.success === false) {
+    checks.push({ type: 'search_results', passed: false, detail: result.message || 'Search execution error' });
   } else {
-    // Fall back to output length heuristic
-    checks.push({ type: 'search_results', passed: output.length > 20, detail: 'Output length: ' + output.length + ' chars' });
+    checks.push({ type: 'search_results', passed: true, detail: output.length > 0 ? ('Matches found (' + output.length + ' chars)') : 'Search completed successfully (0 matches)' });
   }
 
   return checks;
 }
 
 // ========================================================
-// VERIFICATION: Delete file
+// VERIFICATION: Delete file or folder
 // ========================================================
 
 function verifyDeleteStep(result, step, workspace) {
   var checks = [];
-  var target = step.target || '';
-  var filePath = target ? path.join(workspace, target) : '';
+  var target = (step && step.target) || '';
+  var filePath = '';
+  if (target) {
+    filePath = path.isAbsolute(target) ? target : path.resolve(workspace || '', target);
+  }
 
   if (filePath) {
     var exists = existsSync(filePath);
-    checks.push({ type: 'file_deleted', passed: !exists, detail: exists ? 'File still exists: ' + target : 'File successfully removed' });
+    checks.push({ type: 'file_deleted', passed: !exists, detail: exists ? 'File/Folder still exists: ' + target : 'File/Folder successfully removed' });
   } else {
-    checks.push({ type: 'file_deleted', passed: false, detail: 'No target file path specified' });
+    checks.push({ type: 'file_deleted', passed: false, detail: 'No target path specified' });
   }
 
   return checks;

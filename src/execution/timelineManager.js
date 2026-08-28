@@ -1,12 +1,16 @@
-// timelineManager.js — Agent Timeline
+// timelineManager.js — Agent Timeline (Session Scoped)
 // Records chronological events: tool executions, file edits, terminal runs, etc.
-// Stores entries as a JSON array in a single SQLite metadata key.
+// Stores entries as a JSON array in SQLite metadata keyed by session.
 // ContextManager surfaces the timeline for LLM prompt context.
 
 import * as projectKnowledge from '../context/projectKnowledge.js';
 
 var TIMELINE_KEY = 'timeline_data';
 var MAX_ENTRIES = 50;
+
+function getSessionTimelineKey(sessionId) {
+  return TIMELINE_KEY + (sessionId ? '_' + sessionId : '');
+}
 
 // ========================================================
 // PUBLIC API
@@ -26,14 +30,11 @@ var MAX_ENTRIES = 50;
  *   terminal:run   — Terminal command was executed
  *   session:start  — Chat session started
  *   error          — General error
- *
- * @param {string} type    - Event type (category:action)
- * @param {string} summary - Human-readable summary (max 120 chars)
  */
-export function addEvent(type, summary) {
+export function addEvent(type, summary, sessionId) {
   if (!type || !summary) return;
 
-  var entries = loadEntries();
+  var entries = loadEntries(sessionId);
   entries.push({
     type: type,
     summary: String(summary).substring(0, 120),
@@ -45,35 +46,35 @@ export function addEvent(type, summary) {
     entries = entries.slice(entries.length - MAX_ENTRIES);
   }
 
-  saveEntries(entries);
+  saveEntries(entries, sessionId);
 }
 
 /**
  * Record a complete tool execution event derived from its result.
  */
-export function addToolEvent(toolName, args, success, message) {
+export function addToolEvent(toolName, args, success, message, sessionId) {
   var target = args.file_path || args.command || args.pattern || '';
   var summary = toolName + ': ' + String(target).substring(0, 80);
 
   if (success !== false) {
-    addEvent('tool:result', summary);
+    addEvent('tool:result', summary, sessionId);
   } else {
-    addEvent('tool:error', summary + ' — ' + String(message || 'failed').substring(0, 60));
+    addEvent('tool:error', summary + ' — ' + String(message || 'failed').substring(0, 60), sessionId);
   }
 
   // Add file/terminal-specific events for richer timeline
   if (toolName === 'write_file' || toolName === 'edit_file') {
-    addEvent('file:' + (toolName === 'write_file' ? 'write' : 'edit'), (args.file_path || ''));
+    addEvent('file:' + (toolName === 'write_file' ? 'write' : 'edit'), (args.file_path || ''), sessionId);
   } else if (toolName === 'delete_file') {
-    addEvent('file:delete', (args.file_path || ''));
+    addEvent('file:delete', (args.file_path || ''), sessionId);
   } else if (toolName === 'read_file') {
-    addEvent('file:read', (args.file_path || ''));
+    addEvent('file:read', (args.file_path || ''), sessionId);
   } else if (toolName === 'run_terminal') {
-    addEvent('terminal:run', '$ ' + String(args.command || '').substring(0, 80));
+    addEvent('terminal:run', '$ ' + String(args.command || '').substring(0, 80), sessionId);
   } else if (toolName === 'list_directory') {
-    addEvent('tool:result', 'Listed: ' + (args.folder_path || '.'));
+    addEvent('tool:result', 'Listed: ' + (args.folder_path || '.'), sessionId);
   } else if (toolName === 'search_files') {
-    addEvent('tool:result', 'Searched: ' + (args.pattern || '*'));
+    addEvent('tool:result', 'Searched: ' + (args.pattern || '*'), sessionId);
   }
 }
 
@@ -81,9 +82,9 @@ export function addToolEvent(toolName, args, success, message) {
  * Get recent timeline entries as a formatted string for prompt context.
  * Newest first.
  */
-export function getRecentContext(limit) {
+export function getRecentContext(limit, sessionId) {
   limit = limit || 8;
-  var entries = getRecent(limit);
+  var entries = getRecent(limit, sessionId);
   if (!entries.length) return '';
 
   var lines = ['## RECENT TIMELINE'];
@@ -100,9 +101,9 @@ export function getRecentContext(limit) {
 /**
  * Get recent entries as an array of { type, summary, ts }.
  */
-export function getRecent(limit) {
+export function getRecent(limit, sessionId) {
   limit = limit || 10;
-  var entries = loadEntries();
+  var entries = loadEntries(sessionId);
   // Return newest first
   var result = [];
   for (var i = entries.length - 1; i >= 0 && result.length < limit; i--) {
@@ -112,37 +113,50 @@ export function getRecent(limit) {
 }
 
 /**
- * Clear all timeline entries.
+ * Clear all timeline entries for a session.
  */
-export function clearAll() {
-  projectKnowledge.setSetting(TIMELINE_KEY, '[]');
+export function clearAll(sessionId) {
+  projectKnowledge.setSetting(getSessionTimelineKey(sessionId), '[]');
 }
 
 /**
  * Get formatted timeline with event icons for prompt injection.
  */
-export function getTimelinePrompt(limit) {
-  return getRecentContext(limit);
+export function getTimelinePrompt(limit, sessionId) {
+  return getRecentContext(limit, sessionId);
 }
 
 // ========================================================
 // INTERNAL
 // ========================================================
 
-function loadEntries() {
-  var raw = projectKnowledge.getSetting(TIMELINE_KEY);
-  if (!raw) return [];
+var _sessionCache = {};
+
+function loadEntries(sessionId) {
+  var sid = sessionId || 'default';
+  if (_sessionCache[sid]) {
+    return _sessionCache[sid];
+  }
+  var key = getSessionTimelineKey(sid);
+  var raw = projectKnowledge.getSetting(key);
+  if (!raw) {
+    _sessionCache[sid] = [];
+    return _sessionCache[sid];
+  }
   try {
     var parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (Array.isArray(parsed)) return parsed;
-    return [];
+    _sessionCache[sid] = Array.isArray(parsed) ? parsed : [];
   } catch (_) {
-    return [];
+    _sessionCache[sid] = [];
   }
+  return _sessionCache[sid];
 }
 
-function saveEntries(entries) {
-  projectKnowledge.setSetting(TIMELINE_KEY, JSON.stringify(entries));
+function saveEntries(entries, sessionId) {
+  var sid = sessionId || 'default';
+  _sessionCache[sid] = entries;
+  var key = getSessionTimelineKey(sid);
+  projectKnowledge.setSetting(key, JSON.stringify(entries));
 }
 
 function getEventIcon(type) {

@@ -28,34 +28,24 @@ export function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function executeSleep(ms, resolve) {
-  setTimeout(resolve, ms);
-}
-
 export function sleep(ms) {
-  return new Promise(executeSleep.bind(null, ms));
-}
-
-function runDebounced(debouncer, args) {
-  debouncer.fn.apply(null, args);
-}
-
-function handleDebounceTimeout(debouncer, args) {
-  runDebounced(debouncer, args);
-}
-
-function executeDebounce(debouncer, ...args) {
-  clearTimeout(debouncer.timer);
-  debouncer.timer = setTimeout(handleDebounceTimeout.bind(null, debouncer, args), debouncer.ms);
+  function sleepPromise(resolve) {
+    setTimeout(resolve, ms);
+  }
+  return new Promise(sleepPromise);
 }
 
 export function debounce(fn, ms) {
-  var debouncer = {
-    fn: fn,
-    ms: ms,
-    timer: null
-  };
-  return executeDebounce.bind(null, debouncer);
+  var timer = null;
+  function debounced() {
+    var args = arguments;
+    clearTimeout(timer);
+    function run() {
+      fn.apply(null, args);
+    }
+    timer = setTimeout(run, ms);
+  }
+  return debounced;
 }
 
 export function safeJsonParse(str, fallback) {

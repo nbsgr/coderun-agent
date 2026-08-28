@@ -27,7 +27,6 @@ var WORKFLOWS = {
 /**
  * Get workflow steps list by type.
  *
- * @param {string} type - 'web' | 'generic'
  * @returns {object[]} Workflow steps
  */
 export function getWorkflow(type) {
@@ -37,8 +36,6 @@ export function getWorkflow(type) {
 /**
  * Get the next recommended state in a workflow sequence.
  *
- * @param {string} type         - Workflow type
- * @param {string} currentState - Active agentState state
  * @returns {string} The next target state, or 'completed' if at the end
  */
 export function getNextState(type, currentState) {

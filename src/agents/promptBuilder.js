@@ -2,12 +2,13 @@
 // No concatenation inside agent.js — everything happens here.
 
 import { SYSTEM_PROMPT } from './constants.js';
+import { loadRules } from '../context/rulesLoader.js';
 
 function formatMemoryItem(m) {
   return '- ' + m;
 }
 
-export function buildMessages(userPrompt, options) {
+export async function buildMessages(userPrompt, options) {
   options = options || {};
   var history = options.history || [];
   var workspace = options.workspace || '';
@@ -40,6 +41,15 @@ export function buildMessages(userPrompt, options) {
   }
   if (platformName) {
     systemContent += '\nPlatform: ' + platformName;
+  }
+
+  // Load and inject user rules
+  var rulesContent = await loadRules(workspace);
+  if (rulesContent) {
+    systemContent += '\n\n## USER RULES\n' +
+      'The following rules MUST be followed without exception. ' +
+      'These are user-defined project conventions:\n\n' +
+      rulesContent;
   }
 
   systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
@@ -205,11 +215,18 @@ export function buildMessages(userPrompt, options) {
   return messages;
 }
 
-export function buildSystemPromptOnly(workspace, skills, memory, mcpContext) {
+export async function buildSystemPromptOnly(workspace, skills, memory, mcpContext) {
   var content = SYSTEM_PROMPT;
   if (workspace) {
     content += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
     content += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
+  }
+  var rulesContent = await loadRules(workspace);
+  if (rulesContent) {
+    content += '\n\n## USER RULES\n' +
+      'The following rules MUST be followed without exception. ' +
+      'These are user-defined project conventions:\n\n' +
+      rulesContent;
   }
   if (skills && skills.length) {
     content += '\n\n## SKILLS\n' + skills.join('\n');

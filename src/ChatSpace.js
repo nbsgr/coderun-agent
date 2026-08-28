@@ -116,7 +116,8 @@
     var hasPendingPermissions = lastChild && lastChild.querySelector('.cr-permission-actions button') !== null;
     if (hasPendingPermissions) return;
     if (_scrollRAF) return;
-    _scrollRAF = requestAnimationFrame(handleScrollRAF.bind(null, el));
+    function onScrollRAF() { handleScrollRAF(el); }
+    _scrollRAF = requestAnimationFrame(onScrollRAF);
   }
 
   // ── Debounced markdown render for streaming content ───
@@ -130,7 +131,8 @@
 
   function scheduleContentRender(S) {
     if (_renderTimer) return;
-    _renderTimer = setTimeout(handleContentRenderTimeout.bind(null, S), 100);
+    function onRenderTimeout() { handleContentRenderTimeout(S); }
+    _renderTimer = setTimeout(onRenderTimeout, 100);
   }
 
   function flushContentRender(S) {
@@ -155,7 +157,7 @@
       'list_directory': 'READ DIR',
       'search_files': 'SEARCH FILES',
       'get_file_info': 'FILE INFO',
-      'run_terminal': 'RUN COMMAND',
+      'run_terminal': 'RUN TERMINAL',
       'terminal_input': 'TERM INPUT',
       'stop_terminal': 'STOP TERMINAL',
       'create_plan': 'CREATE PLAN',
@@ -439,22 +441,26 @@
 
       var allowAllBtn = controlsPanel.querySelector('.cr-btn-continue-all');
       if (allowAllBtn) {
-        allowAllBtn.onclick = handleAllowAllClick.bind(null, chatCtx);
+    function onAllowAllClick() { handleAllowAllClick(chatCtx); }
+    allowAllBtn.onclick = onAllowAllClick;
       }
 
       var denyAllBtn = controlsPanel.querySelector('.cr-btn-quit-all');
       if (denyAllBtn) {
-        denyAllBtn.onclick = handleDenyAllClick.bind(null, chatCtx);
+    function onDenyAllClick() { handleDenyAllClick(chatCtx); }
+    denyAllBtn.onclick = onDenyAllClick;
       }
 
       var acceptAllDiffsBtn = controlsPanel.querySelector('.cr-btn-accept-all-diffs');
       if (acceptAllDiffsBtn) {
-        acceptAllDiffsBtn.onclick = handleAcceptAllDiffsClick.bind(null, chatCtx);
+    function onAcceptAllDiffsClick() { handleAcceptAllDiffsClick(chatCtx); }
+    acceptAllDiffsBtn.onclick = onAcceptAllDiffsClick;
       }
 
       var rejectAllDiffsBtn = controlsPanel.querySelector('.cr-btn-reject-all-diffs');
       if (rejectAllDiffsBtn) {
-        rejectAllDiffsBtn.onclick = handleRejectAllDiffsClick.bind(null, chatCtx);
+    function onRejectAllDiffsClick() { handleRejectAllDiffsClick(chatCtx); }
+    rejectAllDiffsBtn.onclick = onRejectAllDiffsClick;
       }
     } else {
       controlsPanel.style.display = 'none';
@@ -739,7 +745,8 @@
         var blob = items[i].getAsFile();
         if (!blob) continue;
         var reader = new FileReader();
-        reader.onload = handleReaderOnload.bind(null, chatCtx);
+    function onReaderLoad(ev) { handleReaderOnload(chatCtx, ev); }
+    reader.onload = onReaderLoad;
         reader.readAsDataURL(blob);
         break;
       }
@@ -761,7 +768,8 @@
     var f = fileInput.files[0];
     if (!f) return;
     var reader = new FileReader();
-    reader.onload = handleReaderOnload.bind(null, chatCtx);
+    function onReaderLoad(ev) { handleReaderOnload(chatCtx, ev); }
+    reader.onload = onReaderLoad;
     reader.readAsDataURL(f);
     fileInput.value = '';
   }
@@ -918,8 +926,8 @@
 
   function pumpStream(streamCtx) {
     return streamCtx.reader.read()
-      .then(handleReaderChunk.bind(null, streamCtx))
-      .catch(handleReaderError.bind(null, streamCtx));
+      .then(function onReaderChunk(c) { return handleReaderChunk(streamCtx, c); })
+      .catch(function onReaderErr(e) { return handleReaderError(streamCtx, e); });
   }
 
   function handleReaderChunk(streamCtx, c) {
@@ -1074,7 +1082,8 @@
 
       if (window.VSCODE && window.VSCODE_API) {
         onStreamStart();
-        window.activeChatStreamCallback = handleActiveChatStream.bind(null, chatCtx);
+        function onActiveStream(ev) { handleActiveChatStream(chatCtx, ev); }
+        window.activeChatStreamCallback = onActiveStream;
 
         window.VSCODE_API.postMessage({
           type: "startChat",
@@ -1110,8 +1119,8 @@
         body: JSON.stringify(body),
         signal: chatCtx.abortCtrl.signal
       })
-      .then(handleFetchChatResponse.bind(null, S, msgList, onStreamEnd, onStreamError, chatCtx))
-      .catch(handleFetchChatError.bind(null, onStreamError, chatCtx));
+      .then(function onChatRes(res) { return handleFetchChatResponse(S, msgList, onStreamEnd, onStreamError, chatCtx, res); })
+      .catch(function onChatErr(e) { return handleFetchChatError(onStreamError, chatCtx, e); });
     } catch (e) {
       console.error("[CHATSPACE] Error in doSend:", e);
     }
@@ -1177,7 +1186,8 @@
 
       if (window.VSCODE && window.VSCODE_API) {
         onStreamStart();
-        window.activeChatStreamCallback = handleActiveChatStream.bind(null, chatCtx);
+        function onActiveStream(ev) { handleActiveChatStream(chatCtx, ev); }
+        window.activeChatStreamCallback = onActiveStream;
 
         window.VSCODE_API.postMessage({
           type: "startChat",
@@ -1214,8 +1224,8 @@
         body: JSON.stringify(body),
         signal: chatCtx.abortCtrl.signal
       })
-      .then(handleFetchChatResponse.bind(null, S, msgList, onStreamEnd, onStreamError, chatCtx))
-      .catch(handleFetchChatError.bind(null, onStreamError, chatCtx));
+      .then(function onChatRes(res) { return handleFetchChatResponse(S, msgList, onStreamEnd, onStreamError, chatCtx, res); })
+      .catch(function onChatErr(e) { return handleFetchChatError(onStreamError, chatCtx, e); });
     } catch (e) {
       console.error("[CHATSPACE] Error in doContinue:", e);
     }
@@ -1282,7 +1292,6 @@
           var tc = msg.tool_calls[tci];
           var toolName = (tc.function && tc.function.name) || tc.name || '';
           if (!toolName) continue;
-          if (toolName === 'terminal_input' || toolName === 'stop_terminal') continue;
           if (toolName === 'run_terminal') {
             var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
             var toolId = tc.id || '';
@@ -1390,7 +1399,6 @@
           removeTyping(S.botBody);
           var toolId = ev.id || 'tool_' + (++S._toolIdCounter);
           var toolName = ev.tool || '';
-          if (toolName === 'terminal_input' || toolName === 'stop_terminal') break;
           var toolArgs = ev.args || {};
           var toolIndex = ev.index;
 
@@ -1411,7 +1419,6 @@
         case 'action': {
           removeTyping(S.botBody);
           var action = ev.action;
-          if (action === 'terminal_input' || action === 'stop_terminal') break;
           if (action === 'run_terminal') {
             var termCard = findPendingCardByToolName(S, 'run_terminal', ev.toolCallId) || findPendingCardByToolName(S, 'run_terminal');
             if (termCard) {
@@ -1449,7 +1456,6 @@
         case 'tool_result': {
           removeTyping(S.botBody);
           var resTool = ev.tool;
-          if (resTool === 'terminal_input' || resTool === 'stop_terminal') break;
           var resSuccess = ev.success !== false;
           var resStatus = resSuccess ? 'success' : 'error';
           
@@ -1932,7 +1938,7 @@
       if (cardBody) {
         targetParent = cardBody;
         isEmbedded = true;
-        pendingCard.open = false;
+        pendingCard.open = true;
       }
     }
 
@@ -1973,7 +1979,8 @@
 
     targetParent.appendChild(d);
     var actions = d.querySelector('[id="actions-' + id + '"]');
-    actions.addEventListener('click', handlePermissionActionClick.bind(null, id, tool, chatCtx.msgList, chatCtx.controlsPanel));
+    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, ev); }
+    actions.addEventListener('click', onPermActionClick);
     scrollBottom(chatCtx.msgList);
     return d;
   }
@@ -1999,7 +2006,8 @@
       });
     }
     var chatCtx = { msgList: msgList, controlsPanel: controlsPanel };
-    setTimeout(updateAgentControlsPanel.bind(null, chatCtx), 50);
+    function onUpdateControls() { updateAgentControlsPanel(chatCtx); }
+    setTimeout(onUpdateControls, 50);
   }
 
   function appendToolResultBlock(body, tool, ev) {
@@ -2115,7 +2123,8 @@
       var a = mk('a', 'cr-source-chip');
       a.innerHTML = I.src + ' <span>' + esc(src) + '</span>';
       a.title = 'Open ' + src;
-      a.addEventListener('click', handleSourceChipClick.bind(null, src));
+      function onSourceClick() { handleSourceChipClick(src); }
+      a.addEventListener('click', onSourceClick);
       d.appendChild(a);
     }
     body.appendChild(d);
@@ -2126,29 +2135,36 @@
     if (!body) return null;
     status = status || 'pending';
 
-    var card = mk('details', 'cr-terminal-details');
+    var card = mk('details', 'cr-tool-card cr-tool-card--' + status + ' cr-terminal-details');
     card.open = false;
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = 'run_terminal';
     card.dataset.status = status;
 
-    var command = (args && args.command) || '';
-    var shortCommand = command.split(' ')[0] || 'Terminal';
+    var displayName = formatToolName('run_terminal');
+    var iconHtml = getToolIcon('run_terminal');
 
-    var summary = mk('summary', 'cr-terminal-summary-trigger');
-    summary.innerHTML =
-      'Ran <span class="cr-terminal-trigger-cmd">' + esc(shortCommand) + '</span>' +
-      '<span class="cr-terminal-summary-chevron">' + I.chevron + '</span>';
-    card.appendChild(summary);
+    var statusLabel = (status === 'running' || status === 'pending' || status === 'waiting') ? 'PENDING' : (status === 'success' || status === 'completed') ? 'COMPLETED' : 'FAILED';
+    var statusClass = 'cr-tool-card-status--' + (status === 'completed' ? 'success' : status);
+    var iconClass = 'cr-tool-card-icon--' + (status === 'completed' ? 'success' : status);
+
+    var head = mk('summary', 'cr-tool-card-head');
+    head.innerHTML =
+      '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
+      '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+      '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
+      '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
+    card.appendChild(head);
 
     var container = mk('div', 'cr-terminal-container cr-terminal-container--' + status);
     
-    var head = mk('div', 'cr-terminal-header');
-    head.innerHTML =
+    var command = (args && args.command) || '';
+    var headBar = mk('div', 'cr-terminal-header');
+    headBar.innerHTML =
       '<span class="cr-terminal-status-dot"></span>' +
       '<span class="cr-terminal-header-title">' + esc(command) + '</span>' +
       '<span class="cr-terminal-header-icon">' + I.terminal + '</span>';
-    container.appendChild(head);
+    container.appendChild(headBar);
 
     var cardBody = mk('div', 'cr-terminal-body');
     container.appendChild(cardBody);
@@ -2199,9 +2215,27 @@
     if (!card) return;
     card.dataset.status = execStatus;
     
+    card.className = 'cr-tool-card cr-tool-card--' + execStatus + ' cr-terminal-details';
+
     var container = card.querySelector('.cr-terminal-container');
     if (container) {
       container.className = 'cr-terminal-container cr-terminal-container--' + execStatus;
+    }
+
+    var statusLabel = (execStatus === 'running' || execStatus === 'pending' || execStatus === 'waiting') ? 'PENDING' : (execStatus === 'success' || execStatus === 'completed') ? 'COMPLETED' : 'FAILED';
+    var statusClass = 'cr-tool-card-status--' + (execStatus === 'completed' ? 'success' : execStatus);
+    var iconClass = 'cr-tool-card-icon--' + (execStatus === 'completed' ? 'success' : execStatus);
+
+    var statusEl = card.querySelector('.cr-tool-card-status');
+    if (statusEl) {
+      statusEl.className = 'cr-tool-card-status ' + statusClass;
+      statusEl.textContent = statusLabel;
+    }
+
+    var iconEl = card.querySelector('.cr-tool-card-icon');
+    if (iconEl) {
+      iconEl.className = 'cr-tool-card-icon ' + iconClass;
+      iconEl.innerHTML = (execStatus === 'running' || execStatus === 'pending') ? I.spin : getToolIcon('run_terminal');
     }
 
     if (execStatus !== 'running' && execStatus !== 'waiting' && execStatus !== 'pending') {
@@ -2419,9 +2453,12 @@
       '<span class="cr-diff-status" style="display:none"></span>';
     card.appendChild(actions);
 
-    actions.querySelector('.cr-diff-accept').onclick = handleDiffAcceptClick.bind(null, diffId, card, chatCtx.controlsPanel, chatCtx.msgList);
-    actions.querySelector('.cr-diff-reject').onclick = handleDiffRejectClick.bind(null, diffId, card, chatCtx.controlsPanel, chatCtx.msgList);
-    actions.querySelector('.cr-diff-full-btn').onclick = handleDiffFullClick.bind(null, diffId);
+    function onDiffAccept() { handleDiffAcceptClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList); }
+    actions.querySelector('.cr-diff-accept').onclick = onDiffAccept;
+    function onDiffReject() { handleDiffRejectClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList); }
+    actions.querySelector('.cr-diff-reject').onclick = onDiffReject;
+    function onDiffFull() { handleDiffFullClick(diffId); }
+    actions.querySelector('.cr-diff-full-btn').onclick = onDiffFull;
 
     var targetParent = body;
     var pendingCard = null;
@@ -2475,11 +2512,13 @@
 
     var btnContinue = mk('button', 'cr-btn cr-btn-continue-all');
     btnContinue.textContent = 'Continue';
-    btnContinue.addEventListener('click', handleContinueClick.bind(null, btnContainer, chatCtx));
+    function onContinueClick() { handleContinueClick(btnContainer, chatCtx); }
+    btnContinue.addEventListener('click', onContinueClick);
 
     var btnQuit = mk('button', 'cr-btn cr-btn-quit-all');
     btnQuit.textContent = 'Quit';
-    btnQuit.addEventListener('click', handleQuitClick.bind(null, btnContainer, chatCtx));
+    function onQuitClick() { handleQuitClick(btnContainer, chatCtx); }
+    btnQuit.addEventListener('click', onQuitClick);
 
     btnContainer.appendChild(btnContinue);
     btnContainer.appendChild(btnQuit);
@@ -3125,7 +3164,8 @@
       }
       updateUsageDisplay(chatCtx, S.sessionUsage);
 
-      window.stopCurrentChatStream = stopCurrentChatStream.bind(null, chatCtx);
+      function onStopStream() { stopCurrentChatStream(chatCtx); }
+      window.stopCurrentChatStream = onStopStream;
 
       if (conversation.plan) {
         renderTodos(chatCtx, conversation.plan);
@@ -3134,20 +3174,48 @@
       }
       loadHistory(chatCtx, msgList, conversation.messages || []);
 
-      input.addEventListener('input', handleInputTextChange.bind(null, input, charCount));
-      input.addEventListener('keydown', handleInputKeyDown.bind(null, doSend.bind(null, chatCtx)));
-      sendBtn.addEventListener('click', doSend.bind(null, chatCtx));
+      function onInputTextChange() { handleInputTextChange(input, charCount); }
+      input.addEventListener('input', onInputTextChange);
+      function onDoSendAction() { doSend(chatCtx); }
+      function onInputKeyDown(e) { handleInputKeyDown(onDoSendAction, e); }
+      input.addEventListener('keydown', onInputKeyDown);
+      function onSendBtnClick() { doSend(chatCtx); }
+      sendBtn.addEventListener('click', onSendBtnClick);
 
       if (stopBtn) {
-        stopBtn.addEventListener('click', handleStopButtonClick.bind(null, chatCtx));
+        function onStopBtnClick() { handleStopButtonClick(chatCtx); }
+        stopBtn.addEventListener('click', onStopBtnClick);
       }
 
-      input.addEventListener('paste', handleInputPaste.bind(null, chatCtx));
-      attachBtn.addEventListener('click', handleAttachClick.bind(null, fileInput));
-      fileInput.addEventListener('change', handleFileInputChange.bind(null, chatCtx));
+      function onInputPaste(e) { handleInputPaste(chatCtx, e); }
+      input.addEventListener('paste', onInputPaste);
+      function onAttachClick() { handleAttachClick(fileInput); }
+      attachBtn.addEventListener('click', onAttachClick);
+      function onFileInputChange(e) { handleFileInputChange(chatCtx, e); }
+      fileInput.addEventListener('change', onFileInputChange);
       if (clearImg) {
-        clearImg.addEventListener('click', handleClearImgClick.bind(null, chatCtx));
+        function onClearImgClick() { handleClearImgClick(chatCtx); }
+        clearImg.addEventListener('click', onClearImgClick);
       }
+
+      function handleMsgListCodeCopy(evt) {
+        if (!evt || !evt.target) return;
+        var copyBtn = evt.target.closest ? evt.target.closest('.md-code-copy-btn') : null;
+        if (copyBtn) {
+          var codeToCopy = decodeURIComponent(copyBtn.getAttribute('data-code') || '');
+          if (navigator.clipboard && codeToCopy) {
+            function onClipSuccess() {
+              copyBtn.classList.add('md-copied');
+              function onRemoveCopied() {
+                copyBtn.classList.remove('md-copied');
+              }
+              setTimeout(onRemoveCopied, 1500);
+            }
+            navigator.clipboard.writeText(codeToCopy).then(onClipSuccess);
+          }
+        }
+      }
+      msgList.addEventListener('click', handleMsgListCodeCopy);
 
       var usageBadge = container.querySelector('.cr-usage-badge');
       var usageCard  = container.querySelector('.cr-usage-card');

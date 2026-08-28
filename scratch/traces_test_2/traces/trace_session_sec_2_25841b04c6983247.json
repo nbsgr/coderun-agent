@@ -1,0 +1,56 @@
+[
+  {
+    "id": "trace_sec_2",
+    "sessionId": "session_sec_2",
+    "startedAt": 1787930188794,
+    "completedAt": 1787930188795,
+    "durationMs": 1,
+    "status": "completed",
+    "provider": "ollama",
+    "model": "test-model",
+    "user": {
+      "query": "Connecting to database",
+      "images": [],
+      "context": {
+        "workspaceFolder": "",
+        "openFiles": [],
+        "systemPromptTokens": "[REDACTED]"
+      }
+    },
+    "steps": [
+      {
+        "stepIndex": 1,
+        "llmCall": {
+          "model": "test-model",
+          "provider": "ollama",
+          "messages": {
+            "system": "",
+            "user": "Connecting to database",
+            "toolResults": null
+          },
+          "thinking": "Using connection string postgres://[REDACTED]@db.example.com:5432/mydb and AWS key [REDACTED_AWS_KEY] with JWT [REDACTED_JWT]",
+          "decision": "Connecting to DB",
+          "tokens": "[REDACTED]",
+          "durationMs": 0
+        },
+        "toolCalls": []
+      }
+    ],
+    "finalResponse": {
+      "text": "",
+      "thinking": "",
+      "durationMs": 0
+    },
+    "metrics": {
+      "totalDurationMs": 1,
+      "totalTokens": "[REDACTED]",
+      "toolsExecuted": 0,
+      "filesTouched": []
+    },
+    "transitions": [],
+    "events": [],
+    "observations": [],
+    "decisions": [],
+    "asciiTree": "Agent Run [test-model | COMPLETED | 0.0s]\n│\n├── User Input\n│   └── \"Connecting to database\"\n│\n├── LLM Call #1\n│   ├── Model: test-model\n│   ├── Reasoning: \"Using connection string postgres://[REDACTED]@db.example.com:5432/myd...\"\n│   └── Decision: Connecting to DB\n│\n└── Final Response\n    └── (Completed)"
+  }
+]

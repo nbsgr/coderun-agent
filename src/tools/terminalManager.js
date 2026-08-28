@@ -1,26 +1,73 @@
 // terminalManager.js — VS Code Terminal with Shell Integration
-// Executes commands in the REAL VS Code Integrated Terminal and streams
-// output live to the chat UI via shell integration events.
+// Executes commands in isolated VS Code Integrated Terminals per chat session
+// and streams output live to the chat UI via shell integration events.
 
 import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 
-var activeTerminal = null;
+var _sessions = {}; // sessionId -> sessionState
 var terminalListeners = [];
-var pendingExecutions = {};
 var executionCounter = 0;
-var sendEventCallback = null;
-var _lastSessionOutput = '';  // Holds stdout from the last/most recent terminal execution
-var _lastSessionActive = false; // Whether the session is still active
-var _lastCheckedPosition = 0; // Tracks the last position returned by checkTerminalOutput() to avoid returning duplicate output
-var activeExecId = null; // Tracks the currently running terminal execution ID for interactive routing
-var _pendingInteractiveReader = null; // Stores the async iterator reader when process is waiting for input
-var _pendingInteractiveExecution = null; // Stores the execution object for exit code retrieval
+
+function createSessionState(sessionId) {
+  return {
+    id: sessionId || 'default',
+    terminal: null,
+    lastSessionOutput: '',
+    lastSessionActive: false,
+    lastCheckedPosition: 0,
+    activeExecId: null,
+    activeChildProcess: null,
+    backgroundTasks: {},
+    pendingInteractiveReader: null,
+    pendingInteractiveExecution: null,
+    sendEventCallback: null
+  };
+}
+
+export function getSession(sessionId) {
+  var sid = sessionId || 'default';
+  if (!_sessions[sid]) {
+    _sessions[sid] = createSessionState(sid);
+  }
+  return _sessions[sid];
+}
+
+export function removeSession(sessionId) {
+  if (!sessionId) return;
+  var sess = _sessions[sessionId];
+  if (sess) {
+    if (sess.activeChildProcess) {
+      killChildProcess(sess.activeChildProcess);
+      sess.activeChildProcess = null;
+    }
+    if (sess.terminal) {
+      try {
+        sess.terminal.dispose();
+      } catch (_) {
+        // Intentionally ignored
+      }
+    }
+  }
+  delete _sessions[sessionId];
+}
+
+function killChildProcess(proc) {
+  if (!proc) return;
+  try {
+    if (process.platform === 'win32' && proc.pid) {
+      execFile('taskkill', ['/F', '/T', '/PID', String(proc.pid)], function onKillDone() {});
+    } else {
+      proc.kill('SIGTERM');
+    }
+  } catch (_) {
+    // Intentionally ignored
+  }
+}
 
 // ── Shell detection ────────────────────────────────────────
-// Auto-detect the shell name from VS Code's terminal API.
 function detectShellName(terminal) {
   try {
     var vscodeShell = vscode.env.shell || '';
@@ -35,7 +82,7 @@ function detectShellName(terminal) {
       if (shellName.includes('wsl')) return 'wsl';
     }
   } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    // Intentionally ignored
   }
 
   if (!terminal) return guessShellFromEnv();
@@ -44,19 +91,19 @@ function detectShellName(terminal) {
     if (creationOptions) {
       var shellPath = creationOptions.shellPath || '';
       if (shellPath) {
-        var shellName = path.basename(shellPath).toLowerCase();
-        if (shellName.includes('powershell')) return 'powershell';
-        if (shellName.includes('pwsh')) return 'powershell';
-        if (shellName.includes('cmd')) return 'cmd';
-        if (shellName.includes('bash')) return 'bash';
-        if (shellName.includes('zsh')) return 'zsh';
-        if (shellName.includes('fish')) return 'fish';
-        if (shellName.includes('wsl')) return 'wsl';
-        return shellName.replace(/\.exe$/, '');
+        var sName = path.basename(shellPath).toLowerCase();
+        if (sName.includes('powershell')) return 'powershell';
+        if (sName.includes('pwsh')) return 'powershell';
+        if (sName.includes('cmd')) return 'cmd';
+        if (sName.includes('bash')) return 'bash';
+        if (sName.includes('zsh')) return 'zsh';
+        if (sName.includes('fish')) return 'fish';
+        if (sName.includes('wsl')) return 'wsl';
+        return sName.replace(/\.exe$/, '');
       }
     }
   } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    // Intentionally ignored
   }
   return guessShellFromEnv();
 }
@@ -67,7 +114,7 @@ function guessShellFromEnv() {
     try {
       if (process.env.PSModulePath) return 'powershell';
     } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
+      // Intentionally ignored
     }
 
     if (process.env.SHELL) {
@@ -79,7 +126,7 @@ function guessShellFromEnv() {
       var comspec = process.env.COMSPEC || '';
       if (comspec.toLowerCase().includes('cmd')) return 'cmd';
     } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
+      // Intentionally ignored
     }
     return 'powershell';
   }
@@ -95,6 +142,18 @@ function getPlatform() {
   if (p === 'win32') return 'windows';
   if (p === 'darwin') return 'macos';
   return 'linux';
+}
+
+export function getShellName(sessionId) {
+  var term = null;
+  if (sessionId && _sessions[sessionId]) {
+    term = _sessions[sessionId].terminal;
+  }
+  return detectShellName(term);
+}
+
+export function getPlatformName() {
+  return getPlatform();
 }
 
 // ── ANSI escape sequence cleaner ────────────────────────────
@@ -117,375 +176,102 @@ function stripAnsi(text) {
   return cleaned;
 }
 
-export function setSendEventCallback(callback) {
-  sendEventCallback = callback;
+export function setSendEventCallback(callback, sessionId) {
+  var sess = getSession(sessionId);
+  sess.sendEventCallback = callback;
 }
 
-export function getShellName() {
-  var term = getTerminal();
-  return detectShellName(term);
-}
+// ── Interactive prompt detection ────────────────────────────
+var INTERACTIVE_PATTERNS = [
+  /\(y\/n\)/i,
+  /\[y\/n\]/i,
+  /\[Y\/n\]/i,
+  /\[y\/N\]/i,
+  /are you sure/i,
+  /continue\?/i,
+  /press any key/i,
+  /press enter/i,
+  /password:/i,
+  /enter passphrase/i,
+  /select an option/i,
+  /\? \[.*\]/
+];
 
-export function getPlatformName() {
-  return getPlatform();
-}
-
-export function getTerminal() {
-  if (activeTerminal && !activeTerminal.exitStatus) {
-    return activeTerminal;
+function detectPrompt(output) {
+  if (!output) return { interactive: false, promptDetected: false };
+  var lastLines = output.split('\n').slice(-5).join('\n');
+  for (var i = 0; i < INTERACTIVE_PATTERNS.length; i++) {
+    var pat = INTERACTIVE_PATTERNS[i];
+    if (pat.test(lastLines)) {
+      return { interactive: true, promptDetected: true };
+    }
   }
-  var existing = null;
-  var allTerms = vscode.window.terminals;
+  return { interactive: false, promptDetected: false };
+}
+
+export function getTerminal(sessionId, workspace) {
+  var sess = getSession(sessionId);
+  if (sess.terminal) {
+    return sess.terminal;
+  }
+
+  var termName = 'CodeRun (' + (sessionId || 'default') + ')';
+  var allTerms = vscode.window.terminals || [];
   for (var i = 0; i < allTerms.length; i++) {
-    if (allTerms[i].name === 'CodeRun Agent') {
-      existing = allTerms[i];
-      break;
-    }
-  }
-  if (existing && !existing.exitStatus) {
-    activeTerminal = existing;
-    return activeTerminal;
-  }
-  var workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath;
-  activeTerminal = vscode.window.createTerminal({
-    name: 'CodeRun Agent',
-    cwd: workspaceFolder,
-    location: vscode.TerminalLocation.Panel
-  });
-  return activeTerminal;
-}
-
-function handleShellIntegrationChange(disposable, resolve, event) {
-  if (event.terminal === activeTerminal && event.shellIntegration) {
-    disposable.ref.dispose();
-    resolve(true);
-  }
-}
-
-function handleShellIntegrationTimeout(disposable, resolve) {
-  disposable.ref.dispose();
-  resolve(!!activeTerminal.shellIntegration);
-}
-
-function executeShellIntegrationPromise(ms, resolve) {
-  var disposable = { ref: null };
-  var changeCb = handleShellIntegrationChange.bind(null, disposable, resolve);
-  disposable.ref = vscode.window.onDidChangeTerminalShellIntegration(changeCb);
-  
-  var timeoutCb = handleShellIntegrationTimeout.bind(null, disposable, resolve);
-  setTimeout(timeoutCb, ms);
-}
-
-export async function waitForShellIntegration(ms) {
-  ms = ms || 5000;
-  if (!activeTerminal) return false;
-  if (activeTerminal.shellIntegration) return true;
-  return new Promise(executeShellIntegrationPromise.bind(null, ms));
-}
-
-function onShellIntegrationChange(event) {
-  var terminal = event.terminal;
-  var shellIntegration = event.shellIntegration;
-  console.log('[TERMINAL] Shell integration changed for:', terminal.name);
-  if (terminal === activeTerminal && shellIntegration) {
-    console.log('[TERMINAL] Shell integration ready for CodeRun terminal');
-  }
-}
-
-function onDidCloseTerminalHandler(terminal) {
-  if (terminal === activeTerminal) {
-    activeTerminal = null;
-    for (var id in pendingExecutions) {
-      if (sendEventCallback) {
-        sendEventCallback({
-          type: 'terminal_error',
-          terminalId: id,
-          message: 'Terminal was closed before command completed.'
-        });
-      }
-      delete pendingExecutions[id];
-    }
-  }
-}
-
-export function registerTerminalListeners(context) {
-  if (!vscode.window.onDidChangeTerminalShellIntegration) {
-    console.log('[TERMINAL] Shell integration change events are not available in this VS Code version.');
-    return;
-  }
-
-  var changeSub = vscode.window.onDidChangeTerminalShellIntegration(onShellIntegrationChange);
-  terminalListeners.push(changeSub);
-  context.subscriptions.push(changeSub);
-
-  var closeSub = vscode.window.onDidCloseTerminal(onDidCloseTerminalHandler);
-  terminalListeners.push(closeSub);
-  context.subscriptions.push(closeSub);
-}
-
-function processTerminalChunk(execId, result) {
-  if (!result || result.done) return true;
-  var chunk = result.value;
-  if (chunk) {
-    var cleanChunk = stripAnsi(String(chunk));
-    if (cleanChunk) {
-      _lastSessionOutput += cleanChunk;
-      console.log('[TERMINAL] Background reader: new output for', execId, 'length:', cleanChunk.length);
-      if (sendEventCallback) {
-        sendEventCallback({
-          type: 'terminal_output',
-          terminalId: execId,
-          chunk: cleanChunk
-        });
-      }
-    }
-  }
-  return false;
-}
-
-function resolveBgTimeout(resolve) {
-  resolve({ done: false, value: undefined, _bgTimeout: true });
-}
-
-function executeBgTimeoutPromise(ms, resolve) {
-  setTimeout(resolveBgTimeout.bind(null, resolve), ms);
-}
-
-function createBgTimeoutPromise(ms) {
-  return new Promise(executeBgTimeoutPromise.bind(null, ms));
-}
-
-function resolveNullValue(resolve) {
-  resolve(null);
-}
-
-function executeNullTimeoutPromise(ms, resolve) {
-  setTimeout(resolveNullValue.bind(null, resolve), ms);
-}
-
-function createNullTimeoutPromise(ms) {
-  return new Promise(executeNullTimeoutPromise.bind(null, ms));
-}
-
-async function continueReadingInBackground(execId, reader, execution, shellName, platformName, cwd, command, startedAt, orphanedNextPromise) {
-  console.log('[TERMINAL] Starting background reader for interactive session:', execId);
-  _pendingInteractiveReader = reader;
-  _pendingInteractiveExecution = execution;
-
-  try {
-    if (orphanedNextPromise) {
-      console.log('[TERMINAL] Background reader: awaiting orphaned nextPromise for', execId);
-      var firstResult = await Promise.race([
-        orphanedNextPromise,
-        createBgTimeoutPromise(60000)
-      ]);
-
-      if (firstResult._bgTimeout) {
-        if (!_lastSessionActive) {
-          console.log('[TERMINAL] Background reader: session cancelled during orphan wait, stopping');
-          _pendingInteractiveReader = null;
-          _pendingInteractiveExecution = null;
-          return;
-        }
-      } else {
-        var streamEnded = processTerminalChunk(execId, firstResult);
-        if (streamEnded) {
-          console.log('[TERMINAL] Background reader: stream ended on orphaned promise for', execId);
-          _lastSessionActive = false;
-          activeExecId = null;
-          _pendingInteractiveReader = null;
-          _pendingInteractiveExecution = null;
-
-          var exitCode = null;
-          try {
-            exitCode = await Promise.race([
-              execution.exitCode,
-              createNullTimeoutPromise(5000)
-            ]);
-          } catch (_) {
-            // Intentionally ignored to allow safe execution fallback
-          }
-
-          var durationMs = Date.now() - startedAt;
-          console.log('[TERMINAL] Background reader: process exited for', execId, 'exitCode:', exitCode);
-          if (sendEventCallback) {
-            sendEventCallback({
-              type: 'terminal_exit',
-              terminalId: execId,
-              exitCode: exitCode,
-              duration: durationMs,
-              shell: shellName,
-              platform: platformName,
-              cwd: cwd,
-              command: command
-            });
-          }
-          return;
-        }
-      }
-    }
-
-    while (true) {
-      if (!_lastSessionActive) {
-        console.log('[TERMINAL] Background reader: session no longer active, stopping loop for', execId);
-        break;
-      }
-      var raceResult = await Promise.race([
-        reader.next(),
-        createBgTimeoutPromise(60000)
-      ]);
-
-      if (raceResult._bgTimeout) {
-        if (!_lastSessionActive) {
-          console.log('[TERMINAL] Background reader: session no longer active, stopping');
-          break;
-        }
-        continue;
-      }
-
-      var streamEnded = processTerminalChunk(execId, raceResult);
-      if (streamEnded) break;
-    }
-
-    console.log('[TERMINAL] Background reader: stream ended for', execId, '— awaiting exitCode');
-    var exitCode = null;
-    try {
-      exitCode = await Promise.race([
-        execution.exitCode,
-        createNullTimeoutPromise(5000)
-      ]);
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-
-    _lastSessionActive = false;
-    activeExecId = null;
-    _pendingInteractiveReader = null;
-    _pendingInteractiveExecution = null;
-
-    var durationMs = Date.now() - startedAt;
-    console.log('[TERMINAL] Background reader: process exited for', execId, 'exitCode:', exitCode);
-
-    if (sendEventCallback) {
-      sendEventCallback({
-        type: 'terminal_exit',
-        terminalId: execId,
-        exitCode: exitCode,
-        duration: durationMs,
-        shell: shellName,
-        platform: platformName,
-        cwd: cwd,
-        command: command
-      });
-    }
-  } catch (err) {
-    console.error('[TERMINAL] Background reader error for', execId, ':', err.message);
-    _lastSessionActive = false;
-    activeExecId = null;
-    _pendingInteractiveReader = null;
-    _pendingInteractiveExecution = null;
-  }
-}
-
-// Heuristic: scan text for common interactive patterns.
-function detectPrompt(text) {
-  if (!text) return { interactive: false, promptDetected: false };
-  var lines = text.split('\n');
-  var interactive = false;
-  var promptDetected = false;
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-
-    if (/[○●◉◎⦿⊙⊚]/.test(line)) {
-      interactive = true;
-      promptDetected = true;
-    }
-
-    if (/[↑↓←→]/.test(line)) {
-      interactive = true;
-      promptDetected = true;
-    }
-
-    if (/[:：]\s*$/.test(line) && line.length < 120) {
-      interactive = true;
-      promptDetected = true;
-    }
-
-    if (/\([yYnN]\/[yYnN]\)|\[[yYnN]\/[yYnN]\]/.test(line)) {
-      interactive = true;
-      promptDetected = true;
-    }
-
-    if (/\[ ?\d+ ?\]|\( ?\d+ ?\)/.test(line) && lines.length - i < 30) {
-      interactive = true;
-    }
-
-    if (/^(Select|Choose|Pick)\b/i.test(line)) {
-      interactive = true;
-      promptDetected = true;
-    }
-
-    if (/\?\s*$/.test(line) && line.length < 150) {
-      interactive = true;
-      promptDetected = true;
+    if (allTerms[i].name === termName) {
+      sess.terminal = allTerms[i];
+      return sess.terminal;
     }
   }
 
-  return { interactive: interactive, promptDetected: promptDetected };
-}
-
-function handleBgStartTimeout(execId, shellName, platformName, cwd, startedAt) {
-  if (sendEventCallback) {
-    sendEventCallback({
-      type: 'terminal_exit',
-      terminalId: execId,
-      exitCode: null,
-      duration: Date.now() - startedAt,
-      shell: shellName,
-      platform: platformName,
-      cwd: cwd,
-      background: true,
-      message: 'Process started in the background.'
-    });
+  var cwd = workspace || undefined;
+  if (!cwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
   }
-}
 
-function handleNextPromiseResolve(timerCtx, r) {
-  if (timerCtx.id) {
-    clearTimeout(timerCtx.id);
-    timerCtx.id = null;
+  var termOptions = {
+    name: termName,
+    cwd: cwd
+  };
+
+  if (vscode.TerminalLocation && vscode.TerminalLocation.Panel) {
+    termOptions.location = vscode.TerminalLocation.Panel;
   }
-  return r;
+
+  sess.terminal = vscode.window.createTerminal(termOptions);
+
+  function onTerminalClosed(closedTerm) {
+    if (closedTerm === sess.terminal) {
+      sess.terminal = null;
+      sess.lastSessionActive = false;
+      sess.activeExecId = null;
+    }
+  }
+
+  terminalListeners.push(vscode.window.onDidCloseTerminal(onTerminalClosed));
+  return sess.terminal;
 }
 
-function resolveIdleTimeout(resolve) {
-  resolve({ done: true, value: undefined, _idleTimeout: true });
-}
+// ── Interactive command check ───────────────────────────────
+var INTERACTIVE_COMMANDS = [
+  'ssh', 'sftp', 'ftp', 'telnet',
+  'python -i', 'python3 -i', 'node -i', 'irb',
+  'mysql', 'psql', 'sqlite3', 'mongo', 'mongosh', 'redis-cli',
+  'nano', 'vim', 'vi', 'emacs', 'less', 'more',
+  'top', 'htop', 'glances',
+  'powershell -noexit', 'cmd /k'
+];
 
-function executeIdleTimeoutPromise(timerCtx, ms, resolve) {
-  timerCtx.id = setTimeout(resolveIdleTimeout.bind(null, resolve), ms);
-}
-
-function createIdleTimeoutPromise(timerCtx, ms) {
-  return new Promise(executeIdleTimeoutPromise.bind(null, timerCtx, ms));
-}
-
-function checkInteractiveCommand(cmd) {
-  var lower = String(cmd || '').toLowerCase();
-  var interactiveKeywords = [
-    'cmd', 'powershell', 'pwsh', 'bash', 'sh', 'zsh',
-    'python', 'node', 'npm start', 'npm run', 'nodemon', 'flask run', 'deno',
-    'ssh', 'ftp', 'telnet',
-    'read ', 'set /p', 'choice', 'input(', 'raw_input(',
-    'ping -t', 'ping localhost -t'
-  ];
-  for (var i = 0; i < interactiveKeywords.length; i++) {
-    var kw = interactiveKeywords[i];
-    var idx = lower.indexOf(kw);
+function checkInteractiveCommand(command) {
+  var trimmed = (command || '').trim().toLowerCase();
+  for (var i = 0; i < INTERACTIVE_COMMANDS.length; i++) {
+    var ic = INTERACTIVE_COMMANDS[i];
+    if (trimmed === ic || trimmed.startsWith(ic + ' ')) {
+      return true;
+    }
+    var idx = trimmed.indexOf(ic);
     if (idx !== -1) {
-      if (idx === 0) return true;
-      var prevChar = lower.charAt(idx - 1);
+      var prevChar = trimmed.charAt(idx - 1);
       if (prevChar === ' ' || prevChar === '&' || prevChar === '|' || prevChar === ';') {
         return true;
       }
@@ -494,113 +280,191 @@ function checkInteractiveCommand(cmd) {
   return false;
 }
 
-function handleInteractiveExitTimeout(execId, shellName, platformName, cwd, startedAt) {
-  if (sendEventCallback) {
-    sendEventCallback({
-      type: 'terminal_exit',
-      terminalId: execId,
-      exitCode: 0,
-      duration: Date.now() - startedAt,
-      shell: shellName,
-      platform: platformName,
-      cwd: cwd,
-      message: 'Interactive session active in terminal.'
-    });
+function createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess) {
+  function executeFilePromise(resolve) {
+    var options = {
+      cwd: cwd || undefined,
+      timeout: (timeout || 30) * 1000,
+      maxBuffer: 2 * 1024 * 1024,
+      windowsHide: true
+    };
+    function onResult(error, cpStdout, cpStderr) {
+      if (sess && sess.activeChildProcess === childProc) {
+        sess.activeChildProcess = null;
+      }
+      if (error) {
+        resolve({
+          stdout: cpStdout || '',
+          stderr: cpStderr || (error.killed ? 'Command timed out after ' + timeout + 's' : error.message),
+          exitCode: error.code != null ? error.code : (error.killed ? -1 : 1)
+        });
+      } else {
+        resolve({
+          stdout: cpStdout || '',
+          stderr: cpStderr || '',
+          exitCode: 0
+        });
+      }
+    }
+    var childProc = execFile(shellExe, fullArgs, options, onResult);
+    if (sess) {
+      sess.activeChildProcess = childProc;
+    }
   }
+  return new Promise(executeFilePromise);
 }
 
-function handleExecFileResult(resolve, error, cpStdout, cpStderr) {
-  if (error) {
-    resolve({
-      stdout: cpStdout || '',
-      stderr: cpStderr || '',
-      exitCode: error.code != null ? error.code : (error.killed ? -1 : 1)
-    });
-  } else {
-    resolve({
-      stdout: cpStdout || '',
-      stderr: cpStderr || '',
-      exitCode: 0
-    });
+function waitForShellIntegration(terminal, timeoutMs) {
+  if (!terminal) return Promise.resolve(null);
+  if (terminal.shellIntegration) {
+    return Promise.resolve(terminal.shellIntegration);
   }
+  timeoutMs = timeoutMs || 1200;
+  var disposable = null;
+
+  function executor(resolve) {
+    var timer = setTimeout(function onTimeout() {
+      if (disposable) disposable.dispose();
+      resolve(terminal.shellIntegration || null);
+    }, timeoutMs);
+
+    function onIntegrationChange(event) {
+      if (event && event.terminal === terminal && event.shellIntegration) {
+        clearTimeout(timer);
+        if (disposable) disposable.dispose();
+        resolve(event.shellIntegration);
+      }
+    }
+
+    if (vscode.window && typeof vscode.window.onDidChangeTerminalShellIntegration === 'function') {
+      disposable = vscode.window.onDidChangeTerminalShellIntegration(onIntegrationChange);
+    } else {
+      clearTimeout(timer);
+      resolve(null);
+    }
+  }
+
+  return new Promise(executor);
 }
 
-function executeFilePromise(shellExe, fullArgs, cwd, timeout, resolve) {
-  var options = {
-    cwd: cwd || undefined,
-    timeout: timeout * 1000,
-    maxBuffer: 1024 * 1024,
-    windowsHide: true
-  };
-  execFile(shellExe, fullArgs, options, handleExecFileResult.bind(null, resolve));
-}
-
-function createExecFilePromise(shellExe, fullArgs, cwd, timeout) {
-  return new Promise(executeFilePromise.bind(null, shellExe, fullArgs, cwd, timeout));
-}
-
-export async function executeCommand(command, timeout, background, isInteractive) {
+export async function executeCommand(command, timeout, background, isInteractive, sessionId, workspace) {
   timeout = timeout || 30;
-  var terminal = getTerminal();
+  var sess = getSession(sessionId);
+  var terminal = getTerminal(sessionId, workspace);
   terminal.show(true);
+
+  var cwd = workspace || undefined;
+  if (!cwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+  }
 
   var shellName = detectShellName(terminal);
   var platformName = getPlatform();
-  var cwd = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || '';
   var startedAt = Date.now();
-  var useInteractiveTimeout = isInteractive === true || (isInteractive !== false && checkInteractiveCommand(command));
+  var sendEvent = sess.sendEventCallback;
 
+  // Background execution: Track explicit task handle and lifecycle
   if (background) {
-    console.log('[TERMINAL] Running command in background:', command);
-    terminal.sendText(command, true);
+    var bgExecId = 'term_bg_' + (++executionCounter);
+    var shellExe = '';
+    var shellArg = '';
+    var lowerShell = shellName.toLowerCase();
+    if (lowerShell.includes('powershell') || lowerShell.includes('pwsh')) {
+      shellExe = process.env.PWSH_EXE || 'powershell.exe';
+      shellArg = '-NoProfile -NonInteractive -Command';
+    } else if (lowerShell.includes('cmd')) {
+      shellExe = process.env.COMSPEC || 'cmd.exe';
+      shellArg = '/c';
+    } else if (lowerShell.includes('wsl')) {
+      shellExe = 'wsl.exe';
+      shellArg = '--';
+    } else {
+      shellExe = process.env.SHELL || 'bash';
+      shellArg = '-c';
+    }
 
-    var execId = 'term_bg_' + (++executionCounter);
-    if (sendEventCallback) {
-      sendEventCallback({
+    var fullArgs = shellArg.split(' ').concat([command]);
+    var bgProcess = null;
+    try {
+      var spawnOptions = {
+        cwd: cwd || undefined,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+      };
+      function onBgExit(error) {
+        var t = sess.backgroundTasks[bgExecId];
+        if (t && t.status !== 'cancelled') {
+          t.status = error ? 'failed' : 'completed';
+          t.exitCode = error ? (error.code != null ? error.code : 1) : 0;
+          t.endedAt = Date.now();
+        }
+      }
+      bgProcess = execFile(shellExe, fullArgs, spawnOptions, onBgExit);
+    } catch (_) {
+      terminal.sendText(command, true);
+    }
+
+    sess.backgroundTasks[bgExecId] = {
+      id: bgExecId,
+      command: command,
+      status: 'running',
+      startedAt: startedAt,
+      childProcess: bgProcess
+    };
+
+    if (sendEvent) {
+      sendEvent({
         type: 'terminal_start',
-        terminalId: execId,
+        terminalId: bgExecId,
         command: command,
         shell: shellName,
         platform: platformName,
         cwd: cwd,
         background: true
       });
-      setTimeout(handleBgStartTimeout.bind(null, execId, shellName, platformName, cwd, startedAt), 1000);
     }
 
     return {
       shell: shellName,
       platform: platformName,
       command: command,
+      taskId: bgExecId,
       stdout: '',
       stderr: '',
       exitCode: null,
       durationMs: Date.now() - startedAt,
       success: true,
       workingDirectory: cwd,
-      method: 'background',
-      message: 'Command started in the background.'
+      background: true,
+      status: 'running'
     };
   }
 
+  // 1. Try Shell Integration execution (wait briefly for integration if terminal was just created)
   var shellIntegration = terminal.shellIntegration;
-  if (!shellIntegration) {
-    await waitForShellIntegration(3000);
-    shellIntegration = terminal.shellIntegration;
+  if (!shellIntegration && typeof vscode.window.onDidChangeTerminalShellIntegration === 'function') {
+    try {
+      shellIntegration = await waitForShellIntegration(terminal, 1200);
+    } catch (_) {}
   }
 
   if (shellIntegration) {
-    console.log('[TERMINAL] Executing via shell integration:', command, 'useInteractiveTimeout:', useInteractiveTimeout);
+    var shellExecutionStarted = false;
+    var execId = 'term_exec_' + (++executionCounter);
     var stdout = '';
     var stderr = '';
-    try {
-      var execId = 'term_direct_' + (++executionCounter);
-      activeExecId = execId;
-      var execution = shellIntegration.executeCommand(command);
-      var timeoutAt = startedAt + timeout * 1000;
+    var timeoutTimer = null;
+    var isTimedOut = false;
 
-      if (sendEventCallback) {
-        sendEventCallback({
+    try {
+      console.log('[TERMINAL] Executing command via Shell Integration for session', sess.id, ':', command);
+      sess.activeExecId = execId;
+      var execution = shellIntegration.executeCommand(command);
+      shellExecutionStarted = true;
+      var stream = execution.read();
+
+      if (sendEvent) {
+        sendEvent({
           type: 'terminal_start',
           terminalId: execId,
           command: command,
@@ -610,131 +474,107 @@ export async function executeCommand(command, timeout, background, isInteractive
         });
       }
 
-      if (!execution || typeof execution.read !== 'function') {
-        throw new Error('Shell integration did not return a readable execution stream.');
-      }
-      var iterable = execution.read();
-      if (!iterable || typeof iterable[Symbol.asyncIterator] !== 'function') {
-        throw new Error('Shell integration read() did not return an async iterable.');
+      var timeoutMs = timeout * 1000;
+
+      function createStreamTimeoutPromise() {
+        function executor(resolve, reject) {
+          timeoutTimer = setTimeout(async function onStreamTimeout() {
+            isTimedOut = true;
+            console.warn('[TERMINAL] Shell integration command timed out after ' + timeout + 's. Interrupting process in terminal for session:', sess.id);
+            try {
+              await stopTerminal(sess.id);
+            } catch (_) {}
+            reject(new Error('Shell integration execution timed out after ' + timeout + 's (process cancelled)'));
+          }, timeoutMs);
+        }
+        return new Promise(executor);
       }
 
-      console.log('[TERMINAL] Entering for-await loop for', execId);
-      var reader = iterable[Symbol.asyncIterator]();
-      var chunkCount = 0;
-      var idleDetected = false;
+      var isWaitingForPrompt = false;
+      var promptSilenceTimer = null;
 
+      function checkPromptSilence(resolveStream) {
+        if (promptSilenceTimer) {
+          clearTimeout(promptSilenceTimer);
+        }
+        var pCheck = detectPrompt(stdout);
+        if (pCheck.interactive || checkInteractiveCommand(command) || isInteractive) {
+          promptSilenceTimer = setTimeout(function onPromptDetected() {
+            isWaitingForPrompt = true;
+            sess.lastSessionActive = true;
+            resolveStream(0);
+          }, 300);
+        }
+      }
+
+      function consumeStream() {
+        function streamExecutor(resolve) {
+          async function readLoop() {
+            try {
+              for await (var chunk of stream) {
+                var cleanChunk = stripAnsi(String(chunk));
+                if (cleanChunk) {
+                  stdout += cleanChunk;
+                  sess.lastSessionOutput += cleanChunk;
+                  if (sendEvent) {
+                    sendEvent({
+                      type: 'terminal_output',
+                      terminalId: execId,
+                      chunk: cleanChunk
+                    });
+                  }
+                  checkPromptSilence(resolve);
+                }
+              }
+              if (promptSilenceTimer) {
+                clearTimeout(promptSilenceTimer);
+              }
+              var code = 0;
+              if (execution) {
+                if (typeof execution.exitCode === 'number') {
+                  code = execution.exitCode;
+                } else if (execution.exitCode && typeof execution.exitCode.then === 'function') {
+                  try {
+                    var resCode = await execution.exitCode;
+                    if (typeof resCode === 'number') code = resCode;
+                  } catch (_) {}
+                }
+              }
+              resolve(typeof code === 'number' ? code : 0);
+            } catch (err) {
+              if (promptSilenceTimer) {
+                clearTimeout(promptSilenceTimer);
+              }
+              resolve(0);
+            }
+          }
+          readLoop();
+        }
+        return new Promise(streamExecutor);
+      }
+
+      var exitCode = 0;
       try {
-        var IDLE_TIMEOUT_MS = useInteractiveTimeout ? 3000 : (timeout * 1000 + 5000);
-
-        while (true) {
-          var nextPromise = reader.next();
-          var raceResult = null;
-          if (useInteractiveTimeout) {
-            var timerCtx = { id: null };
-            raceResult = await Promise.race([
-              nextPromise.then(handleNextPromiseResolve.bind(null, timerCtx)),
-              createIdleTimeoutPromise(timerCtx, IDLE_TIMEOUT_MS)
-            ]);
-          } else {
-            var remainingMs = timeoutAt - Date.now();
-            if (remainingMs <= 0) {
-              throw new Error('Command timed out after ' + timeout + ' seconds.');
-            }
-            var timerCtx2 = { id: null };
-            raceResult = await Promise.race([
-              nextPromise.then(handleNextPromiseResolve.bind(null, timerCtx2)),
-              createIdleTimeoutPromise(timerCtx2, Math.max(remainingMs, 1000))
-            ]);
-          }
-
-          if (raceResult._idleTimeout) {
-            if (useInteractiveTimeout) {
-              idleDetected = true;
-              break;
-            } else {
-              throw new Error('Command timed out after ' + timeout + ' seconds.');
-            }
-          }
-
-          if (raceResult.done) break;
-
-          var chunk = raceResult.value;
-          chunkCount++;
-          console.log('[TERMINAL] Chunk #' + chunkCount + ' for', execId, 'length:', String(chunk || '').length);
-          var text = String(chunk || '');
-          var cleanChunk = stripAnsi(text);
-          stdout += cleanChunk;
-          if (sendEventCallback && cleanChunk) {
-            sendEventCallback({
-              type: 'terminal_output',
-              terminalId: execId,
-              chunk: cleanChunk
-            });
-          }
-
-          if (Date.now() > timeoutAt) {
-            throw new Error('Command timed out after ' + timeout + ' seconds.');
-          }
+        exitCode = await Promise.race([consumeStream(), createStreamTimeoutPromise()]);
+      } finally {
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
         }
-        _lastSessionOutput = stdout;
-        _lastSessionActive = (idleDetected === true);
-      } catch (streamErr) {
-        console.log('[TERMINAL] for-await loop threw for', execId, ':', streamErr.message, 'chunks received:', chunkCount);
-        throw streamErr;
+        if (promptSilenceTimer) {
+          clearTimeout(promptSilenceTimer);
+          promptSilenceTimer = null;
+        }
       }
 
-      if (idleDetected) {
-        console.log('[TERMINAL] Idle timeout for', execId, '- process waiting for input');
-        var durationMs2 = Date.now() - startedAt;
-        var promptCheck = detectPrompt(stdout);
-
-        continueReadingInBackground(execId, reader, execution, shellName, platformName, cwd, command, startedAt, nextPromise);
-
-        if (sendEventCallback) {
-          sendEventCallback({
-            type: 'terminal_exit',
-            terminalId: execId,
-            exitCode: null,
-            duration: durationMs2,
-            shell: shellName,
-            platform: platformName,
-            cwd: cwd,
-            command: command,
-            waitingForInput: true,
-            interactive: promptCheck.interactive,
-            promptDetected: promptCheck.promptDetected
-          });
-        }
-        console.log('[TERMINAL] Returning partial result for', execId, '(waiting for input)');
-        return {
-          shell: shellName,
-          platform: platformName,
-          command: command,
-          stdout: stdout,
-          stderr: stderr,
-          exitCode: null,
-          durationMs: durationMs2,
-          success: true,
-          workingDirectory: cwd,
-          method: 'shell_integration',
-          waitingForInput: true,
-          interactive: promptCheck.interactive,
-          promptDetected: promptCheck.promptDetected,
-          status: 'waiting_for_input'
-        };
-      }
-
-      console.log('[TERMINAL] for-await loop COMPLETED for', execId, 'chunks:', chunkCount);
-      console.log('[TERMINAL] Awaiting exitCode for', execId);
-      var exitCode = await execution.exitCode;
-      console.log('[TERMINAL] exitCode received for', execId, ':', exitCode);
       var durationMs = Date.now() - startedAt;
-      console.log('[TERMINAL] Sending terminal_exit for', execId, 'exitCode:', exitCode, 'duration:', durationMs);
-      if (sendEventCallback) {
-        sendEventCallback({
+      sess.activeExecId = null;
+
+      if (sendEvent) {
+        sendEvent({
           type: 'terminal_exit',
           terminalId: execId,
-          exitCode: exitCode,
+          exitCode: isWaitingForPrompt ? null : exitCode,
           duration: durationMs,
           shell: shellName,
           platform: platformName,
@@ -743,57 +583,83 @@ export async function executeCommand(command, timeout, background, isInteractive
         });
       }
 
-      console.log('[TERMINAL] Returning result for', execId);
       var promptCheck = detectPrompt(stdout);
-      activeExecId = null;
+      var isSuccess = !isTimedOut && (exitCode === 0 || exitCode == null);
+      var finalStatus = isWaitingForPrompt ? 'waiting_for_input' : (isSuccess ? 'completed' : 'failed');
+
       return {
         shell: shellName,
         platform: platformName,
         command: command,
         stdout: stdout,
         stderr: stderr,
-        exitCode: exitCode,
+        exitCode: isWaitingForPrompt ? null : exitCode,
         durationMs: durationMs,
-        success: exitCode != null ? (exitCode === 0) : true,
+        success: isSuccess,
         workingDirectory: cwd,
         method: 'shell_integration',
-        interactive: promptCheck.interactive,
-        promptDetected: promptCheck.promptDetected,
-        status: exitCode != null ? (exitCode === 0 ? 'completed' : 'failed') : 'completed'
+        interactive: promptCheck.interactive || isWaitingForPrompt,
+        promptDetected: promptCheck.promptDetected || isWaitingForPrompt,
+        waitingForInput: isWaitingForPrompt,
+        status: finalStatus
       };
-    } catch (err) {
-      console.error('[TERMINAL] Shell integration executeCommand failed:', err);
-      activeExecId = null;
-      _lastSessionOutput = stdout;
-      _lastSessionActive = false;
-      if (sendEventCallback) {
-        sendEventCallback({
-          type: 'terminal_error',
-          terminalId: 'term_error_' + executionCounter,
-          message: err.message,
+    } catch (siErr) {
+      console.warn('[TERMINAL] Shell integration execution error:', siErr.message);
+      sess.activeExecId = null;
+
+      // If execution was already started on the shell, handle timeout / stream error cleanly
+      if (shellExecutionStarted) {
+        var failDurationMs = Date.now() - startedAt;
+        if (sendEvent) {
+          sendEvent({
+            type: 'terminal_error',
+            terminalId: execId,
+            message: siErr.message,
+            shell: shellName,
+            platform: platformName
+          });
+        }
+
+        // Check if execution actually exited with a valid code despite stream reading issue
+        var fallbackExitCode = isTimedOut ? -1 : (typeof execution.exitCode === 'number' ? execution.exitCode : -1);
+        var isRealSuccess = fallbackExitCode === 0;
+
+        return {
           shell: shellName,
-          platform: platformName
-        });
+          platform: platformName,
+          command: command,
+          stdout: stdout,
+          stderr: siErr.message,
+          exitCode: fallbackExitCode,
+          durationMs: failDurationMs,
+          success: isRealSuccess,
+          workingDirectory: cwd,
+          method: 'shell_integration',
+          error: siErr.message,
+          status: isTimedOut ? 'timed_out' : (isRealSuccess ? 'completed' : 'failed'),
+          observationError: !isTimedOut && !isRealSuccess
+        };
       }
     }
   }
 
-  console.log('[TERMINAL] Shell integration unavailable — using child_process fallback:', command);
-  terminal.sendText(command, true);
+  // 2. Child Process Fallback (Executes strictly ONCE only if Shell Integration was not started)
+  console.log('[TERMINAL] Using isolated child_process fallback for session', sess.id, ':', command);
 
-  if (checkInteractiveCommand(command)) {
-    var execId = 'term_interactive_' + (++executionCounter);
-    if (sendEventCallback) {
-      sendEventCallback({
+  // If interactive, send to VS Code terminal directly without child_process duplicate
+  if (checkInteractiveCommand(command) || isInteractive) {
+    terminal.sendText(command, true);
+    var interactiveExecId = 'term_interactive_' + (++executionCounter);
+    if (sendEvent) {
+      sendEvent({
         type: 'terminal_start',
-        terminalId: execId,
+        terminalId: interactiveExecId,
         command: command,
         shell: shellName,
         platform: platformName,
         cwd: cwd,
         interactive: true
       });
-      setTimeout(handleInteractiveExitTimeout.bind(null, execId, shellName, platformName, cwd, startedAt), 1000);
     }
     return {
       shell: shellName,
@@ -801,21 +667,24 @@ export async function executeCommand(command, timeout, background, isInteractive
       command: command,
       stdout: 'Interactive command running in VS Code terminal.',
       stderr: '',
-      exitCode: 0,
+      exitCode: null,
       durationMs: Date.now() - startedAt,
       success: true,
       workingDirectory: cwd,
       interactive: true,
-      message: 'Interactive command executed in VS Code terminal.'
+      status: 'running',
+      submitted: true,
+      message: 'Interactive command submitted to VS Code terminal.'
     };
   }
 
-  var execId = 'term_fallback_' + (++executionCounter);
-  activeExecId = execId;
-  if (sendEventCallback) {
-    sendEventCallback({
+  // Non-interactive: Execute strictly via execFile
+  var fallbackExecId = 'term_fallback_' + (++executionCounter);
+  sess.activeExecId = fallbackExecId;
+  if (sendEvent) {
+    sendEvent({
       type: 'terminal_start',
-      terminalId: execId,
+      terminalId: fallbackExecId,
       command: command,
       shell: shellName,
       platform: platformName,
@@ -843,42 +712,28 @@ export async function executeCommand(command, timeout, background, isInteractive
   }
 
   try {
-    var stdout = '';
-    var stderr = '';
-    var cpExitCode = null;
-
     var fullArgs = shellArg.split(' ').concat([command]);
-    var cpResult = await createExecFilePromise(shellExe, fullArgs, cwd, timeout);
+    var cpResult = await createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess);
 
-    stdout = cpResult.stdout;
-    stderr = cpResult.stderr;
-    cpExitCode = cpResult.exitCode;
-    var durationMs = Date.now() - startedAt;
+    var fbStdout = stripAnsi(cpResult.stdout || '');
+    var fbStderr = stripAnsi(cpResult.stderr || '');
+    var fbExitCode = cpResult.exitCode;
+    var fbDurationMs = Date.now() - startedAt;
 
-    stdout = stripAnsi(stdout);
-    stderr = stripAnsi(stderr);
+    sess.lastSessionOutput += fbStdout;
 
-    if (sendEventCallback && stdout) {
-      sendEventCallback({
-        type: 'terminal_output',
-        terminalId: execId,
-        chunk: stdout
-      });
+    if (sendEvent && fbStdout) {
+      sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStdout });
     }
-    if (sendEventCallback && stderr) {
-      sendEventCallback({
-        type: 'terminal_output',
-        terminalId: execId,
-        chunk: stderr
-      });
+    if (sendEvent && fbStderr) {
+      sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStderr });
     }
-
-    if (sendEventCallback) {
-      sendEventCallback({
+    if (sendEvent) {
+      sendEvent({
         type: 'terminal_exit',
-        terminalId: execId,
-        exitCode: cpExitCode,
-        duration: durationMs,
+        terminalId: fallbackExecId,
+        exitCode: fbExitCode,
+        duration: fbDurationMs,
         shell: shellName,
         platform: platformName,
         cwd: cwd,
@@ -887,38 +742,32 @@ export async function executeCommand(command, timeout, background, isInteractive
       });
     }
 
-    var promptCheck = detectPrompt(stdout);
-    activeExecId = null;
+    sess.activeExecId = null;
     return {
       shell: shellName,
       platform: platformName,
       command: command,
-      stdout: stdout,
-      stderr: stderr,
-      exitCode: cpExitCode,
-      durationMs: durationMs,
-      success: cpExitCode === 0,
+      stdout: fbStdout,
+      stderr: fbStderr,
+      exitCode: fbExitCode,
+      durationMs: fbDurationMs,
+      success: fbExitCode === 0,
       workingDirectory: cwd,
-      method: 'sendText',
-      interactive: promptCheck.interactive,
-      promptDetected: promptCheck.promptDetected,
-      status: cpExitCode != null ? (cpExitCode === 0 ? 'completed' : 'failed') : 'completed'
+      method: 'execFile_fallback',
+      status: fbExitCode === 0 ? 'completed' : 'failed'
     };
   } catch (cpErr) {
-    console.error('[TERMINAL] child_process fallback also failed:', cpErr.message);
-    activeExecId = null;
-    var fallbackDuration = Date.now() - startedAt;
-
-    if (sendEventCallback) {
-      sendEventCallback({
+    sess.activeExecId = null;
+    var errDuration = Date.now() - startedAt;
+    if (sendEvent) {
+      sendEvent({
         type: 'terminal_error',
-        terminalId: execId,
+        terminalId: fallbackExecId,
         message: cpErr.message,
         shell: shellName,
         platform: platformName
       });
     }
-
     return {
       shell: shellName,
       platform: platformName,
@@ -926,32 +775,240 @@ export async function executeCommand(command, timeout, background, isInteractive
       stdout: '',
       stderr: cpErr.message,
       exitCode: -1,
-      durationMs: fallbackDuration,
+      durationMs: errDuration,
       success: false,
       workingDirectory: cwd,
-      method: 'sendText',
+      method: 'execFile_fallback',
       error: cpErr.message
     };
   }
 }
 
-export function executeCommandLegacy(command) {
-  if (!command) return;
-  var terminal = getTerminal();
-  terminal.show(true);
-  terminal.sendText(command, true);
+export async function sendTerminalInput(text, sessionId) {
+  var sess = getSession(sessionId);
+  var term = getTerminal(sessionId);
+  term.show(true);
+  var cleanText = String(text != null ? text : '');
+  term.sendText(cleanText, true);
+
+  // Allow shell to process input and emit response into stream buffer
+  function waitTimer(resolve) {
+    setTimeout(resolve, 300);
+  }
+  await new Promise(waitTimer);
+
+  var fullOutput = sess.lastSessionOutput || '';
+  var responseOutput = fullOutput.substring(sess.lastCheckedPosition);
+  sess.lastCheckedPosition = fullOutput.length;
+
+  var pCheck = detectPrompt(responseOutput);
+  if (!pCheck.interactive) {
+    sess.lastSessionActive = false;
+  }
+
+  return {
+    success: true,
+    status: pCheck.interactive ? 'waiting_for_input' : 'sent',
+    stdout: responseOutput,
+    output: responseOutput,
+    interactive: pCheck.interactive,
+    message: 'Input sent to terminal: ' + cleanText + (responseOutput ? ('\nResponse output:\n' + responseOutput) : '')
+  };
 }
 
-export function writeOutput(text, outputType) {
-  if (!text) return;
-  var terminal = getTerminal();
-  terminal.show(true);
-  var prefix = outputType === 'stderr' ? '[ERROR] ' : '[OUTPUT] ';
-  var lines = text.split('\n');
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    if (line.trim()) {
-      terminal.sendText('echo "' + prefix + line.replace(/"/g, '\"') + '"', true);
+export async function checkTerminalOutput(sessionId) {
+  var sess = getSession(sessionId);
+
+  // Allow in-flight stream chunks to settle into buffer
+  function waitTick(resolve) {
+    setTimeout(resolve, 250);
+  }
+  await new Promise(waitTick);
+
+  var fullOutput = sess.lastSessionOutput || '';
+  var shellName = sess.terminal ? detectShellName(sess.terminal) : 'unknown';
+  var platformName = getPlatform();
+
+  var newOutput = fullOutput.substring(sess.lastCheckedPosition);
+  sess.lastCheckedPosition = fullOutput.length;
+
+  var isWaiting = sess.lastSessionActive;
+  var promptCheck = detectPrompt(newOutput);
+  return {
+    shell: shellName,
+    platform: platformName,
+    stdout: newOutput,
+    stderr: '',
+    exitCode: null,
+    durationMs: 0,
+    success: true,
+    status: (isWaiting || promptCheck.interactive) ? 'waiting_for_input' : 'active',
+    waitingForInput: isWaiting || promptCheck.interactive,
+    interactive: promptCheck.interactive,
+    promptDetected: promptCheck.promptDetected
+  };
+}
+
+export async function stopTerminal(sessionId) {
+  var sess = getSession(sessionId);
+
+  var hadActiveProcess = false;
+
+  // 1. Stop active fallback child process if running
+  if (sess.activeChildProcess) {
+    console.log('[TERMINAL] Stopping active child process for session', sess.id);
+    killChildProcess(sess.activeChildProcess);
+    sess.activeChildProcess = null;
+    hadActiveProcess = true;
+  }
+
+  // 2. Stop any running background tasks
+  for (var bgId in sess.backgroundTasks) {
+    var bgTask = sess.backgroundTasks[bgId];
+    if (bgTask && bgTask.status === 'running') {
+      if (bgTask.childProcess) {
+        killChildProcess(bgTask.childProcess);
+        bgTask.childProcess = null;
+      }
+      bgTask.status = 'cancelled';
+      hadActiveProcess = true;
+    }
+  }
+
+  // 3. Send Ctrl+C interrupt directly to this session's VS Code terminal if active
+  if (sess.lastSessionActive || sess.activeExecId || hadActiveProcess) {
+    hadActiveProcess = true;
+    var term = getTerminal(sessionId);
+    if (term) {
+      try {
+        term.show(true);
+        term.sendText('\u0003', false);
+      } catch (_) {}
+    }
+
+    console.log('[TERMINAL] Sent Ctrl+C interrupt to session terminal:', sess.id);
+
+    if (sess.sendEventCallback) {
+      sess.sendEventCallback({
+        type: 'terminal_output',
+        terminalId: sess.activeExecId || ('term_stop_' + Date.now()),
+        chunk: '^C\n'
+      });
+    }
+
+    sess.lastSessionActive = false;
+    sess.activeExecId = null;
+    sess.pendingInteractiveReader = null;
+    sess.pendingInteractiveExecution = null;
+
+    return { success: true, status: 'stopped', message: 'Sent Ctrl+C to stop running process.' };
+  }
+
+  return { success: false, status: 'not_running', message: 'No active command or process was running in terminal.' };
+}
+
+export function resetTerminal(sessionId) {
+  var sess = getSession(sessionId);
+  if (sess.activeChildProcess) {
+    killChildProcess(sess.activeChildProcess);
+    sess.activeChildProcess = null;
+  }
+  if (sess.terminal) {
+    try {
+      sess.terminal.dispose();
+    } catch (_) {
+      // Intentionally ignored
+    }
+    sess.terminal = null;
+  }
+  sess.lastSessionOutput = '';
+  sess.lastSessionActive = false;
+  sess.lastCheckedPosition = 0;
+  sess.backgroundTasks = {};
+}
+
+export function getBackgroundTaskStatus(taskId, sessionId) {
+  var sess = getSession(sessionId);
+  return sess.backgroundTasks[taskId] || null;
+}
+
+export async function stopBackgroundTask(taskId, sessionId) {
+  var sess = getSession(sessionId);
+  var task = sess.backgroundTasks[taskId];
+  if (!task) {
+    return { success: false, message: 'Background task not found: ' + taskId };
+  }
+  if (task.childProcess) {
+    killChildProcess(task.childProcess);
+    task.childProcess = null;
+  }
+  task.status = 'cancelled';
+  return { success: true, message: 'Background task ' + taskId + ' cancelled.' };
+}
+
+export function onTerminalClosed(terminal) {
+  if (!terminal) return;
+  for (var sid in _sessions) {
+    var sess = _sessions[sid];
+    if (sess && sess.terminal === terminal) {
+      console.log('[TERMINAL] Terminal closed for session:', sid);
+      sess.terminal = null;
+      sess.lastSessionActive = false;
+      sess.activeExecId = null;
+      sess.pendingInteractiveReader = null;
+      sess.pendingInteractiveExecution = null;
+    }
+  }
+}
+
+export function registerTerminalListeners(context) {
+  if (!vscode.window) return;
+  if (vscode.window.onDidStartTerminalShellExecution) {
+    try {
+      function onShellStart(e) {
+        if (e && e.terminal) {
+          console.log('[TERMINAL] Shell execution started for terminal:', e.terminal.name);
+        }
+      }
+      var startListener = vscode.window.onDidStartTerminalShellExecution(onShellStart);
+      terminalListeners.push(startListener);
+      if (context && context.subscriptions) {
+        context.subscriptions.push(startListener);
+      }
+    } catch (_) {
+      // Intentionally ignored
+    }
+  }
+
+  if (vscode.window.onDidEndTerminalShellExecution) {
+    try {
+      function onShellEnd(e) {
+        if (e && e.terminal) {
+          console.log('[TERMINAL] Shell execution ended for terminal:', e.terminal.name);
+        }
+      }
+      var endListener = vscode.window.onDidEndTerminalShellExecution(onShellEnd);
+      terminalListeners.push(endListener);
+      if (context && context.subscriptions) {
+        context.subscriptions.push(endListener);
+      }
+    } catch (_) {
+      // Intentionally ignored
+    }
+  }
+
+  if (vscode.window.onDidCloseTerminal) {
+    try {
+      function onTermClose(term) {
+        onTerminalClosed(term);
+      }
+      var closeListener = vscode.window.onDidCloseTerminal(onTermClose);
+      terminalListeners.push(closeListener);
+      if (context && context.subscriptions) {
+        context.subscriptions.push(closeListener);
+      }
+    } catch (_) {
+      // Intentionally ignored
     }
   }
 }
@@ -961,106 +1018,11 @@ export function dispose() {
     try {
       terminalListeners[i].dispose();
     } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
+      // Intentionally ignored
     }
   }
   terminalListeners = [];
-  if (activeTerminal) {
-    try {
-      activeTerminal.dispose();
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-    activeTerminal = null;
+  for (var sid in _sessions) {
+    removeSession(sid);
   }
-  pendingExecutions = {};
-  sendEventCallback = null;
-}
-
-export function onTerminalClosed(terminal) {
-  if (terminal === activeTerminal) {
-    activeTerminal = null;
-  }
-}
-
-export function resetTerminal() {
-  if (activeTerminal) {
-    try {
-      activeTerminal.dispose();
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-    activeTerminal = null;
-  }
-  _lastSessionOutput = '';
-  _lastSessionActive = false;
-  _lastCheckedPosition = 0;
-}
-
-export function hasShellIntegration() {
-  return activeTerminal && activeTerminal.shellIntegration ? true : false;
-}
-
-export function sendTerminalInput(text) {
-  var terminal = getTerminal();
-  terminal.show(true);
-  terminal.sendText(text, true);
-  return { success: true, message: 'Input sent to terminal: ' + text };
-}
-
-export async function checkTerminalOutput() {
-  if (_pendingInteractiveReader && _lastSessionActive) {
-    await createNullTimeoutPromise(1500);
-  }
-
-  var fullOutput = _lastSessionOutput || '';
-  var stderr = '';
-  var shellName = activeTerminal ? detectShellName(activeTerminal) : 'unknown';
-  var platformName = getPlatform();
-  var startedAt = Date.now();
-
-  var newOutput = fullOutput.substring(_lastCheckedPosition);
-  _lastCheckedPosition = fullOutput.length;
-
-  var isWaiting = _lastSessionActive;
-  var exitCode = null;
-
-  var promptCheck = detectPrompt(newOutput);
-  return {
-    shell: shellName,
-    platform: platformName,
-    stdout: newOutput,
-    stderr: stderr,
-    exitCode: exitCode,
-    durationMs: Date.now() - startedAt,
-    success: true,
-    status: isWaiting ? 'waiting_for_input' : 'active',
-    waitingForInput: isWaiting,
-    interactive: promptCheck.interactive,
-    promptDetected: promptCheck.promptDetected
-  };
-}
-
-export async function stopTerminal() {
-  var terminal = getTerminal();
-  terminal.show(true);
-
-  console.log('[TERMINAL] Sending Ctrl+C interrupt');
-
-  await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', { text: '\u0003' });
-
-  if (sendEventCallback) {
-    sendEventCallback({
-      type: 'terminal_output',
-      terminalId: activeExecId || ('term_stop_' + Date.now()),
-      chunk: '^C\n'
-    });
-  }
-
-  _lastSessionActive = false;
-  activeExecId = null;
-  _pendingInteractiveReader = null;
-  _pendingInteractiveExecution = null;
-
-  return { success: true, message: 'Sent Ctrl+C to stop running process.' };
 }

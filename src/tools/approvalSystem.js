@@ -5,10 +5,16 @@ import * as permissions from './permissions.js';
 import * as toolRegistry from './toolRegistry.js';
 
 var DANGEROUS_COMMANDS = [
-  'rm ', 'rmdir', 'del ', 'erase', 'format', 
-  'git reset', 'git clean', 'git branch -d', 'git branch -D',
+  // POSIX / Linux / macOS
+  'rm ', 'rmdir', 'del ', 'erase', 'format',
+  'git reset', 'git clean', 'git branch -d', 'git branch -D', 'git push --force',
   'docker rm', 'docker rmi', 'docker system prune',
-  'npm uninstall', 'yarn remove', 'pnpm remove', 'pip uninstall'
+  'npm uninstall', 'yarn remove', 'pnpm remove', 'pip uninstall',
+  // Windows PowerShell cmdlets & aliases
+  'remove-item', 'ri ', 'rd ', 'clear-content', 'clc ', 'stop-process', 'spps ', 'taskkill',
+  'fdisk', 'diskpart',
+  // Database destructive operations
+  'drop database', 'drop table', 'truncate table', 'drop schema'
 ];
 
 var DEPLOY_COMMANDS = [
@@ -19,13 +25,7 @@ var DEPLOY_COMMANDS = [
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Determine if a tool invocation requires human approval.
- *
- * @param {string} toolName - Name of the tool
- * @param {object} args     - Tool arguments
- * @returns {boolean} True if approval is required
- */
+// Determine if a tool invocation requires human approval.
 export function requiresApproval(toolName, args) {
   args = args || {};
   var canonicalName = normalizeToolName(toolName);
@@ -35,13 +35,15 @@ export function requiresApproval(toolName, args) {
     return true;
   }
 
-  // 2. Filesystem write actions must prompt even if metadata is missing.
+  // 2. Sensitive write/execution actions must prompt even if metadata is missing.
   if (canonicalName === 'write_file' ||
       canonicalName === 'edit_file' ||
       canonicalName === 'patch_file' ||
       canonicalName === 'delete_file' ||
       canonicalName === 'create_folder' ||
-      canonicalName === 'delete_folder') {
+      canonicalName === 'delete_folder' ||
+      canonicalName === 'terminal_input' ||
+      canonicalName === 'web_request') {
     return true;
   }
 
@@ -80,19 +82,10 @@ function normalizeToolName(toolName) {
   return normalized;
 }
 
-/**
- * Request approval for a tool call.
- *
- * @param {string} toolName   - Name of the tool
- * @param {object} args       - Tool arguments
- * @param {string} toolCallId - Tool call unique identifier
- * @param {function} sendEvent - Event channel to notify UI
- * @returns {Promise<boolean>} True if approved, false if denied
- */
-export async function requestApproval(toolName, args, toolCallId, sendEvent) {
-  // Centralized hook using permissions.js under the hood
+// Request approval for a tool call.
+export async function requestApproval(toolName, args, toolCallId, sendEvent, sessionId) {
   try {
-    return await permissions.requestPermission(toolName, args, toolCallId, sendEvent);
+    return await permissions.requestPermission(toolName, args, toolCallId, sendEvent, sessionId);
   } catch (e) {
     console.error('[APPROVAL SYSTEM] Request error:', e);
     return false;

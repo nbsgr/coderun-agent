@@ -1,142 +1,93 @@
-// runtime.js — Centralized Execution Context (Runtime)
-//
-// SINGLE source of truth for ALL execution state.
-// Every mutation emits an event via the events.js bus.
-// The UI renders from Runtime state — never creates or modifies it.
-//
-// Ownership boundaries:
-//   Runtime         — owns execution state + plan cache, emits events
-//   Agent Loop      — drives execution, mutates Runtime state
-//   Planner         — only modifies planning data through Runtime
-//   Observer        — only records observations through Runtime
-//   Memory Engine   — only stores structured knowledge through Runtime
-//   UI (ChatSpace)  — renders Runtime state, never mutates it
-//
-// PLANNING ARCHITECTURE:
-//   Runtime owns the authoritative plan cache (_plans). All plan objects
-//   live here and are reference-stable — consumers always get the same
-//   object until Runtime replaces it. The LLM never needs to reconstruct
-//   plan state from conversation history; it queries Runtime APIs.
-//
-//   Plan flow:
-//     create_plan → tools.js → planningManager → planningEngine (generates)
-//                   ↓
-//                 runtime.registerPlan() ← authoritative copy stored here
-//                   ↓
-//                 agentLoop reads runtime.getActivePlan() — always fresh
-//                   ↓
-//     update_plan → tools.js → planningManager → planningEngine (mutates)
-//                   ↓
-//                 runtime.updatePlan() ← cache updated, events emitted
-//                   ↓
-//                 agentLoop reads same object — no stale reference
-//                   ↓
-//     get_plan    → tools.js → runtime.getPlan() / getActivePlan()
-//                              returns the exact same object reference
-//
-// State shape:
-//   {
-//     goal:          string,
-//     state:         'idle'|'thinking'|'executing'|'verifying'|'completed'|'failed'|'stopped',
-//     currentPlanId: string,          // ← plan ID, not object (avoids stale refs)
-//     messages:      array,
-//     toolResults:   array,
-//     observations:  array,
-//     decisions:     array,
-//     memory:        object,
-//     metadata:      { startedAt, iteration, sessionId }
-//   }
-
 import * as events from './events.js';
 import * as agentState from './agentState.js';
+import * as memoryManager from '../context/memoryManager.js';
+import * as goalTracker from '../context/goalTracker.js';
+import * as timelineManager from '../execution/timelineManager.js';
+import * as permissions from '../tools/permissions.js';
+import * as terminalManager from '../tools/terminalManager.js';
+import * as projectKnowledge from '../context/projectKnowledge.js';
+import * as diffManager from '../tools/diffManager.js';
+import * as executionTrace from '../execution/executionTrace.js';
 
-// ── Plan cache ────────────────────────────────────────────
-// SINGLE authoritative store for all plan objects.
-// No other module holds a separate plan cache.
 var _plans = {};           // { [planId]: Plan }
 var _planSessionIndex = {};// { [sessionId]: [planId, ...] }
+var _runtimeBySession = {};// { [sessionId]: SessionState }
+var _subscribers = [];
+var _activeSessionId = 'default';
 
-var _state = {
-  goal: '',
-  state: 'idle',
-  currentPlanId: '',
-  messages: [],
-  toolResults: [],
-  observations: [],
-  decisions: [],
-  memory: {},
-  metadata: {
-    startedAt: 0,
-    iteration: 0,
-    sessionId: '',
-    iterationLabel: ''
+function createInitialSessionState(sessionId) {
+  return {
+    goal: '',
+    state: 'idle',
+    currentPlanId: '',
+    messages: [],
+    toolResults: [],
+    observations: [],
+    decisions: [],
+    memory: {},
+    metadata: {
+      startedAt: 0,
+      iteration: 0,
+      sessionId: sessionId || 'default',
+      iterationLabel: ''
+    }
+  };
+}
+
+export function getSessionRuntime(sessionId) {
+  var sid = sessionId || _activeSessionId || 'default';
+  if (!_runtimeBySession[sid]) {
+    _runtimeBySession[sid] = createInitialSessionState(sid);
   }
-};
+  return _runtimeBySession[sid];
+}
 
 // ═══════════════════════════════════════════════════════════
 // SUBSCRIPTION
 // ═══════════════════════════════════════════════════════════
 
-var _subscribers = [];
-
-/**
- * Subscribe to state changes. The callback receives the new state.
- * @param {function} fn - (newState) => void
- * @returns {function} unsubscribe
- */
-function performUnsubscribe(subscriberList, fn) {
-  var idx = subscriberList.indexOf(fn);
-  if (idx !== -1) subscriberList.splice(idx, 1);
-}
-
 export function subscribe(fn) {
   _subscribers.push(fn);
-  return performUnsubscribe.bind(null, _subscribers, fn);
+  function unsubscribe() {
+    var idx = _subscribers.indexOf(fn);
+    if (idx !== -1) _subscribers.splice(idx, 1);
+  }
+  return unsubscribe;
 }
 
 // ═══════════════════════════════════════════════════════════
 // READ
 // ═══════════════════════════════════════════════════════════
 
-export function getState() {
-  return _state;
+export function getState(sessionId) {
+  return getSessionRuntime(sessionId);
 }
 
-/**
- * Get the active plan object. Returns the authoritative plan from the
- * internal cache — always the same reference until replaced.
- * Returns null if no plan is active.
- */
-export function getCurrentPlan() {
-  return _state.currentPlanId ? (_plans[_state.currentPlanId] || null) : null;
+export function getCurrentPlan(sessionId) {
+  var sessState = getSessionRuntime(sessionId);
+  return sessState.currentPlanId ? (_plans[sessState.currentPlanId] || null) : null;
 }
 
-export function getGoal() {
-  return _state.goal;
+export function getGoal(sessionId) {
+  return getSessionRuntime(sessionId).goal;
 }
 
-export function getMessages() {
-  return _state.messages;
+export function getMessages(sessionId) {
+  return getSessionRuntime(sessionId).messages;
 }
 
-export function getToolResults() {
-  return _state.toolResults;
+export function getToolResults(sessionId) {
+  return getSessionRuntime(sessionId).toolResults;
 }
 
-export function getMetadata() {
-  return _state.metadata;
+export function getMetadata(sessionId) {
+  return getSessionRuntime(sessionId).metadata;
 }
 
 // ═══════════════════════════════════════════════════════════
-// PLAN CACHE — Single Source of Truth for all plan objects
+// PLAN CACHE
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Register a plan in the runtime cache. Returns the same plan object.
- * If a plan with the same ID already exists, it is overwritten.
- * @param {object} plan - Plan object with .id and .sessionId
- * @returns {object} the same plan reference
- */
 export function registerPlan(plan) {
   if (!plan || !plan.id) return plan;
   _plans[plan.id] = plan;
@@ -176,17 +127,21 @@ export function updatePlan(plan) {
     plan.updatedAt = Date.now();
   }
   _plans[plan.id] = plan;
-  // Emit a runtime event so any listeners can react
+
+  var sid = plan.sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var oldState = Object.assign({}, sessState);
+
   events.emit('runtime:plan_updated', {
     planId: plan.id,
     plan: plan,
-    state: _state
+    state: sessState,
+    sessionId: sid
   });
 
-  // Notify subscribers about the plan change
-  if (_state.currentPlanId === plan.id || fullyCompleted) {
+  if (sessState.currentPlanId === plan.id || fullyCompleted) {
     for (var i = 0; i < _subscribers.length; i++) {
-      try { _subscribers[i](_state, _state); } catch (e) {
+      try { _subscribers[i](sessState, oldState); } catch (e) {
         console.error('[RUNTIME] Subscriber error:', e);
       }
     }
@@ -194,39 +149,25 @@ export function updatePlan(plan) {
   return plan;
 }
 
-/**
- * Get the active plan ID string.
- * @returns {string}
- */
-export function getActivePlanId() {
-  return _state.currentPlanId;
+export function getActivePlanId(sessionId) {
+  return getSessionRuntime(sessionId).currentPlanId;
 }
 
-/**
- * Set the active plan by ID. The plan must already be registered
- * (via registerPlan or updatePlan), otherwise it's a no-op.
- * @param {string} planId
- * @returns {boolean} whether the active plan was changed
- */
-export function setActivePlanId(planId) {
+export function setActivePlanId(planId, sessionId) {
   if (!planId || !_plans[planId]) return false;
-  mutate({ currentPlanId: planId }, 'plan', { planId: planId });
+  mutate({ currentPlanId: planId }, 'plan', { planId: planId }, sessionId);
   return true;
 }
 
-/**
- * Get a plan by ID from the runtime cache.
- * @param {string} planId
- * @returns {object|null}
- */
-export function getPlan(planId) {
-  return planId ? (_plans[planId] || null) : null;
+export function getPlan(planId, sessionId) {
+  if (!planId || !_plans[planId]) return null;
+  var plan = _plans[planId];
+  if (sessionId && plan.sessionId && plan.sessionId !== 'default' && plan.sessionId !== sessionId) {
+    return null;
+  }
+  return plan;
 }
 
-/**
- * Get all registered plans.
- * @returns {object[]}
- */
 export function getAllPlans() {
   var result = [];
   for (var pid in _plans) {
@@ -235,11 +176,6 @@ export function getAllPlans() {
   return result;
 }
 
-/**
- * Get all plans for a specific session.
- * @param {string} sessionId
- * @returns {object[]}
- */
 export function getPlansBySession(sessionId) {
   if (!_planSessionIndex[sessionId]) return [];
   var result = [];
@@ -250,65 +186,60 @@ export function getPlansBySession(sessionId) {
   return result;
 }
 
-/**
- * Remove a plan from the cache. If it's the active plan,
- * the active plan is cleared.
- * @param {string} planId
- * @returns {boolean}
- */
 export function removePlan(planId) {
   if (!_plans[planId]) return false;
   var plan = _plans[planId];
   delete _plans[planId];
 
-  // Clean up session index
   if (plan.sessionId && _planSessionIndex[plan.sessionId]) {
     var idx = _planSessionIndex[plan.sessionId].indexOf(planId);
     if (idx !== -1) _planSessionIndex[plan.sessionId].splice(idx, 1);
   }
 
-  // Clear active plan if removed
-  if (_state.currentPlanId === planId) {
-    _state.currentPlanId = '';
+  var sid = plan.sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  if (sessState.currentPlanId === planId) {
+    sessState.currentPlanId = '';
   }
 
   events.emit('runtime:plan_removed', {
     planId: planId,
-    state: _state
+    state: sessState,
+    sessionId: sid
   });
   return true;
 }
 
-/**
- * Count of registered plans.
- * @returns {number}
- */
-export function planCount() {
+export function planCount(sessionId) {
+  if (sessionId) {
+    return _planSessionIndex[sessionId] ? _planSessionIndex[sessionId].length : 0;
+  }
   var count = 0;
   for (var _ in _plans) count++; // eslint-disable-line no-unused-vars
   return count;
 }
 
 // ═══════════════════════════════════════════════════════════
-// MUTATE — all mutations go through here
+// MUTATE
 // ═══════════════════════════════════════════════════════════
 
-function mutate(changes, eventType, eventData) {
-  var oldState = Object.assign({}, _state);
-  Object.assign(_state, changes);
+function mutate(changes, eventType, eventData, sessionId) {
+  var sid = sessionId || _activeSessionId || 'default';
+  var sessState = getSessionRuntime(sid);
+  var oldState = Object.assign({}, sessState);
+  Object.assign(sessState, changes);
 
-  // Emit through events.js bus
   if (eventType) {
     events.emit('runtime:' + eventType, {
       changes: changes,
-      state: _state,
+      state: sessState,
+      sessionId: sid,
       data: eventData || null
     });
   }
 
-  // Notify subscribers
   for (var i = 0; i < _subscribers.length; i++) {
-    try { _subscribers[i](_state, oldState); } catch (e) {
+    try { _subscribers[i](sessState, oldState); } catch (e) {
       console.error('[RUNTIME] Subscriber error:', e);
     }
   }
@@ -318,10 +249,12 @@ function mutate(changes, eventType, eventData) {
 // PUBLIC MUTATION API
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Initialize a new session.
- */
 export function initSession(goal, sessionId) {
+  var sid = sessionId || 'session_' + Date.now();
+  _activeSessionId = sid;
+  _runtimeBySession[sid] = createInitialSessionState(sid);
+  agentState.reset(sid);
+
   mutate({
     goal: goal || '',
     state: 'thinking',
@@ -334,142 +267,150 @@ export function initSession(goal, sessionId) {
     metadata: {
       startedAt: Date.now(),
       iteration: 0,
-      sessionId: sessionId || 'session_' + Date.now(),
+      sessionId: sid,
       iterationLabel: ''
     }
-  }, 'init', { goal: goal, sessionId: sessionId });
+  }, 'init', { goal: goal, sessionId: sid }, sid);
 }
 
-/**
- * Set the current goal.
- */
-export function setGoal(goal) {
-  mutate({ goal: goal }, 'goal', { goal: goal });
+export function setGoal(goal, sessionId) {
+  mutate({ goal: goal }, 'goal', { goal: goal }, sessionId);
 }
 
-/**
- * Set the agent state machine state.
- */
-export function setState(state) {
-  if (agentState.getState() !== state) {
-    agentState.transition(state);
+export function setState(state, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  if (agentState.getState(sid) !== state) {
+    agentState.transition(state, sid);
   }
-  mutate({ state: state }, 'state', { state: state });
+  mutate({ state: state }, 'state', { state: state }, sid);
 }
 
-/**
- * Set the current plan (legacy compatible — registers and activates the plan).
- * If the plan has an id, it's stored in the plan cache and set as active.
- */
-export function setCurrentPlan(plan) {
+export function setCurrentPlan(plan, sessionId) {
+  var sid = sessionId || (plan && plan.sessionId) || _activeSessionId;
   if (!plan) {
-    mutate({ currentPlanId: '' }, 'plan', { plan: null });
+    mutate({ currentPlanId: '' }, 'plan', { plan: null }, sid);
     return;
   }
-  // Register in cache if not already present
   if (plan.id && !_plans[plan.id]) {
+    if (!plan.sessionId) plan.sessionId = sid;
     registerPlan(plan);
   }
-  mutate({ currentPlanId: plan.id || '' }, 'plan', { plan: plan });
+  mutate({ currentPlanId: plan.id || '' }, 'plan', { plan: plan }, sid);
 }
 
-/**
- * Add a message to the conversation.
- */
-export function addMessage(message) {
-  var msgs = _state.messages.slice();
+export function addMessage(message, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var msgs = sessState.messages.slice();
   msgs.push(message);
-  mutate({ messages: msgs }, 'message', { message: message });
+  mutate({ messages: msgs }, 'message', { message: message }, sid);
 }
 
-/**
- * Update the last message (for streaming content).
- */
-export function updateLastMessage(updates) {
-  var msgs = _state.messages.slice();
+export function updateLastMessage(updates, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var msgs = sessState.messages.slice();
   if (msgs.length > 0) {
     var last = Object.assign({}, msgs[msgs.length - 1], updates);
     msgs[msgs.length - 1] = last;
-    mutate({ messages: msgs }, 'message_update', { updates: updates });
+    mutate({ messages: msgs }, 'message_update', { updates: updates }, sid);
   }
 }
 
-/**
- * Add a tool result.
- */
-export function addToolResult(result) {
-  var results = _state.toolResults.slice();
+export function addToolResult(result, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var results = sessState.toolResults.slice();
   results.push(result);
-  mutate({ toolResults: results }, 'tool_result', { result: result });
+  mutate({ toolResults: results }, 'tool_result', { result: result }, sid);
 }
 
-/**
- * Record an observation.
- */
-export function addObservation(type, detail, source) {
-  var obs = _state.observations.slice();
+export function addObservation(type, detail, source, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var obs = sessState.observations.slice();
   obs.push({
     type: type || 'info',
     detail: detail || '',
     source: source || 'system',
     timestamp: Date.now()
   });
-  mutate({ observations: obs }, 'observation', { type: type, detail: detail });
+  mutate({ observations: obs }, 'observation', { type: type, detail: detail }, sid);
 }
 
-/**
- * Record a decision (e.g., tool approval).
- */
-export function addDecision(tool, decision, reason) {
-  var decs = _state.decisions.slice();
+export function addDecision(tool, decision, reason, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var decs = sessState.decisions.slice();
   decs.push({
     tool: tool,
     decision: decision,
     reason: reason || '',
     timestamp: Date.now()
   });
-  mutate({ decisions: decs }, 'decision', { tool: tool, decision: decision });
+  mutate({ decisions: decs }, 'decision', { tool: tool, decision: decision }, sid);
 }
 
-/**
- * Update metadata (iteration, etc.).
- */
-export function updateMetadata(changes) {
-  var meta = Object.assign({}, _state.metadata, changes);
-  mutate({ metadata: meta }, 'metadata', { changes: changes });
+export function updateMetadata(changes, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var meta = Object.assign({}, sessState.metadata, changes);
+  mutate({ metadata: meta }, 'metadata', { changes: changes }, sid);
 }
 
-/**
- * Set memory key.
- */
-export function setMemory(key, value) {
-  var mem = Object.assign({}, _state.memory);
+export function setMemory(key, value, sessionId) {
+  var sid = sessionId || _activeSessionId;
+  var sessState = getSessionRuntime(sid);
+  var mem = Object.assign({}, sessState.memory);
   mem[key] = value;
-  mutate({ memory: mem }, 'memory', { key: key });
+  mutate({ memory: mem }, 'memory', { key: key }, sid);
 }
 
-/**
- * Reset the runtime to initial state.
- */
-export function reset() {
-  agentState.reset();
-  _plans = {};
-  _planSessionIndex = {};
-  _state = {
-    goal: '',
-    state: 'idle',
-    currentPlanId: '',
-    messages: [],
-    toolResults: [],
-    observations: [],
-    decisions: [],
-    memory: {},
-    metadata: {
-      startedAt: 0,
-      iteration: 0,
-      sessionId: '',
-      iterationLabel: ''
+export function reset(sessionId) {
+  if (sessionId) {
+    agentState.reset(sessionId);
+    delete _runtimeBySession[sessionId];
+    var sessionPlans = _planSessionIndex[sessionId] || [];
+    for (var i = 0; i < sessionPlans.length; i++) {
+      delete _plans[sessionPlans[i]];
     }
-  };
-  events.emit('runtime:reset', { state: _state });
+    delete _planSessionIndex[sessionId];
+  } else {
+    agentState.reset();
+    _plans = {};
+    _planSessionIndex = {};
+    _runtimeBySession = {};
+    _activeSessionId = 'default';
+  }
+  events.emit('runtime:reset', { sessionId: sessionId || 'all' });
+}
+
+export function disposeSession(sessionId) {
+  if (!sessionId) return;
+  reset(sessionId);
+  try {
+    memoryManager.clear(sessionId);
+  } catch (_) {}
+  try {
+    goalTracker.clear(sessionId);
+  } catch (_) {}
+  try {
+    timelineManager.clearTimeline(sessionId);
+  } catch (_) {}
+  try {
+    permissions.resetChatDecisions(sessionId);
+  } catch (_) {}
+  try {
+    terminalManager.resetTerminal(sessionId);
+  } catch (_) {}
+  try {
+    projectKnowledge.deleteCheckpointsBySession(sessionId);
+  } catch (_) {}
+  try {
+    diffManager.rejectAll(sessionId);
+  } catch (_) {}
+  try {
+    executionTrace.clearTraces(sessionId);
+  } catch (_) {}
+  events.emit('session:disposed', { sessionId: sessionId });
 }

@@ -1,18 +1,14 @@
 // observationEngine.js — Production-grade Observation Engine
-// Intercepts tool execution outputs and produces structured observations.
+// Intercepts tool execution outputs and produces structured observations (Session-Scoped).
 
 import * as runtime from '../agents/runtime.js';
 
 /**
  * Generate a structured observation from a completed tool execution.
  *
- * @param {string} toolName   - Name of the tool called
- * @param {object} args       - Original arguments passed
- * @param {object} result     - Tool result object
- * @param {number} durationMs - Execution time in milliseconds
  * @returns {object} The structured Observation object
  */
-export function generateObservation(toolName, args, result, durationMs) {
+export function generateObservation(toolName, args, result, durationMs, sessionId) {
   var res = result || {};
   var output = res.output || res.content || res.message || res.stdout || '';
   if (typeof output !== 'string') {
@@ -91,9 +87,9 @@ export function generateObservation(toolName, args, result, durationMs) {
 
   // Add to runtime state
   try {
-    runtime.addObservation(errors.length ? 'error' : 'success', summary, 'observation_engine');
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+    runtime.addObservation(errors.length ? 'error' : 'success', summary, 'observation_engine', sessionId);
+  } catch (obsErr) {
+    console.warn('[OBSERVATION ENGINE] Failed to record runtime observation for session ' + (sessionId || 'default') + ':', obsErr.message);
   }
 
   return observation;

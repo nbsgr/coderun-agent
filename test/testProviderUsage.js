@@ -26,9 +26,10 @@ async function testOllamaUsage() {
 async function testOpenCodeUsage() {
   console.log('=== Testing OpenCode Usage ===');
   try {
+    var apiKey = process.env.TEST_OPENCODE_API_KEY || 'test-opencode-placeholder-key';
     var client = new OpenAI({
       baseURL: 'https://opencode.ai/zen/v1',
-      apiKey: 'sk-2GS9T54rzLK0s77eoaRwRf3cMOKBuY66XdHXaNfjSFW6icvxaasXF302j8Mdn3Gn'
+      apiKey: apiKey
     });
     var stream = await client.chat.completions.create({
       model: 'deepseek-v4-flash-free',
@@ -49,9 +50,10 @@ async function testOpenCodeUsage() {
 async function testGeminiUsage() {
   console.log('=== Testing Gemini OpenAI SDK Usage ===');
   try {
+    var apiKey = process.env.TEST_GEMINI_API_KEY || 'test-gemini-placeholder-key';
     var client = new OpenAI({
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-      apiKey: 'AIzaSyBA6FmLn7abwZXXVXKlaM_6amDJdYVWqj8'
+      apiKey: apiKey
     });
 
     var modelList = await client.models.list();

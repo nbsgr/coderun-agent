@@ -20,7 +20,6 @@ var _scanInProgress = null;
  * All results stored in SQLite via projectKnowledge. Idempotent — subsequent
  * calls within the same session skip if already scanned.
  *
- * @param {string} workspaceRoot - Absolute path to workspace root
  * @returns {Promise<boolean>} true if scan was performed
  */
 export async function scan(workspaceRoot) {

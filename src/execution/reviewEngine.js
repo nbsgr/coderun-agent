@@ -8,13 +8,7 @@ import * as path from 'path';
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Conduct a code review and self-reflection audit on modified files.
- *
- * @param {string} workspaceRoot   - Absolute workspace path
- * @param {string[]} modifiedFiles - Relative paths of modified files
- * @returns {Promise<object>} Structured review report
- */
+// Conduct a code review and self-reflection audit on modified and created files.
 export async function reviewChanges(workspaceRoot, modifiedFiles) {
   var issues = [];
   var passed = true;
@@ -26,10 +20,9 @@ export async function reviewChanges(workspaceRoot, modifiedFiles) {
 
   for (var i = 0; i < modifiedFiles.length; i++) {
     var relPath = modifiedFiles[i];
-    var fullPath = path.join(workspaceRoot, relPath);
+    var fullPath = path.isAbsolute(relPath) ? relPath : path.resolve(workspaceRoot || '', relPath);
     try {
       var content = await fs.readFile(fullPath, 'utf-8');
-      var lines = content.split('\n');
 
       // 1. Check for Placeholders / TODOs
       var lowerContent = content.toLowerCase();
@@ -47,8 +40,8 @@ export async function reviewChanges(workspaceRoot, modifiedFiles) {
 
       // 3. Check for hardcoded API keys/Secrets (Security)
       var secretPatterns = [
-        /(?:key|secret|password|token|api_key|apikey|passwd)\s*=\s*['"][a-zA-Z0-9_\-]{16,}['"]/i,
-        /Authorization\s*:\s*['"]Bearer\s+[a-zA-Z0-9_\-]{16,}['"]/i
+        /(?:['"]?(?:key|secret|password|token|api_key|apikey|passwd)['"]?)\s*[:=]\s*['"][a-zA-Z0-9_\-]{16,}['"]/i,
+        /(?:['"]?Authorization['"]?)\s*[:=]\s*['"]Bearer\s+[a-zA-Z0-9_\-]{16,}['"]/i
       ];
       for (var s = 0; s < secretPatterns.length; s++) {
         if (secretPatterns[s].test(content)) {
@@ -59,7 +52,6 @@ export async function reviewChanges(workspaceRoot, modifiedFiles) {
 
       // 4. Check for console.log debugging prints in production files
       if (lowerContent.includes('console.log(') && !relPath.startsWith('scripts') && !relPath.includes('test')) {
-        // Warning, doesn't fail the build but noted
         issues.push(relPath + ': Debugging console.log statement found.');
       }
 

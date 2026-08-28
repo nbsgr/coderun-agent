@@ -64,7 +64,10 @@ export function use(fn, priority) {
   var entry = { fn: fn, priority: priority };
   _middleware.push(entry);
   _middleware.sort(sortMiddleware);
-  return removeMiddleware.bind(null, entry);
+  function unsubscribe() {
+    removeMiddleware(entry);
+  }
+  return unsubscribe;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -83,6 +86,12 @@ export function execute(name, args, context) {
 
   var tool = _tools[canonicalName];
   if (!tool) return notFoundGenerator(name);
+
+  if (tool.hidden || (tool.metadata && (tool.metadata.hidden || tool.metadata.internalOnly))) {
+    if (!context.allowInternal) {
+      return validationErrorGenerator(canonicalName, ['Tool ' + canonicalName + ' is internal and cannot be invoked as an agent tool call.']);
+    }
+  }
 
   var validation = validate(canonicalName, args);
   if (!validation.valid) return validationErrorGenerator(canonicalName, validation.errors);
@@ -146,6 +155,7 @@ export function validate(name, args) {
 
   var errors = [];
   var required = tool.required || [];
+  var schemaParams = tool.parameters || {};
 
   for (var i = 0; i < required.length; i++) {
     var key = required[i];
@@ -155,7 +165,50 @@ export function validate(name, args) {
     }
   }
 
-  return { valid: errors.length === 0, errors: errors };
+  for (var paramKey in schemaParams) {
+    var paramVal = args[paramKey];
+    if (paramVal !== undefined && paramVal !== null) {
+      var expectedType = schemaParams[paramKey].type;
+      if (expectedType === 'string' && typeof paramVal !== 'string') {
+        errors.push("Invalid type for parameter '" + paramKey + "': expected string, got " + typeof paramVal);
+      } else if (expectedType === 'integer') {
+        if (typeof paramVal !== 'number' || !Number.isInteger(paramVal)) {
+          errors.push("Invalid type for parameter '" + paramKey + "': expected integer, got " + (typeof paramVal === 'number' ? 'decimal' : typeof paramVal));
+        }
+      } else if (expectedType === 'number') {
+        if (typeof paramVal !== 'number' || isNaN(paramVal)) {
+          errors.push("Invalid type for parameter '" + paramKey + "': expected number, got " + typeof paramVal);
+        }
+      } else if (expectedType === 'boolean' && typeof paramVal !== 'boolean') {
+        errors.push("Invalid type for parameter '" + paramKey + "': expected boolean, got " + typeof paramVal);
+      } else if (expectedType === 'array') {
+        if (!Array.isArray(paramVal)) {
+          errors.push("Invalid type for parameter '" + paramKey + "': expected array, got " + typeof paramVal);
+        } else if (schemaParams[paramKey].items) {
+          var itemSchema = schemaParams[paramKey].items;
+          for (var ai = 0; ai < paramVal.length; ai++) {
+            var itemVal = paramVal[ai];
+            if (itemSchema.type === 'object') {
+              if (typeof itemVal !== 'object' || itemVal === null || Array.isArray(itemVal)) {
+                errors.push("Invalid item type at index " + ai + " in '" + paramKey + "': expected object, got " + (itemVal === null ? 'null' : typeof itemVal));
+              } else if (itemSchema.required) {
+                for (var ri = 0; ri < itemSchema.required.length; ri++) {
+                  var reqProp = itemSchema.required[ri];
+                  if (itemVal[reqProp] === undefined || itemVal[reqProp] === null) {
+                    errors.push("Missing required field '" + reqProp + "' in item #" + (ai + 1) + " of '" + paramKey + "'");
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else if (expectedType === 'object' && (typeof paramVal !== 'object' || Array.isArray(paramVal))) {
+        errors.push("Invalid type for parameter '" + paramKey + "': expected object, got " + typeof paramVal);
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors: errors, error: errors.join('; ') };
 }
 
 export function isDangerous(name) {
@@ -312,17 +365,30 @@ function* validationErrorGenerator(name, errors) {
   };
 }
 
-function executeToolHandlerDirectly(tool, n, a, w) {
-  return tool.handler(a, w);
-}
-
-function runNextMiddlewareStep(nxt, n, a, w, on, oa, ow) {
-  return nxt(on || n, oa || a, ow !== undefined ? ow : w);
+function createNextBound(nxt, n, a, w) {
+  function nextBound(on, oa, ow) {
+    return nxt(on || n, oa || a, ow !== undefined ? ow : w);
+  }
+  return nextBound;
 }
 
 function executeMiddlewareStep(mwf, nxt, n, a, w) {
-  var nextBound = runNextMiddlewareStep.bind(null, nxt, n, a, w);
+  var nextBound = createNextBound(nxt, n, a, w);
   return mwf(n, a, { workspace: w }, nextBound);
+}
+
+function createToolExecutor(tool) {
+  function toolExecutor(n, a, w) {
+    return tool.handler(a, w);
+  }
+  return toolExecutor;
+}
+
+function wrapMiddlewareStep(mwf, nxt) {
+  function wrapped(n, a, w) {
+    return executeMiddlewareStep(mwf, nxt, n, a, w);
+  }
+  return wrapped;
 }
 
 function executeWithMiddleware(canonicalName, tool, args, context) {
@@ -332,11 +398,11 @@ function executeWithMiddleware(canonicalName, tool, args, context) {
     return tool.handler(args, workspace);
   }
 
-  var executeFn = executeToolHandlerDirectly.bind(null, tool);
+  var executeFn = createToolExecutor(tool);
 
   for (var i = _middleware.length - 1; i >= 0; i--) {
     var mw = _middleware[i];
-    executeFn = executeMiddlewareStep.bind(null, mw.fn, executeFn);
+    executeFn = wrapMiddlewareStep(mw.fn, executeFn);
   }
 
   return executeFn(canonicalName, args, workspace);

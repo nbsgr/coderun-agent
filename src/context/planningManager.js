@@ -65,9 +65,6 @@ planningEngine.setStorage({
 
 /**
  * Create a structured plan (legacy signature — delegates to engine).
- * @param {string} goal - User's stated goal
- * @param {object} context - From ContextManager.gatherContext()
- * @param {string} sessionId - Chat session ID
  * @returns {Promise<object>} Plan
  */
 export async function createPlan(goal, context, sessionId) {
@@ -123,19 +120,19 @@ export function storePlan(plan) {
 /**
  * Get active plans as a formatted string for prompt injection.
  */
-export function getActivePlansContext() {
-  var allPlans = runtime.getAllPlans();
+export function getActivePlansContext(sessionId) {
+  var allPlans = sessionId ? runtime.getPlansBySession(sessionId) : runtime.getAllPlans();
   var activePlans = [];
   for (var a = 0; a < allPlans.length; a++) {
     var p = allPlans[a];
-    if (p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled') {
+    if (p.status !== 'completed' && p.status !== 'failed' && p.status !== 'cancelled' && p.status !== 'blocked') {
       var totalTasks = 0, completedTasks = 0;
       if (p.phases) {
         for (var pi = 0; pi < p.phases.length; pi++) {
           if (p.phases[pi].tasks) {
             totalTasks += p.phases[pi].tasks.length;
             for (var ti = 0; ti < p.phases[pi].tasks.length; ti++) {
-              if (p.phases[pi].tasks[ti].status === 'completed') {
+              if (p.phases[pi].tasks[ti].status === 'completed' || p.phases[pi].tasks[ti].status === 'skipped') {
                 completedTasks++;
               }
             }
@@ -144,7 +141,7 @@ export function getActivePlansContext() {
       } else if (p.steps) {
         totalTasks = p.steps.length;
         for (var si = 0; si < p.steps.length; si++) {
-          if (p.steps[si].status === 'completed') {
+          if (p.steps[si].status === 'completed' || p.steps[si].status === 'skipped') {
             completedTasks++;
           }
         }
@@ -203,15 +200,23 @@ function matchesTask(strId, lowerStr, numId, cleanTaskId, tObj, idx, ord) {
  * (e.g. projectKnowledge wasn't ready), falls back to the Runtime's plan cache.
  * The result is always synced back to the Runtime.
  */
-export function updateTaskStatus(planId, taskId, status, observation) {
-  var result = planningEngine.updateTaskStatus(planId, taskId, status, observation);
+export function updateTaskStatus(planId, taskId, status, observation, sessionId) {
+  if (status === 'in_progress') {
+    status = 'active';
+  }
+  var VALID_TASK_STATUSES = new Set(['pending', 'active', 'completed', 'failed', 'skipped', 'blocked']);
+  if (!VALID_TASK_STATUSES.has(status)) {
+    return { success: false, message: 'Invalid task status: ' + status, blockedTasks: [], readyTasks: [] };
+  }
+
+  var result = planningEngine.updateTaskStatus(planId, taskId, status, observation, sessionId);
 
   if (result.success) {
     if (result.plan) runtime.updatePlan(result.plan);
     return result;
   }
 
-  var plan = runtime.getPlan(planId) || runtime.getCurrentPlan();
+  var plan = runtime.getPlan(planId) || runtime.getCurrentPlan(sessionId);
   if (!plan) return result;
 
   var task = null;
@@ -264,8 +269,8 @@ export function updateTaskStatus(planId, taskId, status, observation) {
 
   try {
     projectKnowledge.setSetting('pe_plan_' + plan.id, JSON.stringify(plan));
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
+  } catch (setErr) {
+    console.warn('[PLANNING MANAGER] Failed to persist plan to projectKnowledge for plan ' + plan.id + ':', setErr.message);
   }
 
   runtime.updatePlan(plan);

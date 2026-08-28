@@ -1,30 +1,23 @@
-// diffManager.js — Inline Diff Review Manager
+// diffManager.js — Inline Diff Review Manager with Optimistic Concurrency Protection
 // Stores pending patches from write_file/edit_file requests.
 // Applies or rejects patches on user command from the chat UI.
-// No temp files, no vscode.diff editor unless explicitly requested.
+// Verifies SHA-256 hash before applying to prevent silent overwrites of parallel edits.
 
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import * as pathSecurity from './pathSecurity.js';
+import * as fileLockManager from './fileLockManager.js';
 
 // ── Internal state ───────────────────────────────────────────
 var _pendingPatches = {};    // { [diffId]: DiffPatch }
 
-/**
- * @typedef {Object} DiffPatch
- * @property {string} id
- * @property {string} filePath
- * @property {string} originalText
- * @property {string} modifiedText
- * @property {boolean} isNewFile
- * @property {string} tool - 'write_file' or 'edit_file'
- * @property {string} status - 'pending' | 'accepted' | 'rejected'
- * @property {number} additions - count of added lines
- * @property {number} deletions - count of removed lines
- * @property {number} createdAt
- * @property {object} deferred - resolve/reject functions
- */
+function computeHash(content) {
+  return crypto.createHash('sha256').update(content || '', 'utf8').digest('hex');
+}
 
 // ========================================================
 // PUBLIC API
@@ -41,11 +34,13 @@ export function storePatch(event) {
   var originalText = event.original_content || '';
   var modifiedText = event.new_content || '';
   var stats = computeDiffStats(originalText, modifiedText);
+  var originalHash = computeHash(originalText);
 
   var patch = {
     id: diffId,
     filePath: event.file_path || '',
     originalText: originalText,
+    originalHash: originalHash,
     modifiedText: modifiedText,
     isNewFile: event.is_new_file || false,
     tool: event.tool || 'write_file',
@@ -53,7 +48,8 @@ export function storePatch(event) {
     additions: stats.additions,
     deletions: stats.deletions,
     createdAt: Date.now(),
-    deferred: event.deferred || null
+    deferred: event.deferred || null,
+    sessionId: event.sessionId || 'default'
   };
 
   _pendingPatches[diffId] = patch;
@@ -62,9 +58,9 @@ export function storePatch(event) {
 }
 
 /**
- * Apply a pending patch — write the modified content to disk.
+ * Apply a pending patch — verifies optimistic concurrency hash and resolves promise.
  */
-export async function applyPatch(diffId, workspace) {
+export async function applyPatch(diffId, workspace, sessionId) {
   var patch = _pendingPatches[diffId];
   if (!patch) {
     return { success: false, message: 'Patch not found: ' + diffId };
@@ -73,23 +69,70 @@ export async function applyPatch(diffId, workspace) {
     return { success: false, message: 'Patch already ' + patch.status };
   }
 
-  // Just mark as accepted — tools.js actually writes the file
-  // after the deferred promise resolves.
+  // Session ownership check
+  if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
+    return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
+  }
+
+  // Canonical workspace safety validation
+  var safeCheck = pathSecurity.resolveSafePath(patch.filePath, workspace);
+  if (!safeCheck.safe) {
+    patch.status = 'rejected';
+    if (patch.deferred && patch.deferred.resolve) {
+      patch.deferred.resolve({ accepted: false, error: safeCheck.error });
+    }
+    delete _pendingPatches[diffId];
+    return { success: false, message: 'Security violation: ' + safeCheck.error };
+  }
+
+  var targetPath = safeCheck.canonicalPath;
+
+  // Optimistic concurrency check: verify current disk content
+  var currentDiskContent = '';
+  if (fsSync.existsSync(targetPath)) {
+    try {
+      currentDiskContent = await fs.readFile(targetPath, 'utf8');
+    } catch (err) {
+      return { success: false, message: 'Failed to read current file: ' + err.message };
+    }
+  } else if (!patch.isNewFile) {
+    patch.status = 'conflict';
+    if (patch.deferred && patch.deferred.resolve) {
+      patch.deferred.resolve({ accepted: false, conflict: true, message: 'File was deleted on disk before applying diff.' });
+    }
+    delete _pendingPatches[diffId];
+    return { success: false, conflict: true, message: 'Conflict: ' + patch.filePath + ' was deleted on disk before applying diff.' };
+  }
+
+  var currentDiskHash = computeHash(currentDiskContent);
+  if (currentDiskHash !== patch.originalHash) {
+    patch.status = 'conflict';
+    if (patch.deferred && patch.deferred.resolve) {
+      patch.deferred.resolve({ accepted: false, conflict: true, message: 'File was modified on disk by another operation since diff was generated.' });
+    }
+    delete _pendingPatches[diffId];
+    return {
+      success: false,
+      conflict: true,
+      message: 'Conflict: ' + patch.filePath + ' has changed since this diff was created. Please review the newest file content.'
+    };
+  }
+
   patch.status = 'accepted';
   if (patch.deferred && patch.deferred.resolve) {
-    patch.deferred.resolve({ accepted: true });
+    patch.deferred.resolve({ accepted: true, originalHash: patch.originalHash, expectedContent: patch.originalText });
   }
   delete _pendingPatches[diffId];
   return { success: true, message: 'Applied: ' + patch.filePath };
 }
 
-/**
- * Reject a pending patch — discard without writing.
- */
-export function rejectPatch(diffId) {
+export function rejectPatch(diffId, sessionId) {
   var patch = _pendingPatches[diffId];
   if (!patch) {
     return { success: false, message: 'Patch not found: ' + diffId };
+  }
+  if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
+    return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
   }
   patch.status = 'rejected';
   if (patch.deferred && patch.deferred.resolve) {
@@ -99,57 +142,62 @@ export function rejectPatch(diffId) {
   return { success: true, message: 'Rejected: ' + patch.filePath };
 }
 
-/**
- * Get a patch by ID (for sending to webview).
- */
-export function getPatch(diffId) {
-  return _pendingPatches[diffId] || null;
+export function getPatch(diffId, sessionId) {
+  var patch = _pendingPatches[diffId] || null;
+  if (patch && sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
+    return null;
+  }
+  return patch;
 }
 
-/**
- * Get all pending patches for batch operations.
- */
-export function getPendingPatches() {
+export function getPendingPatches(sessionId) {
   var result = [];
   for (var id in _pendingPatches) {
-    if (_pendingPatches[id].status === 'pending') {
-      result.push(_pendingPatches[id]);
+    var p = _pendingPatches[id];
+    if (p.status === 'pending') {
+      if (!sessionId || p.sessionId === sessionId) {
+        result.push(p);
+      }
     }
   }
   return result;
 }
 
-/**
- * Accept all pending patches.
- */
-export async function acceptAll(workspace) {
-  var patches = getPendingPatches();
+export async function acceptAll(workspace, sessionId) {
+  var patches = getPendingPatches(sessionId);
   var results = [];
   for (var i = 0; i < patches.length; i++) {
-    var r = await applyPatch(patches[i].id, workspace);
+    var r = await applyPatch(patches[i].id, workspace, sessionId);
     r.diffId = patches[i].id;
     results.push(r);
   }
   return results;
 }
 
-/**
- * Reject all pending patches.
- */
-export function rejectAll() {
-  var patches = getPendingPatches();
+export function rejectAll(sessionId) {
+  var patches = getPendingPatches(sessionId);
   var results = [];
   for (var i = 0; i < patches.length; i++) {
-    var r = rejectPatch(patches[i].id);
+    var r = rejectPatch(patches[i].id, sessionId);
     r.diffId = patches[i].id;
     results.push(r);
   }
   return results;
 }
 
-/**
- * Cancel all pending patches (used when chat is stopped).
- */
+export function cancelSession(sessionId) {
+  if (!sessionId) return;
+  for (var id in _pendingPatches) {
+    var patch = _pendingPatches[id];
+    if (patch && patch.sessionId === sessionId) {
+      if (patch.deferred && patch.deferred.resolve) {
+        patch.deferred.resolve({ accepted: false });
+      }
+      delete _pendingPatches[id];
+    }
+  }
+}
+
 export function cancelAll() {
   for (var id in _pendingPatches) {
     var patch = _pendingPatches[id];
@@ -160,12 +208,12 @@ export function cancelAll() {
   _pendingPatches = {};
 }
 
-/**
- * Open the VS Code diff editor for a specific patch (optional explicit action).
- */
-export async function openDiffEditor(diffId, workspace) {
-  var patch = _pendingPatches[diffId] || getPatch(diffId);
+export async function openDiffEditor(diffId, workspace, sessionId) {
+  var patch = _pendingPatches[diffId] || getPatch(diffId, sessionId);
   if (!patch) return;
+  if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
+    return;
+  }
 
   try {
     var tmpDir = path.join(os.tmpdir(), 'coderun-diff');

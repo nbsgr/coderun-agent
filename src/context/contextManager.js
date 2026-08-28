@@ -33,11 +33,9 @@ import * as workspaceIntelligence from './workspaceIntelligence.js';
  * Gather context for a user prompt.
  * This is the ONLY function callers need.
  *
- * @param {string} userPrompt - The user's message
- * @param {string} workspace  - Absolute workspace path
  * @returns {Promise<ContextResult>} Structured context
  */
-export async function gatherContext(userPrompt, workspace) {
+export async function gatherContext(userPrompt, workspace, sessionId) {
   var intent = analyzeIntent(userPrompt);
   var editor = getEditorContext();
   var project = getProjectMetadata();
@@ -53,7 +51,7 @@ export async function gatherContext(userPrompt, workspace) {
   suggestedTools = suggestTools(intent, project.indexed);
 
   // Build the knowledge object (backward-compatible with promptBuilder)
-  var knowledge = buildKnowledge(project, editor, relevantFiles, intent);
+  var knowledge = buildKnowledge(project, editor, relevantFiles, intent, sessionId);
 
   return {
     intent: intent,
@@ -385,7 +383,7 @@ function suggestTools(intent, isIndexed) {
  * Build the knowledge object consumed by promptBuilder.
  * This ensures backward compatibility with the existing promptBuilder API.
  */
-function buildKnowledge(project, editor, relevantFiles, intent) {
+function buildKnowledge(project, editor, relevantFiles, intent, sessionId) {
   var knowledge = {};
 
   // Project metadata
@@ -449,7 +447,7 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
 
   // Active plans context (from Planning Engine)
   try {
-    var planContext = planningManager.getActivePlansContext();
+    var planContext = planningManager.getActivePlansContext(sessionId);
     if (planContext) {
       knowledge.activePlans = planContext;
     }
@@ -494,7 +492,7 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
 
   // Timeline context (from Timeline Engine)
   try {
-    var timelineCtx = timelineManager.getRecentContext(6);
+    var timelineCtx = timelineManager.getRecentContext(6, sessionId);
     if (timelineCtx) {
       knowledge.timeline = timelineCtx;
     }
@@ -505,7 +503,7 @@ function buildKnowledge(project, editor, relevantFiles, intent) {
 
   // Checkpoint context (from Checkpoint Engine)
   try {
-    var cpCtx = checkpointManager.getCheckpointContext(3);
+    var cpCtx = checkpointManager.getCheckpointContext(3, sessionId);
     if (cpCtx) {
       knowledge.checkpointContext = cpCtx;
     }

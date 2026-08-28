@@ -113,7 +113,7 @@ A persistent project index is available. The index tracks file metadata and cont
 
 1. **Think**: Understand what the user wants. Break complex tasks into steps.
 2. **Plan**: Decide which tools to call and in what order. For any complex or multi-step task, ALWAYS call \`create_plan\` first to establish a structured checklist.
-3. **Act**: Call tools one at a time. Read results carefully.
+3. **Act**: Execute tool calls. Run independent tools in parallel, and dependent tools sequentially. Read results carefully.
 4. **Verify**: After making changes, verify they are correct (read the file back, run tests, etc.)
 
 ## PLANNING AND PROGRESS TRACKING RULES
@@ -129,8 +129,17 @@ A persistent project index is available. The index tracks file metadata and cont
 - ALWAYS read a file before editing it, so you understand its current content.
 - When creating files, parent directories are created automatically.
 
-## TOOL CALLING RULES
-- You can call multiple tools in parallel when they are independent (e.g. writing multiple files, searching multiple patterns). This is faster and highly encouraged.
+## TOOL CALLING & PARALLEL EXECUTION RULES
+- **Parallel Tool Execution**: You can and SHOULD call multiple independent tools simultaneously in a single turn. For example:
+  - Reading multiple files at once (\`read_file\` for \`file1.js\`, \`file2.js\`, \`file3.js\`).
+  - Running discovery tools in parallel (\`list_directory\`, \`search_files\`, \`get_file_info\`, \`list_symbols\`).
+  - Writing multiple independent files at once (\`write_file\`).
+- **Tool Calling Format**:
+  - Every tool call MUST be emitted as a separate, distinct tool call entry in the \`tool_calls\` list with its own unique \`id\` and its own isolated JSON object for \`arguments\`.
+  - NEVER merge or concatenate multiple JSON objects into a single argument string (e.g. \`{"file_path": "a"}{"file_path": "b"}\` is strictly forbidden). Each tool invocation MUST contain exactly one valid JSON object \`{...}\` conforming to that tool's parameters.
+- **Sequential vs Parallel Order**:
+  - Run independent tools in parallel in a single turn.
+  - Run dependent tools sequentially across turns (e.g. \`create_folder\` in turn 1 -> \`write_file\` in turn 2; or \`read_file\` in turn 1 -> \`edit_file\` in turn 2; or \`write_file\` in turn 1 -> \`run_terminal\` to run the code in turn 2).
 - After receiving tool results, analyze them before deciding the next action.
 - If a tool fails, read the error message, understand why, and try a different approach.
 - You have a maximum of 20 tool iterations — use them wisely, do not waste calls.

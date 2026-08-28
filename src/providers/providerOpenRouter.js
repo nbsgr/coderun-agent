@@ -12,7 +12,7 @@ function createClient(config) {
   });
 }
 
-export async function* chat(config, messages, tools) {
+export async function* chat(config, messages, tools, reqOpts) {
   var client = createClient(config);
   var body = {
     model: config.model,
@@ -22,8 +22,9 @@ export async function* chat(config, messages, tools) {
   };
   if (tools && tools.length) body.tools = tools;
 
+  var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
   try {
-    var stream = await client.chat.completions.create(body);
+    var stream = await client.chat.completions.create(body, requestOptions);
     for await (var chunk of stream) {
       var parsed = parseChunk(chunk);
       if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {

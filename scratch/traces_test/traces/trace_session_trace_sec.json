@@ -1,0 +1,59 @@
+[
+  {
+    "id": "run_sec_1",
+    "sessionId": "session_trace_sec",
+    "startedAt": 1787917046674,
+    "completedAt": 0,
+    "durationMs": 0,
+    "status": "running",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "user": {
+      "query": "Query with sk-1234567890abcdef",
+      "images": [],
+      "context": {
+        "workspaceFolder": "",
+        "openFiles": [],
+        "systemPromptTokens": "[REDACTED]"
+      }
+    },
+    "steps": [
+      {
+        "stepIndex": 1,
+        "llmCall": {
+          "model": "gpt-4o",
+          "thinking": "Using [REDACTED]",
+          "decision": "done"
+        },
+        "toolCalls": [
+          {
+            "toolName": "web_request",
+            "input": {
+              "headers": {
+                "authorization": "[REDACTED]"
+              }
+            },
+            "output": "ok",
+            "success": true,
+            "durationMs": 10
+          }
+        ]
+      }
+    ],
+    "finalResponse": {
+      "text": "",
+      "thinking": "",
+      "durationMs": 0
+    },
+    "metrics": {
+      "totalDurationMs": 0,
+      "totalTokens": "[REDACTED]",
+      "toolsExecuted": 0,
+      "filesTouched": []
+    },
+    "transitions": [],
+    "events": [],
+    "observations": [],
+    "decisions": []
+  }
+]

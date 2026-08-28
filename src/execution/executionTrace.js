@@ -6,6 +6,7 @@ import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as crypto from 'crypto';
 
 var _activeTracesBySession = {};
 var _completedTracesBySession = {};
@@ -301,6 +302,59 @@ export function generateAsciiTree(trace) {
   return lines.join('\n');
 }
 
+function redactSensitiveData(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') {
+    return obj
+      .replace(/ghp_[a-zA-Z0-9]{20,}/g, '[REDACTED_GITHUB_TOKEN]')
+      .replace(/github_pat_[a-zA-Z0-9_]{20,}/g, '[REDACTED_GITHUB_PAT]')
+      .replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED_OPENAI_KEY]')
+      .replace(/AKIA[0-9A-Z]{16}/g, '[REDACTED_AWS_KEY]')
+      .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_GOOGLE_KEY]')
+      .replace(/ey[A-Za-z0-9-_=]{10,}\.ey[A-Za-z0-9-_=]{10,}\.?[A-Za-z0-9-_.+/=]*/g, '[REDACTED_JWT]')
+      .replace(/(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^:]+:[^@]+@/gi, '$1://[REDACTED]@')
+      .replace(/(?:api[_-]?key|token|secret|password|bearer|auth|authorization|aws_secret_access_key)["'\s:=]+(["'][a-zA-Z0-9_\-\.]{8,}["']|[a-zA-Z0-9_\-\.]{12,})/gi, '[REDACTED]')
+      .replace(/-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]');
+  }
+  if (Array.isArray(obj)) {
+    var arr = [];
+    for (var i = 0; i < obj.length; i++) {
+      arr.push(redactSensitiveData(obj[i]));
+    }
+    return arr;
+  }
+  if (typeof obj === 'object') {
+    var out = {};
+    for (var k in obj) {
+      var lk = k.toLowerCase();
+      if (lk.includes('password') || lk.includes('token') || lk.includes('apikey') || lk.includes('secret') || lk === 'authorization' || lk.includes('cookie') || lk.includes('database_url')) {
+        out[k] = '[REDACTED]';
+      } else {
+        out[k] = redactSensitiveData(obj[k]);
+      }
+    }
+    return out;
+  }
+  return obj;
+}
+
+export function clearTraces(sessionId) {
+  if (sessionId) {
+    delete _activeTracesBySession[sessionId];
+    delete _completedTracesBySession[sessionId];
+  } else {
+    _activeTracesBySession = {};
+    _completedTracesBySession = {};
+  }
+}
+
+function getSafeTraceFilename(sessionId) {
+  var str = String(sessionId || 'default').trim();
+  var clean = str.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 48);
+  var hash = crypto.createHash('sha256').update(str, 'utf8').digest('hex').substring(0, 16);
+  return 'trace_' + (clean ? clean + '_' : '') + hash + '.json';
+}
+
 export async function saveTraceToDisk(globalStoragePath, sessionId) {
   var traces = getTraces(sessionId);
   if (!traces.length) {
@@ -321,8 +375,10 @@ export async function saveTraceToDisk(globalStoragePath, sessionId) {
     if (!existsSync(targetDir)) {
       await fs.mkdir(targetDir, { recursive: true });
     }
-    var filePath = path.join(targetDir, 'trace_' + sessionId + '.json');
-    await fs.writeFile(filePath, JSON.stringify(traces, null, 2), 'utf-8');
+    var filename = getSafeTraceFilename(sessionId);
+    var filePath = path.join(targetDir, filename);
+    var sanitized = redactSensitiveData(traces);
+    await fs.writeFile(filePath, JSON.stringify(sanitized, null, 2), 'utf-8');
     return filePath;
   } catch (err) {
     console.warn('[EXECUTION TRACE] Failed to save trace to disk:', err.message);
@@ -333,7 +389,8 @@ export async function saveTraceToDisk(globalStoragePath, sessionId) {
 export async function loadTracesFromDisk(globalStoragePath, sessionId) {
   if (!sessionId) return [];
   var targetDir = globalStoragePath ? path.join(globalStoragePath, 'traces') : path.join(os.homedir(), '.coderun', 'traces');
-  var filePath = path.join(targetDir, 'trace_' + sessionId + '.json');
+  var filename = getSafeTraceFilename(sessionId);
+  var filePath = path.join(targetDir, filename);
   try {
     if (existsSync(filePath)) {
       var content = await fs.readFile(filePath, 'utf-8');

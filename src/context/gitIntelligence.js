@@ -4,37 +4,31 @@
 import { exec } from 'child_process';
 import * as path from 'path';
 
-function handleGitExecResult(resolve, error, stdout, stderr) {
-  if (error) {
-    resolve({ success: false, stdout: '', stderr: stderr || error.message });
-  } else {
-    resolve({ success: true, stdout: stdout.trim(), stderr: '' });
-  }
-}
-
-function executeGitPromise(args, cwd, resolve) {
-  exec('git ' + args, { cwd: cwd, timeout: 5000, windowsHide: true }, handleGitExecResult.bind(null, resolve));
-}
-
 function runGit(args, cwd) {
-  return new Promise(executeGitPromise.bind(null, args, cwd));
+  function gitPromise(resolve) {
+    function onExecDone(error, stdout, stderr) {
+      if (error) {
+        resolve({ success: false, stdout: '', stderr: stderr || error.message });
+      } else {
+        resolve({ success: true, stdout: stdout.trim(), stderr: '' });
+      }
+    }
+    exec('git ' + args, { cwd: cwd, timeout: 5000, windowsHide: true }, onExecDone);
+  }
+  return new Promise(gitPromise);
 }
 
 // ═══════════════════════════════════════════════════════════
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Get current Git branch name.
- */
+// Get current Git branch name.
 export async function getGitBranch(cwd) {
   var res = await runGit('rev-parse --abbrev-ref HEAD', cwd);
   return res.success ? res.stdout : 'detached';
 }
 
-/**
- * Get detailed repository status listing new, modified, and deleted files.
- */
+// Get detailed repository status listing new, modified, and deleted files.
 export async function getGitStatus(cwd) {
   var res = await runGit('status --porcelain', cwd);
   if (!res.success) {
@@ -69,18 +63,14 @@ export async function getGitStatus(cwd) {
   };
 }
 
-/**
- * Get git diff for the workspace or a specific file.
- */
+// Get git diff for the workspace or a specific file.
 export async function getDiff(cwd, filePath) {
   var fileArg = filePath ? ' -- "' + filePath + '"' : '';
   var res = await runGit('diff' + fileArg, cwd);
   return res.success ? res.stdout : '';
 }
 
-/**
- * Check if the workspace has merge conflicts.
- */
+// Check if the workspace has merge conflicts.
 export async function checkMergeConflicts(cwd) {
   var res = await runGit('diff --name-only --diff-filter=U', cwd);
   if (res.success && res.stdout) {
@@ -89,18 +79,14 @@ export async function checkMergeConflicts(cwd) {
   return false;
 }
 
-/**
- * Check if a specific file has uncommitted changes.
- */
+// Check if a specific file has uncommitted changes.
 export async function isDirty(cwd, filePath) {
   var relPath = path.isAbsolute(filePath) ? path.relative(cwd, filePath) : filePath;
   var status = await getGitStatus(cwd);
   return status.modified.indexOf(relPath) !== -1 || status.deleted.indexOf(relPath) !== -1;
 }
 
-/**
- * Expose formatted Git context string for LLM prompt context injection.
- */
+// Expose formatted Git context string for LLM prompt context injection.
 export async function getGitPromptFragment(cwd) {
   try {
     var branch = await getGitBranch(cwd);

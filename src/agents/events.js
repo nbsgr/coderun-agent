@@ -3,14 +3,13 @@
 var listeners = {};
 var onceHandlers = [];
 
-function performOff(event, handler) {
-  off(event, handler);
-}
-
 export function on(event, handler) {
   if (!listeners[event]) listeners[event] = [];
   listeners[event].push(handler);
-  return performOff.bind(null, event, handler);
+  function unsubscribe() {
+    off(event, handler);
+  }
+  return unsubscribe;
 }
 
 export function off(event, handler) {
@@ -42,7 +41,9 @@ function handleOnce(index, data) {
 
 export function once(event, handler) {
   var index = onceHandlers.length;
-  var wrapper = handleOnce.bind(null, index);
+  function wrapper(data) {
+    handleOnce(index, data);
+  }
   var entry = {
     event: event,
     handler: handler,
