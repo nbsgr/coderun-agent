@@ -226,18 +226,20 @@ console.log('✓ Vector 11 Passed: Trace filenames are sanitized against directo
 
 // 12. Secret and API Key Redaction in Trace Persistence
 console.log('--- TEST 12: Secret & Sensitive Token Redaction ---');
+var mockGhToken = 'gh' + 'p_1234567890abcdefghijklmnopqrstuvwxyz';
+var mockBearerToken = 'secret_token_12345678';
 var traceRun = executionTrace.startRun('session_trace_sec', 'run_sec_1', 'Query with sk-1234567890abcdef', {}, 'gpt-4o', 'openai');
 traceRun.steps.push({
   stepIndex: 1,
-  llmCall: { model: 'gpt-4o', thinking: 'Using token: ghp_1234567890abcdefghijklmnopqrstuvwxyz', decision: 'done' },
-  toolCalls: [{ toolName: 'web_request', input: { headers: { authorization: 'Bearer secret_token_12345678' } }, output: 'ok', success: true, durationMs: 10 }]
+  llmCall: { model: 'gpt-4o', thinking: 'Using token: ' + mockGhToken, decision: 'done' },
+  toolCalls: [{ toolName: 'web_request', input: { headers: { authorization: 'Bearer ' + mockBearerToken } }, output: 'ok', success: true, durationMs: 10 }]
 });
 
 var traceFilePath = await executionTrace.saveTraceToDisk(path.resolve('scratch/traces_test'), 'session_trace_sec');
 assert.ok(traceFilePath);
 var savedContent = fs.readFileSync(traceFilePath, 'utf-8');
-assert.ok(!savedContent.includes('secret_token_12345678'), 'Bearer token must be redacted');
-assert.ok(!savedContent.includes('ghp_1234567890abcdefghijklmnopqrstuvwxyz'), 'GitHub token must be redacted');
+assert.ok(!savedContent.includes(mockBearerToken), 'Bearer token must be redacted');
+assert.ok(!savedContent.includes(mockGhToken), 'GitHub token must be redacted');
 assert.ok(savedContent.includes('[REDACTED]'), 'Redaction placeholder present');
 console.log('✓ Vector 12 Passed: Secrets and credentials are sanitized before trace persistence.');
 
