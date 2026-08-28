@@ -1472,6 +1472,7 @@
             }
             if (termCardToUpdate) {
               updateTerminalCardResult(termCardToUpdate, resStatus, ev);
+              setTerminalCardStatus(termCardToUpdate, resStatus, ev.exitCode != null ? ev.exitCode : (resSuccess ? 0 : 1), ev.durationMs || 0, ev);
             }
             break;
           }
@@ -2213,18 +2214,19 @@
 
   function setTerminalCardStatus(card, execStatus, exitCode, duration, extra) {
     if (!card) return;
-    card.dataset.status = execStatus;
+    var normStatus = (execStatus === 'completed' || execStatus === 'success') ? 'success' : (execStatus === 'failed' || execStatus === 'error') ? 'error' : (execStatus || 'success');
+    card.dataset.status = normStatus;
     
-    card.className = 'cr-tool-card cr-tool-card--' + execStatus + ' cr-terminal-details';
+    card.className = 'cr-tool-card cr-tool-card--' + normStatus + ' cr-terminal-details';
 
     var container = card.querySelector('.cr-terminal-container');
     if (container) {
-      container.className = 'cr-terminal-container cr-terminal-container--' + execStatus;
+      container.className = 'cr-terminal-container cr-terminal-container--' + normStatus;
     }
 
-    var statusLabel = (execStatus === 'running' || execStatus === 'pending' || execStatus === 'waiting') ? 'PENDING' : (execStatus === 'success' || execStatus === 'completed') ? 'COMPLETED' : 'FAILED';
-    var statusClass = 'cr-tool-card-status--' + (execStatus === 'completed' ? 'success' : execStatus);
-    var iconClass = 'cr-tool-card-icon--' + (execStatus === 'completed' ? 'success' : execStatus);
+    var statusLabel = (normStatus === 'running' || normStatus === 'pending' || normStatus === 'waiting') ? 'PENDING' : (normStatus === 'success') ? 'COMPLETED' : 'FAILED';
+    var statusClass = 'cr-tool-card-status--' + normStatus;
+    var iconClass = 'cr-tool-card-icon--' + normStatus;
 
     var statusEl = card.querySelector('.cr-tool-card-status');
     if (statusEl) {
@@ -2235,10 +2237,10 @@
     var iconEl = card.querySelector('.cr-tool-card-icon');
     if (iconEl) {
       iconEl.className = 'cr-tool-card-icon ' + iconClass;
-      iconEl.innerHTML = (execStatus === 'running' || execStatus === 'pending') ? I.spin : getToolIcon('run_terminal');
+      iconEl.innerHTML = (normStatus === 'running' || normStatus === 'pending' || normStatus === 'waiting') ? I.spin : getToolIcon('run_terminal');
     }
 
-    if (execStatus !== 'running' && execStatus !== 'waiting' && execStatus !== 'pending') {
+    if (normStatus !== 'running' && normStatus !== 'waiting' && normStatus !== 'pending') {
       card.open = false;
     }
   }
@@ -2262,6 +2264,10 @@
 
   function updateTerminalCardResult(card, status, result) {
     if (!card) return;
+    var exitCode = result ? (result.exit_code != null ? result.exit_code : result.exitCode) : null;
+    var duration = result ? (result.duration_ms || result.durationMs) : 0;
+    setTerminalCardStatus(card, status, exitCode, duration, result);
+
     var bodyEl = card.querySelector('.cr-terminal-body');
     if (!bodyEl) return;
 

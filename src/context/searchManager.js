@@ -22,6 +22,10 @@ import * as projectKnowledge from './projectKnowledge.js';
  *
  * @returns {Promise<string[]>} Array of relative paths
  */
+function normalizePathSlashes(p) {
+  return String(p || '').replace(/\\/g, '/');
+}
+
 export async function searchFiles(pattern, rootDir, subDir) {
   if (!pattern || !rootDir) return [];
 
@@ -34,10 +38,13 @@ export async function searchFiles(pattern, rootDir, subDir) {
       var results = projectKnowledge.searchByGlob(sqlLike, subDir || '');
       if (results && results.length) {
         var existing = [];
+        var seen = {};
         for (var ri = 0; ri < results.length; ri++) {
+          var norm = normalizePathSlashes(results[ri]);
           var checkFull = path.resolve(rootDir, results[ri]);
-          if (existsSync(checkFull)) {
-            existing.push(results[ri]);
+          if (!seen[norm] && existsSync(checkFull)) {
+            seen[norm] = true;
+            existing.push(norm);
           }
         }
         return existing;
@@ -47,7 +54,17 @@ export async function searchFiles(pattern, rootDir, subDir) {
     }
   }
 
-  return await fallbackWalk(pattern, rootDir, subDir);
+  var rawMatches = await fallbackWalk(pattern, rootDir, subDir);
+  var outMatches = [];
+  var seenMap = {};
+  for (var mi = 0; mi < rawMatches.length; mi++) {
+    var nMatch = normalizePathSlashes(rawMatches[mi]);
+    if (!seenMap[nMatch]) {
+      seenMap[nMatch] = true;
+      outMatches.push(nMatch);
+    }
+  }
+  return outMatches;
 }
 
 // ========================================================
@@ -176,21 +193,26 @@ async function runTouchFile(relPath) {
 
 async function fallbackWalk(pattern, rootDir, subDir) {
   var searchDir = subDir ? path.join(rootDir, subDir) : rootDir;
-  var matches = [];
+  var rawMatches = [];
   var regex = globToRegex(pattern);
 
   if (existsSync(searchDir)) {
-    await walkFilesFallback(searchDir, regex, searchDir, matches);
+    await walkFilesFallback(searchDir, regex, searchDir, rawMatches);
   }
 
-  if (matches.length) {
-    for (var m = 0; m < matches.length; m++) {
-      var relPath = subDir ? path.join(subDir, matches[m]) : matches[m];
-      runTouchFile(relPath);
+  var finalMatches = [];
+  var seen = {};
+  for (var m = 0; m < rawMatches.length; m++) {
+    var rawRel = subDir ? path.join(subDir, rawMatches[m]) : rawMatches[m];
+    var normRel = normalizePathSlashes(rawRel);
+    if (!seen[normRel]) {
+      seen[normRel] = true;
+      finalMatches.push(normRel);
+      runTouchFile(normRel);
     }
   }
 
-  return matches;
+  return finalMatches;
 }
 
 // ========================================================

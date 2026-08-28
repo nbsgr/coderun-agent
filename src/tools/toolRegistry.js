@@ -308,6 +308,22 @@ function defaultFormatResult(toolName, result) {
   if (res.message !== undefined) parts.push('Message: ' + res.message);
   if (res.entries !== undefined) parts.push('Entries: ' + JSON.stringify(res.entries));
   if (res.matches !== undefined) parts.push('Matches: ' + JSON.stringify(res.matches));
+  if (res.results !== undefined) {
+    if (Array.isArray(res.results)) {
+      var resultLines = [];
+      for (var rli = 0; rli < res.results.length; rli++) {
+        var rItem = res.results[rli];
+        if (rItem && rItem.path) {
+          resultLines.push('- ' + rItem.path + (rItem.matches ? ' (' + rItem.matches + ' matches)' : '') + (rItem.snippet ? ': ' + rItem.snippet : ''));
+        } else {
+          resultLines.push('- ' + JSON.stringify(rItem));
+        }
+      }
+      parts.push('Results:\n' + resultLines.join('\n'));
+    } else {
+      parts.push('Results:\n' + JSON.stringify(res.results, null, 2));
+    }
+  }
   if (res.info !== undefined) parts.push('Info: ' + JSON.stringify(res.info));
   if (res.datetime !== undefined) parts.push('Datetime: ' + res.datetime);
 

@@ -191,15 +191,20 @@ var INTERACTIVE_PATTERNS = [
   /continue\?/i,
   /press any key/i,
   /press enter/i,
-  /password:/i,
-  /enter passphrase/i,
+  /password\s*:/i,
+  /passphrase\s*:/i,
+  /token\s*:/i,
   /select an option/i,
-  /\? \[.*\]/
+  /choice\s*:/i,
+  /choose\s*\[/i,
+  /\? \[.*\]/,
+  /(?:enter|input|type)\s+(?:a|an|the|your)?\s*[\w\s]{1,30}\s*:/i,
+  /:\s*$/
 ];
 
 function detectPrompt(output) {
   if (!output) return { interactive: false, promptDetected: false };
-  var lastLines = output.split('\n').slice(-5).join('\n');
+  var lastLines = output.split('\n').slice(-3).join('\n');
   for (var i = 0; i < INTERACTIVE_PATTERNS.length; i++) {
     var pat = INTERACTIVE_PATTERNS[i];
     if (pat.test(lastLines)) {
@@ -498,7 +503,8 @@ export async function executeCommand(command, timeout, background, isInteractive
           clearTimeout(promptSilenceTimer);
         }
         var pCheck = detectPrompt(stdout);
-        if (pCheck.interactive || checkInteractiveCommand(command) || isInteractive) {
+        var isRealPrompt = pCheck.interactive || checkInteractiveCommand(command);
+        if (isRealPrompt) {
           promptSilenceTimer = setTimeout(function onPromptDetected() {
             isWaitingForPrompt = true;
             sess.lastSessionActive = true;
@@ -833,7 +839,9 @@ export async function checkTerminalOutput(sessionId) {
   sess.lastCheckedPosition = fullOutput.length;
 
   var isWaiting = sess.lastSessionActive;
+  var hasActiveExecution = !!sess.activeExecId || !!sess.activeChildProcess || Object.keys(sess.backgroundTasks).length > 0;
   var promptCheck = detectPrompt(newOutput);
+  var currentStatus = (isWaiting || promptCheck.interactive) ? 'waiting_for_input' : (hasActiveExecution ? 'active' : 'completed');
   return {
     shell: shellName,
     platform: platformName,
@@ -842,7 +850,7 @@ export async function checkTerminalOutput(sessionId) {
     exitCode: null,
     durationMs: 0,
     success: true,
-    status: (isWaiting || promptCheck.interactive) ? 'waiting_for_input' : 'active',
+    status: currentStatus,
     waitingForInput: isWaiting || promptCheck.interactive,
     interactive: promptCheck.interactive,
     promptDetected: promptCheck.promptDetected
@@ -900,6 +908,7 @@ export async function stopTerminal(sessionId) {
     sess.activeExecId = null;
     sess.pendingInteractiveReader = null;
     sess.pendingInteractiveExecution = null;
+    sess.lastCheckedPosition = (sess.lastSessionOutput || '').length;
 
     return { success: true, status: 'stopped', message: 'Sent Ctrl+C to stop running process.' };
   }
