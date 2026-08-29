@@ -1554,6 +1554,8 @@
           S.contentDiv = null; S.contentText = '';
           clearStatusLines(S);
           S.toolCards = {};
+          S._seenToolIds = {};
+          S._toolCalls = [];
           S._toolQueue = [];
           S._toolIdCounter = 0;
           break;
@@ -1968,8 +1970,6 @@
     if (pendingCard) {
       if (pendingCard.dataset.toolName === tool) {
         isMatch = true;
-      } else if ((tool === 'terminal_input' || tool === 'stop_terminal') && pendingCard.dataset.toolName === 'run_terminal') {
-        isMatch = true;
       }
     }
 
@@ -2042,7 +2042,8 @@
         approved: isAllow,
         toolCallId: id,
         always: isAlways,
-        tool: tool
+        tool: tool,
+        sessionId: window.activeConversationId || ''
       });
     }
     var chatCtx = { msgList: msgList, controlsPanel: controlsPanel };
@@ -2620,13 +2621,6 @@
   }
 
   function findPendingCardByToolName(S, toolName, toolId) {
-    if (toolName === 'terminal_input' || toolName === 'stop_terminal') {
-      var termCards = S.botBody ? S.botBody.querySelectorAll('.cr-terminal-details') : [];
-      if (termCards.length > 0) {
-        return termCards[termCards.length - 1];
-      }
-    }
-
     for (var cardKey in S.toolCards) {
       var card = S.toolCards[cardKey];
       if (card && card.dataset && card.dataset.toolName === toolName &&
@@ -2642,11 +2636,18 @@
   }
 
   function reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex) {
-    var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+    if (typeof toolArgs === 'string') {
+      try {
+        toolArgs = JSON.parse(toolArgs);
+      } catch (_) {}
+    }
+    var iter = S.iterationCount || 0;
+    var indexKey = 'iter_' + iter + '_' + toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
     var idKey = toolId || '';
-    if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) {
-      var card = S.toolCards[idKey] || S.toolCards[indexKey];
-      if (card && idKey) {
+
+    var card = (idKey && S.toolCards[idKey]) || S.toolCards[indexKey];
+    if (card) {
+      if (idKey) {
         S._seenToolIds[idKey] = true;
         card.dataset.toolCallId = idKey;
         S.toolCards[idKey] = card;
@@ -2654,13 +2655,15 @@
       return card;
     }
 
-    var existingCard = findPendingCardByToolName(S, toolName, toolId) || (toolId && S.toolCards[toolId]);
+    var existingCard = findPendingCardByToolName(S, toolName, toolId);
     if (existingCard) {
       S._seenToolIds[indexKey] = true;
-      if (idKey) S._seenToolIds[idKey] = true;
-      if (toolId) existingCard.dataset.toolCallId = toolId;
+      if (idKey) {
+        S._seenToolIds[idKey] = true;
+        existingCard.dataset.toolCallId = idKey;
+        S.toolCards[idKey] = existingCard;
+      }
       S.toolCards[indexKey] = existingCard;
-      if (idKey) S.toolCards[idKey] = existingCard;
       return existingCard;
     }
 
@@ -2681,17 +2684,25 @@
     if (toolId) cardElement.dataset.toolCallId = toolId;
     cardElement.dataset.terminalId = '';
     S.toolCards[cardKey] = cardElement;
-    S.toolCards[displayId] = cardElement;
+    if (displayId) S.toolCards[displayId] = cardElement;
+    S.toolCards[indexKey] = cardElement;
     S._toolQueue.push({ key: cardKey, toolName: toolName, id: displayId });
     return cardElement;
   }
 
   function reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex) {
-    var indexKey = toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
+    if (typeof toolArgs === 'string') {
+      try {
+        toolArgs = JSON.parse(toolArgs);
+      } catch (_) {}
+    }
+    var iter = S.iterationCount || 0;
+    var indexKey = 'iter_' + iter + '_' + toolName + '_idx_' + (toolIndex != null ? toolIndex : '?');
     var idKey = toolId || '';
-    if ((idKey && S._seenToolIds[idKey]) || S._seenToolIds[indexKey]) {
-      var card = S.toolCards[idKey] || S.toolCards[indexKey];
-      if (card && idKey) {
+
+    var card = (idKey && S.toolCards[idKey]) || S.toolCards[indexKey];
+    if (card) {
+      if (idKey) {
         S._seenToolIds[idKey] = true;
         card.dataset.toolCallId = idKey;
         S.toolCards[idKey] = card;
@@ -2699,13 +2710,15 @@
       return card;
     }
 
-    var existingCard = findPendingCardByToolName(S, toolName, toolId) || (toolId && S.toolCards[toolId]);
+    var existingCard = findPendingCardByToolName(S, toolName, toolId);
     if (existingCard) {
       S._seenToolIds[indexKey] = true;
-      if (idKey) S._seenToolIds[idKey] = true;
-      if (toolId) existingCard.dataset.toolCallId = toolId;
+      if (idKey) {
+        S._seenToolIds[idKey] = true;
+        existingCard.dataset.toolCallId = idKey;
+        S.toolCards[idKey] = existingCard;
+      }
       S.toolCards[indexKey] = existingCard;
-      if (idKey) S.toolCards[idKey] = existingCard;
       return existingCard;
     }
 
@@ -2716,7 +2729,7 @@
     S.contentText = '';
 
     var displayId = toolId || 'tool_' + (++S._toolIdCounter);
-    var cardKey = toolName + '_' + S._toolIdCounter + '_' + Date.now();
+    var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
     var cardElement = appendToolCard(S, msgList, S.botBody, cardKey, toolName, toolArgs, 'running');
     if (toolId) {
       cardElement.dataset.toolCallId = toolId;

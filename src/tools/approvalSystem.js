@@ -26,28 +26,12 @@ var DEPLOY_COMMANDS = [
 // ═══════════════════════════════════════════════════════════
 
 // Determine if a tool invocation requires human approval.
-export function requiresApproval(toolName, args) {
+export function requiresApproval(toolName, args, config) {
   args = args || {};
   var canonicalName = normalizeToolName(toolName);
+  var confirmDangerous = (config && config.confirmDangerous !== undefined) ? config.confirmDangerous : true;
 
-  // 1. Any tool registered as needing permission must prompt.
-  if (toolRegistry.needsPermission(canonicalName) || toolRegistry.isDangerous(canonicalName)) {
-    return true;
-  }
-
-  // 2. Sensitive write/execution actions must prompt even if metadata is missing.
-  if (canonicalName === 'write_file' ||
-      canonicalName === 'edit_file' ||
-      canonicalName === 'patch_file' ||
-      canonicalName === 'delete_file' ||
-      canonicalName === 'create_folder' ||
-      canonicalName === 'delete_folder' ||
-      canonicalName === 'terminal_input' ||
-      canonicalName === 'web_request') {
-    return true;
-  }
-
-  // 3. Dangerous terminal commands
+  // 1. Critical dangerous terminal commands
   if (canonicalName === 'run_terminal') {
     var cmd = String(args.command || '').trim().toLowerCase();
     if (!cmd) return false;
@@ -65,6 +49,29 @@ export function requiresApproval(toolName, args) {
         return true;
       }
     }
+
+    return false;
+  }
+
+  if (!confirmDangerous) {
+    return false;
+  }
+
+  // 2. Any tool registered as needing permission must prompt.
+  if (toolRegistry.needsPermission(canonicalName) || toolRegistry.isDangerous(canonicalName)) {
+    return true;
+  }
+
+  // 3. Sensitive write/execution actions must prompt when confirmDangerous is true.
+  if (canonicalName === 'write_file' ||
+      canonicalName === 'edit_file' ||
+      canonicalName === 'patch_file' ||
+      canonicalName === 'delete_file' ||
+      canonicalName === 'create_folder' ||
+      canonicalName === 'delete_folder' ||
+      canonicalName === 'terminal_input' ||
+      canonicalName === 'web_request') {
+    return true;
   }
 
   return false;

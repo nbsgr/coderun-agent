@@ -96,9 +96,17 @@ export function resolvePermission(id, approved, options, sessionId) {
   options = options || {};
   var entry = pendingPermissions[id];
   var toolName = options.toolName || options.tool || (entry && entry.toolName);
-  var sid = sessionId || options.sessionId || (entry && entry.sessionId) || 'default';
+  var sid = (sessionId && sessionId !== 'default') ? sessionId : (options.sessionId && options.sessionId !== 'default') ? options.sessionId : (entry && entry.sessionId) || 'default';
 
   if (entry) {
+    if (sessionId && sessionId !== 'default' && entry.sessionId && entry.sessionId !== 'default' && entry.sessionId !== sessionId) {
+      console.warn('[PERMISSIONS] Cross-session resolve attempt rejected. Request session:', entry.sessionId, 'Caller session:', sessionId);
+      return false;
+    }
+    if (options.sessionId && options.sessionId !== 'default' && entry.sessionId && entry.sessionId !== 'default' && entry.sessionId !== options.sessionId) {
+      console.warn('[PERMISSIONS] Cross-session resolve attempt rejected. Request session:', entry.sessionId, 'Options session:', options.sessionId);
+      return false;
+    }
     clearTimeout(entry.timer);
     delete pendingPermissions[id];
     if (options.always && toolName) {

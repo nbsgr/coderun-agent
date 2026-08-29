@@ -265,7 +265,7 @@ vsce package
 
 Install the generated `.vsix`:
 ```bash
-code --install-extension ai-agent-1.3.7.vsix
+code --install-extension ai-agent-1.3.8.vsix
 ```
 
 ---

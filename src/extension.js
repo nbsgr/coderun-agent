@@ -517,6 +517,12 @@ async function handleFrontendMessage(message, webview) {
       }
       terminalManager.setSendEventCallback(onSendTerminalEvent, convSessionId);
 
+      if (abortControllers[convSessionId]) {
+        try {
+          abortControllers[convSessionId].abort();
+          abortControllers[convSessionId].stopped = true;
+        } catch (_) {}
+      }
       abortControllers[convSessionId] = new AbortController();
       var abortCtrl = abortControllers[convSessionId];
       abortCtrl.stopped = false;

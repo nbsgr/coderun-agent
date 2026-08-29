@@ -381,37 +381,36 @@ function* validationErrorGenerator(name, errors) {
   };
 }
 
-function createNextBound(nxt, n, a, w) {
-  function nextBound(on, oa, ow) {
-    return nxt(on || n, oa || a, ow !== undefined ? ow : w);
+function createNextBound(nxt, n, a, ctx) {
+  function nextBound(on, oa, octx) {
+    return nxt(on || n, oa || a, octx !== undefined ? octx : ctx);
   }
   return nextBound;
 }
 
-function executeMiddlewareStep(mwf, nxt, n, a, w) {
-  var nextBound = createNextBound(nxt, n, a, w);
-  return mwf(n, a, { workspace: w }, nextBound);
+function executeMiddlewareStep(mwf, nxt, n, a, ctx) {
+  var nextBound = createNextBound(nxt, n, a, ctx);
+  var contextObj = (typeof ctx === 'object' && ctx !== null) ? ctx : { workspace: ctx };
+  return mwf(n, a, contextObj, nextBound);
 }
 
 function createToolExecutor(tool) {
-  function toolExecutor(n, a, w) {
-    return tool.handler(a, w);
+  function toolExecutor(n, a, ctx) {
+    return tool.handler(a, ctx);
   }
   return toolExecutor;
 }
 
 function wrapMiddlewareStep(mwf, nxt) {
-  function wrapped(n, a, w) {
-    return executeMiddlewareStep(mwf, nxt, n, a, w);
+  function wrapped(n, a, ctx) {
+    return executeMiddlewareStep(mwf, nxt, n, a, ctx);
   }
   return wrapped;
 }
 
 function executeWithMiddleware(canonicalName, tool, args, context) {
-  var workspace = (typeof context === 'object' && context !== null) ? context.workspace : context;
-
   if (!_middleware.length) {
-    return tool.handler(args, workspace);
+    return tool.handler(args, context);
   }
 
   var executeFn = createToolExecutor(tool);
@@ -421,7 +420,7 @@ function executeWithMiddleware(canonicalName, tool, args, context) {
     executeFn = wrapMiddlewareStep(mw.fn, executeFn);
   }
 
-  return executeFn(canonicalName, args, workspace);
+  return executeFn(canonicalName, args, context);
 }
 
 export function clear() {

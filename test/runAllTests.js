@@ -20,6 +20,9 @@ import * as planningManager from '../src/context/planningManager.js';
 import * as planningEngine from '../src/context/planningEngine.js';
 import * as terminalManager from '../src/tools/terminalManager.js';
 import * as permissions from '../src/tools/permissions.js';
+import * as toolRegistry from '../src/tools/toolRegistry.js';
+import { registerAllTools } from '../src/tools/tools.js';
+import * as approvalSystem from '../src/tools/approvalSystem.js';
 
 console.log('================================================================');
 console.log('=== STARTING COMPLETE ADVERSARIAL REGRESSION TEST SUITE ===');
@@ -643,6 +646,78 @@ assert.strictEqual(fs.readFileSync(path.join(delFolderFull, 'file1.txt'), 'utf-8
 assert.strictEqual(fs.readFileSync(path.join(delFolderFull, 'file2.txt'), 'utf-8'), 'FILE 2 CONTENT', 'file2.txt restored');
 console.log('✓ Vector 37 Passed: Directory deletion checkpoint and full subtree restoration verified.');
 
+// 38. Tool Registry Context and Session ID Propagation
+console.log('--- TEST 38: Tool Registry Context and Session ID Propagation ---');
+registerAllTools();
+var ctxSessionId = 'session_ctx_prop_38';
+var ctxFilePath = 'ctx_test_file.txt';
+var ctxGen = toolRegistry.execute('write_file', { file_path: ctxFilePath, content: 'PROPGATION TEST CONTENT' }, { workspace: testDir, sessionId: ctxSessionId });
+var writeEvents = [];
+for await (var wEvt of ctxGen) {
+  writeEvents.push(wEvt);
+  if (wEvt.type === 'request_diff' && wEvt.id) {
+    diffManager.storePatch(wEvt);
+    diffManager.resolveDiff(wEvt.id, true, ctxSessionId, testDir);
+  }
+}
+var ctxHistory = projectKnowledge.getRecentCheckpoints(ctxSessionId, 5);
+assert.ok(ctxHistory && ctxHistory.length > 0, 'Checkpoint was saved under session_ctx_prop_38 rather than default');
+console.log('✓ Vector 38 Passed: ToolRegistry propagates full context object including sessionId to tools.');
+
+// 39. Signal Cancellation Propagation in Web Request
+console.log('--- TEST 39: Signal Cancellation Propagation ---');
+var testAbortCtrl = new AbortController();
+testAbortCtrl.abort();
+var netGen = toolRegistry.execute('web_request', { url: 'https://example.com' }, { workspace: testDir, signal: testAbortCtrl.signal });
+var netEvents = [];
+for await (var nEvt of netGen) {
+  netEvents.push(nEvt);
+}
+var lastNetEvt = netEvents[netEvents.length - 1];
+assert.strictEqual(lastNetEvt.success, false, 'Aborted signal resulted in cancelled/failed tool result');
+console.log('✓ Vector 39 Passed: Signal abort cleanly propagates into tool execution.');
+
+// 40. Permission Cross-Session Resolution Enforcement
+console.log('--- TEST 40: Permission Cross-Session Resolution Enforcement ---');
+var permPromise = permissions.requestPermission('run_terminal', { command: 'echo 1' }, 'perm_test_cross_40', null, 'session_owner_40');
+var wrongResolveResult = permissions.resolvePermission('perm_test_cross_40', true, { sessionId: 'session_intruder_40' }, 'session_intruder_40');
+assert.strictEqual(wrongResolveResult, false, 'Cross-session resolution rejected');
+var correctResolveResult = permissions.resolvePermission('perm_test_cross_40', true, { sessionId: 'session_owner_40' }, 'session_owner_40');
+assert.strictEqual(correctResolveResult, true, 'Matching session resolution accepted');
+var permApproved = await permPromise;
+assert.strictEqual(permApproved, true, 'Permission resolved as approved for session owner');
+console.log('✓ Vector 40 Passed: Cross-session permission resolution is strictly guarded.');
+
+// 41. Max Iterations and Continuation State Lifecycle
+console.log('--- TEST 41: Max Iterations and Continuation State Lifecycle ---');
+var stateSessionId = 'session_state_lifecycle_41';
+agentState.reset(stateSessionId);
+agentState.transition('thinking', stateSessionId);
+agentState.transition('executing', stateSessionId);
+agentState.transition('max_iterations', stateSessionId);
+assert.strictEqual(agentState.isTerminal(stateSessionId), true, 'max_iterations is recognized as a terminal state');
+assert.strictEqual(agentState.getState(stateSessionId), 'max_iterations');
+
+// Test continuation from max_iterations
+agentState.transition('thinking', stateSessionId);
+assert.strictEqual(agentState.getState(stateSessionId), 'thinking', 'State machine cleanly resumes thinking from max_iterations on continuation');
+console.log('✓ Vector 41 Passed: State machine transitions cleanly support max_iterations and continuation.');
+
+// 42. Interactive Command & Prompt Detection
+console.log('--- TEST 42: Interactive Command & Prompt Detection ---');
+var isReadHostInteractive = terminalManager.isInteractiveCommand('Read-Host "What is your name?"');
+assert.strictEqual(isReadHostInteractive, true, 'Read-Host recognized as interactive command');
+var promptCheckResult = terminalManager.isPrompt('What is your name? (type it, I will send it):');
+assert.strictEqual(promptCheckResult, true, 'Interactive prompt recognized from output');
+console.log('✓ Vector 42 Passed: Interactive commands and prompt patterns accurately detected.');
+
+// Teardown
+try {
+  terminalManager.dispose();
+} catch (_) {}
+
 console.log('\n================================================================');
-console.log('=== ALL 37 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 42 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
+
+process.exit(0);

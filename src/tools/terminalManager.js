@@ -197,15 +197,22 @@ var INTERACTIVE_PATTERNS = [
   /choice\s*:/i,
   /choose\s*\[/i,
   /\? \[.*\]/,
-  /(?:enter|input|type)\s+(?:a|an|the|your)?\s*[\w\s]{1,30}\s*:/i
+  /(?:enter|input|type|provide|what|which|how|confirm|specify)\b.*[:?]\s*$/i,
+  /:\s*$/,
+  /\?\s*$/,
+  />\s*$/,
+  /\$\s*$/
 ];
 
 function detectPrompt(output) {
   if (!output) return { interactive: false, promptDetected: false };
-  var lastLines = output.split('\n').slice(-3).join('\n');
+  var trimmed = String(output).trim();
+  var lines = trimmed.split('\n');
+  var lastLine = lines[lines.length - 1].trim();
+  var lastLines = lines.slice(-3).join('\n');
   for (var i = 0; i < INTERACTIVE_PATTERNS.length; i++) {
     var pat = INTERACTIVE_PATTERNS[i];
-    if (pat.test(lastLines)) {
+    if (pat.test(lastLines) || pat.test(lastLine)) {
       return { interactive: true, promptDetected: true };
     }
   }
@@ -262,12 +269,18 @@ var INTERACTIVE_COMMANDS = [
   'mysql', 'psql', 'sqlite3', 'mongo', 'mongosh', 'redis-cli',
   'nano', 'vim', 'vi', 'emacs', 'less', 'more',
   'top', 'htop', 'glances',
-  'powershell -noexit', 'cmd /k'
+  'powershell -noexit', 'cmd /k',
+  'read-host', 'read', 'set /p', 'input', 'prompt',
+  'npm init', 'yarn init', 'pnpm init', 'npx create-',
+  'gh auth', 'git commit', 'git add -p', 'git rebase -i'
 ];
 
 function checkInteractiveCommand(command) {
   var trimmed = (command || '').trim().toLowerCase();
   if (!trimmed) return false;
+  if (trimmed.includes('read-host') || trimmed.includes('set /p ') || trimmed.includes('input(')) {
+    return true;
+  }
   var segments = trimmed.split(/[|;&]+/);
   for (var s = 0; s < segments.length; s++) {
     var seg = segments[s].trim();
@@ -277,12 +290,20 @@ function checkInteractiveCommand(command) {
     var exeWithArg = words.length > 1 ? (words[0] + ' ' + words[1]) : '';
     for (var i = 0; i < INTERACTIVE_COMMANDS.length; i++) {
       var ic = INTERACTIVE_COMMANDS[i];
-      if (exe === ic || exeWithArg === ic || seg === ic || seg.startsWith(ic + ' ')) {
+      if (exe === ic || exeWithArg === ic || seg === ic || seg.startsWith(ic + ' ') || seg.indexOf(ic) === 0) {
         return true;
       }
     }
   }
   return false;
+}
+
+export function isInteractiveCommand(command) {
+  return checkInteractiveCommand(command);
+}
+
+export function isPrompt(output) {
+  return detectPrompt(output).interactive;
 }
 
 function createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess) {
@@ -803,16 +824,30 @@ export async function executeCommand(command, timeout, background, isInteractive
   }
 }
 
-export async function sendTerminalInput(text, sessionId) {
+export async function sendTerminalInput(text, sessionId, addNewLine) {
   var sess = getSession(sessionId);
   var term = getTerminal(sessionId);
   term.show(true);
-  var cleanText = String(text != null ? text : '');
-  term.sendText(cleanText, true);
+
+  var rawText = String(text != null ? text : '');
+  // Normalize escaped control characters that LLMs frequently output as literal strings
+  var cleanText = rawText
+    .replace(/\\r\\n/g, '\r\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t');
+
+  var shouldAddNewline = addNewLine !== false;
+  // If the string itself ended with \r\n or \n, strip trailing newline and send with addNewLine=true
+  if (/[\r\n]+$/.test(cleanText)) {
+    cleanText = cleanText.replace(/[\r\n]+$/, '');
+    shouldAddNewline = true;
+  }
+
+  term.sendText(cleanText, shouldAddNewline);
 
   // Allow shell to process input and emit response into stream buffer
   function waitTimer(resolve) {
-    setTimeout(resolve, 300);
+    setTimeout(resolve, 350);
   }
   await new Promise(waitTimer);
 
@@ -831,7 +866,7 @@ export async function sendTerminalInput(text, sessionId) {
     stdout: responseOutput,
     output: responseOutput,
     interactive: pCheck.interactive,
-    message: 'Input sent to terminal: ' + cleanText + (responseOutput ? ('\nResponse output:\n' + responseOutput) : '')
+    message: 'Input sent to terminal: ' + (cleanText || '(empty/newline)') + (responseOutput ? ('\nResponse output:\n' + responseOutput) : '')
   };
 }
 
@@ -930,10 +965,18 @@ export async function stopTerminal(sessionId) {
     sess.pendingInteractiveExecution = null;
     sess.lastCheckedPosition = (sess.lastSessionOutput || '').length;
 
-    return { success: true, status: 'stopped', message: 'Sent Ctrl+C to stop running process.' };
+    return {
+      success: true,
+      status: 'stopped',
+      message: 'Sent Ctrl+C to stop running process.'
+    };
   }
 
-  return { success: false, status: 'not_running', message: 'No active command or process was running in terminal.' };
+  return {
+    success: false,
+    status: 'not_running',
+    message: 'No active command or process was running in terminal.'
+  };
 }
 
 export function resetTerminal(sessionId) {

@@ -13,7 +13,8 @@ export function StateError(from, to) {
 StateError.prototype = Object.create(Error.prototype);
 StateError.prototype.constructor = StateError;
 
-var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped'];
+var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped', 'max_iterations'];
+var RESUME_STATES = ['idle', 'thinking'];
 var TRANSITIONS = {
   idle:               new Set(ACTIVE_STATES),
   thinking:           new Set(ACTIVE_STATES),
@@ -28,10 +29,11 @@ var TRANSITIONS = {
   testing:            new Set(ACTIVE_STATES),
   reviewing:          new Set(ACTIVE_STATES),
   waiting:            new Set(ACTIVE_STATES),
-  completed:          new Set([]), // terminal
-  failed:             new Set([]), // terminal
-  cancelled:          new Set([]), // terminal
-  stopped:            new Set([])  // terminal
+  completed:          new Set(RESUME_STATES), // terminal, resumes on continuation/new prompt
+  failed:             new Set(RESUME_STATES), // terminal, resumes on retry
+  cancelled:          new Set(RESUME_STATES), // terminal, resumes on retry
+  stopped:            new Set(RESUME_STATES), // terminal, resumes on continuation
+  max_iterations:     new Set(RESUME_STATES)  // terminal, resumes on continuation
 };
 
 export var LABELS = {
@@ -51,7 +53,8 @@ export var LABELS = {
   completed:          'Completed',
   failed:             'Failed',
   cancelled:          'Cancelled',
-  stopped:            'Stopped'
+  stopped:            'Stopped',
+  max_iterations:     'Max Iterations'
 };
 
 export function transition(to, sessionId) {
@@ -73,7 +76,7 @@ export function getState(sessionId) {
 export function isTerminal(sessionId) {
   var sid = sessionId || 'default';
   var s = _stateBySession[sid] || 'idle';
-  return s === 'completed' || s === 'failed' || s === 'cancelled' || s === 'stopped';
+  return s === 'completed' || s === 'failed' || s === 'cancelled' || s === 'stopped' || s === 'max_iterations';
 }
 
 export function reset(sessionId) {

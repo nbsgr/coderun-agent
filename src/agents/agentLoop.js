@@ -161,7 +161,7 @@ function robustParseToolArguments(rawArgs, toolName) {
   }
 }
 
-async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, sessionCtx, tc, index) {
+async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, sessionCtx, tc, index, signal) {
   var toolName = tc.function?.name;
   var args = tc.function?.arguments || {};
   var tcId = tc.id || 'call_' + iteration + '_' + index;
@@ -195,7 +195,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
 
   // Permission check
   var approved = true;
-  if (approvalSystem.requiresApproval(toolName, args)) {
+  if (approvalSystem.requiresApproval(toolName, args, sessionCtx ? sessionCtx.config : null)) {
     try {
       if (agentState.getState(sessionId) !== 'waiting') {
         var fromWait = agentState.getState(sessionId);
@@ -245,7 +245,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
   var _createdDiffIds = [];
   try {
     dbg('[AGENT LOOP] Calling toolRegistry.execute for', toolName);
-    var generator = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId });
+    var generator = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId, signal: signal });
     dbg('[AGENT LOOP] toolRegistry.execute returned generator');
     var eventCount = 0;
     for await (var event of generator) {
@@ -652,7 +652,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   });
 
   var initialLength = messages.length;
-  var sessionCtx = { plan: currentPlan };
+  var sessionCtx = { plan: currentPlan, config: config };
   function sendHistoryUpdate() {
     forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx, config);
   }
@@ -679,8 +679,10 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       iteration++;
       console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
+      sendEvent({ type: EVENT_TYPES.AGENT_ITERATION, iteration: iteration });
 
-      var targetState = agentState.getState(sessionId) === 'idle' ? 'thinking' : agentState.getState(sessionId);
+      var currentState = agentState.getState(sessionId);
+      var targetState = (currentState === 'idle' || agentState.isTerminal(sessionId)) ? 'thinking' : currentState;
 
       try {
         if (agentState.getState(sessionId) !== targetState) {
@@ -1085,7 +1087,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         var singleResult = await executeSingleToolCall(
           workspace, sessionId, traceStepIndex, sendEvent, askPermission,
           userPrompt || effectivePrompt, history, sessionCtx,
-          completedToolCalls[tpi], tpi
+          completedToolCalls[tpi], tpi, signal
         );
         results.push(singleResult);
       }
@@ -1148,11 +1150,15 @@ export async function runAgentLoop(userPrompt, config, options) {
         messages.push(toolMsg);
       }
 
-      if (currentPlan) {
+      var livePlan = runtime.getCurrentPlan(sessionId) || sessionCtx.plan;
+      if (livePlan && livePlan.status !== 'completed') {
         try {
           var lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.role === 'tool') {
-            lastMsg.content = (lastMsg.content || '') + '\n\n[CURRENT PLAN]\n' + currentPlan;
+            var planStr = typeof livePlan === 'string' ? livePlan : (livePlan.rawPlan || livePlan.goal || '');
+            if (planStr) {
+              lastMsg.content = (lastMsg.content || '') + '\n\n[CURRENT PLAN]\n' + planStr;
+            }
           }
         } catch (_) {
           // Intentionally ignored to allow safe execution fallback
@@ -1164,6 +1170,11 @@ export async function runAgentLoop(userPrompt, config, options) {
     }
   } catch (err) {
     console.error('[AGENT LOOP] Error in loop:', err);
+    try {
+      if (!agentState.isTerminal(sessionId)) {
+        agentState.transition('failed', sessionId);
+      }
+    } catch (_) {}
     try {
       var errText = err ? (err.message || String(err)) : 'Unknown error';
       executionTrace.recordFinalResponse(sessionId, {
@@ -1186,15 +1197,14 @@ export async function runAgentLoop(userPrompt, config, options) {
     throw err;
   } finally {
     console.log('[AGENT LOOP] While loop exited. finally block.');
-    if (!agentState.isTerminal(sessionId)) {
-      agentState.transition('failed', sessionId);
-    }
     sendHistoryUpdate();
   }
 
-  if (!agentState.isTerminal(sessionId)) {
-    agentState.transition('completed', sessionId);
-  }
+  try {
+    if (!agentState.isTerminal(sessionId)) {
+      agentState.transition('max_iterations', sessionId);
+    }
+  } catch (_) {}
 
   try {
     executionTrace.recordFinalResponse(sessionId, {

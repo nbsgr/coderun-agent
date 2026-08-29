@@ -120,8 +120,9 @@ A persistent project index is available. The index tracks file metadata and cont
 - For any complex or multi-step task, ALWAYS call \`create_plan\` first to initialize your checklist.
 - Task IDs are simple sequential integers: 1, 2, 3, 4... (no complex prefixes like t1_1).
 - The plan ID is always "1".
-- As you complete each task, immediately call \`update_plan\` to mark it as 'completed' (or 'failed' / 'skipped') before proceeding. DO NOT skip task status updates.
-- The updated plan status (todos list and progress) is automatically appended to the end of every tool result message so you always see fresh progress. Use this checklist context to drive your next actions.
+- As you complete each task, immediately call \`update_plan\` to mark completed tasks with \`[x]\` (or \`[!]\` for failed, \`[>]\` for active) before proceeding.
+- When all tasks are completed, call \`update_plan\` with all items marked \`[x]\` to complete and conclude the plan.
+- While active, the plan status is automatically tracked and displayed in the UI Todos panel.
 
 ## WORKSPACE RULES
 - The workspace path is provided by the system. Always use RELATIVE paths (e.g., 'src/main.py' not '/home/user/project/src/main.py').

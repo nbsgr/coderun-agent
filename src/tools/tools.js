@@ -58,14 +58,16 @@ function sleep(ms) {
 // HELPER: SAFE PATH
 // =====================================================
 function _safePath(workspace, relOrAbsPath) {
-  return pathSecurity.assertSafePath(relOrAbsPath, workspace);
+  var ws = (typeof workspace === 'string') ? workspace : (workspace && workspace.workspace) || '';
+  return pathSecurity.assertSafePath(relOrAbsPath, ws);
 }
 
 // =====================================================
 // FILE TOOLS
 // =====================================================
 
-async function* read_file(args, workspace) {
+async function* read_file(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'read_file', message: 'Reading file: ' + filePath };
   try {
@@ -448,7 +450,8 @@ async function* delete_folder(args, context) {
   }
 }
 
-async function* list_directory(args, workspace) {
+async function* list_directory(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var folderPath = args.folder_path || '.';
   yield { type: 'action', action: 'list_directory', message: 'Listing directory: ' + folderPath };
   try {
@@ -465,7 +468,8 @@ async function* list_directory(args, workspace) {
   }
 }
 
-async function* search_files(args, workspace) {
+async function* search_files(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var pattern = args.pattern || '*';
   var folderPath = args.folder_path || '.';
   yield { type: 'action', action: 'search_files', message: "Searching files: pattern='" + pattern + "' in '" + folderPath + "'" };
@@ -491,7 +495,8 @@ async function* search_files(args, workspace) {
   }
 }
 
-async function* get_file_info(args, workspace) {
+async function* get_file_info(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'get_file_info', message: 'Getting file info: ' + filePath };
   try {
@@ -637,7 +642,8 @@ async function* get_current_datetime(args, workspace) {
 // FIND IN FILES — content search
 // =====================================================
 
-async function* find_in_files(args, workspace) {
+async function* find_in_files(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var query = args.query || '';
   yield { type: 'action', action: 'find_in_files', message: "Searching file contents for: '" + query + "'" };
   if (!query) {
@@ -698,7 +704,8 @@ async function* stop_terminal(args, context) {
 // CODE NAVIGATION, DIFF PATCHING, & HTTP TOOLS
 // =═══════════════════════════════════════════════════
 
-async function* list_symbols(args, workspace) {
+async function* list_symbols(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'list_symbols', message: 'Getting code outline for: ' + filePath };
   try {
@@ -1058,28 +1065,47 @@ async function* update_plan(args, context) {
 
   try {
     var activePlan = runtime.getCurrentPlan(sessionId);
-    if (activePlan) {
-      var lines = planText.split('\n');
-      for (var l = 0; l < lines.length; l++) {
-        var line = lines[l].trim();
-        var doneMatch = line.match(/^[-*]\s*\[([ xX!→])\]\s*(?:#?([0-9a-zA-Z_-]+)\s*:?)?\s*(.*)$/);
-        if (doneMatch) {
-          var mark = doneMatch[1];
-          var taskId = doneMatch[2];
-          var desc = doneMatch[3];
-          var status = (mark === 'x' || mark === 'X') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
-          if (taskId) {
-            planningManager.updateTaskStatus(activePlan.id, taskId, status, desc, sessionId);
-            goalTracker.updateGoalStatus(taskId, status, sessionId);
-          }
+    var totalTasks = 0;
+    var completedTasks = 0;
+    var lines = planText.split('\n');
+    var taskLineIndex = 0;
+
+    for (var l = 0; l < lines.length; l++) {
+      var line = lines[l].trim();
+      var doneMatch = line.match(/^[-*]\s*\[([ xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
+      if (doneMatch) {
+        taskLineIndex++;
+        totalTasks++;
+        var mark = doneMatch[1];
+        var taskId = doneMatch[2] || doneMatch[3] || String(taskLineIndex);
+        var desc = doneMatch[4] || line;
+        var status = (mark === 'x' || mark === 'X' || mark === '✓') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
+        if (status === 'completed') {
+          completedTasks++;
+        }
+        if (activePlan) {
+          planningManager.updateTaskStatus(activePlan.id, taskId, status, desc, sessionId);
+          goalTracker.updateGoalStatus(taskId, status, sessionId);
         }
       }
+    }
+
+    var allDone = (totalTasks > 0 && completedTasks === totalTasks) || (args.status === 'completed');
+
+    if (activePlan) {
       activePlan.rawPlan = planText;
+      if (allDone) {
+        activePlan.status = 'completed';
+        planningManager.updatePlanStatus(activePlan.id, 'completed');
+      }
       runtime.updatePlan(activePlan);
     } else {
       var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
       var planObj = planningEngine.buildPlan(analysis, sessionId);
       planObj.rawPlan = planText;
+      if (allDone) {
+        planObj.status = 'completed';
+      }
       runtime.registerPlan(planObj);
       runtime.setCurrentPlan(planObj, sessionId);
       goalTracker.syncWithPlan(planObj, sessionId);
@@ -1090,7 +1116,13 @@ async function* update_plan(args, context) {
       tool: 'update_plan',
       success: true,
       plan: planText,
-      message: 'Plan updated and synced with planning engine.'
+      status: allDone ? 'completed' : 'active',
+      all_tasks_completed: allDone,
+      completed_tasks: completedTasks,
+      total_tasks: totalTasks,
+      message: allDone
+        ? 'Plan updated successfully. All ' + completedTasks + '/' + totalTasks + ' tasks are completed — plan is marked as finished.'
+        : 'Plan updated: ' + completedTasks + '/' + totalTasks + ' tasks completed.'
     };
   } catch (e) {
     yield {
@@ -1127,7 +1159,8 @@ async function* create_plan(args, context) {
       tool: 'create_plan',
       success: true,
       plan: planText,
-      planObject: planObj,
+      plan_id: planObj.id,
+      status: planObj.status || 'active',
       message: 'Plan created and registered in planning engine successfully.'
     };
   } catch (err) {
