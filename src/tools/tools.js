@@ -376,22 +376,45 @@ async function* delete_file(args, context) {
 // DIRECTORY TOOLS
 // =====================================================
 
-async function* create_folder(args, workspace) {
+async function* create_folder(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var folderPath = args.folder_path || '';
   yield { type: 'action', action: 'create_folder', message: 'Creating folder: ' + folderPath };
   try {
     var target = _safePath(workspace, folderPath);
+    var existed = existsSync(target);
+    var cpId = null;
+
     async function performLockedCreateFolder() {
+      if (!existed) {
+        try {
+          cpId = await checkpointManager.createFolderCheckpoint(folderPath, workspace, sessionId, 'Created: ' + folderPath, false);
+        } catch (_) {}
+      }
       await fs.mkdir(target, { recursive: true });
+      return { success: true, checkpointId: cpId };
     }
-    await fileLockManager.withFileLock(target, performLockedCreateFolder);
-    yield { type: 'tool_result', tool: 'create_folder', success: true, folder_path: folderPath, message: 'Folder created: ' + folderPath };
+
+    var cfResult = await fileLockManager.withFileLock(target, performLockedCreateFolder);
+    yield {
+      type: 'tool_result',
+      tool: 'create_folder',
+      success: true,
+      folder_path: folderPath,
+      message: 'Folder created: ' + folderPath,
+      checkpoint_id: cfResult ? cfResult.checkpointId : null,
+      is_directory: true,
+      existed: existed
+    };
   } catch (e) {
     yield { type: 'tool_result', tool: 'create_folder', success: false, message: e.message };
   }
 }
 
-async function* delete_folder(args, workspace) {
+async function* delete_folder(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var sessionId = (context && context.sessionId) || 'default';
   var folderPath = args.folder_path || '';
   yield { type: 'action', action: 'delete_folder', message: 'Deleting folder: ' + folderPath };
   try {
@@ -400,11 +423,26 @@ async function* delete_folder(args, workspace) {
       yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
       return;
     }
+
+    var cpId = null;
     async function performLockedDeleteFolder() {
+      try {
+        cpId = await checkpointManager.createFolderDeleteCheckpoint(folderPath, workspace, sessionId, 'Deleted: ' + folderPath);
+      } catch (_) {}
       await _safeRmDir(target);
+      return { success: true, checkpointId: cpId };
     }
-    await fileLockManager.withFileLock(target, performLockedDeleteFolder);
-    yield { type: 'tool_result', tool: 'delete_folder', success: true, folder_path: folderPath, message: 'Folder deleted: ' + folderPath };
+
+    var dfResult = await fileLockManager.withFileLock(target, performLockedDeleteFolder);
+    yield {
+      type: 'tool_result',
+      tool: 'delete_folder',
+      success: true,
+      folder_path: folderPath,
+      message: 'Folder deleted: ' + folderPath,
+      checkpoint_id: dfResult ? dfResult.checkpointId : null,
+      is_directory: true
+    };
   } catch (e) {
     yield { type: 'tool_result', tool: 'delete_folder', success: false, message: e.message };
   }
@@ -777,7 +815,7 @@ async function* patch_file(args, context) {
 
       var cpId = null;
       try {
-        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Patched: ' + filePath);
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Patches: ' + filePath);
       } catch (cpErr) {
         return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
       }

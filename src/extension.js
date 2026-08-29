@@ -32,6 +32,7 @@ const __dirname = path.dirname(__filename);
 let statusBarItem;
 let currentWebview = null;
 let sidebarWebviewView = null;
+let activeWebviews = { sidebar: null, panel: null, sessionWebviews: {} };
 let extensionContext = null;
 var abortControllers = {};
 
@@ -263,6 +264,7 @@ function createSidebarWebviewViewProvider(extensionUri) {
 function handleResolveWebviewView(extensionUri, webviewView, context, token) {
   console.log('[CODERUN] resolveWebviewView called');
   sidebarWebviewView = webviewView;
+  activeWebviews.sidebar = webviewView.webview;
 
   webviewView.webview.options = {
     enableScripts: true,
@@ -294,12 +296,20 @@ function createOrShowPanel(extensionUri) {
     }
   );
 
+  activeWebviews.panel = panel.webview;
+
   panel.webview.html = getWebviewHtml(panel.webview, extensionUri);
 
   function onPanelMessageReceive(msg) {
     handleFrontendMessageReceive(panel.webview, msg);
   }
   panel.webview.onDidReceiveMessage(onPanelMessageReceive);
+
+  panel.onDidDispose(function onPanelDispose() {
+    if (activeWebviews.panel === panel.webview) {
+      activeWebviews.panel = null;
+    }
+  });
 
   currentWebview = panel.webview;
 }
@@ -901,19 +911,23 @@ async function handleFrontendMessage(message, webview) {
     }
 
     case 'undoCheckpoint': {
-      if (message.filePath) {
-        var wsPath = getWorkspaceFolder();
-        var undoSessionId = message.sessionId || message.conversationId;
-        var result = await checkpointManager.undoFile(message.filePath, wsPath, undoSessionId);
-        webview.postMessage({
-          type: 'undoCheckpointResult',
-          filePath: message.filePath,
-          success: result ? result.success : false,
-          message: result ? result.message : 'Failed'
-        });
-        if (result && result.success) {
-          vscode.window.showInformationMessage(result.message);
-        }
+      var wsPath = getWorkspaceFolder();
+      var undoSessionId = message.sessionId || message.conversationId;
+      var result = null;
+      if (message.checkpointId) {
+        result = await checkpointManager.undoCheckpointById(message.checkpointId, wsPath, undoSessionId);
+      } else if (message.filePath) {
+        result = await checkpointManager.undoFile(message.filePath, wsPath, undoSessionId);
+      }
+      webview.postMessage({
+        type: 'undoCheckpointResult',
+        filePath: (result && result.filePath) || message.filePath,
+        checkpointId: message.checkpointId,
+        success: result ? result.success : false,
+        message: result ? result.message : 'Failed'
+      });
+      if (result && result.success) {
+        vscode.window.showInformationMessage(result.message);
       }
       break;
     }
@@ -922,9 +936,6 @@ async function handleFrontendMessage(message, webview) {
       var wsPath = getWorkspaceFolder();
       var diffSessionId = message.sessionId || message.conversationId;
       var result = await diffManager.applyPatch(message.diffId, wsPath, diffSessionId);
-      if (result.success) {
-        agentLoop.resolveDiff(message.diffId, true, diffSessionId);
-      }
       webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
       break;
     }
@@ -933,12 +944,6 @@ async function handleFrontendMessage(message, webview) {
       var wsPath = getWorkspaceFolder();
       var diffSessionId = message.sessionId || message.conversationId;
       var results = await diffManager.acceptAll(wsPath, diffSessionId);
-      for (var ri = 0; ri < results.length; ri++) {
-        var r = results[ri];
-        if (r.success) {
-          agentLoop.resolveDiff(r.diffId || r.message, true, diffSessionId);
-        }
-      }
       webview.postMessage({ type: 'diffAllResult', results: results });
       break;
     }
@@ -947,7 +952,6 @@ async function handleFrontendMessage(message, webview) {
       if (message.diffId) {
         var diffSessionId = message.sessionId || message.conversationId;
         var result = diffManager.rejectPatch(message.diffId, diffSessionId);
-        agentLoop.resolveDiff(message.diffId, false, diffSessionId);
         webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
       }
       break;
@@ -956,10 +960,6 @@ async function handleFrontendMessage(message, webview) {
     case 'rejectAllDiffs': {
       var diffSessionId = message.sessionId || message.conversationId;
       var results = diffManager.rejectAll(diffSessionId);
-      for (var ri = 0; ri < results.length; ri++) {
-        var r = results[ri];
-        agentLoop.resolveDiff(r.diffId, false, diffSessionId);
-      }
       webview.postMessage({ type: 'diffAllResult', results: results });
       break;
     }

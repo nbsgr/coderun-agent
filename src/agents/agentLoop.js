@@ -29,6 +29,7 @@ import * as reviewEngine from '../execution/reviewEngine.js';
 import * as executionTrace from '../execution/executionTrace.js';
 import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import * as memoryManager from '../context/memoryManager.js';
+import * as diffManager from '../tools/diffManager.js';
 
 var DEBUG = false;
 function dbg() {
@@ -37,21 +38,8 @@ function dbg() {
   }
 }
 
-var _pendingDiffs = {};
-
-export function resolveDiff(id, accepted, sessionId) {
-  var entry = _pendingDiffs[id];
-  if (entry) {
-    if (sessionId && entry.sessionId && entry.sessionId !== 'default' && entry.sessionId !== sessionId) {
-      return false;
-    }
-    if (typeof entry.resolve === 'function') {
-      entry.resolve({ accepted: accepted });
-    }
-    delete _pendingDiffs[id];
-    return true;
-  }
-  return false;
+export async function resolveDiff(id, accepted, sessionId, workspace) {
+  return await diffManager.resolveDiff(id, accepted, sessionId, workspace);
 }
 
 function noop() {}
@@ -173,7 +161,7 @@ function robustParseToolArguments(rawArgs, toolName) {
   }
 }
 
-async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, _pendingDiffs, sessionCtx, tc, index) {
+async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, sessionCtx, tc, index) {
   var toolName = tc.function?.name;
   var args = tc.function?.arguments || {};
   var tcId = tc.id || 'call_' + iteration + '_' + index;
@@ -269,18 +257,42 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
         event.sessionId = sessionId;
       }
 
-      // Capture deferred resolve for diff review requests
-      if (event.type === 'request_diff' && event.id && event.deferred) {
-        _pendingDiffs[event.id] = { resolve: event.deferred.resolve, sessionId: sessionId };
+      // Capture deferred resolve for diff review requests in diffManager
+      if (event.type === 'request_diff' && event.id) {
+        event.sessionId = sessionId;
+        diffManager.storePatch(event);
         _createdDiffIds.push(event.id);
       }
 
       if (event.type === 'tool_result' && event.checkpoint_id) {
-        checkpointsCreated.push({
+        var targetPath = event.file_path || event.folder_path || args.file_path || args.folder_path || '';
+        var actionLabel = '';
+        if (toolName === 'create_folder') {
+          actionLabel = 'Created: ' + targetPath;
+        } else if (toolName === 'delete_folder') {
+          actionLabel = 'Deleted: ' + targetPath;
+        } else if (toolName === 'delete_file') {
+          actionLabel = 'Deleted: ' + targetPath;
+        } else if (toolName === 'write_file') {
+          actionLabel = (event.is_new_file || !event.existed) ? ('Created: ' + targetPath) : ('Write: ' + targetPath);
+        } else if (toolName === 'edit_file') {
+          actionLabel = 'Edit: ' + targetPath;
+        } else if (toolName === 'patch_file') {
+          actionLabel = 'Patches: ' + targetPath;
+        } else {
+          actionLabel = 'Edit: ' + targetPath;
+        }
+
+        var cpObj = {
           id: event.checkpoint_id,
-          filePath: event.file_path || args.file_path || '',
-          label: (toolName === 'delete_file' ? 'Deleted: ' : (toolName === 'write_file' ? 'Created: ' : 'Edited: ')) + (event.file_path || args.file_path || '')
-        });
+          filePath: targetPath,
+          toolCallId: tcId,
+          isDir: event.is_directory || toolName === 'create_folder' || toolName === 'delete_folder',
+          label: actionLabel
+        };
+        checkpointsCreated.push(cpObj);
+        // User Directive: Emit checkpoints_created immediately so UI displays Undo buttons in real time!
+        sendEvent({ type: 'checkpoints_created', checkpoints: [cpObj] });
       }
 
       sendEvent(event);
@@ -297,12 +309,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     // Clean up only the diffs created during THIS tool call
     for (var di = 0; di < _createdDiffIds.length; di++) {
       var diffId = _createdDiffIds[di];
-      if (_pendingDiffs[diffId]) {
-        if (typeof _pendingDiffs[diffId].resolve === 'function') {
-          _pendingDiffs[diffId].resolve({ accepted: false });
-        }
-        delete _pendingDiffs[diffId];
-      }
+      diffManager.rejectPatch(diffId, sessionId);
     }
   }
 
@@ -1077,7 +1084,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       for (var tpi = 0; tpi < completedToolCalls.length; tpi++) {
         var singleResult = await executeSingleToolCall(
           workspace, sessionId, traceStepIndex, sendEvent, askPermission,
-          userPrompt || effectivePrompt, history, _pendingDiffs, sessionCtx,
+          userPrompt || effectivePrompt, history, sessionCtx,
           completedToolCalls[tpi], tpi
         );
         results.push(singleResult);

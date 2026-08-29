@@ -514,6 +514,135 @@ var agentLoopModule = await import('../src/agents/agentLoop.js');
 assert.ok(typeof agentLoopModule.runAgentLoop === 'function', 'runAgentLoop function exported');
 console.log('✓ Vector 30 Passed: Parallel tool call parser recovers concatenated arguments and formats distinct calls.');
 
+// 31. Exact Canonical Path Checkpoint Resolution (Collision Immunity)
+console.log('--- TEST 31: Exact Canonical Path Checkpoint Resolution (Collision Immunity) ---');
+var srcAppDir = path.join(testDir, 'src', 'foo');
+var testAppDir = path.join(testDir, 'tests', 'foo');
+fs.mkdirSync(srcAppDir, { recursive: true });
+fs.mkdirSync(testAppDir, { recursive: true });
+
+var srcAppPath = path.join(srcAppDir, 'App.java');
+var testAppPath = path.join(testAppDir, 'App.java');
+
+fs.writeFileSync(srcAppPath, 'class App { /* SRC APP ORIGINAL */ }', 'utf-8');
+fs.writeFileSync(testAppPath, 'class AppTest { /* TEST APP ORIGINAL */ }', 'utf-8');
+
+var srcCpId = await checkpointManager.createCheckpoint(srcAppPath, testDir, 'session_exact_paths', 'Src App Checkpoint');
+var testCpId = await checkpointManager.createCheckpoint(testAppPath, testDir, 'session_exact_paths', 'Test App Checkpoint');
+
+assert.ok(srcCpId && testCpId, 'Both checkpoints created successfully');
+
+// Mutate both files
+fs.writeFileSync(srcAppPath, 'class App { /* SRC MUTATED */ }', 'utf-8');
+fs.writeFileSync(testAppPath, 'class AppTest { /* TEST MUTATED */ }', 'utf-8');
+
+// Undo ONLY tests/foo/App.java
+var undoTestRes = await checkpointManager.undoFile('tests/foo/App.java', testDir, 'session_exact_paths');
+assert.strictEqual(undoTestRes.success, true, 'tests/foo/App.java undone successfully');
+
+// Verify tests/foo/App.java was reverted to ORIGINAL
+var testContentAfterUndo = fs.readFileSync(testAppPath, 'utf-8');
+assert.strictEqual(testContentAfterUndo, 'class AppTest { /* TEST APP ORIGINAL */ }', 'tests/foo/App.java was restored');
+
+// Verify src/foo/App.java remained MUTATED (no collision occurred)
+var srcContentAfterUndo = fs.readFileSync(srcAppPath, 'utf-8');
+assert.strictEqual(srcContentAfterUndo, 'class App { /* SRC MUTATED */ }', 'src/foo/App.java was completely untouched by tests/foo undo');
+console.log('✓ Vector 31 Passed: Exact canonical relative path checkpoint resolution eliminates all cross-directory basename collisions.');
+
+// 32. Diff Approval Lifecycle & Single Source of Truth
+console.log('--- TEST 32: Diff Approval Lifecycle & Single Source of Truth ---');
+var diffEvent = {
+  id: 'diff_test_32',
+  file_path: 'src/foo/App.java',
+  original_content: 'class App { /* SRC MUTATED */ }',
+  new_content: 'class App { /* SRC PATCHED */ }',
+  sessionId: 'session_diff_test'
+};
+var diffResolved = false;
+var deferredPromise = new Promise(function (resolve) {
+  diffEvent.deferred = { resolve: function (res) { diffResolved = true; resolve(res); } };
+});
+var patch = diffManager.storePatch(diffEvent);
+assert.strictEqual(patch.status, 'pending', 'Patch starts in pending state');
+
+var applyRes = await diffManager.applyPatch('diff_test_32', testDir, 'session_diff_test');
+assert.strictEqual(applyRes.success, true, 'Patch applied successfully');
+assert.strictEqual(applyRes.status, 'approved', 'Status transitions to approved');
+assert.strictEqual(diffResolved, true, 'Deferred approval promise was resolved');
+console.log('✓ Vector 32 Passed: Centralized diffManager transitions patches cleanly through pending -> approved lifecycle.');
+
+// 33. Completed Background Task Output Status
+console.log('--- TEST 33: Completed Background Task Output Status ---');
+var bgSess = terminalManager.getSession('session_bg_test');
+bgSess.backgroundTasks['bg_1'] = {
+  id: 'bg_1',
+  command: 'echo done',
+  status: 'completed',
+  startedAt: Date.now() - 1000,
+  endedAt: Date.now(),
+  childProcess: null
+};
+var bgOutputCheck = await terminalManager.checkTerminalOutput('session_bg_test');
+assert.strictEqual(bgOutputCheck.status, 'completed', 'Completed background tasks do not hold session in active state');
+console.log('✓ Vector 33 Passed: Completed background tasks correctly report status: completed.');
+
+// 34. Checkpoint Direct ID Lookup & Direct Restoration
+console.log('--- TEST 34: Checkpoint Direct ID Lookup & Direct Restoration ---');
+var directCpFile = path.join(testDir, 'direct_id_test.txt');
+fs.writeFileSync(directCpFile, 'DIRECT ORIGINAL', 'utf-8');
+var directCpId = await checkpointManager.createCheckpoint(directCpFile, testDir, 'session_direct_id', 'Direct ID Checkpoint');
+assert.ok(directCpId, 'Direct checkpoint created');
+
+fs.writeFileSync(directCpFile, 'DIRECT MUTATED', 'utf-8');
+
+var directUndoRes = await checkpointManager.undoCheckpointById(directCpId, testDir, 'session_direct_id');
+assert.strictEqual(directUndoRes.success, true, 'Direct ID checkpoint restored');
+assert.strictEqual(fs.readFileSync(directCpFile, 'utf-8'), 'DIRECT ORIGINAL', 'File restored via primary key checkpoint ID');
+console.log('✓ Vector 34 Passed: Direct primary key checkpoint lookup and restoration verified.');
+
+// 35. Project Knowledge Database & Index Readiness
+console.log('--- TEST 35: Project Knowledge Database & Index Readiness ---');
+assert.ok(typeof projectKnowledge.isDbReady === 'function', 'isDbReady exported');
+assert.ok(typeof projectKnowledge.isIndexReady === 'function', 'isIndexReady exported');
+console.log('✓ Vector 35 Passed: Project knowledge readiness state exports verified.');
+
+// 36. Directory Creation Checkpoint & Undo
+console.log('--- TEST 36: Directory Creation Checkpoint & Undo ---');
+var newFolderRel = 'new_test_folder';
+var newFolderFull = path.join(testDir, newFolderRel);
+var createdCpId = await checkpointManager.createFolderCheckpoint(newFolderRel, testDir, 'session_dir_undo', 'Created: ' + newFolderRel, false);
+assert.ok(createdCpId, 'Folder creation checkpoint created');
+fs.mkdirSync(newFolderFull, { recursive: true });
+assert.strictEqual(fs.existsSync(newFolderFull), true, 'Folder created on disk');
+
+var undoCreateFolderRes = await checkpointManager.undoFile(newFolderRel, testDir, 'session_dir_undo');
+assert.strictEqual(undoCreateFolderRes.success, true, 'Folder creation undone');
+assert.strictEqual(fs.existsSync(newFolderFull), false, 'Newly created folder was cleanly removed on undo');
+console.log('✓ Vector 36 Passed: Directory creation checkpoint and undo verified.');
+
+// 37. Directory Deletion Checkpoint & Subtree Restoration
+console.log('--- TEST 37: Directory Deletion Checkpoint & Subtree Restoration ---');
+var delFolderRel = 'deleted_test_folder';
+var delFolderFull = path.join(testDir, delFolderRel);
+fs.mkdirSync(delFolderFull, { recursive: true });
+fs.writeFileSync(path.join(delFolderFull, 'file1.txt'), 'FILE 1 CONTENT', 'utf-8');
+fs.writeFileSync(path.join(delFolderFull, 'file2.txt'), 'FILE 2 CONTENT', 'utf-8');
+
+var delCpId = await checkpointManager.createFolderDeleteCheckpoint(delFolderRel, testDir, 'session_dir_del_undo', 'Deleted: ' + delFolderRel);
+assert.ok(delCpId, 'Folder delete checkpoint created');
+
+// Delete folder from disk
+fs.rmSync(delFolderFull, { recursive: true, force: true });
+assert.strictEqual(fs.existsSync(delFolderFull), false, 'Folder removed from disk');
+
+// Undo folder deletion
+var undoDelFolderRes = await checkpointManager.undoFile(delFolderRel, testDir, 'session_dir_del_undo');
+assert.strictEqual(undoDelFolderRes.success, true, 'Folder deletion undone');
+assert.strictEqual(fs.existsSync(delFolderFull), true, 'Folder recreated');
+assert.strictEqual(fs.readFileSync(path.join(delFolderFull, 'file1.txt'), 'utf-8'), 'FILE 1 CONTENT', 'file1.txt restored');
+assert.strictEqual(fs.readFileSync(path.join(delFolderFull, 'file2.txt'), 'utf-8'), 'FILE 2 CONTENT', 'file2.txt restored');
+console.log('✓ Vector 37 Passed: Directory deletion checkpoint and full subtree restoration verified.');
+
 console.log('\n================================================================');
-console.log('=== ALL 30 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 37 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');

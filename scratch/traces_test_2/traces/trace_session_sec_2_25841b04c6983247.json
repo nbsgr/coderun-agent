@@ -2,9 +2,9 @@
   {
     "id": "trace_sec_2",
     "sessionId": "session_sec_2",
-    "startedAt": 1787934225533,
-    "completedAt": 1787934225534,
-    "durationMs": 1,
+    "startedAt": 1787973648077,
+    "completedAt": 1787973648077,
+    "durationMs": 0,
     "status": "completed",
     "provider": "ollama",
     "model": "test-model",
@@ -42,7 +42,7 @@
       "durationMs": 0
     },
     "metrics": {
-      "totalDurationMs": 1,
+      "totalDurationMs": 0,
       "totalTokens": "[REDACTED]",
       "toolsExecuted": 0,
       "filesTouched": []

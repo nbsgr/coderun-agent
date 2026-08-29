@@ -23,6 +23,8 @@ function computeHash(content) {
 // PUBLIC API
 // ========================================================
 
+var DIFF_TIMEOUT_MS = 300000; // 5 minutes bounded approval lifetime
+
 /**
  * Store a pending patch and return it.
  * Called from extension.js when a request_diff event arrives.
@@ -35,6 +37,16 @@ export function storePatch(event) {
   var modifiedText = event.new_content || '';
   var stats = computeDiffStats(originalText, modifiedText);
   var originalHash = computeHash(originalText);
+
+  var timer = null;
+  if (event.deferred && event.deferred.resolve) {
+    timer = setTimeout(function onDiffTimeout() {
+      if (_pendingPatches[diffId] && _pendingPatches[diffId].status === 'pending') {
+        console.warn('[DIFF MANAGER] Pending diff timed out after 5 minutes:', diffId);
+        rejectPatch(diffId, event.sessionId);
+      }
+    }, DIFF_TIMEOUT_MS);
+  }
 
   var patch = {
     id: diffId,
@@ -49,7 +61,8 @@ export function storePatch(event) {
     deletions: stats.deletions,
     createdAt: Date.now(),
     deferred: event.deferred || null,
-    sessionId: event.sessionId || 'default'
+    sessionId: event.sessionId || 'default',
+    timer: timer
   };
 
   _pendingPatches[diffId] = patch;
@@ -58,7 +71,7 @@ export function storePatch(event) {
 }
 
 /**
- * Apply a pending patch — verifies optimistic concurrency hash and resolves promise.
+ * Apply a pending patch — verifies optimistic concurrency hash, marks approved, and resolves promise.
  */
 export async function applyPatch(diffId, workspace, sessionId) {
   var patch = _pendingPatches[diffId];
@@ -67,6 +80,11 @@ export async function applyPatch(diffId, workspace, sessionId) {
   }
   if (patch.status !== 'pending') {
     return { success: false, message: 'Patch already ' + patch.status };
+  }
+
+  if (patch.timer) {
+    clearTimeout(patch.timer);
+    patch.timer = null;
   }
 
   // Session ownership check
@@ -118,18 +136,22 @@ export async function applyPatch(diffId, workspace, sessionId) {
     };
   }
 
-  patch.status = 'accepted';
+  patch.status = 'approved';
   if (patch.deferred && patch.deferred.resolve) {
     patch.deferred.resolve({ accepted: true, originalHash: patch.originalHash, expectedContent: patch.originalText });
   }
   delete _pendingPatches[diffId];
-  return { success: true, message: 'Applied: ' + patch.filePath };
+  return { success: true, status: 'approved', message: 'Approved: ' + patch.filePath };
 }
 
 export function rejectPatch(diffId, sessionId) {
   var patch = _pendingPatches[diffId];
   if (!patch) {
     return { success: false, message: 'Patch not found: ' + diffId };
+  }
+  if (patch.timer) {
+    clearTimeout(patch.timer);
+    patch.timer = null;
   }
   if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
     return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
@@ -139,7 +161,27 @@ export function rejectPatch(diffId, sessionId) {
     patch.deferred.resolve({ accepted: false });
   }
   delete _pendingPatches[diffId];
-  return { success: true, message: 'Rejected: ' + patch.filePath };
+  return { success: true, status: 'rejected', message: 'Rejected: ' + patch.filePath };
+}
+
+export async function resolveDiff(diffId, accepted, sessionId, workspace) {
+  if (accepted) {
+    return await applyPatch(diffId, workspace, sessionId);
+  }
+  return rejectPatch(diffId, sessionId);
+}
+
+export function clearSessionPatches(sessionId) {
+  for (var id in _pendingPatches) {
+    var p = _pendingPatches[id];
+    if (p && (!sessionId || p.sessionId === sessionId || p.sessionId === 'default')) {
+      if (p.timer) clearTimeout(p.timer);
+      if (p.deferred && p.deferred.resolve) {
+        p.deferred.resolve({ accepted: false });
+      }
+      delete _pendingPatches[id];
+    }
+  }
 }
 
 export function getPatch(diffId, sessionId) {

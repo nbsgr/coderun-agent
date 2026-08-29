@@ -181,7 +181,6 @@ export function setSendEventCallback(callback, sessionId) {
   sess.sendEventCallback = callback;
 }
 
-// ── Interactive prompt detection ────────────────────────────
 var INTERACTIVE_PATTERNS = [
   /\(y\/n\)/i,
   /\[y\/n\]/i,
@@ -198,8 +197,7 @@ var INTERACTIVE_PATTERNS = [
   /choice\s*:/i,
   /choose\s*\[/i,
   /\? \[.*\]/,
-  /(?:enter|input|type)\s+(?:a|an|the|your)?\s*[\w\s]{1,30}\s*:/i,
-  /:\s*$/
+  /(?:enter|input|type)\s+(?:a|an|the|your)?\s*[\w\s]{1,30}\s*:/i
 ];
 
 function detectPrompt(output) {
@@ -269,15 +267,17 @@ var INTERACTIVE_COMMANDS = [
 
 function checkInteractiveCommand(command) {
   var trimmed = (command || '').trim().toLowerCase();
-  for (var i = 0; i < INTERACTIVE_COMMANDS.length; i++) {
-    var ic = INTERACTIVE_COMMANDS[i];
-    if (trimmed === ic || trimmed.startsWith(ic + ' ')) {
-      return true;
-    }
-    var idx = trimmed.indexOf(ic);
-    if (idx !== -1) {
-      var prevChar = trimmed.charAt(idx - 1);
-      if (prevChar === ' ' || prevChar === '&' || prevChar === '|' || prevChar === ';') {
+  if (!trimmed) return false;
+  var segments = trimmed.split(/[|;&]+/);
+  for (var s = 0; s < segments.length; s++) {
+    var seg = segments[s].trim();
+    if (!seg) continue;
+    var words = seg.split(/\s+/);
+    var exe = words[0];
+    var exeWithArg = words.length > 1 ? (words[0] + ' ' + words[1]) : '';
+    for (var i = 0; i < INTERACTIVE_COMMANDS.length; i++) {
+      var ic = INTERACTIVE_COMMANDS[i];
+      if (exe === ic || exeWithArg === ic || seg === ic || seg.startsWith(ic + ' ')) {
         return true;
       }
     }
@@ -402,6 +402,19 @@ export async function executeCommand(command, timeout, background, isInteractive
           t.status = error ? 'failed' : 'completed';
           t.exitCode = error ? (error.code != null ? error.code : 1) : 0;
           t.endedAt = Date.now();
+          if (sendEvent) {
+            sendEvent({
+              type: 'terminal_exit',
+              terminalId: bgExecId,
+              exitCode: t.exitCode,
+              duration: Date.now() - startedAt,
+              shell: shellName,
+              platform: platformName,
+              cwd: cwd,
+              command: command,
+              background: true
+            });
+          }
         }
       }
       bgProcess = execFile(shellExe, fullArgs, spawnOptions, onBgExit);
@@ -412,7 +425,7 @@ export async function executeCommand(command, timeout, background, isInteractive
     sess.backgroundTasks[bgExecId] = {
       id: bgExecId,
       command: command,
-      status: 'running',
+      status: bgProcess ? 'running' : 'submitted_to_terminal',
       startedAt: startedAt,
       childProcess: bgProcess
     };
@@ -441,7 +454,7 @@ export async function executeCommand(command, timeout, background, isInteractive
       success: true,
       workingDirectory: cwd,
       background: true,
-      status: 'running'
+      status: bgProcess ? 'running' : 'submitted_to_terminal'
     };
   }
 
@@ -839,7 +852,14 @@ export async function checkTerminalOutput(sessionId) {
   sess.lastCheckedPosition = fullOutput.length;
 
   var isWaiting = sess.lastSessionActive;
-  var hasActiveExecution = !!sess.activeExecId || !!sess.activeChildProcess || Object.keys(sess.backgroundTasks).length > 0;
+  var hasRunningBackground = false;
+  for (var bKey in sess.backgroundTasks) {
+    if (sess.backgroundTasks[bKey] && sess.backgroundTasks[bKey].status === 'running') {
+      hasRunningBackground = true;
+      break;
+    }
+  }
+  var hasActiveExecution = !!sess.activeExecId || !!sess.activeChildProcess || hasRunningBackground;
   var promptCheck = detectPrompt(newOutput);
   var currentStatus = (isWaiting || promptCheck.interactive) ? 'waiting_for_input' : (hasActiveExecution ? 'active' : 'completed');
   return {
@@ -950,9 +970,16 @@ export async function stopBackgroundTask(taskId, sessionId) {
   if (task.childProcess) {
     killChildProcess(task.childProcess);
     task.childProcess = null;
+    task.status = 'cancelled';
+    return { success: true, message: 'Background task ' + taskId + ' cancelled.' };
   }
-  task.status = 'cancelled';
-  return { success: true, message: 'Background task ' + taskId + ' cancelled.' };
+  task.status = 'cancel_requested';
+  if (sess.terminal) {
+    try {
+      sess.terminal.sendText('\u0003', false);
+    } catch (_) {}
+  }
+  return { success: true, message: 'Background task ' + taskId + ' cancellation requested.' };
 }
 
 export function onTerminalClosed(terminal) {
@@ -1020,6 +1047,10 @@ export function registerTerminalListeners(context) {
       // Intentionally ignored
     }
   }
+}
+
+export function disposeSession(sessionId) {
+  removeSession(sessionId);
 }
 
 export function dispose() {

@@ -1499,6 +1499,18 @@
             updateToolCard(chatCtx, cardToUpdate, resStatus, ev);
             cardToUpdate.dataset.status = resStatus;
             updated = true;
+            if (ev.checkpoint_id) {
+              var targetPath = ev.file_path || ev.folder_path || '';
+              var actionLabel = '';
+              if (resTool === 'create_folder') actionLabel = 'Created: ' + targetPath;
+              else if (resTool === 'delete_folder') actionLabel = 'Deleted: ' + targetPath;
+              else if (resTool === 'delete_file') actionLabel = 'Deleted: ' + targetPath;
+              else if (resTool === 'write_file') actionLabel = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPath) : ('Write: ' + targetPath);
+              else if (resTool === 'edit_file') actionLabel = 'Edit: ' + targetPath;
+              else if (resTool === 'patch_file') actionLabel = 'Patches: ' + targetPath;
+              else actionLabel = 'Edit: ' + targetPath;
+              appendCheckpointUndoForCard(cardToUpdate, ev.checkpoint_id, targetPath, actionLabel);
+            }
           } else {
             var domCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
             for (var di = domCards.length - 1; di >= 0; di--) {
@@ -1507,6 +1519,18 @@
                 updateToolCard(chatCtx, dc, resStatus, ev);
                 dc.dataset.status = resStatus;
                 updated = true;
+                if (ev.checkpoint_id) {
+                  var targetPath2 = ev.file_path || ev.folder_path || '';
+                  var actionLabel2 = '';
+                  if (resTool === 'create_folder') actionLabel2 = 'Created: ' + targetPath2;
+                  else if (resTool === 'delete_folder') actionLabel2 = 'Deleted: ' + targetPath2;
+                  else if (resTool === 'delete_file') actionLabel2 = 'Deleted: ' + targetPath2;
+                  else if (resTool === 'write_file') actionLabel2 = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPath2) : ('Write: ' + targetPath2);
+                  else if (resTool === 'edit_file') actionLabel2 = 'Edit: ' + targetPath2;
+                  else if (resTool === 'patch_file') actionLabel2 = 'Patches: ' + targetPath2;
+                  else actionLabel2 = 'Edit: ' + targetPath2;
+                  appendCheckpointUndoForCard(dc, ev.checkpoint_id, targetPath2, actionLabel2);
+                }
                 break;
               }
             }
@@ -1546,9 +1570,6 @@
           if (ev.sources && ev.sources.length) {
             S.sources = ev.sources;
             appendSources(S.botBody, ev.sources);
-          }
-          if (S._currentCheckpoints && S._currentCheckpoints.length) {
-            appendActionsBar(chatCtx, S.botBody, S._currentCheckpoints);
           }
           if (ev.reason === 'max_iterations') {
             appendContinueButton(chatCtx, S.botBody);
@@ -1607,6 +1628,24 @@
               }
               if (!exists) {
                 S._currentCheckpoints.push(cp);
+              }
+
+              var targetCard = null;
+              if (cp.toolCallId && S.toolCards[cp.toolCallId]) {
+                targetCard = S.toolCards[cp.toolCallId];
+              }
+              if (!targetCard && S.botBody) {
+                var domCards2 = S.botBody.querySelectorAll('.cr-tool-card');
+                for (var dci2 = domCards2.length - 1; dci2 >= 0; dci2--) {
+                  var cEl = domCards2[dci2];
+                  if (!cEl.nextElementSibling || !cEl.nextElementSibling.classList.contains('cr-tool-undo-bar')) {
+                    targetCard = cEl;
+                    break;
+                  }
+                }
+              }
+              if (targetCard) {
+                appendCheckpointUndoForCard(targetCard, cp.id, cp.filePath, cp.label);
               }
             }
           }
@@ -2303,27 +2342,32 @@
     }
   }
 
-  function appendActionsBar(chatCtx, body, checkpoints) {
-    if (!body || !checkpoints || !checkpoints.length) return;
-    var existing = body.querySelector('.cr-actions-bar');
-    if (existing) existing.remove();
+  function appendCheckpointUndoForCard(card, cpId, filePath, label) {
+    if (!card) return;
+    var cardParent = card.parentNode;
+    if (!cardParent) return;
 
-    var bar = mk('div', 'cr-actions-bar');
-    var seenFiles = {};
-    for (var ai = 0; ai < checkpoints.length; ai++) {
-      var cp = checkpoints[ai];
-      if (!cp.filePath || seenFiles[cp.filePath]) continue;
-      seenFiles[cp.filePath] = true;
-
-      var undoBtn = mk('button', 'cr-action-btn cr-action-undo');
-      undoBtn.dataset.cpId = cp.id;
-      undoBtn.dataset.filePath = cp.filePath;
-      undoBtn.innerHTML = '↩ Undo <span class="cr-action-label">' + esc(cp.label || cp.filePath) + '</span>';
-      undoBtn.addEventListener('click', handleUndoBtnClick);
-
-      bar.appendChild(undoBtn);
+    var existingBar = card.nextElementSibling;
+    if (existingBar && existingBar.classList && existingBar.classList.contains('cr-tool-undo-bar') && existingBar.dataset.cpId === cpId) {
+      return;
     }
-    body.appendChild(bar);
+
+    var bar = mk('div', 'cr-tool-undo-bar');
+    bar.dataset.cpId = cpId || '';
+    bar.dataset.filePath = filePath || '';
+    bar.style.marginTop = '4px';
+    bar.style.marginBottom = '6px';
+    bar.style.display = 'flex';
+    bar.style.alignItems = 'center';
+
+    var undoBtn = mk('button', 'cr-action-btn cr-action-undo');
+    undoBtn.dataset.cpId = cpId || '';
+    undoBtn.dataset.filePath = filePath || '';
+    undoBtn.innerHTML = '↩ Undo <span class="cr-action-label">' + esc(label || filePath) + '</span>';
+    undoBtn.addEventListener('click', handleUndoBtnClick);
+
+    bar.appendChild(undoBtn);
+    cardParent.insertBefore(bar, card.nextSibling);
   }
 
   function handleUndoBtnClick(e) {
@@ -2340,16 +2384,13 @@
   }
 
   function updateActionsBarStatus(filePath, statusText) {
-    var bars = document.querySelectorAll('.cr-actions-bar');
-    for (var bi = 0; bi < bars.length; bi++) {
-      var btns = bars[bi].querySelectorAll('.cr-action-undo');
-      for (var bj = 0; bj < btns.length; bj++) {
-        var btn = btns[bj];
-        if (btn.dataset.filePath === filePath) {
-          btn.disabled = true;
-          btn.innerHTML = '✓ ' + statusText;
-          btn.classList.add('cr-action-done');
-        }
+    var btns = document.querySelectorAll('.cr-action-undo');
+    for (var bj = 0; bj < btns.length; bj++) {
+      var btn = btns[bj];
+      if (btn.dataset.filePath === filePath) {
+        btn.disabled = true;
+        btn.innerHTML = '✓ ' + statusText;
+        btn.classList.add('cr-action-done');
       }
     }
   }
@@ -2490,7 +2531,7 @@
   function handleDiffAcceptClick(diffId, card, controlsPanel, msgList) {
     if (!window.VSCODE_API) return;
     window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: diffId });
-    setDiffCardStatus(card, 'accepted');
+    setDiffCardStatus(card, 'approved');
     var chatCtx = { controlsPanel: controlsPanel, msgList: msgList };
     updateAgentControlsPanel(chatCtx);
   }
@@ -2554,7 +2595,7 @@
     if (fullBtn) fullBtn.style.display = 'none';
     if (statusEl) {
       statusEl.style.display = 'inline-block';
-      statusEl.textContent = status === 'accepted' ? '✓ Applied' : '✗ Rejected';
+      statusEl.textContent = (status === 'accepted' || status === 'approved') ? '✓ Approved' : status === 'applied' ? '✓ Applied' : '✗ Rejected';
       statusEl.className = 'cr-diff-status cr-diff-status--' + status;
     }
   }
