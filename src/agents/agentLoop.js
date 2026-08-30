@@ -74,6 +74,49 @@ function formatReviewIssueItem(iss) {
   return '- ' + iss;
 }
 
+function isReadOnlyTool(toolName) {
+  var readTools = {
+    read_file: true,
+    search_code: true,
+    search_files: true,
+    list_dir: true,
+    grep_search: true,
+    find_by_name: true,
+    get_symbols: true,
+    get_stats: true,
+    view_file: true,
+    read_url_content: true,
+    read_rules: true
+  };
+  return !!readTools[toolName];
+}
+
+function checkToolFailureRepetition(sessionCtx, toolName, args, result) {
+  if (!sessionCtx) return null;
+  if (!result || result.success !== false) {
+    sessionCtx.recentFailures = [];
+    return null;
+  }
+  sessionCtx.recentFailures = sessionCtx.recentFailures || [];
+  var key = toolName + ':' + JSON.stringify(args || {});
+  sessionCtx.recentFailures.push(key);
+
+  if (sessionCtx.recentFailures.length >= 3) {
+    var count = 0;
+    for (var i = sessionCtx.recentFailures.length - 1; i >= 0; i--) {
+      if (sessionCtx.recentFailures[i] === key) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    if (count >= 3) {
+      return '⚠️ REPETITIVE TOOL FAILURE: You have called "' + toolName + '" 3 times consecutively with the same failing result. Please stop repeating this command, inspect workspace files/directories, and choose an alternative strategy.';
+    }
+  }
+  return null;
+}
+
 function robustParseToolArguments(rawArgs, toolName) {
   if (!rawArgs) return { argsList: [{}] };
   if (typeof rawArgs === 'object') return { argsList: [rawArgs] };
@@ -306,10 +349,12 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     lastResult = { success: false, message: err.message };
   } finally {
     dbg('[AGENT LOOP] Generator finally block for', toolName, 'eventCount:', eventCount, 'lastResult:', lastResult ? (lastResult.success !== false ? 'success' : 'fail') : 'null');
-    // Clean up only the diffs created during THIS tool call
-    for (var di = 0; di < _createdDiffIds.length; di++) {
-      var diffId = _createdDiffIds[di];
-      diffManager.rejectPatch(diffId, sessionId);
+    // Clean up diffs only if the operation was explicitly aborted/stopped
+    if (signal && (signal.stopped || signal.aborted)) {
+      for (var di = 0; di < _createdDiffIds.length; di++) {
+        var diffId = _createdDiffIds[di];
+        diffManager.rejectPatch(diffId, sessionId);
+      }
     }
   }
 
@@ -1083,13 +1128,37 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       var traceStepIndex = baseStepOffset + iteration;
       var results = [];
-      for (var tpi = 0; tpi < completedToolCalls.length; tpi++) {
-        var singleResult = await executeSingleToolCall(
-          workspace, sessionId, traceStepIndex, sendEvent, askPermission,
-          userPrompt || effectivePrompt, history, sessionCtx,
-          completedToolCalls[tpi], tpi, signal
-        );
-        results.push(singleResult);
+
+      var allReadOnly = true;
+      for (var tpiCheck = 0; tpiCheck < completedToolCalls.length; tpiCheck++) {
+        var fnName = (completedToolCalls[tpiCheck].function && completedToolCalls[tpiCheck].function.name) || '';
+        if (!isReadOnlyTool(fnName)) {
+          allReadOnly = false;
+          break;
+        }
+      }
+
+      if (allReadOnly && completedToolCalls.length > 1) {
+        var parallelExecPromises = [];
+        for (var pIdx = 0; pIdx < completedToolCalls.length; pIdx++) {
+          parallelExecPromises.push(
+            executeSingleToolCall(
+              workspace, sessionId, traceStepIndex, sendEvent, askPermission,
+              userPrompt || effectivePrompt, history, sessionCtx,
+              completedToolCalls[pIdx], pIdx, signal
+            )
+          );
+        }
+        results = await Promise.all(parallelExecPromises);
+      } else {
+        for (var tpi = 0; tpi < completedToolCalls.length; tpi++) {
+          var singleResult = await executeSingleToolCall(
+            workspace, sessionId, traceStepIndex, sendEvent, askPermission,
+            userPrompt || effectivePrompt, history, sessionCtx,
+            completedToolCalls[tpi], tpi, signal
+          );
+          results.push(singleResult);
+        }
       }
 
       var toolResults = [];
@@ -1112,17 +1181,17 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       currentPlan = sessionCtx.plan;
 
-      var isOllama = (config.provider === 'ollama');
       var assistantToolCalls = [];
       for (var atIndex = 0; atIndex < completedToolCalls.length; atIndex++) {
         var tObj = completedToolCalls[atIndex];
         var toolArgs = (tObj.function && tObj.function.arguments) || {};
+        var argsString = typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs);
         assistantToolCalls.push({
           id: tObj.id,
           type: tObj.type || 'function',
           function: {
             name: tObj.function && tObj.function.name,
-            arguments: isOllama ? toolArgs : JSON.stringify(toolArgs)
+            arguments: argsString
           }
         });
       }
@@ -1135,7 +1204,6 @@ export async function runAgentLoop(userPrompt, config, options) {
       sendHistoryUpdate();
 
       dbg('[AGENT LOOP] Messages updated. Total messages:', messages.length, 'Tool results count:', toolResults.length);
-      var isOllama2 = (config.provider === 'ollama');
       for (var j = 0; j < toolResults.length; j++) {
         var toolMsg = {
           role: 'tool',
@@ -1144,25 +1212,31 @@ export async function runAgentLoop(userPrompt, config, options) {
           tool_name: toolResults[j].tool_name,
           result: toolResults[j].result
         };
-        if (isOllama2 && toolResults[j].tool_name) {
-          toolMsg.tool_name = toolResults[j].tool_name;
-        }
         messages.push(toolMsg);
       }
 
-      var livePlan = runtime.getCurrentPlan(sessionId) || sessionCtx.plan;
-      if (livePlan && livePlan.status !== 'completed') {
-        try {
-          var lastMsg = messages[messages.length - 1];
-          if (lastMsg && lastMsg.role === 'tool') {
-            var planStr = typeof livePlan === 'string' ? livePlan : (livePlan.rawPlan || livePlan.goal || '');
-            if (planStr) {
-              lastMsg.content = (lastMsg.content || '') + '\n\n[CURRENT PLAN]\n' + planStr;
-            }
-          }
-        } catch (_) {
-          // Intentionally ignored to allow safe execution fallback
+      // Check repetitive failure circuit breaker
+      var repeatWarning = null;
+      for (var chkIdx = 0; chkIdx < results.length; chkIdx++) {
+        var resObj = results[chkIdx];
+        var tcItem = completedToolCalls[chkIdx];
+        var warnMsg = checkToolFailureRepetition(
+          sessionCtx,
+          resObj.tool_name,
+          tcItem && tcItem.function ? tcItem.function.arguments : {},
+          resObj.result
+        );
+        if (warnMsg) {
+          repeatWarning = warnMsg;
+          break;
         }
+      }
+
+      if (repeatWarning) {
+        messages.push({
+          role: 'user',
+          content: repeatWarning
+        });
       }
 
       sendHistoryUpdate();
