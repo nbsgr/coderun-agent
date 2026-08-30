@@ -145,6 +145,28 @@
     }
   }
 
+  // ── Auto-hide completed todos timer ──────────────────
+  var _todosAutoHideTimer = null;
+  function clearTodosAutoHideTimer() {
+    if (_todosAutoHideTimer) {
+      clearTimeout(_todosAutoHideTimer);
+      _todosAutoHideTimer = null;
+    }
+  }
+
+  function handleTodosAutoHide(panel) {
+    _todosAutoHideTimer = null;
+    if (!panel) return;
+    panel.style.transition = 'opacity 0.4s ease';
+    panel.style.opacity = '0';
+    function onFadeOutDone() {
+      panel.style.display = 'none';
+      panel.style.opacity = '1';
+      panel.style.transition = '';
+    }
+    setTimeout(onFadeOutDone, 400);
+  }
+
   // ── Tool name formatter ──────────────────────────────
   function formatToolName(name) {
     var map = {
@@ -297,6 +319,10 @@
 
   function renderTodos(chatCtx, plan) {
     if (!chatCtx.todosPanel) return;
+    clearTodosAutoHideTimer();
+    chatCtx.todosPanel.style.opacity = '1';
+    chatCtx.todosPanel.style.transition = '';
+
     if (!plan) {
       chatCtx.todosPanel.style.display = 'none';
       return;
@@ -348,13 +374,12 @@
       }
     }
     var totalCount = steps.length;
-
-    if (totalCount > 0 && completedCount === totalCount) {
-      chatCtx.todosPanel.style.display = 'none';
-      return;
-    }
+    var allDone = totalCount > 0 && completedCount === totalCount;
 
     chatCtx.todosPanel.style.display = 'block';
+    if (chatCtx.todosPanel.dataset.collapsed == null && allDone) {
+      chatCtx.todosPanel.dataset.collapsed = 'true';
+    }
     var isCollapsed = chatCtx.todosPanel.dataset.collapsed === 'true';
 
     var stepsHtml = '';
@@ -377,10 +402,11 @@
         '</div>';
     }
 
+    var titleSuffix = allDone ? ' ✓' : '';
     chatCtx.todosPanel.innerHTML =
       '<div class="cr-todos-header">' +
         '<span class="cr-todos-toggle">' + (isCollapsed ? '▶' : '▼') + '</span>' +
-        '<span class="cr-todos-title">Todos (' + completedCount + '/' + totalCount + ')</span>' +
+        '<span class="cr-todos-title">Todos (' + completedCount + '/' + totalCount + ')' + titleSuffix + '</span>' +
         '<span class="cr-todos-icon"><svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>' +
       '</div>' +
       '<div class="cr-todos-list" style="display:' + (isCollapsed ? 'none' : 'block') + '">' +
@@ -388,9 +414,17 @@
       '</div>';
 
     var header = chatCtx.todosPanel.querySelector('.cr-todos-header');
-    header.onclick = function() {
+    function onTodosHeaderClick() {
       handleTodosHeaderClick(chatCtx, plan);
-    };
+    }
+    header.onclick = onTodosHeaderClick;
+
+    if (allDone) {
+      function onAutoHideTick() {
+        handleTodosAutoHide(chatCtx.todosPanel);
+      }
+      _todosAutoHideTimer = setTimeout(onAutoHideTick, 5000);
+    }
   }
 
   function handleTodosHeaderClick(chatCtx, plan) {

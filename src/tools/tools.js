@@ -1072,7 +1072,7 @@ async function* update_plan(args, context) {
 
     for (var l = 0; l < lines.length; l++) {
       var line = lines[l].trim();
-      var doneMatch = line.match(/^[-*]\s*\[([ xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
+      var doneMatch = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
       if (doneMatch) {
         taskLineIndex++;
         totalTasks++;

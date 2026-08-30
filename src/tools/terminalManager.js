@@ -204,11 +204,25 @@ var INTERACTIVE_PATTERNS = [
   /\$\s*$/
 ];
 
+function isShellPromptLine(line) {
+  if (!line) return false;
+  var trimmed = line.trim();
+  if (/^PS(\s+[a-zA-Z]:|\s+[\/~]|\s*>|>)/i.test(trimmed)) return true;
+  if (/^[\w.-]+@[\w.-]+[:\s].*[$#]\s*$/i.test(trimmed)) return true;
+  if (/^(bash|zsh|sh|cmd|pwsh|powershell)[-\d.]*[$#>]\s*$/i.test(trimmed)) return true;
+  return false;
+}
+
 function detectPrompt(output) {
   if (!output) return { interactive: false, promptDetected: false };
   var trimmed = String(output).trim();
   var lines = trimmed.split('\n');
   var lastLine = lines[lines.length - 1].trim();
+
+  if (isShellPromptLine(lastLine)) {
+    return { interactive: false, promptDetected: false };
+  }
+
   var lastLines = lines.slice(-3).join('\n');
   for (var i = 0; i < INTERACTIVE_PATTERNS.length; i++) {
     var pat = INTERACTIVE_PATTERNS[i];
@@ -690,6 +704,8 @@ export async function executeCommand(command, timeout, background, isInteractive
   if (checkInteractiveCommand(command) || isInteractive) {
     terminal.sendText(command, true);
     var interactiveExecId = 'term_interactive_' + (++executionCounter);
+    sess.lastSessionActive = true;
+    sess.activeExecId = interactiveExecId;
     if (sendEvent) {
       sendEvent({
         type: 'terminal_start',
@@ -855,17 +871,18 @@ export async function sendTerminalInput(text, sessionId, addNewLine) {
   var responseOutput = fullOutput.substring(sess.lastCheckedPosition);
   sess.lastCheckedPosition = fullOutput.length;
 
-  var pCheck = detectPrompt(responseOutput);
-  if (!pCheck.interactive) {
+  var isExitCommand = /^\s*(\.exit|exit\(\)|quit\(\)|exit|quit)\s*$/i.test(cleanText);
+  if (isExitCommand) {
     sess.lastSessionActive = false;
+    sess.activeExecId = null;
   }
 
   return {
     success: true,
-    status: pCheck.interactive ? 'waiting_for_input' : 'sent',
+    status: isExitCommand ? 'completed' : 'waiting_for_input',
     stdout: responseOutput,
     output: responseOutput,
-    interactive: pCheck.interactive,
+    interactive: !isExitCommand,
     message: 'Input sent to terminal: ' + (cleanText || '(empty/newline)') + (responseOutput ? ('\nResponse output:\n' + responseOutput) : '')
   };
 }
@@ -907,7 +924,7 @@ export async function checkTerminalOutput(sessionId) {
     success: true,
     status: currentStatus,
     waitingForInput: isWaiting || promptCheck.interactive,
-    interactive: promptCheck.interactive,
+    interactive: isWaiting || promptCheck.interactive,
     promptDetected: promptCheck.promptDetected
   };
 }
@@ -938,16 +955,13 @@ export async function stopTerminal(sessionId) {
     }
   }
 
-  // 3. Send Ctrl+C interrupt directly to this session's VS Code terminal if active
-  if (sess.lastSessionActive || sess.activeExecId || hadActiveProcess) {
+  // 3. Send Ctrl+C interrupt directly if terminal was created and had active session or process
+  if (sess.terminal && (sess.lastSessionActive || sess.activeExecId || hadActiveProcess)) {
     hadActiveProcess = true;
-    var term = getTerminal(sessionId);
-    if (term) {
-      try {
-        term.show(true);
-        term.sendText('\u0003', false);
-      } catch (_) {}
-    }
+    try {
+      sess.terminal.show(true);
+      sess.terminal.sendText('\u0003', false);
+    } catch (_) {}
 
     console.log('[TERMINAL] Sent Ctrl+C interrupt to session terminal:', sess.id);
 
@@ -968,7 +982,17 @@ export async function stopTerminal(sessionId) {
     return {
       success: true,
       status: 'stopped',
-      message: 'Sent Ctrl+C to stop running process.'
+      message: 'Sent Ctrl+C to stop running process in terminal.'
+    };
+  }
+
+  if (hadActiveProcess) {
+    sess.lastSessionActive = false;
+    sess.activeExecId = null;
+    return {
+      success: true,
+      status: 'stopped',
+      message: 'Stopped background/child process.'
     };
   }
 

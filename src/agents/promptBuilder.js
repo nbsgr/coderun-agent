@@ -83,8 +83,11 @@ export async function buildMessages(userPrompt, options) {
     '- [ ] 4 Update documentation\n' +
     '```\n' +
     '\n' +
-    '**Important:** After completing a tool call that fulfills a task, call `update_plan` immediately to mark progress. ' +
-    'The current plan is automatically appended to tool results so you always see fresh progress.';
+    '### STRICT PLAN UPDATE RULES:\n' +
+    '1. NEVER skip calling `update_plan` during a multi-step task.\n' +
+    '2. When you start working on a task, call `update_plan` marking it as `[/]` (in progress).\n' +
+    '3. As soon as you complete the action(s) for a task, call `update_plan` immediately to mark it `[x]` (completed) and mark the next task `[/]` before proceeding.\n' +
+    '4. DO NOT batch all actions together and only update the plan at the end. The user monitors the live Todos checklist in real time as each step executes.';
   if (skills.length) {
     systemContent += '\n\n## SKILLS\n' + skills.join('\n');
   }
