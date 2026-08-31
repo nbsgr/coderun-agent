@@ -422,6 +422,18 @@ async function sendCurrentSettings(webview) {
 
   var providerConfigs = config.getAllProviderConfigs(extensionContext);
 
+  var hasKeyMap = {};
+  var providerKeys = Object.keys(providerConfigs);
+  for (var pi = 0; pi < providerKeys.length; pi++) {
+    var pk = providerKeys[pi];
+    try {
+      var pkKey = await config.getApiKey(extensionContext, pk);
+      hasKeyMap[pk] = !!pkKey && pkKey.length > 0;
+    } catch (_) {
+      hasKeyMap[pk] = false;
+    }
+  }
+
   webview.postMessage({
     type: 'currentSettings',
     settings: {
@@ -434,7 +446,8 @@ async function sendCurrentSettings(webview) {
       confirmDangerous: cfg.confirmDangerous,
       hasApiKey: hasKey
     },
-    providerConfigs: providerConfigs
+    providerConfigs: providerConfigs,
+    providerHasKeyMap: hasKeyMap
   });
 }
 

@@ -263,14 +263,16 @@
     if (typeof planStr !== 'string') return [];
     var items = [];
     var lines = planStr.split('\n');
+    var autoId = 0;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
-      var match = line.match(/^-\s*\[([ \/xX])\]\s*(\d+)\s+(.*)/);
+      var match = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
       if (match) {
+        autoId++;
         items.push({
           mark: match[1],
-          id: match[2],
-          desc: match[3]
+          id: match[2] || match[3] || String(autoId),
+          desc: match[4] || ''
         });
       }
     }
@@ -331,16 +333,19 @@
     var steps = [];
     if (typeof plan === 'string') {
       var lines = plan.split('\n');
+      var autoId = 0;
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
-        var match = line.match(/^-\s*\[([ \/xX])\]\s*(\d+)\s+(.*)/);
+        var match = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
         if (match) {
+          autoId++;
           var mark = match[1];
-          var id = match[2];
-          var desc = match[3];
+          var id = match[2] || match[3] || String(autoId);
+          var desc = match[4] || '';
           var status = 'pending';
-          if (mark === '/') status = 'active';
-          if (mark === 'x' || mark === 'X') status = 'completed';
+          if (mark === '/' || mark === '→' || mark === '>') status = 'active';
+          if (mark === 'x' || mark === 'X' || mark === '✓') status = 'completed';
+          if (mark === '!') status = 'failed';
           steps.push({ id: id, description: desc, status: status });
         }
       }

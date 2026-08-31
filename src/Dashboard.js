@@ -406,7 +406,8 @@
       } else {
         label = prov.charAt(0).toUpperCase() + prov.slice(1);
       }
-      var hasKey = cfg.apiKey ? '🔑' : '○';
+      var keyMap = state.providerHasKeyMap || {};
+      var hasKey = keyMap[prov] ? '🔑' : '○';
       var defaultUrl = PROVIDER_DEFAULT_URLS[prov] || '';
       var rawUrl = cfg.baseUrl || defaultUrl;
       var url = rawUrl ? rawUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
@@ -439,8 +440,9 @@
     state.provider = provider;
     state.settings.provider = provider;
     state.settings.baseUrl = cfg.baseUrl || defaultUrl;
-    state.settings.apiKey = cfg.apiKey || '';
-    state.hasApiKey = !!cfg.apiKey;
+    state.settings.apiKey = '';
+    var keyMap = state.providerHasKeyMap || {};
+    state.hasApiKey = !!keyMap[provider];
     state.settings.model = cfg.model || '';
     state.settings.apiType = cfg.apiType || 'openai';
 
@@ -1328,10 +1330,11 @@
 
     if (saved) {
       state.settings.baseUrl = saved.baseUrl || defaultUrl;
-      state.settings.apiKey = saved.apiKey || '';
+      state.settings.apiKey = '';
       state.settings.model = saved.model || '';
       state.settings.apiType = saved.apiType || 'openai';
-      state.hasApiKey = !!saved.apiKey;
+      var keyMap = state.providerHasKeyMap || {};
+      state.hasApiKey = !!keyMap[provider];
     } else {
       state.settings.baseUrl = defaultUrl;
       state.settings.apiKey = '';
@@ -1385,8 +1388,8 @@
 
     if (state.isVsCode && window.VSCODE_API) {
       var apiKeyToSend = newApiKey;
-      var savedConfigs = state.savedProviderConfigs || {};
-      var hasExistingKey = savedConfigs[newProvider] && savedConfigs[newProvider].apiKey;
+      var keyMap = state.providerHasKeyMap || {};
+      var hasExistingKey = keyMap[newProvider];
 
       if (hasExistingKey && newApiKey === "") {
         apiKeyToSend = "";
@@ -2256,6 +2259,9 @@
     }
     if (message.type === "currentSettings") {
       window.applyVscodeSettings(message.settings);
+      if (message.providerHasKeyMap) {
+        state.providerHasKeyMap = message.providerHasKeyMap;
+      }
       if (message.providerConfigs) {
         var newConfigs = message.providerConfigs;
         if (state.savedProviderConfigs) {
