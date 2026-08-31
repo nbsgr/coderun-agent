@@ -65,6 +65,10 @@ Whether you are running completely offline with local models via **Ollama**, lev
 *   **Detailed Step Diagnostics:** Inspect exact system prompts, LLM decisions, duration in milliseconds, inputs, and outputs per step.
 *   **One-Click Export:** Copy individual step data or export the full run JSON to clipboard.
 
+### 📜 Global & Workspace Rules Engine
+*   **Hierarchical Rule Precedence:** Define Global Rules (`~/.coderun/rules`) that apply everywhere across all projects, and Workspace Rules (`.coderunrules`) scoped to the active repository.
+*   **Integrated Code-Style Editor:** In-app editor with dynamic line number gutters, synchronized scrolling, one-click open in VS Code, and instant `Ctrl + S` saving.
+
 ### 🔄 Tool Lifecycle State Sync
 *   **Reliable Lifecycle Transitions:** Every tool follows the exact lifecycle: PENDING → WAITING_FOR_PERMISSION → RUNNING → COMPLETED/FAILED/CANCELLED. No tool card remains stuck in RUNNING.
 *   **Provider-Compatible Card Linking:** Cards are stored under multiple key aliases (toolCallId, index key, toolName key), ensuring `tool_result` events find the correct card regardless of whether the LLM provider emits tool call IDs or not.
@@ -221,6 +225,7 @@ src/
 | `Enter` | Send message |
 | `Shift + Enter` | Insert new line in chat input |
 | `Ctrl + V` / `Cmd + V` | Paste image directly into chat |
+| `Ctrl + S` / `Cmd + S` | Save rules when inside the Rules editor |
 | `Ctrl + Shift + P` → `CodeRun: Open Sidebar` | Focus the CodeRun agent sidebar |
 | `Ctrl + Shift + P` → `CodeRun: New Chat` | Start a fresh isolated conversation |
 | `Ctrl + Shift + P` → `CodeRun: Undo Last Edit` | Restore previous workspace snapshot |
