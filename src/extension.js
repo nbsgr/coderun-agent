@@ -899,6 +899,11 @@ async function handleFrontendMessage(message, webview) {
     case 'openFile': {
       if (message.path) {
         var wsPath = getWorkspaceFolder();
+        var paths = rulesLoader.getRulesPaths(wsPath);
+        if (message.path === paths.globalPath) {
+          vscode.workspace.openTextDocument(message.path).then(handleOpenTextDocumentResolve, handleOpenTextDocumentReject);
+          break;
+        }
         var safe = pathSecurity.resolveSafePath(message.path, wsPath);
         if (safe.safe) {
           vscode.workspace.openTextDocument(safe.canonicalPath).then(handleOpenTextDocumentResolve, handleOpenTextDocumentReject);

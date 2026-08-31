@@ -590,20 +590,118 @@
             '</section>' +
             '<section id="panel-rules" class="cr-panel">' +
               '<div class="cr-settings">' +
-                '<h3 class="cr-rules-heading">📋 Rules</h3>' +
-                '<p class="cr-rules-desc">Rules the agent ALWAYS follows. Both are combined — global first, then workspace.</p>' +
-                '<div class="cr-rules-section">' +
-                  '<label class="cr-rules-label">🌐 Global Rules</label>' +
-                  '<span class="cr-rules-sublabel" id="rulesGlobalPath">Apply to ALL your projects (stored at ~/.coderun/rules)</span>' +
-                  '<textarea id="rulesGlobalTextarea" class="cr-rules-textarea" placeholder="Enter rules that apply to every project...&#10;Example: Always use ES modules, never require()."></textarea>' +
-                  '<button id="saveGlobalRulesBtn" class="cr-save-btn">Save Global Rules</button>' +
+                '<div class="cr-rules-header-block">' +
+                  '<div class="cr-rules-header-row">' +
+                    '<h3 class="cr-rules-heading">' +
+                      '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>Rules' +
+                    '</h3>' +
+                    '<div class="cr-rules-order-tag">' +
+                      'Rule order <span class="cr-order-global">Global</span> <span class="cr-order-arrow">→</span> <span class="cr-order-workspace">Workspace</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<p class="cr-rules-desc">Instructions the agent follows automatically.</p>' +
+                  '<p class="cr-rules-subdesc">Global rules apply everywhere; workspace rules apply only to this project.</p>' +
                 '</div>' +
                 '<hr class="cr-rules-divider">' +
-                '<div class="cr-rules-section">' +
-                  '<label class="cr-rules-label">📂 Workspace Rules</label>' +
-                  '<span class="cr-rules-sublabel" id="rulesWorkspacePath">Apply to this project only (stored at .coderunrules)</span>' +
-                  '<textarea id="rulesWorkspaceTextarea" class="cr-rules-textarea" placeholder="Enter rules for this project only...&#10;Example: Use PostgreSQL syntax for all queries."></textarea>' +
-                  '<button id="saveWorkspaceRulesBtn" class="cr-save-btn">Save Workspace Rules</button>' +
+                '<div class="cr-rules-card">' +
+                  '<div class="cr-rules-card-header">' +
+                    '<div class="cr-rules-card-title">' +
+                      '<span class="cr-rules-icon">🌐</span>' +
+                      '<span class="cr-rules-title-text global">GLOBAL</span>' +
+                    '</div>' +
+                    '<div class="cr-rules-path-container">' +
+                      '<span class="cr-rules-path" id="rulesGlobalPath" title="~/.coderun/rules">~/.coderun/rules</span>' +
+                      '<button class="cr-rules-open-file-btn" id="openGlobalRulesFileBtn" title="Open in VS Code editor">' +
+                        '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>' +
+                      '</button>' +
+                    '</div>' +
+                  '</div>' +
+                  '<p class="cr-rules-card-hint">Applied across all projects</p>' +
+                  '<div class="cr-rules-editor-wrapper">' +
+                    '<div class="cr-rules-gutter" id="rulesGlobalGutter">' +
+                      '<div class="cr-gutter-num">1</div>' +
+                      '<div class="cr-gutter-num">2</div>' +
+                      '<div class="cr-gutter-num">3</div>' +
+                      '<div class="cr-gutter-num">4</div>' +
+                      '<div class="cr-gutter-num">5</div>' +
+                      '<div class="cr-gutter-num">6</div>' +
+                    '</div>' +
+                    '<textarea id="rulesGlobalTextarea" class="cr-rules-textarea" placeholder="Enter rules that apply to every project...&#10;Example: Always use ES modules, never require()."></textarea>' +
+                  '</div>' +
+                  '<div class="cr-rules-card-footer">' +
+                    '<div class="cr-rules-status" id="rulesGlobalStatus">' +
+                      '<span class="cr-rules-status-dot saved" id="rulesGlobalStatusDot"></span>' +
+                      '<span class="cr-rules-status-text" id="rulesGlobalStatusText">Saved</span>' +
+                      '<span class="cr-rules-status-time" id="rulesGlobalStatusTime"></span>' +
+                    '</div>' +
+                    '<div class="cr-rules-actions">' +
+                      '<span class="cr-rules-kbd">Ctrl + S</span>' +
+                      '<button id="saveGlobalRulesBtn" class="cr-rules-primary-save-btn">' +
+                        '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save' +
+                      '</button>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<hr class="cr-rules-divider">' +
+                '<div class="cr-rules-card">' +
+                  '<div class="cr-rules-card-header">' +
+                    '<div class="cr-rules-card-title">' +
+                      '<span class="cr-rules-icon">📂</span>' +
+                      '<span class="cr-rules-title-text workspace">WORKSPACE</span>' +
+                    '</div>' +
+                    '<div class="cr-rules-path-container">' +
+                      '<span class="cr-rules-path" id="rulesWorkspacePath" title=".coderunrules">.coderunrules</span>' +
+                      '<button class="cr-rules-open-file-btn" id="openWorkspaceRulesFileBtn" title="Open in VS Code editor">' +
+                        '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>' +
+                      '</button>' +
+                    '</div>' +
+                  '</div>' +
+                  '<p class="cr-rules-card-hint">Applied only to this project</p>' +
+                  '<div class="cr-rules-editor-wrapper">' +
+                    '<div class="cr-rules-gutter" id="rulesWorkspaceGutter">' +
+                      '<div class="cr-gutter-num">1</div>' +
+                      '<div class="cr-gutter-num">2</div>' +
+                      '<div class="cr-gutter-num">3</div>' +
+                      '<div class="cr-gutter-num">4</div>' +
+                      '<div class="cr-gutter-num">5</div>' +
+                      '<div class="cr-gutter-num">6</div>' +
+                    '</div>' +
+                    '<textarea id="rulesWorkspaceTextarea" class="cr-rules-textarea" placeholder="Enter rules for this project only...&#10;Example: Use PostgreSQL syntax for all queries."></textarea>' +
+                  '</div>' +
+                  '<div class="cr-rules-card-footer">' +
+                    '<div class="cr-rules-status" id="rulesWorkspaceStatus">' +
+                      '<span class="cr-rules-status-dot clean" id="rulesWorkspaceStatusDot"></span>' +
+                      '<span class="cr-rules-status-text" id="rulesWorkspaceStatusText">No changes</span>' +
+                      '<span class="cr-rules-status-time" id="rulesWorkspaceStatusTime"></span>' +
+                    '</div>' +
+                    '<div class="cr-rules-actions">' +
+                      '<span class="cr-rules-kbd">Ctrl + S</span>' +
+                      '<button id="saveWorkspaceRulesBtn" class="cr-rules-primary-save-btn">' +
+                        '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save' +
+                      '</button>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<hr class="cr-rules-divider">' +
+                '<div class="cr-rules-precedence-card">' +
+                  '<h4 class="cr-precedence-heading">Rule precedence</h4>' +
+                  '<p class="cr-precedence-desc">The agent follows rules in this order:</p>' +
+                  '<div class="cr-precedence-flow">' +
+                    '<div class="cr-precedence-box global">' +
+                      '<div class="cr-precedence-box-title"><span class="cr-precedence-box-icon">🌐</span> GLOBAL</div>' +
+                      '<div class="cr-precedence-box-sub">Applied everywhere</div>' +
+                    '</div>' +
+                    '<span class="cr-precedence-arrow">→</span>' +
+                    '<div class="cr-precedence-box workspace">' +
+                      '<div class="cr-precedence-box-title"><span class="cr-precedence-box-icon">📂</span> WORKSPACE</div>' +
+                      '<div class="cr-precedence-box-sub">Applied to this project</div>' +
+                    '</div>' +
+                    '<span class="cr-precedence-arrow">→</span>' +
+                    '<div class="cr-precedence-box agent">' +
+                      '<div class="cr-precedence-box-title"><span class="cr-precedence-box-icon">🤖</span> AGENT</div>' +
+                      '<div class="cr-precedence-box-sub">Final instructions</div>' +
+                    '</div>' +
+                  '</div>' +
                 '</div>' +
               '</div>' +
             '</section>' +
@@ -623,6 +721,23 @@
     if (saveGlobalBtn) saveGlobalBtn.onclick = handleSaveGlobalRules;
     var saveWorkspaceBtn = document.getElementById("saveWorkspaceRulesBtn");
     if (saveWorkspaceBtn) saveWorkspaceBtn.onclick = handleSaveWorkspaceRules;
+
+    var globalTa = document.getElementById("rulesGlobalTextarea");
+    if (globalTa) {
+      globalTa.oninput = handleRulesGlobalTextareaInput;
+      globalTa.onscroll = handleRulesGlobalScroll;
+      globalTa.onkeydown = handleRulesGlobalKeyDown;
+    }
+    var wsTa = document.getElementById("rulesWorkspaceTextarea");
+    if (wsTa) {
+      wsTa.oninput = handleRulesWorkspaceTextareaInput;
+      wsTa.onscroll = handleRulesWorkspaceScroll;
+      wsTa.onkeydown = handleRulesWorkspaceKeyDown;
+    }
+    var openGlobalBtn = document.getElementById("openGlobalRulesFileBtn");
+    if (openGlobalBtn) openGlobalBtn.onclick = handleOpenGlobalRulesFile;
+    var openWsBtn = document.getElementById("openWorkspaceRulesFileBtn");
+    if (openWsBtn) openWsBtn.onclick = handleOpenWorkspaceRulesFile;
     document.getElementById("newChatBtn").onclick = createNewChat;
     document.getElementById("newChatHeaderBtn").onclick = createNewChat;
     document.getElementById("refreshModelsBtn").onclick = loadModels;
@@ -1230,13 +1345,110 @@
     }
   }
 
+  function formatRulesTimestamp(d) {
+    if (!d) d = new Date();
+    var h = d.getHours();
+    var m = d.getMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    h = h ? h : 12;
+    var mStr = m < 10 ? '0' + m : String(m);
+    var hStr = h < 10 ? '0' + h : String(h);
+    return hStr + ':' + mStr + ' ' + ampm;
+  }
+
+  function updateRulesGutter(textareaId, gutterId) {
+    var ta = document.getElementById(textareaId);
+    var gut = document.getElementById(gutterId);
+    if (!ta || !gut) return;
+    var lines = (ta.value || '').split('\n').length;
+    if (lines < 6) lines = 6;
+    var html = '';
+    for (var i = 1; i <= lines; i++) {
+      html += '<div class="cr-gutter-num">' + i + '</div>';
+    }
+    gut.innerHTML = html;
+  }
+
+  function setRulesStatus(level, statusType, timeText) {
+    var dotEl = document.getElementById(level === 'global' ? "rulesGlobalStatusDot" : "rulesWorkspaceStatusDot");
+    var textEl = document.getElementById(level === 'global' ? "rulesGlobalStatusText" : "rulesWorkspaceStatusText");
+    var timeEl = document.getElementById(level === 'global' ? "rulesGlobalStatusTime" : "rulesWorkspaceStatusTime");
+    if (!dotEl || !textEl) return;
+
+    if (statusType === 'saved') {
+      dotEl.className = "cr-rules-status-dot saved";
+      textEl.textContent = "Saved";
+      if (timeEl) timeEl.textContent = "Last saved: " + (timeText || formatRulesTimestamp());
+    } else if (statusType === 'editing') {
+      dotEl.className = "cr-rules-status-dot editing";
+      textEl.textContent = "Unsaved changes";
+      if (timeEl) timeEl.textContent = "";
+    } else {
+      dotEl.className = "cr-rules-status-dot clean";
+      textEl.textContent = "No changes";
+      if (timeEl) timeEl.textContent = "";
+    }
+  }
+
+  function handleRulesGlobalTextareaInput() {
+    updateRulesGutter("rulesGlobalTextarea", "rulesGlobalGutter");
+    setRulesStatus("global", "editing");
+  }
+
+  function handleRulesWorkspaceTextareaInput() {
+    updateRulesGutter("rulesWorkspaceTextarea", "rulesWorkspaceGutter");
+    setRulesStatus("workspace", "editing");
+  }
+
+  function handleRulesGlobalScroll() {
+    var ta = document.getElementById("rulesGlobalTextarea");
+    var gut = document.getElementById("rulesGlobalGutter");
+    if (ta && gut) gut.scrollTop = ta.scrollTop;
+  }
+
+  function handleRulesWorkspaceScroll() {
+    var ta = document.getElementById("rulesWorkspaceTextarea");
+    var gut = document.getElementById("rulesWorkspaceGutter");
+    if (ta && gut) gut.scrollTop = ta.scrollTop;
+  }
+
+  function handleRulesGlobalKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      handleSaveGlobalRules();
+    }
+  }
+
+  function handleRulesWorkspaceKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      handleSaveWorkspaceRules();
+    }
+  }
+
+  function handleOpenGlobalRulesFile() {
+    var path = state.globalRulesPath || '~/.coderun/rules';
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "openFile", path: path });
+    }
+  }
+
+  function handleOpenWorkspaceRulesFile() {
+    var path = state.workspaceRulesPath || '.coderunrules';
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "openFile", path: path });
+    }
+  }
+
   function handleSaveGlobalRules() {
     var textarea = document.getElementById("rulesGlobalTextarea");
     var content = textarea ? textarea.value : '';
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "saveRules", level: "global", content: content });
     }
-    showRulesSaveConfirmation("saveGlobalRulesBtn", "Save Global Rules");
+    setRulesStatus("global", "saved");
+    showRulesSaveConfirmation("saveGlobalRulesBtn", "Save");
   }
 
   function handleSaveWorkspaceRules() {
@@ -1245,17 +1457,20 @@
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "saveRules", level: "workspace", content: content });
     }
-    showRulesSaveConfirmation("saveWorkspaceRulesBtn", "Save Workspace Rules");
+    setRulesStatus("workspace", "saved");
+    showRulesSaveConfirmation("saveWorkspaceRulesBtn", "Save");
   }
 
   function showRulesSaveConfirmation(btnId, originalText) {
     var button = document.getElementById(btnId);
     if (button) {
-      button.textContent = "Saved ✓";
+      button.innerHTML = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;vertical-align:-1px;margin-right:4px;"><polyline points="20 6 9 17 4 12"/></svg>Saved ✓';
+      button.classList.add("saved");
       function resetRulesSaveBtn() {
         var btn = document.getElementById(btnId);
         if (btn) {
-          btn.textContent = originalText;
+          btn.innerHTML = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>' + originalText;
+          btn.classList.remove("saved");
         }
       }
       setTimeout(resetRulesSaveBtn, 1500);
@@ -2374,19 +2589,34 @@
       var wsEl = document.getElementById("rulesWorkspaceTextarea");
       var wsPathEl = document.getElementById("rulesWorkspacePath");
       var globalPathEl = document.getElementById("rulesGlobalPath");
-      if (globalEl) globalEl.value = message.globalRules || '';
-      if (wsEl) wsEl.value = message.workspaceRules || '';
-      if (globalPathEl && message.globalPath) {
-        globalPathEl.textContent = 'Apply to ALL your projects (stored at: ' + message.globalPath + ')';
+      if (globalEl) {
+        globalEl.value = message.globalRules || '';
+        updateRulesGutter("rulesGlobalTextarea", "rulesGlobalGutter");
+      }
+      if (wsEl) {
+        wsEl.value = message.workspaceRules || '';
+        updateRulesGutter("rulesWorkspaceTextarea", "rulesWorkspaceGutter");
+      }
+      if (message.globalPath) {
+        state.globalRulesPath = message.globalPath;
+        if (globalPathEl) {
+          globalPathEl.textContent = message.globalPath;
+          globalPathEl.title = message.globalPath;
+        }
       }
       if (wsPathEl) {
         if (message.hasWorkspace && message.workspacePath) {
-          wsPathEl.textContent = 'Apply to this project only (stored at: ' + message.workspacePath + ')';
+          state.workspaceRulesPath = message.workspacePath;
+          wsPathEl.textContent = message.workspacePath;
+          wsPathEl.title = message.workspacePath;
+          wsPathEl.classList.remove("disabled");
           if (wsEl) wsEl.disabled = false;
           var wsBtn = document.getElementById("saveWorkspaceRulesBtn");
           if (wsBtn) wsBtn.disabled = false;
         } else {
-          wsPathEl.textContent = 'No workspace folder open. Open a workspace folder to set project rules.';
+          wsPathEl.textContent = 'No workspace open';
+          wsPathEl.title = 'Open a workspace folder to set project rules';
+          wsPathEl.classList.add("disabled");
           if (wsEl) {
             wsEl.disabled = true;
             wsEl.placeholder = 'Open a workspace folder to set project rules';
@@ -2394,6 +2624,16 @@
           var wsBtnDisabled = document.getElementById("saveWorkspaceRulesBtn");
           if (wsBtnDisabled) wsBtnDisabled.disabled = true;
         }
+      }
+      if (globalEl && globalEl.value) {
+        setRulesStatus("global", "saved");
+      } else {
+        setRulesStatus("global", "clean");
+      }
+      if (wsEl && wsEl.value) {
+        setRulesStatus("workspace", "saved");
+      } else {
+        setRulesStatus("workspace", "clean");
       }
     }
   }
