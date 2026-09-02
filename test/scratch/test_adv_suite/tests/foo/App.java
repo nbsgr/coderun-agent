@@ -1,0 +1,1 @@
+class AppTest { /* TEST APP ORIGINAL */ }

@@ -132,7 +132,7 @@
   function scheduleContentRender(S) {
     if (_renderTimer) return;
     function onRenderTimeout() { handleContentRenderTimeout(S); }
-    _renderTimer = setTimeout(onRenderTimeout, 100);
+    _renderTimer = setTimeout(onRenderTimeout, 30);
   }
 
   function flushContentRender(S) {
@@ -143,6 +143,19 @@
     if (S.contentDiv && S.contentText !== undefined) {
       S.contentDiv.innerHTML = md(S.contentText);
     }
+  }
+
+  function closeCurrentContentBlock(S) {
+    flushContentRender(S);
+    if (S.contentDiv) {
+      if (!S.contentText || !S.contentText.trim()) {
+        if (S.contentDiv.parentNode) {
+          S.contentDiv.parentNode.removeChild(S.contentDiv);
+        }
+      }
+    }
+    S.contentDiv = null;
+    S.contentText = '';
   }
 
   // ── Auto-hide completed todos timer ──────────────────
@@ -1431,7 +1444,7 @@
             appendPermissionRequestBlock(chatCtx, S.botBody, ev.tool, ev.arguments, ev.id);
             updateAgentControlsPanel(chatCtx);
           }
-          S.contentDiv = null; S.contentText = '';
+          closeCurrentContentBlock(S);
           break;
         }
         case 'tool_call': {
@@ -1444,14 +1457,14 @@
           if (toolName === 'run_terminal') {
             reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
             S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
-            S.contentDiv = null; S.contentText = '';
+            closeCurrentContentBlock(S);
           } else {
             var card = reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
             if (card) {
               S.toolCallBlocks[ev.id || card.dataset.cardKey || ('tool_' + S._toolIdCounter)] = card;
             }
             S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
-            S.contentDiv = null; S.contentText = '';
+            closeCurrentContentBlock(S);
           }
           break;
         }
@@ -1479,6 +1492,7 @@
             }
           }
           if (!pendingCard) {
+            closeCurrentContentBlock(S);
             var actionKey = action + '_action_' + (++S._toolIdCounter);
             S.toolCards[actionKey] = appendToolCard(S, chatCtx.msgList, S.botBody, actionKey, action, {}, 'running');
             S._toolQueue.push({ key: actionKey, toolName: action, id: actionKey });
@@ -1575,10 +1589,11 @@
             }
           }
           if (!updated) {
+            closeCurrentContentBlock(S);
             var fallbackKey = 'tr_' + Date.now();
             appendToolCard(S, chatCtx.msgList, S.botBody, fallbackKey, resTool, {}, resStatus, ev);
           }
-          S.contentDiv = null; S.contentText = '';
+          closeCurrentContentBlock(S);
           break;
         }
         case 'agent_status': {
@@ -1590,7 +1605,7 @@
         case 'agent_iteration': {
           S.iterationCount = ev.iteration;
           S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
-          S.contentDiv = null; S.contentText = '';
+          closeCurrentContentBlock(S);
           clearStatusLines(S);
           S.toolCards = {};
           S._seenToolIds = {};
@@ -1602,10 +1617,11 @@
         case 'agent_done':
         case 'done': {
           removeTyping(S.botBody);
+          closeCurrentContentBlock(S);
           var finalContent = ev.content || ev.full_content;
-          if (finalContent && !S.contentDiv) {
-            S.contentDiv = appendContentBlock(S.botBody);
-            S.contentDiv.innerHTML = md(finalContent);
+          if (finalContent && (!S.botBody || !S.botBody.querySelector('.cr-content-block'))) {
+            var finalBlock = appendContentBlock(S.botBody);
+            finalBlock.innerHTML = md(finalContent);
             S.fullResponse = finalContent;
           }
           if (ev.sources && ev.sources.length) {
@@ -1695,7 +1711,7 @@
         case 'request_diff': {
           removeTyping(S.botBody);
           appendDiffCard(chatCtx, S.botBody, ev);
-          S.contentDiv = null; S.contentText = '';
+          closeCurrentContentBlock(S);
           break;
         }
         case 'terminal_start': {
@@ -1742,7 +1758,7 @@
             var oldCard = S._terminalCards[S._terminalCardOrder[tci]];
             if (oldCard) oldCard.open = false;
           }
-          S.contentDiv = null; S.contentText = '';
+          closeCurrentContentBlock(S);
           break;
         }
         case 'terminal_output': {
@@ -1795,7 +1811,7 @@
   }
 
   function finishStream(chatCtx, S) {
-    flushContentRender(S);
+    closeCurrentContentBlock(S);
     removeTyping(S.botBody);
     S.thinkBlock = null; S.thinkPre = null;
     if (chatCtx.conversation && chatCtx.conversation.plan) {
@@ -2709,8 +2725,7 @@
     S._seenToolIds[indexKey] = true;
     if (idKey) S._seenToolIds[idKey] = true;
 
-    S.contentDiv = null;
-    S.contentText = '';
+    closeCurrentContentBlock(S);
 
     var displayId = toolId || 'term_' + (++S._toolIdCounter);
     var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
@@ -2764,8 +2779,7 @@
     S._seenToolIds[indexKey] = true;
     if (idKey) S._seenToolIds[idKey] = true;
 
-    S.contentDiv = null;
-    S.contentText = '';
+    closeCurrentContentBlock(S);
 
     var displayId = toolId || 'tool_' + (++S._toolIdCounter);
     var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
