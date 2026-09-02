@@ -453,18 +453,52 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
               index: index
             });
 
-            var retryGen = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId });
-            for await (var retryEvent of retryGen) {
-              retryEvent.toolCallId = retryCallId;
-              sendEvent(retryEvent);
-              if (retryEvent.type === 'tool_result') {
-                lastResult = retryEvent;
-              }
+            var retryApproved = true;
+            if (approvalSystem.requiresApproval(toolName, args, sessionCtx ? sessionCtx.config : null)) {
+              try {
+                if (agentState.getState(sessionId) !== 'waiting') {
+                  var fromWaitRetry = agentState.getState(sessionId);
+                  agentState.transition('waiting', sessionId);
+                  executionTrace.recordTransition(sessionId, fromWaitRetry, 'waiting');
+                  events.emit('state_changed', { state: 'waiting', sessionId: sessionId });
+                }
+              } catch (_) {}
+
+              retryApproved = await askPermission(toolName, args, retryCallId, sendEvent, sessionId);
+              memoryManager.recordUserDecision(toolName, args.command || args.file_path || args.folder_path || '', retryApproved, sessionId);
+              executionTrace.recordDecision(sessionId, toolName, retryApproved ? 'allow' : 'deny', 'User prompted approval on retry');
+
+              try {
+                var fromExecRetry = agentState.getState(sessionId);
+                agentState.transition('executing', sessionId);
+                executionTrace.recordTransition(sessionId, fromExecRetry, 'executing');
+                events.emit('state_changed', { state: 'executing', sessionId: sessionId });
+              } catch (_) {}
             }
-            if (lastResult && lastResult.success !== false) {
-              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry succeeded.';
+
+            if (!retryApproved) {
+              sendEvent({
+                type: EVENT_TYPES.TOOL_RESULT,
+                tool: toolName,
+                success: false,
+                message: 'Permission denied by user on retry.',
+                toolCallId: retryCallId
+              });
+              lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry permission denied by user.' };
             } else {
-              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry failed: ' + ((lastResult && (lastResult.error || lastResult.message)) || '');
+              var retryGen = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId });
+              for await (var retryEvent of retryGen) {
+                retryEvent.toolCallId = retryCallId;
+                sendEvent(retryEvent);
+                if (retryEvent.type === 'tool_result') {
+                  lastResult = retryEvent;
+                }
+              }
+              if (lastResult && lastResult.success !== false) {
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry succeeded.';
+              } else {
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry failed: ' + ((lastResult && (lastResult.error || lastResult.message)) || '');
+              }
             }
 
             // Rerun step verification and observation on retry result
@@ -488,17 +522,42 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
           console.log('[AGENT LOOP] Recovery proposed tool action: ' + recTool, recArgs);
 
           var recCallId = 'rec_' + Date.now();
-          var recoveryApproved = await askPermission(recTool, recArgs, recCallId, sendEvent, sessionId);
+
+          // 1. Emit TOOL_CALL first so the tool dropdown / terminal card is displayed in the UI
+          sendEvent({
+            type: EVENT_TYPES.TOOL_CALL,
+            tool: recTool,
+            args: recArgs,
+            id: recCallId,
+            index: index
+          });
+
+          // 2. Check permission if the tool requires approval
+          var recoveryApproved = true;
+          if (approvalSystem.requiresApproval(recTool, recArgs, sessionCtx ? sessionCtx.config : null)) {
+            try {
+              if (agentState.getState(sessionId) !== 'waiting') {
+                var fromWaitRec = agentState.getState(sessionId);
+                agentState.transition('waiting', sessionId);
+                executionTrace.recordTransition(sessionId, fromWaitRec, 'waiting');
+                events.emit('state_changed', { state: 'waiting', sessionId: sessionId });
+              }
+            } catch (_) {}
+
+            recoveryApproved = await askPermission(recTool, recArgs, recCallId, sendEvent, sessionId);
+            memoryManager.recordUserDecision(recTool, recArgs.command || recArgs.file_path || recArgs.folder_path || '', recoveryApproved, sessionId);
+            executionTrace.recordDecision(sessionId, recTool, recoveryApproved ? 'allow' : 'deny', 'User prompted approval on recovery action');
+
+            try {
+              var fromExecRec = agentState.getState(sessionId);
+              agentState.transition('executing', sessionId);
+              executionTrace.recordTransition(sessionId, fromExecRec, 'executing');
+              events.emit('state_changed', { state: 'executing', sessionId: sessionId });
+            } catch (_) {}
+          }
+
           if (recoveryApproved) {
             try {
-              sendEvent({
-                type: EVENT_TYPES.TOOL_CALL,
-                tool: recTool,
-                args: recArgs,
-                id: recCallId,
-                index: index
-              });
-
               var recGen = toolRegistry.execute(recTool, recArgs, { workspace: workspace, sessionId: sessionId });
               var recRes = null;
               for await (var recEv of recGen) {
@@ -513,6 +572,13 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
               lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery tool execution failed: ' + e.message;
             }
           } else {
+            sendEvent({
+              type: EVENT_TYPES.TOOL_RESULT,
+              tool: recTool,
+              success: false,
+              message: 'Permission denied by user for recovery action.',
+              toolCallId: recCallId
+            });
             lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Proposed recovery action (' + (recArgs.command || recTool) + ') was denied by user.';
           }
         }

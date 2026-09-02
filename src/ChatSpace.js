@@ -678,6 +678,10 @@
               var errDiv = mk('div', 'cr-error-line');
               errDiv.innerHTML = I.err + ' ' + esc(m.error);
               body.appendChild(errDiv);
+            } else if (!thinking && (!m.tool_calls || !m.tool_calls.length)) {
+              var emptyDiv = mk('div', 'cr-error-line');
+              emptyDiv.innerHTML = I.err + ' (No response recorded or request failed)';
+              body.appendChild(emptyDiv);
             }
             if (m.tool_calls && m.tool_calls.length) {
               for (var tci = 0; tci < m.tool_calls.length; tci++) {
@@ -1124,6 +1128,7 @@
             provider: m.provider || ''
           };
           if (m.thinking) h.thinking = m.thinking;
+          if (m.error) h.error = m.error;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
           if (m.images) h.images = m.images;
@@ -1228,6 +1233,7 @@
             provider: m.provider || ''
           };
           if (m.thinking) h.thinking = m.thinking;
+          if (m.error) h.error = m.error;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
           if (m.images) h.images = m.images;
@@ -1304,11 +1310,10 @@
         if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
       }
       if (msg.content) {
-        if (S.thinkBlock) {
+        if (S.thinkBlock && S.thinkBlock.open) {
           var lbl = S.thinkBlock.querySelector('.cr-think-label');
           if (lbl) lbl.textContent = 'Thought process';
           S.thinkBlock.open = false;
-          S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
         }
         removeTyping(S.botBody);
         if (!S.contentDiv) { S.contentDiv = appendContentBlock(S.botBody); S.contentText = ''; }
@@ -1416,7 +1421,6 @@
             if (lbl) lbl.textContent = 'Thought process';
             S.thinkBlock.open = false;
           }
-          S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
           break;
         }
         case 'content': {

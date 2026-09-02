@@ -2355,6 +2355,12 @@
           if (!nMsg.provider) {
             nMsg.provider = (oldMsg && oldMsg.provider) || (nMsg.role === 'user' ? state.selectedProvider : '') || '';
           }
+          if (!nMsg.error && oldMsg && oldMsg.error) {
+            nMsg.error = oldMsg.error;
+          }
+          if (!nMsg.thinking && oldMsg && oldMsg.thinking) {
+            nMsg.thinking = oldMsg.thinking;
+          }
           mergedAll.push(nMsg);
         }
         conversation.messages = mergedAll;

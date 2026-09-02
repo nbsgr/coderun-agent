@@ -2,7 +2,7 @@
   {
     "id": "run_malicious",
     "sessionId": "../../outside_session_name",
-    "startedAt": 1788324273144,
+    "startedAt": 1788369013379,
     "completedAt": 0,
     "durationMs": 0,
     "status": "running",

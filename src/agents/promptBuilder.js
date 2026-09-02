@@ -183,6 +183,8 @@ export async function buildMessages(userPrompt, options) {
       model: msg.model || '',
       provider: msg.provider || ''
     };
+    if (msg.thinking) historyMsg.thinking = msg.thinking;
+    if (msg.error) historyMsg.error = msg.error;
     if (msg.tool_calls) historyMsg.tool_calls = msg.tool_calls;
     if (msg.tool_call_id) historyMsg.tool_call_id = msg.tool_call_id;
     if (msg.images) historyMsg.images = msg.images;

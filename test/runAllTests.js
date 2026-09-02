@@ -711,13 +711,25 @@ var promptCheckResult = terminalManager.isPrompt('What is your name? (type it, I
 assert.strictEqual(promptCheckResult, true, 'Interactive prompt recognized from output');
 console.log('✓ Vector 42 Passed: Interactive commands and prompt patterns accurately detected.');
 
+// 43. Terminal Tool Execution Approval & Safety
+console.log('--- TEST 43: Terminal Tool Execution Approval & Safety ---');
+var cmdRequiresApproval = approvalSystem.requiresApproval('run_terminal', { command: 'npm test' });
+assert.strictEqual(cmdRequiresApproval, true, 'Non-empty terminal command requires approval by default');
+var emptyCmdRequires = approvalSystem.requiresApproval('run_terminal', { command: '' });
+assert.strictEqual(emptyCmdRequires, false, 'Empty terminal command (output check) does not require approval');
+var destructiveWithoutConfirm = approvalSystem.requiresApproval('run_terminal', { command: 'rm -rf ./build' }, { confirmDangerous: false });
+assert.strictEqual(destructiveWithoutConfirm, true, 'Destructive command requires approval even when confirmDangerous is false');
+var normalWithoutConfirm = approvalSystem.requiresApproval('run_terminal', { command: 'npm test' }, { confirmDangerous: false });
+assert.strictEqual(normalWithoutConfirm, false, 'Normal command does not require approval when confirmDangerous is false');
+console.log('✓ Vector 43 Passed: Terminal tool permission checks properly enforced across safety policies.');
+
 // Teardown
 try {
   terminalManager.dispose();
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 42 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 43 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

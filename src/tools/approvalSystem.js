@@ -50,7 +50,8 @@ export function requiresApproval(toolName, args, config) {
       }
     }
 
-    return false;
+    // When confirmDangerous is enabled (default), executing any non-empty terminal command requires approval
+    return confirmDangerous;
   }
 
   if (!confirmDangerous) {
@@ -70,6 +71,7 @@ export function requiresApproval(toolName, args, config) {
       canonicalName === 'create_folder' ||
       canonicalName === 'delete_folder' ||
       canonicalName === 'terminal_input' ||
+      canonicalName === 'terminal_key' ||
       canonicalName === 'web_request') {
     return true;
   }
