@@ -18,6 +18,8 @@ function createClient(config) {
   return new OpenAI({
     baseURL: getV1OllamaBaseUrl(config.baseUrl),
     apiKey: config.apiKey || 'ollama',
+    timeout: 5000,
+    maxRetries: 0,
     dangerouslyAllowBrowser: true
   });
 }

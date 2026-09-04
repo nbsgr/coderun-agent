@@ -98,8 +98,8 @@ export async function listModels(config) {
       return models;
     } catch (e) {
       console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint:', e.message);
+      throw e;
     }
-    return config.model ? [config.model] : [];
   }
   return [
     'claude-3-5-sonnet-20241022',

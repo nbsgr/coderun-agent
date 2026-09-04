@@ -143,7 +143,10 @@ export async function listModels(config) {
     // Fallback to native REST API
   }
 
-  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta/openai/';
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta';
+  if (baseUrl.endsWith('/openai')) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 7);
+  }
   var url = baseUrl + '/models?key=' + config.apiKey;
   var res = await fetch(url);
   if (!res.ok) throw await handleApiResponseError(res, 'Gemini');

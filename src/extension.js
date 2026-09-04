@@ -477,7 +477,6 @@ async function handleFrontendMessage(message, webview) {
         console.error('[CODERUN] Failed to send initial data:', e);
       }
       await sendCurrentSettings(webview);
-      await checkProviderHealth(webview);
       await refreshAllProviderModels(webview);
       break;
     }
@@ -1130,19 +1129,38 @@ async function checkProviderHealth(webview, overrideConfig) {
 /**
  * Refresh models from ALL saved provider configurations.
  */
-async function refreshAllProviderModels(webview) {
-  var allConfigs = config.getAllProviderConfigs(extensionContext);
-  var providerKeys = Object.keys(allConfigs);
-
-  if (!providerKeys.length) {
-    await checkProviderHealth(webview);
-    return;
-  }
-
-  for (var i = 0; i < providerKeys.length; i++) {
-    var provName = providerKeys[i];
+async function checkOneSavedProvider(webview, provName) {
+  try {
     var provCfg = await config.getProviderConfigByName(extensionContext, provName);
     await checkProviderHealth(webview, provCfg);
+  } catch (err) {
+    console.error('[CODERUN] Failed refreshing provider ' + provName + ':', err.message);
+  }
+}
+
+var isRefreshingModels = false;
+
+async function refreshAllProviderModels(webview) {
+  if (isRefreshingModels) {
+    return;
+  }
+  isRefreshingModels = true;
+  try {
+    var allConfigs = config.getAllProviderConfigs(extensionContext);
+    var providerKeys = Object.keys(allConfigs);
+
+    if (!providerKeys.length) {
+      await checkProviderHealth(webview);
+      return;
+    }
+
+    var promises = [];
+    for (var i = 0; i < providerKeys.length; i++) {
+      promises.push(checkOneSavedProvider(webview, providerKeys[i]));
+    }
+    await Promise.allSettled(promises);
+  } finally {
+    isRefreshingModels = false;
   }
 }
 

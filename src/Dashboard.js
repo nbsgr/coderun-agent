@@ -411,8 +411,11 @@
       var defaultUrl = PROVIDER_DEFAULT_URLS[prov] || '';
       var rawUrl = cfg.baseUrl || defaultUrl;
       var url = rawUrl ? rawUrl.replace(/^https?:\/\//, '').substring(0, 30) : '(no URL)';
+      var provErr = (state.providerErrors && state.providerErrors[prov]) || '';
+      var errBadge = provErr ? ' <span class="cr-saved-provider-error" title="' + esc(provErr) + '">⚠️</span>' : '';
+      var itemTitle = label + (provErr ? ' — Error: ' + provErr : '');
       html += '<div class="cr-saved-provider-item" data-provider="' + esc(prov) + '">' +
-        '<span class="cr-saved-provider-name" title="' + esc(label) + '">' + hasKey + ' ' + esc(label) + '</span>' +
+        '<span class="cr-saved-provider-name" title="' + esc(itemTitle) + '">' + hasKey + ' ' + esc(label) + errBadge + '</span>' +
         '<span class="cr-saved-provider-url" title="' + esc(rawUrl || '') + '">' + esc(url) + '</span>' +
         '<button class="cr-saved-provider-load" title="Load this provider\'s settings">Load</button>' +
         '<button class="cr-saved-provider-remove" title="Remove this provider config">✕</button>' +
@@ -1531,6 +1534,7 @@
 
     saveSelectedModel();
     updateModelBadge();
+    renderModelOptions();
   }
 
   function handleCfgProviderChange() {
@@ -1748,7 +1752,13 @@
       .catch(handleHealthCheckError);
   }
 
+  var lastRefreshTime = 0;
   function loadModels() {
+    var now = Date.now();
+    if (now - lastRefreshTime < 1500) {
+      return;
+    }
+    lastRefreshTime = now;
     var list = document.getElementById("modelDropdownList");
     if (list) list.innerHTML = '<div class="cr-combobox-item loading">Loading models...</div>';
     if (state.isVsCode && window.VSCODE_API) {
@@ -1832,16 +1842,30 @@
 
   function createModelItemElement(modelName, providerName, isPinned) {
     var item = document.createElement("div");
-    var isSelected = state.selectedModel === modelName && (state.selectedProvider === providerName || (!state.selectedProvider && providerName === 'ollama'));
+    var activeModel = state.selectedModel || state.settings.model || "";
+    var currentSelectedProv = state.selectedProvider || state.provider || state.settings.provider || "ollama";
+    var isSelected = activeModel === modelName && (!state.selectedProvider || state.selectedProvider === providerName || currentSelectedProv === providerName);
+
     item.className = "cr-combobox-item" + (isSelected ? " active" : "") + (isPinned ? " is-pinned" : "");
     item.dataset.model = modelName;
     item.dataset.provider = providerName;
     item.onclick = handleModelItemClick;
 
+    if (isSelected) {
+      var checkSpan = document.createElement("span");
+      checkSpan.className = "cr-model-check";
+      checkSpan.textContent = "✓";
+      item.appendChild(checkSpan);
+    } else {
+      var spacerSpan = document.createElement("span");
+      spacerSpan.className = "cr-model-check-spacer";
+      item.appendChild(spacerSpan);
+    }
+
     var nameSpan = document.createElement("span");
     nameSpan.className = "cr-model-name";
     nameSpan.textContent = modelName;
-    nameSpan.title = modelName;
+    nameSpan.title = modelName + (isSelected ? " (Currently selected)" : "");
     item.appendChild(nameSpan);
 
     var pinBtn = document.createElement("span");
@@ -1861,7 +1885,13 @@
     if (!list) return;
     list.innerHTML = "";
 
-    var providers = Object.keys(state.modelsByProvider || {});
+    var modelProviders = Object.keys(state.modelsByProvider || {});
+    var errorProviders = Object.keys(state.providerErrors || {});
+    var allProviderSet = {};
+    for (var mpi = 0; mpi < modelProviders.length; mpi++) allProviderSet[modelProviders[mpi]] = true;
+    for (var epi = 0; epi < errorProviders.length; epi++) allProviderSet[errorProviders[epi]] = true;
+    var providers = Object.keys(allProviderSet);
+
     if (!providers.length) {
       list.innerHTML = '<div class="cr-combobox-item empty">No models available</div>';
       state.selectedModel = "";
@@ -1885,11 +1915,14 @@
 
     var filterQuery = (state.modelSearchFilter || "").toLowerCase();
     var totalMatches = 0;
+    var errorCount = 0;
 
     for (var p = 0; p < providers.length; p++) {
       var providerName = providers[p];
-      var models = state.modelsByProvider[providerName];
-      if (!models || !models.length) continue;
+      var models = state.modelsByProvider[providerName] || [];
+      var provError = (state.providerErrors && state.providerErrors[providerName]) || '';
+
+      if (!models.length && !provError) continue;
 
       var filtered = [];
       for (var m = 0; m < models.length; m++) {
@@ -1897,8 +1930,9 @@
           filtered.push(models[m]);
         }
       }
-      if (!filtered.length) continue;
+      if (!filtered.length && !provError) continue;
       totalMatches += filtered.length;
+      if (provError && !models.length) errorCount++;
 
       var groupContainer = document.createElement("div");
       groupContainer.className = "cr-combobox-group";
@@ -1906,15 +1940,24 @@
       var isExpanded = filterQuery.length > 0 || !!state.openProviderGroups[providerName] || state.selectedProvider === providerName || (!state.selectedProvider && providerName === 'ollama');
 
       var header = document.createElement("div");
-      header.className = "cr-combobox-group-header";
+      header.className = "cr-combobox-group-header" + (provError && !models.length ? " has-error" : "");
       header.dataset.provider = providerName;
-      header.innerHTML = '<span class="cr-group-arrow">' + (isExpanded ? "▼" : "▶") + '</span> ' + getProviderLabel(providerName) + ' <span class="cr-group-count">(' + filtered.length + ')</span>';
+      var badgeText = (provError && !models.length) ? ' <span class="cr-group-error-badge">⚠️ Error</span>' : ' <span class="cr-group-count">(' + filtered.length + ')</span>';
+      header.innerHTML = '<span class="cr-group-arrow">' + (isExpanded ? "▼" : "▶") + '</span> ' + getProviderLabel(providerName) + badgeText;
       header.onclick = handleGroupHeaderClick;
       groupContainer.appendChild(header);
 
       var itemsContainer = document.createElement("div");
       itemsContainer.className = "cr-combobox-group-items";
       itemsContainer.style.display = isExpanded ? "block" : "none";
+
+      if (provError && !models.length) {
+        var errItem = document.createElement("div");
+        errItem.className = "cr-combobox-item error";
+        errItem.title = provError;
+        errItem.innerHTML = '⚠️ <span class="cr-error-text">' + esc(provError) + '</span>';
+        itemsContainer.appendChild(errItem);
+      }
 
       var pinnedList = (state.pinnedModels && state.pinnedModels[providerName]) || [];
       var pinnedModels = [];
@@ -1958,15 +2001,15 @@
       list.appendChild(groupContainer);
     }
 
-    if (totalMatches === 0) {
+    if (totalMatches === 0 && errorCount === 0) {
       var emptyItem = document.createElement("div");
       emptyItem.className = "cr-combobox-item empty";
       emptyItem.textContent = "No models match '" + filterQuery + "'";
       list.appendChild(emptyItem);
     }
 
-    // Determine current model
-    if (!state.selectedModel || !modelExists(state.selectedModel)) {
+    // Determine current model only if not yet set
+    if (!state.selectedModel) {
       var foundModel = "";
       var foundProvider = "";
       for (var p = 0; p < providers.length; p++) {
@@ -1977,9 +2020,10 @@
           break;
         }
       }
-      state.selectedModel = foundModel;
-      state.selectedProvider = foundProvider;
-      saveSelectedModel();
+      if (foundModel) {
+        state.selectedModel = foundModel;
+        state.selectedProvider = foundProvider;
+      }
     }
 
     updateModelSelectValue();
@@ -2505,31 +2549,58 @@
       }
     }
     if (message.type === "healthStatus") {
-      state.isOnline = message.online;
       var dot = document.getElementById("status-dot");
       var text = document.getElementById("status-text");
+      if (!state.providerErrors) state.providerErrors = {};
+      if (!state.modelsByProvider) state.modelsByProvider = {};
+
+      var currentProv = message.provider || "ollama";
+      var isActiveProvider = (currentProv === state.provider || currentProv === state.selectedProvider);
+
       if (message.online && message.models) {
-        if (dot) dot.className = "cr-status-dot";
-        if (text) text.textContent = "Online";
-        if (!state.modelsByProvider) state.modelsByProvider = {};
-        state.modelsByProvider[message.provider || "ollama"] = message.models;
-        state.models = [];
-        for (var provKey in state.modelsByProvider) {
-          if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
-            state.models = state.models.concat(state.modelsByProvider[provKey]);
+        delete state.providerErrors[currentProv];
+        state.modelsByProvider[currentProv] = message.models;
+
+        if (isActiveProvider) {
+          state.isOnline = true;
+          if (dot) {
+            dot.className = "cr-status-dot";
+            dot.title = "Online";
+          }
+          if (text) {
+            text.textContent = "Online";
+            text.title = "Online";
           }
         }
-        renderModelOptions();
       } else {
-        if (dot) dot.className = "cr-status-dot offline";
-        if (text) text.textContent = "Offline";
-        var list = document.getElementById("modelDropdownList");
         var errorMsg = message.error || "Unable to load models";
-        if (list && (!state.models || !state.models.length)) {
-          list.innerHTML = '<div class="cr-combobox-item empty">No models available</div>';
+        state.providerErrors[currentProv] = errorMsg;
+        if (!state.modelsByProvider[currentProv] || !state.modelsByProvider[currentProv].length) {
+          state.modelsByProvider[currentProv] = [];
+        }
+
+        if (isActiveProvider) {
+          state.isOnline = false;
+          if (dot) {
+            dot.className = "cr-status-dot offline";
+            dot.title = errorMsg;
+          }
+          if (text) {
+            text.textContent = "Offline";
+            text.title = errorMsg;
+          }
         }
         console.error("[CODERUN] Health check failed:", errorMsg, "Provider:", message.provider);
       }
+
+      state.models = [];
+      for (var provKey in state.modelsByProvider) {
+        if (state.modelsByProvider[provKey] && state.modelsByProvider[provKey].length) {
+          state.models = state.models.concat(state.modelsByProvider[provKey]);
+        }
+      }
+      renderModelOptions();
+      renderSavedProviders();
     }
     if (message.type === "permissionState") {
       state.alwaysDecisions = message.decisions || {};

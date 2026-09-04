@@ -1,10 +1,19 @@
 import OpenAI from 'openai';
 
 function createClient(config) {
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.groq.com/openai/v1';
+  if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    baseUrl = 'https://' + baseUrl;
+  }
   return new OpenAI({
-    baseURL: config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.groq.com/openai/v1',
+    baseURL: baseUrl,
     apiKey: config.apiKey || '',
-    dangerouslyAllowBrowser: true
+    dangerouslyAllowBrowser: true,
+    timeout: 30000,
+    maxRetries: 2,
+    defaultHeaders: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
   });
 }
 
