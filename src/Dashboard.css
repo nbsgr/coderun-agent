@@ -14,11 +14,30 @@ body,
   font-size: var(--vscode-font-size, 13px);
 }
 
+/* Theme Variables */
+:root {
+  --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.12));
+  --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(255, 255, 255, 0.25));
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+}
+
+body.vscode-light {
+  --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(0, 0, 0, 0.18));
+  --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(0, 0, 0, 0.35));
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23333333' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+}
+
+body.vscode-high-contrast {
+  --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.3));
+  --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(255, 255, 255, 0.5));
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23ffffff' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+}
+
 /* Custom Select Dropdowns */
 select {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-image: var(--cr-select-arrow);
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 10px;
@@ -35,12 +54,12 @@ select {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--cr-scrollbar-thumb);
   border-radius: 3px;
   transition: background 0.2s;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--cr-scrollbar-thumb-hover);
 }
 
 /* Smooth Scrolling */
@@ -1883,4 +1902,90 @@ textarea {
   border: none;
   border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
   margin: 14px 0;
+}
+
+/* ════════════════════════════════════════════════════
+   VS Code Light Theme Overrides for Dashboard
+   ════════════════════════════════════════════════════ */
+
+body.vscode-light {
+  background: var(--vscode-sideBar-background, #f3f3f3);
+  color: var(--vscode-foreground, #333333);
+}
+
+body.vscode-light .cr-root {
+  background: var(--vscode-editor-background, #ffffff);
+}
+
+body.vscode-light .cr-header {
+  border-bottom: 1px solid var(--vscode-sideBar-border, #e5e5e5);
+  background: var(--vscode-sideBar-background, #f3f3f3);
+}
+
+body.vscode-light .cr-rail {
+  border-right: 1px solid var(--vscode-sideBar-border, #e5e5e5);
+  background: var(--vscode-activityBar-background, #f3f3f3);
+}
+
+body.vscode-light .cr-sidebar {
+  border-right: 1px solid var(--vscode-sideBar-border, #e5e5e5);
+  background: var(--vscode-sideBar-background, #f3f3f3);
+}
+
+body.vscode-light .cr-chat-main,
+body.vscode-light .cr-model-bar,
+body.vscode-light .cr-view-nav,
+body.vscode-light #traces-area-container {
+  background: var(--vscode-editor-background, #ffffff);
+  border-color: var(--vscode-sideBar-border, #e5e5e5);
+}
+
+body.vscode-light .cr-view-nav-btn {
+  border-color: var(--vscode-button-secondaryBorder, #cecece);
+  background: var(--vscode-button-secondaryBackground, #e8e8e8);
+  color: var(--vscode-button-secondaryForeground, #333333);
+}
+
+body.vscode-light .cr-view-nav-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #dadada);
+  color: var(--vscode-foreground, #111111);
+}
+
+body.vscode-light .cr-view-nav-btn.active {
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+  border-color: var(--vscode-button-background, #007acc);
+}
+
+body.vscode-light .cr-thread-item:hover,
+body.vscode-light .cr-icon-btn:hover,
+body.vscode-light .cr-mini-btn:hover,
+body.vscode-light .cr-rail-btn:hover,
+body.vscode-light .cr-refresh-btn:hover {
+  background: var(--vscode-list-hoverBackground, #e8e8e8);
+}
+
+body.vscode-light .cr-thread-item.active {
+  background: var(--vscode-list-activeSelectionBackground, #0060c0);
+  color: var(--vscode-list-activeSelectionForeground, #ffffff);
+}
+
+body.vscode-light .cr-rename-input {
+  background: var(--vscode-input-background, #ffffff);
+  color: var(--vscode-input-foreground, #333333);
+  border-color: var(--vscode-input-border, #cecece);
+}
+
+body.vscode-light .cr-workspace-display {
+  background: var(--vscode-input-background, #f0f0f0);
+  color: var(--vscode-foreground, #333333);
+  border-color: var(--vscode-input-border, #cecece);
+}
+
+body.vscode-light .cr-traces-empty-title {
+  color: var(--vscode-foreground, #24292f);
+}
+
+body.vscode-light .cr-rules-divider {
+  border-top-color: var(--vscode-widget-border, rgba(0, 0, 0, 0.1));
 }
