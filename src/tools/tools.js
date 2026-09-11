@@ -470,7 +470,7 @@ async function* list_directory(args, context) {
 
 async function* search_files(args, context) {
   var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
-  var pattern = args.pattern || '*';
+  var pattern = args.glob_pattern || args.pattern || '*';
   var folderPath = args.folder_path || '.';
   yield { type: 'action', action: 'search_files', message: "Searching files: pattern='" + pattern + "' in '" + folderPath + "'" };
   try {
@@ -486,9 +486,9 @@ async function* search_files(args, context) {
     }
 
     if (searchError) {
-      yield { type: 'tool_result', tool: 'search_files', success: false, pattern: pattern, folder_path: folderPath, message: searchError, matches: [] };
+      yield { type: 'tool_result', tool: 'search_files', success: false, glob_pattern: pattern, pattern: pattern, folder_path: folderPath, message: searchError, matches: [] };
     } else {
-      yield { type: 'tool_result', tool: 'search_files', success: true, pattern: pattern, folder_path: folderPath, matches: matches };
+      yield { type: 'tool_result', tool: 'search_files', success: true, glob_pattern: pattern, pattern: pattern, folder_path: folderPath, matches: matches };
     }
   } catch (e) {
     yield { type: 'tool_result', tool: 'search_files', success: false, message: e.message };
@@ -1296,8 +1296,11 @@ export function registerAllTools() {
   reg('search_files', search_files, {
     category: 'search',
     description: 'Recursively search for files matching a glob pattern.',
-    parameters: { pattern: { type: 'string', description: "Glob pattern e.g. '*.py'" }, folder_path: { type: 'string', description: 'Relative path to search in' } },
-    required: ['pattern']
+    parameters: {
+      glob_pattern: { type: 'string', description: "Glob pattern e.g. '*.py' or '**/*.js'" },
+      folder_path: { type: 'string', description: 'Relative path to search in' }
+    },
+    required: ['glob_pattern']
   });
   reg('find_in_files', find_in_files, {
     category: 'search',

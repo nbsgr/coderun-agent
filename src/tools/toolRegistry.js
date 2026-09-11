@@ -87,6 +87,10 @@ export function execute(name, args, context) {
   var tool = _tools[canonicalName];
   if (!tool) return notFoundGenerator(name);
 
+  if (canonicalName === 'search_files' && args.pattern !== undefined && args.glob_pattern === undefined) {
+    args.glob_pattern = args.pattern;
+  }
+
   if (tool.hidden || (tool.metadata && (tool.metadata.hidden || tool.metadata.internalOnly))) {
     if (!context.allowInternal) {
       return validationErrorGenerator(canonicalName, ['Tool ' + canonicalName + ' is internal and cannot be invoked as an agent tool call.']);
@@ -250,6 +254,16 @@ function rebuildDefinitions() {
 }
 
 function buildDefinition(tool) {
+  var props = tool.parameters || {};
+  var rawRequired = tool.required || [];
+  var validRequired = [];
+  for (var i = 0; i < rawRequired.length; i++) {
+    var reqKey = rawRequired[i];
+    if (props[reqKey]) {
+      validRequired.push(reqKey);
+    }
+  }
+
   return {
     type: 'function',
     function: {
@@ -257,8 +271,8 @@ function buildDefinition(tool) {
       description: tool.description || '',
       parameters: {
         type: 'object',
-        properties: tool.parameters || {},
-        required: tool.required || []
+        properties: props,
+        required: validRequired
       }
     }
   };
