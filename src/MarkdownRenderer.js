@@ -175,7 +175,7 @@ function renderTableRow(row, tag) {
   }
   var cellHtml = [];
   for (var ci = 0; ci < cells.length; ci++) {
-    cellHtml.push('<' + tag + '>' + cells[ci].trim() + '</' + tag + '>');
+    cellHtml.push('<' + tag + '>' + renderInlineStyles(cells[ci].trim()) + '</' + tag + '>');
   }
   return '<tr>' + cellHtml.join('') + '</tr>';
 }
@@ -206,7 +206,7 @@ function renderListItems(listText, isOrdered) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     var itemContent = isOrdered ? line.replace(/^\s*\d+\.\s+/, '') : line.replace(/^\s*[-*+]\s+/, '');
-    items.push('<li class="md-li">' + itemContent + '</li>');
+    items.push('<li class="md-li">' + renderInlineStyles(itemContent).replace(/\n/g, '<br>') + '</li>');
   }
   var tag = isOrdered ? 'ol' : 'ul';
   var cls = isOrdered ? 'md-ol' : 'md-ul';
@@ -214,7 +214,7 @@ function renderListItems(listText, isOrdered) {
 }
 
 function renderInlineStyles(text) {
-  var s = text;
+  var s = esc(text);
   // Bold & Italic
   s = s.replace(/\*\*\*([^\*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   s = s.replace(/\*\*([^\*\n]+?)\*\*/g, '<strong>$1</strong>');
@@ -228,7 +228,7 @@ function renderInlineStyles(text) {
   // Images
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, src) {
     var safeSrc = sanitizeUrl(src);
-    return '<img src="' + esc(safeSrc) + '" alt="' + esc(alt) + '" class="md-img" />';
+    return '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" />';
   });
 
   // Links
@@ -274,7 +274,7 @@ function renderMarkdown(src) {
   function flushList() {
     if (currentListLines.length > 0) {
       var renderedList = renderListItems(currentListLines.join('\n'), isOrderedList);
-      out.push(renderInlineStyles(renderedList));
+      out.push(renderedList);
       currentListLines = [];
       inList = false;
     }
@@ -283,7 +283,7 @@ function renderMarkdown(src) {
   function flushTable() {
     if (currentTableLines.length > 0) {
       var renderedTable = renderTable(currentTableLines.join('\n'));
-      out.push(renderInlineStyles(renderedTable));
+      out.push(renderedTable);
       currentTableLines = [];
       inTable = false;
     }
@@ -291,8 +291,8 @@ function renderMarkdown(src) {
 
   function flushQuote() {
     if (currentQuoteLines.length > 0) {
-      var quoteContent = currentQuoteLines.join('<br>');
-      out.push('<blockquote class="md-blockquote">' + renderInlineStyles(quoteContent) + '</blockquote>');
+      var quoteContent = renderInlineStyles(currentQuoteLines.join('\n')).replace(/\n/g, '<br>');
+      out.push('<blockquote class="md-blockquote">' + quoteContent + '</blockquote>');
       currentQuoteLines = [];
       inBlockquote = false;
     }

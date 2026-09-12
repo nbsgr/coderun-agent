@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import * as projectKnowledge from './projectKnowledge.js';
 import * as learningManager from './learningManager.js';
 
@@ -230,7 +230,7 @@ function storeEntryPoints(root, fileNames) {
   var entries = [];
   if (fileNames.indexOf('package.json') !== -1) {
     try {
-      var raw = fs.readFileSync(path.join(root, 'package.json'), 'utf-8');
+      var raw = readFileSync(path.join(root, 'package.json'), 'utf-8');
       var pkg = JSON.parse(raw);
       if (pkg.main) entries.push(pkg.main);
       if (pkg.module) entries.push(pkg.module);

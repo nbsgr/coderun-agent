@@ -706,11 +706,11 @@
               d.innerHTML = md(content);
             } else if (m.error) {
               var errDiv = mk('div', 'cr-error-line');
-              errDiv.innerHTML = I.err + ' ' + esc(m.error);
+              errDiv.innerHTML = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(m.error) + '</span>';
               body.appendChild(errDiv);
             } else if (!thinking && (!m.tool_calls || !m.tool_calls.length)) {
               var emptyDiv = mk('div', 'cr-error-line');
-              emptyDiv.innerHTML = I.err + ' (No response recorded or request failed)';
+              emptyDiv.innerHTML = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">(No response recorded or request failed)</span>';
               body.appendChild(emptyDiv);
             }
             if (m.tool_calls && m.tool_calls.length) {
@@ -917,17 +917,33 @@
     chatCtx.onStreamEnd();
   }
 
+  function formatErrorMessage(msg) {
+    if (!msg) return 'Unknown error';
+    var str = String(msg);
+    if (str.indexOf('Error: ') === 0) {
+      str = str.substring(7);
+    }
+    return str;
+  }
+
   function handleStreamError(chatCtx, err) {
     var S = chatCtx.S;
     removeTyping(S.botBody);
     var errMsg = err && err.message ? err.message : String(err || 'Unknown error');
-    var errorLine = mk('div', 'cr-error-line');
-    errorLine.innerHTML = I.err + ' Error: ' + esc(errMsg);
-    if (S.botBody) S.botBody.appendChild(errorLine);
+    var cleanMsg = formatErrorMessage(errMsg);
+    var existingErr = S.botBody ? S.botBody.querySelector('.cr-error-line') : null;
+    var errorHtml = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(cleanMsg) + '</span>';
+    if (existingErr) {
+      existingErr.innerHTML = errorHtml;
+    } else {
+      var errorLine = mk('div', 'cr-error-line');
+      errorLine.innerHTML = errorHtml;
+      if (S.botBody) S.botBody.appendChild(errorLine);
+    }
     setStreaming(chatCtx, false);
 
     if (typeof window.saveConversationMessage === 'function') {
-      window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: errMsg });
+      window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: cleanMsg });
     }
 
     try {
@@ -1000,9 +1016,10 @@
       window.activeChatStreamCallback = null;
       return;
     }
-    if (ev.type === 'stream_error') {
-      handleStreamError(chatCtx, ev.error);
-      chatCtx.onStreamError(ev.error);
+    if (ev.type === 'stream_error' || ev.type === 'agent_error' || ev.type === 'error') {
+      var streamErr = ev.error || ev.message;
+      handleStreamError(chatCtx, streamErr);
+      chatCtx.onStreamError(streamErr);
       window.activeChatStreamCallback = null;
       return;
     }
@@ -1679,9 +1696,16 @@
         case 'agent_error':
         case 'error': {
           removeTyping(S.botBody);
-          var errDiv = mk('div', 'cr-error-line');
-          errDiv.innerHTML = I.err + ' ' + esc(ev.message || ev.error || 'Error from agent');
-          if (S.botBody) S.botBody.appendChild(errDiv);
+          var agentErrMsg = formatErrorMessage(ev.message || ev.error || 'Error from agent');
+          var existingLine = S.botBody ? S.botBody.querySelector('.cr-error-line') : null;
+          var agentErrHtml = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(agentErrMsg) + '</span>';
+          if (existingLine) {
+            existingLine.innerHTML = agentErrHtml;
+          } else {
+            var errDiv = mk('div', 'cr-error-line');
+            errDiv.innerHTML = agentErrHtml;
+            if (S.botBody) S.botBody.appendChild(errDiv);
+          }
           clearStatusLines(S);
           break;
         }

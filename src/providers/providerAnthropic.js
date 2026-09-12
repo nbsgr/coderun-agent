@@ -75,6 +75,19 @@ export async function* chat(config, messages, tools, reqOpts) {
       } catch (e) { console.warn('[Anthropic] Failed to parse SSE chunk:', e.message); }
     }
   }
+
+  if (buffer && buffer.trim()) {
+    var remainingLine = buffer.trim();
+    if (remainingLine.startsWith('data: ')) {
+      try {
+        var remainingData = JSON.parse(remainingLine.slice(6));
+        var remainingParsed = parseChunk(remainingData);
+        if (remainingParsed.content || remainingParsed.thinking || remainingParsed.tool_calls || remainingParsed.usage) {
+          yield remainingParsed;
+        }
+      } catch (e) { console.warn('[Anthropic] Failed to parse final SSE chunk:', e.message); }
+    }
+  }
 }
 
 export async function listModels(config) {

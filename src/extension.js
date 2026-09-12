@@ -592,7 +592,9 @@ async function handleFrontendMessage(message, webview) {
         webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: errMsg } });
       } finally {
         console.log('[EXTENSION] runAgent finally block for sessionId:', convSessionId);
-        delete abortControllers[convSessionId];
+        if (abortControllers[convSessionId] === abortCtrl) {
+          delete abortControllers[convSessionId];
+        }
       }
       break;
     }

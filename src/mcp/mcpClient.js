@@ -149,7 +149,7 @@ export function createMcpClient(serverConfig) {
   }
 
   function sendHttpRequest(method, params, timeoutMs, resolve, reject) {
-    var targetUrl = sseMessageEndpoint || config.url;
+    var targetUrl = (transport === 'http') ? config.url : (sseMessageEndpoint || config.url);
     if (!targetUrl) {
       reject(new Error('No URL specified for MCP HTTP/SSE transport'));
       return;
@@ -413,12 +413,33 @@ export function createMcpClient(serverConfig) {
     return new Promise(ssePromise);
   }
 
+  function startHttp() {
+    function httpPromise(resolve, reject) {
+      var httpUrl = config.url;
+      if (!httpUrl) {
+        reject(new Error('No URL specified for HTTP MCP server "' + serverName + '"'));
+        return;
+      }
+      try {
+        new URL(httpUrl);
+      } catch (err) {
+        reject(new Error('Invalid HTTP URL for "' + serverName + '": ' + err.message));
+        return;
+      }
+      isConnected = true;
+      resolve();
+    }
+    return new Promise(httpPromise);
+  }
+
   function start() {
     stderrBuffer = [];
     if (transport === 'stdio') {
       return startStdio();
-    } else if (transport === 'sse' || transport === 'http') {
+    } else if (transport === 'sse') {
       return startSse();
+    } else if (transport === 'http') {
+      return startHttp();
     }
     return Promise.reject(new Error('Unknown transport: ' + transport));
   }

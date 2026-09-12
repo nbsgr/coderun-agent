@@ -485,9 +485,14 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
                 toolCallId: retryCallId
               });
               lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry permission denied by user.' };
+            } else if (signal && (signal.stopped || signal.aborted)) {
+              lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry cancelled by user.' };
             } else {
-              var retryGen = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId });
+              var retryGen = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId, signal: signal });
               for await (var retryEvent of retryGen) {
+                if (signal && (signal.stopped || signal.aborted)) {
+                  break;
+                }
                 retryEvent.toolCallId = retryCallId;
                 sendEvent(retryEvent);
                 if (retryEvent.type === 'tool_result') {
@@ -557,19 +562,26 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
           }
 
           if (recoveryApproved) {
-            try {
-              var recGen = toolRegistry.execute(recTool, recArgs, { workspace: workspace, sessionId: sessionId });
-              var recRes = null;
-              for await (var recEv of recGen) {
-                recEv.toolCallId = recCallId;
-                sendEvent(recEv);
-                if (recEv.type === 'tool_result') {
-                  recRes = recEv;
+            if (signal && (signal.stopped || signal.aborted)) {
+              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery cancelled by user.';
+            } else {
+              try {
+                var recGen = toolRegistry.execute(recTool, recArgs, { workspace: workspace, sessionId: sessionId, signal: signal });
+                var recRes = null;
+                for await (var recEv of recGen) {
+                  if (signal && (signal.stopped || signal.aborted)) {
+                    break;
+                  }
+                  recEv.toolCallId = recCallId;
+                  sendEvent(recEv);
+                  if (recEv.type === 'tool_result') {
+                    recRes = recEv;
+                  }
                 }
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Executed ' + recTool + ' - ' + (recRes && recRes.success !== false ? 'success' : 'failed');
+              } catch (e) {
+                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery tool execution failed: ' + e.message;
               }
-              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Executed ' + recTool + ' - ' + (recRes && recRes.success !== false ? 'success' : 'failed');
-            } catch (e) {
-              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery tool execution failed: ' + e.message;
             }
           } else {
             sendEvent({
@@ -950,7 +962,10 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
       } catch (err) {
-        sendEvent({ type: EVENT_TYPES.AGENT_ERROR, message: err.message });
+        try {
+          agentState.transition('failed', sessionId);
+        } catch (_) {}
+        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: err.message, sessionId: sessionId });
         throw err;
       }
 
@@ -981,7 +996,10 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (!iterationContent && !iterationThinking && toolCalls.length === 0 && (!signal || (!signal.stopped && !signal.aborted))) {
         var emptyMsg = 'The model returned an empty response. It may have closed the connection prematurely or does not support tool calling.';
-        sendEvent({ type: EVENT_TYPES.AGENT_ERROR, message: emptyMsg });
+        try {
+          agentState.transition('failed', sessionId);
+        } catch (_) {}
+        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: emptyMsg, sessionId: sessionId });
         throw new Error(emptyMsg);
       }
 
