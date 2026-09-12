@@ -2,8 +2,8 @@
   {
     "id": "trace_sec_2",
     "sessionId": "session_sec_2",
-    "startedAt": 1789204740148,
-    "completedAt": 1789204740149,
+    "startedAt": 1789205504796,
+    "completedAt": 1789205504797,
     "durationMs": 1,
     "status": "completed",
     "provider": "ollama",

@@ -1771,6 +1771,160 @@
         </div>
       </section>
 
+      <!-- Installation & Setup -->
+      <section id="installation">
+        <h2 class="section-heading">📦 Installation & Quick Setup Guide</h2>
+        <p>
+          Get <strong>CodeRun AI Agent</strong> (<code>AI-AGENT</code>) up and running in Visual Studio Code in less than two minutes. CodeRun runs either 100% locally and privately on your machine using Ollama or LM Studio, or connects seamlessly to your preferred cloud model provider (Google Gemini, Anthropic Claude, OpenAI, Groq, OpenRouter, and more).
+        </p>
+
+        <!-- Prerequisites & Quick Info Cards -->
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">💻</div>
+            <div class="card-title">System Requirements</div>
+            <div class="card-text">
+              • Visual Studio Code <strong>v1.85.0+</strong> or VS Code Insiders<br>
+              • Windows 10/11, macOS (Apple Silicon / Intel), or Linux (x64/arm64)<br>
+              • Git installed and available in your terminal PATH
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">Zero Subscription Required</div>
+            <div class="card-text">
+              No subscription or credit card needed. Use free local models with Ollama, or bring your own API keys with pay-per-token or generous free tiers (e.g., Google Gemini 2.0 Flash / Groq).
+            </div>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 32px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">Step 1: Install the VS Code Extension</h3>
+        <p>Choose your preferred installation method below:</p>
+
+        <!-- Method A: Marketplace -->
+        <div class="feature-card" style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <div style="font-weight: 700; color: var(--accent-blue); font-size: 16px;">Method A: Visual Studio Code Marketplace (Recommended)</div>
+            <span class="badge" style="background: rgba(63, 185, 80, 0.15); color: var(--accent-green); border: 1px solid rgba(63, 185, 80, 0.3); font-size: 11px; padding: 2px 8px; border-radius: 12px;">Fastest</span>
+          </div>
+          <p style="margin-bottom: 12px; color: var(--text-secondary);">
+            1. Open VS Code and press <kbd style="background: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-size: 12px;">Ctrl+Shift+X</kbd> (or <kbd style="background: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-size: 12px;">Cmd+Shift+X</kbd> on macOS) to open the <strong>Extensions</strong> view.<br>
+            2. In the search box, type <code>AI-AGENT</code> or <code>Bala-Siva-Ganesh.ai-agent</code>.<br>
+            3. Click <strong>Install</strong> on the CodeRun AI Agent extension.
+          </p>
+          <div style="margin-top: 10px;">
+            <a href="https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent" target="_blank" class="nav-link-btn" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 8px 16px; background: #1f6feb; color: #fff; border-radius: 6px; font-weight: 600; font-size: 13px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              View on Visual Studio Marketplace
+            </a>
+          </div>
+        </div>
+
+        <!-- Method B: CLI -->
+        <div class="feature-card" style="margin-bottom: 16px;">
+          <div style="font-weight: 700; color: var(--accent-purple); font-size: 16px; margin-bottom: 8px;">Method B: VS Code CLI Command</div>
+          <p style="color: var(--text-secondary); margin-bottom: 8px;">Run this command in any terminal (PowerShell, Bash, or Command Prompt) to install directly:</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>Terminal Installation</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><code>code --install-extension Bala-Siva-Ganesh.ai-agent</code></pre>
+          </div>
+        </div>
+
+        <!-- Method C: VSIX Manual Install -->
+        <div class="feature-card" style="margin-bottom: 24px;">
+          <div style="font-weight: 700; color: var(--accent-amber); font-size: 16px; margin-bottom: 8px;">Method C: Manual VSIX Package Installation (Offline / Enterprise)</div>
+          <p style="color: var(--text-secondary); margin-bottom: 8px;">If you downloaded a packaged <code>.vsix</code> release file from GitHub Releases or local builds:</p>
+          <div class="code-container">
+            <div class="code-header">
+              <span>VSIX Installation</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><code>code --install-extension coderun-agent-1.4.5.vsix</code></pre>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-top: 6px;">Or in VS Code: open the Extensions view &rarr; click the <strong>···</strong> (More Actions) menu &rarr; select <strong>Install from VSIX...</strong>.</p>
+        </div>
+
+        <h3 style="margin-top: 32px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">Step 2: Choose Your AI Backend</h3>
+        <p>CodeRun works seamlessly with both completely private local models and high-performance cloud APIs:</p>
+
+        <div class="card-grid">
+          <!-- Ollama Local -->
+          <div class="feature-card">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">🦙</span>
+              <div class="card-title" style="margin: 0;">Local AI: Ollama (Free & 100% Private)</div>
+            </div>
+            <div class="card-text">
+              1. Download Ollama from <a href="https://ollama.ai" target="_blank" style="color: var(--accent-blue);">ollama.ai</a>.<br>
+              2. Pull any coding model of your choice:
+            </div>
+            <div class="code-container" style="margin-top: 8px;">
+              <div class="code-header">
+                <span>Pull Model</span>
+                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre><code>ollama run qwen2.5-coder:7b</code></pre>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+              Other recommended models: <code>deepseek-r1:8b</code>, <code>llama3.2:3b</code>, <code>codellama:7b</code>. Ollama runs at <code>http://localhost:11434</code> automatically without any API key!
+            </div>
+          </div>
+
+          <!-- Cloud APIs -->
+          <div class="feature-card">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+              <span style="font-size: 20px;">☁️</span>
+              <div class="card-title" style="margin: 0;">Cloud AI: Gemini, Claude, OpenAI</div>
+            </div>
+            <div class="card-text">
+              1. Get an API key from your provider of choice:
+              <ul style="margin-left: 18px; margin-top: 6px; margin-bottom: 8px;">
+                <li><strong>Google Gemini:</strong> <a href="https://aistudio.google.com" target="_blank" style="color: var(--accent-blue);">Google AI Studio</a> (Generous free tier)</li>
+                <li><strong>Anthropic:</strong> <a href="https://console.anthropic.com" target="_blank" style="color: var(--accent-blue);">Anthropic Console</a> (Claude 3.5 Sonnet)</li>
+                <li><strong>Groq:</strong> <a href="https://console.groq.com" target="_blank" style="color: var(--accent-blue);">Groq Cloud</a> (Ultra-fast Llama 3)</li>
+                <li><strong>OpenAI / DeepSeek / OpenRouter:</strong> Compatible endpoints</li>
+              </ul>
+              2. Open CodeRun Settings (gear icon) and paste your API key.
+            </div>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 32px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">Step 3: Launch CodeRun & First Prompt</h3>
+        <div class="feature-card">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+            <div>
+              <div style="font-weight: 700; color: var(--accent-green); margin-bottom: 6px;">1. Open the CodeRun Panel</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">
+                Click the <strong>CodeRun Robot</strong> icon in your VS Code Activity Bar on the left. Or press <kbd style="background: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-size: 12px;">Ctrl+Shift+P</kbd> and run <code>CodeRun: Focus on Chat View</code>.
+              </p>
+            </div>
+            <div>
+              <div style="font-weight: 700; color: var(--accent-green); margin-bottom: 6px;">2. Select Your Model</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">
+                In the top dropdown, select your configured provider (e.g., <strong>Ollama</strong> &rarr; <code>qwen2.5-coder:7b</code>, or <strong>Gemini</strong> &rarr; <code>gemini-2.0-flash</code>).
+              </p>
+            </div>
+            <div>
+              <div style="font-weight: 700; color: var(--accent-green); margin-bottom: 6px;">3. Run Your First Task</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">
+                Type a prompt such as: <em>"Analyze this workspace, explain the architecture, and run the test suite"</em> and watch CodeRun think, plan, and execute!
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout success" style="margin-top: 20px;">
+          <div class="callout-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            Ready to Explore!
+          </div>
+          Now that CodeRun is installed, explore the sections below to configure custom endpoints in <a href="#saving-providers" style="color: var(--accent-green); font-weight: 600;">How to Save Providers</a> or attach dynamic MCP tools in <a href="#adding-mcp" style="color: var(--accent-green); font-weight: 600;">How to Add MCP</a>.
+        </div>
+      </section>
+
       <!-- Providers Overview -->
       <section id="providers-overview">
         <h2 class="section-heading">🤖 Supported Providers</h2>
@@ -2789,6 +2943,7 @@ function sanitizeGeminiSchema(schema) {
       <ul class="toc-list">
         <li class="toc-item"><a href="#introduction" class="toc-link">Overview</a></li>
         <li class="toc-item"><a href="#architecture" class="toc-link">Agentic Loop</a></li>
+        <li class="toc-item"><a href="#installation" class="toc-link">Installation & Setup</a></li>
         <li class="toc-item"><a href="#providers-overview" class="toc-link">Supported Providers</a></li>
         <li class="toc-item"><a href="#saving-providers" class="toc-link">How to Save Providers</a></li>
         <li class="toc-item"><a href="#provider-reflection" class="toc-link">How Providers Reflect</a></li>
