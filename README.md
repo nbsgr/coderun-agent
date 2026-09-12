@@ -74,6 +74,19 @@ Whether you are running completely offline with local models via **Ollama**, lev
 *   **Provider-Compatible Card Linking:** Cards are stored under multiple key aliases (toolCallId, index key, toolName key), ensuring `tool_result` events find the correct card regardless of whether the LLM provider emits tool call IDs or not.
 *   **Backwards DOM Fallback:** When lookup keys fail, the DOM search iterates backwards to find the most recently created card — fixing issues where multiple calls of the same tool (e.g., two `update_plan` invocations) would update the wrong card.
 
+### 📊 Live Context Window & Monotonic Token Tracking
+*   **Monotonic Cumulative Token Accumulation:** Token counts strictly accumulate across all conversational turns and tool iterations. Total Consumed never decrements or resets when continuing conversations.
+*   **Live Context Window Gauge:** Real-time visual progress bar and token ratio (`X / Y (Z%)`) indicating the model's active context window occupancy.
+*   **Saturation Alerts:** Progress bar dynamically shifts from normal blue to amber warning (`≥70%`) and critical red (`≥90%`) as the context fills, alerting you before hitting model limits.
+*   **Dynamic Context Limit Discovery:** Automatically fetches accurate context window sizes (`context_length`, `context_window`, `inputTokenLimit`) directly from provider APIs (OpenRouter, Groq, Ollama, Gemini) via raw REST discovery, with heuristic architectural fallbacks.
+*   **Detailed Session Info Modal:** Click the token badge anytime to inspect Total Consumed, active Context Window usage, Input / System tokens, Output / Response tokens, and trigger 1-click conversation compaction.
+
+### 🔌 Model Context Protocol (MCP) & Extensibility
+*   **Full MCP Client Integration:** Seamless stdio-based Model Context Protocol client with capability negotiation, automated tool schema extraction, and dynamic registration into the agent loop.
+*   **Built-in Server Catalog:** Pre-configured support for Web Fetcher (`web-fetch`), Memory Graph (`memory`), GitHub (`github`), and Puppeteer (`puppeteer`).
+*   **Zero-Config Browser Automation:** Embedded system browser discovery automatically locates installed Google Chrome, Microsoft Edge, Brave, or Chromium binaries across Windows, macOS, and Linux — no manual browser installation needed.
+*   **Custom MCP Server Management:** Register arbitrary custom MCP servers directly from the Settings view with per-tool permissions and toggle controls.
+
 ---
 
 ## 🧰 Complete Tool Matrix (20 Tools)
@@ -102,6 +115,17 @@ CodeRun exposes a curated set of **20 active tools** organized across 6 core cat
 | **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
 | | `get_current_datetime` | Retrieve current date and time in ISO format | No |
 | **🗄️ Database** | `query_project_db` | Execute safe read-only SQL queries on the project knowledge database | No |
+
+### 🔌 Model Context Protocol (MCP) Dynamic Tools
+When MCP servers are enabled in Settings, their tools dynamically register into the agent's active schema with namespaced IDs:
+
+| MCP Server | Dynamically Registered Tools | Capabilities |
+| :--- | :--- | :--- |
+| **🌐 Web Fetcher** (`web-fetch`) | `mcp__web-fetch__fetch_web_content`, `mcp__web-fetch__http_get` | Headless page fetching, HTML-to-markdown conversion, web extraction |
+| **🧠 Memory Graph** (`memory`) | `mcp__memory__create_entities`, `mcp__memory__create_relations`, `mcp__memory__read_graph`, `mcp__memory__search_nodes`, `mcp__memory__open_nodes` | Persistent knowledge graph storing facts, entities, and observations across sessions |
+| **🐙 GitHub** (`github`) | `mcp__github__create_or_update_file`, `mcp__github__search_repositories`, `mcp__github__get_issue`, `mcp__github__create_pull_request`, ... | Full GitHub API repository, issue, commit, and pull request manipulation |
+| **🎭 Puppeteer** (`puppeteer`) | `mcp__puppeteer__navigate`, `mcp__puppeteer__screenshot`, `mcp__puppeteer__click`, `mcp__puppeteer__fill`, `mcp__puppeteer__evaluate` | Full browser automation using local Chrome/Edge/Brave/Chromium with screenshot capture |
+| **⚙️ Custom MCP Servers** | Custom tool names dynamically imported | Any stdio-based MCP server configured in Settings |
 
 ---
 
@@ -155,13 +179,16 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **42 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **44 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
 * Token and secret redaction (JWTs, API keys, database URLs, AWS credentials).
 * Checkpoint restoration, directory tree preservation, and cross-session diff safety.
 * Signal cancellation and max iterations lifecycle.
+* Interactive command & REPL prompt detection across shells.
+* Terminal tool execution approval, safe command policies, and interactive terminal lifecycle.
+* MCP protocol handshake, dynamic tool discovery, permission authorization, and runtime tool execution.
 
 Run all tests anytime:
 ```bash
@@ -172,7 +199,7 @@ node test/runAllTests.js
 
 ## 📖 Deep Dive: CodeRun Architecture
 
-CodeRun's engine is split into isolated manager modules that govern the lifecycle of a task execution. The **terminal execution pipeline** provides interactive REPL sessions, automatic shell detection, ANSI cleaning, structured results, and a canonical execution status enum ensuring consistent SUCCESS/FAILED/CANCELLED/TIMEOUT states across all UI elements.
+CodeRun's engine is split into isolated manager modules that govern the lifecycle of a task execution. The **terminal execution pipeline** provides interactive REPL sessions, automatic shell detection, ANSI cleaning, structured results, and a canonical execution status enum ensuring consistent SUCCESS/FAILED/CANCELLED/TIMEOUT states across all UI elements. The **MCP subsystem** connects external tool servers via standard JSON-RPC over stdio, while the **token engine** tracks monotonic consumption and live context window saturation.
 
 ```
 src/
@@ -201,16 +228,24 @@ src/
 │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
 │                                ANSI escape stripping, interactive REPL support, and stop_terminal
 │
+├── mcp/                      ← Model Context Protocol (MCP) subsystem
+│   ├── mcpClient.js          ← JSON-RPC stdio client transport, handshake & request dispatch
+│   ├── mcpManager.js         ← Server catalog, lifecycle management, auto-browser detection (Chrome/Edge/Brave)
+│   └── builtinServers/       ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
+│
 ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
-├── toolRegistry.js           ← Unified tool registry with alias mapping, validation, and hidden filtering
-├── tools.js                  ← 20 active async generators across 6 categories
+├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
+├── tools.js                  ← 20 active async generators across 6 core categories
 │
 ├── providerManager.js        ← Factory to instantiate the correct provider SDK
-├── providerOllama.js / OpenAI.js / Anthropic.js / Gemini.js / Compatible.js ...
+├── providerOllama.js / OpenAI.js / Anthropic.js / Gemini.js / Groq.js / OpenRouter.js ...
+│                                (raw REST model & context limit discovery for OpenRouter, Groq, Ollama, Gemini)
 │
-├── Dashboard.js / .css       ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings
-├── ChatSpace.js / .css       ← Chat space: collapsible tool cards, inline terminal cards with live
-│                                streaming, permission dialogs, diff reviews, thought process
+├── Dashboard.js / .css       ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings,
+│                                unified model dropdown, modelContextWindows store
+├── ChatSpace.js / .css       ← Chat space: collapsible tool cards, live token tracking badge,
+│                                live context window gauge & progress bar, Session Info card,
+│                                inline terminal cards with live streaming, permission dialogs, diff reviews
 ├── MarkdownRenderer.js       ← Client-side markdown processor with tables, code & syntax highlighting
 ├── webview-shared.js         ← Shared utilities (esc, truncate, stripAnsi) between Dashboard & ChatSpace
 └── agentState.js             ← Formal finite state machine for the agent loop
