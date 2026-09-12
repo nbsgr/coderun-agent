@@ -844,7 +844,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Stream from provider
       try {
         var chatSignal = (signal && signal.signal) ? signal.signal : signal;
-        var stream = provider.chat(config, messages, getDefinitions(), { signal: chatSignal });
+        var activeToolDefinitions = (config && config.enableTools === false) ? [] : getDefinitions();
+        var stream = provider.chat(config, messages, activeToolDefinitions, { signal: chatSignal });
         for await (var chunk of stream) {
           if (signal && (signal.stopped || signal.aborted)) {
             break;
@@ -1055,7 +1056,7 @@ export async function runAgentLoop(userPrompt, config, options) {
               content: 'The verification tool execution is completed. Please write a brief concluding response to the user confirming the final outcome of the task.'
             });
             var concludingChatSignal = (signal && signal.signal) ? signal.signal : signal;
-            var stream = provider.chat(config, concludingMessages, getDefinitions(), { signal: concludingChatSignal });
+            var stream = provider.chat(config, concludingMessages, activeToolDefinitions, { signal: concludingChatSignal });
             var concludingThinking = '';
             var concludingContent = '';
             for await (var chunk of stream) {

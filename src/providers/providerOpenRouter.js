@@ -54,12 +54,34 @@ export async function* chat(config, messages, tools, reqOpts) {
 }
 
 export async function listModels(config) {
-  var client = createClient(config);
-  var response = await client.models.list();
+  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://openrouter.ai/api/v1';
+  if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    baseUrl = 'https://' + baseUrl;
+  }
+  var modelsUrl = baseUrl + '/models';
+  var headers = {
+    'HTTP-Referer': 'https://coderun-agent.dev',
+    'X-Title': 'CodeRun Agent'
+  };
+  if (config.apiKey) {
+    headers['Authorization'] = 'Bearer ' + config.apiKey;
+  }
+  var res = await fetch(modelsUrl, { headers: headers });
+  if (!res.ok) {
+    throw new Error('OpenRouter /models request failed: ' + res.status + ' ' + res.statusText);
+  }
+  var data = await res.json();
   var models = [];
-  if (response && response.data) {
-    for (var i = 0; i < response.data.length; i++) {
-      models.push(response.data[i].id);
+  var list = data.data || data.models || [];
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    var mId = m.id || m.name || '';
+    if (!mId) continue;
+    var ctx = m.context_length || m.context_window || 0;
+    if (ctx) {
+      models.push({ id: mId, context_window: ctx });
+    } else {
+      models.push(mId);
     }
   }
   return models;

@@ -148,6 +148,11 @@
           ],
           "default": null,
           "description": "Project ID (OpenAI only)"
+        },
+        "coderun.enableTools": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable agent tools and function calling. When disabled, tools parameter is omitted from API requests."
         }
       }
     }

@@ -10,6 +10,43 @@ var _aliasMap = {};
 var _definitions = [];
 var _dirty = true;
 var _middleware = [];
+var _disabledBuiltinMap = {};
+
+export function setDisabledBuiltinTools(disabledList) {
+  _disabledBuiltinMap = {};
+  if (Array.isArray(disabledList)) {
+    for (var i = 0; i < disabledList.length; i++) {
+      if (disabledList[i]) {
+        _disabledBuiltinMap[disabledList[i]] = true;
+      }
+    }
+  }
+  _dirty = true;
+}
+
+export function isBuiltinToolDisabled(name) {
+  var canonical = resolveAlias(name) || name;
+  return !!_disabledBuiltinMap[canonical];
+}
+
+export function listBuiltinTools() {
+  var list = [];
+  for (var name in _tools) {
+    var tool = _tools[name];
+    var cat = (tool.metadata && tool.metadata.category) || 'utility';
+    if (cat === 'mcp') continue;
+    if (tool.metadata && tool.metadata.hidden) continue;
+
+    list.push({
+      name: name,
+      category: cat,
+      description: tool.description || '',
+      dangerous: !!(tool.metadata && tool.metadata.dangerous),
+      enabled: !_disabledBuiltinMap[name]
+    });
+  }
+  return list;
+}
 
 // ═══════════════════════════════════════════════════════════
 // REGISTRATION
@@ -44,6 +81,40 @@ export function register(descriptor) {
 
   _dirty = true;
   return true;
+}
+
+export function unregister(name) {
+  var canonical = resolveAlias(name);
+  if (!canonical || !_tools[canonical]) return false;
+  var descriptor = _tools[canonical];
+  delete _tools[canonical];
+  delete _aliasMap[canonical];
+  var aliases = (descriptor && descriptor.aliases) || [];
+  for (var i = 0; i < aliases.length; i++) {
+    delete _aliasMap[aliases[i]];
+  }
+  _dirty = true;
+  return true;
+}
+
+export function unregisterCategory(category) {
+  var removedCount = 0;
+  for (var name in _tools) {
+    if (_tools[name].metadata && _tools[name].metadata.category === category) {
+      if (unregister(name)) removedCount++;
+    }
+  }
+  return removedCount;
+}
+
+export function unregisterMcpServer(serverName) {
+  var removedCount = 0;
+  for (var name in _tools) {
+    if (_tools[name].metadata && _tools[name].metadata.mcpServer === serverName) {
+      if (unregister(name)) removedCount++;
+    }
+  }
+  return removedCount;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -95,6 +166,10 @@ export function execute(name, args, context) {
     if (!context.allowInternal) {
       return validationErrorGenerator(canonicalName, ['Tool ' + canonicalName + ' is internal and cannot be invoked as an agent tool call.']);
     }
+  }
+
+  if (_disabledBuiltinMap[canonicalName]) {
+    return disabledToolGenerator(canonicalName);
   }
 
   var validation = validate(canonicalName, args);
@@ -248,6 +323,9 @@ function rebuildDefinitions() {
     if (_tools[name].metadata && _tools[name].metadata.hidden) {
       continue;
     }
+    if (_disabledBuiltinMap[name] === true) {
+      continue;
+    }
     _definitions.push(buildDefinition(_tools[name]));
   }
   _dirty = false;
@@ -385,6 +463,16 @@ function* notFoundGenerator(name) {
   yield {
     type: 'tool_result', tool: name, success: false,
     message: 'Tool "' + name + '" is not available. Available: ' + list().join(', ')
+  };
+}
+
+function* disabledToolGenerator(name) {
+  console.warn('[TR] Tool disabled: ' + name);
+  yield {
+    type: 'tool_result',
+    tool: name,
+    success: false,
+    message: 'Tool "' + name + '" is disabled in your Agent Tools settings. Please enable it in the MCP panel to use.'
   };
 }
 

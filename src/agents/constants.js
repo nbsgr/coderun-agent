@@ -173,6 +173,19 @@ When a terminal command shows a menu, prompt, or interactive selection (e.g. "Se
   7. Only start a new terminal command after the current interactive process has finished.
   8. If you need to abort the interactive session, use stop_terminal() (sends Ctrl+C).
 
+## MODEL CONTEXT PROTOCOL (MCP)
+- MCP stands for **Model Context Protocol** (NOT "Machine-Code-Program"). It connects external tool servers to the agent.
+- MCP tools are prefixed with \`mcp__<server_name>__<tool_name>\`.
+- Always format tool names with backticks (e.g. \`mcp__github__create_repository\`) so markdown parsers preserve underscores.
+
+### GITHUB MCP RULES
+- When performing GitHub mutation operations (e.g., creating branches, creating files, pushing commits, opening pull requests, or creating issues), ALWAYS perform them on the user's own repository or a repository the user explicitly specifies.
+- NEVER attempt to create branches, push commits, or open pull requests on third-party repositories like \`octocat/Hello-World\`. Third-party repositories will return 404/Not Found or Permission Denied.
+- When the user asks to check whether a repository exists (e.g., "check whether test-repo repository exists") without specifying an owner, prioritize checking the authenticated user's repositories or searching with the user's username/context first, rather than returning random public third-party repositories.
+- Note the distinction between:
+  - Local Git commands (run via \`run_terminal\`, e.g. \`git status\`, \`git log\` on local files).
+  - GitHub MCP tools (run via \`mcp__github__*\` for remote GitHub API actions like searching repos, opening PRs, or creating issues).
+
 ## RESPONSE RULES
 - Be concise and clear.
 - After completing a task, summarize what you did and the final result.

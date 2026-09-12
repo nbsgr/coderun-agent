@@ -41,6 +41,7 @@
     workspaceFolder: vscodeState.workspaceFolder || window.WORKSPACE_FOLDER || "",
     models: [],
     modelsByProvider: {},
+    modelContextWindows: {},
     isVsCode: !!window.VSCODE,
     baseUrl: DEFAULT_BASE_URL,
     provider: "ollama",
@@ -55,6 +56,7 @@
     pinnedModels: {},
     modelSearchFilter: "",
     openProviderGroups: {},
+    mcpServers: [],
     settings: {
       provider: "ollama",
       baseUrl: DEFAULT_BASE_URL,
@@ -76,6 +78,21 @@
   } catch (_) {
     state.pinnedModels = {};
   }
+
+  try {
+    var storedContext = localStorage.getItem("coderun_model_context_windows");
+    if (storedContext) {
+      state.modelContextWindows = JSON.parse(storedContext);
+    }
+  } catch (_) {
+    state.modelContextWindows = {};
+  }
+
+  function getModelContextWindow(modelName) {
+    if (!modelName || !state.modelContextWindows) return null;
+    return state.modelContextWindows[modelName] || null;
+  }
+  window.getModelContextWindow = getModelContextWindow;
 
   function saveStateToVscode() {
     if (state.isVsCode && window.VSCODE_API) {
@@ -136,6 +153,9 @@
     }
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "saveSelectedModel", model: state.selectedModel, provider: state.selectedProvider });
+    }
+    if (typeof window.refreshActiveChatUsage === 'function') {
+      window.refreshActiveChatUsage();
     }
   }
 
@@ -238,6 +258,7 @@
     if (vscodeSettings.streaming !== undefined) state.settings.streaming = vscodeSettings.streaming;
     if (vscodeSettings.showThinking !== undefined) state.settings.showThinking = vscodeSettings.showThinking;
     if (vscodeSettings.confirmDangerous !== undefined) state.settings.confirmDangerous = vscodeSettings.confirmDangerous;
+    if (vscodeSettings.enableTools !== undefined) state.settings.enableTools = vscodeSettings.enableTools;
     if (vscodeSettings.hasApiKey !== undefined) state.hasApiKey = vscodeSettings.hasApiKey;
 
     updateSettingsUI();
@@ -352,6 +373,8 @@
     if (streamingEl) streamingEl.checked = state.settings.streaming !== false;
     if (showThinkingEl) showThinkingEl.checked = state.settings.showThinking !== false;
     if (confirmEl) confirmEl.checked = state.settings.confirmDangerous !== false;
+    var globalToolsToggle = document.getElementById("mcpGlobalToolsToggle");
+    if (globalToolsToggle) globalToolsToggle.checked = state.settings.enableTools !== false;
   }
 
   function handleLoadProviderBtnClick(e) {
@@ -546,6 +569,9 @@
             '<button id="rail-chat" class="cr-rail-btn active" title="Chat">💬</button>' +
             '<button id="rail-settings" class="cr-rail-btn" title="Settings">⚙</button>' +
             '<button id="rail-rules" class="cr-rail-btn" title="Rules">📋</button>' +
+            '<button id="rail-mcp" class="cr-rail-btn" title="Model Context Protocol (MCP)">' +
+              '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>' +
+            '</button>' +
           '</nav>' +
           '<main class="cr-viewport">' +
             '<section id="panel-chat" class="cr-panel active">' +
@@ -708,7 +734,225 @@
                 '</div>' +
               '</div>' +
             '</section>' +
+            '<section id="panel-mcp" class="cr-panel">' +
+              '<div class="cr-settings cr-mcp-panel-content">' +
+                '<div class="cr-mcp-top-header">' +
+                  '<div class="cr-mcp-header-top-row">' +
+                    '<div class="cr-mcp-header-title-box">' +
+                      '<div class="cr-mcp-icon-box">' +
+                        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>' +
+                      '</div>' +
+                      '<h3 class="cr-mcp-header-title">Model Context Protocol (MCP)</h3>' +
+                    '</div>' +
+                    '<button id="addMcpServerBtn" class="cr-btn-add-mcp" type="button">' +
+                      '<span style="font-size:14px;margin-right:2px;">+</span>' +
+                      '<span>Add MCP</span>' +
+                      '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="margin-left:4px;"><path d="M7 10l5 5 5-5z"/></svg>' +
+                    '</button>' +
+                  '</div>' +
+                  '<div class="cr-mcp-header-divider"></div>' +
+                  '<div class="cr-mcp-header-desc">' +
+                    '<p class="cr-mcp-header-p">Connect built-in free tools or custom servers (Python, Node, SSE, HTTP).</p>' +
+                    '<p class="cr-mcp-header-p-sub">Tools are auto-discovered, presented to the model, and guarded by your permission flow.</p>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="cr-mcp-global-card">' +
+                  '<label class="cr-switch" title="Toggle Function Calling / Agent Tools">' +
+                    '<input type="checkbox" id="mcpGlobalToolsToggle" checked class="cr-switch-input">' +
+                    '<span class="cr-switch-slider"></span>' +
+                  '</label>' +
+                  '<div class="cr-mcp-global-card-text">' +
+                    '<strong class="cr-mcp-global-card-title">Enable Function Calling / Agent Tools</strong>' +
+                    '<div class="cr-mcp-global-card-sub">When disabled, tools parameter is omitted from API requests so models/APIs that block tools will not error.</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div id="mcpServerList" class="cr-mcp-list">' +
+                  '<div class="cr-mcp-empty">Loading MCP servers...</div>' +
+                '</div>' +
+              '</div>' +
+            '</section>' +
           '</main>' +
+        '</div>' +
+        '<div id="mcpModalOverlay" class="cr-mcp-modal-overlay" style="display:none;">' +
+          '<div class="cr-mcp-modal">' +
+            '<div class="cr-mcp-modal-header">' +
+              '<div class="cr-mcp-modal-title-wrap">' +
+                '<div class="cr-mcp-modal-icon-box">' +
+                  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>' +
+                    '<rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>' +
+                    '<line x1="6" y1="6" x2="6.01" y2="6"></line>' +
+                    '<line x1="6" y1="18" x2="6.01" y2="18"></line>' +
+                  '</svg>' +
+                '</div>' +
+                '<div>' +
+                  '<h3 class="cr-mcp-modal-title">Add MCP Server</h3>' +
+                  '<p class="cr-mcp-modal-subtitle">Connect an MCP server to extend your agent with external tools.</p>' +
+                '</div>' +
+              '</div>' +
+              '<button id="closeMcpModalBtn" class="cr-mcp-modal-close-btn" title="Close">✕</button>' +
+            '</div>' +
+            '<div class="cr-mcp-modal-body">' +
+              '<div class="cr-mcp-modal-section">' +
+                '<div class="cr-mcp-sec-header-row">' +
+                  '<div class="cr-mcp-sec-title-group">' +
+                    '<div class="cr-mcp-sec-title-left">' +
+                      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+                      '<span class="cr-mcp-sec-heading">Quick Setup (Popular Servers)</span>' +
+                    '</div>' +
+                    '<div class="cr-mcp-sec-sub">Select a template to pre-fill the configuration.</div>' +
+                  '</div>' +
+                  '<button type="button" id="mcpViewAllTemplatesBtn" class="cr-mcp-btn-secondary-link">' +
+                    '<span>View All Templates</span>' +
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>' +
+                  '</button>' +
+                '</div>' +
+                '<div class="cr-mcp-templates-grid">' +
+                  '<div class="cr-mcp-template-card active" data-template="github">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="#f0f6fc"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">GitHub</span>' +
+                  '</div>' +
+                  '<div class="cr-mcp-template-card" data-template="web-fetch">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#388bfd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">Web Fetch</span>' +
+                  '</div>' +
+                  '<div class="cr-mcp-template-card" data-template="memory">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f778ba" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z"></path></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">Memory</span>' +
+                  '</div>' +
+                  '<div class="cr-mcp-template-card" data-template="postgres">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7"></path><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M9 22v-4"></path><path d="M15 22v-4"></path><path d="M9 18h6"></path></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">PostgreSQL</span>' +
+                  '</div>' +
+                  '<div class="cr-mcp-template-card" data-template="mysql">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#e3b341" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">MySQL</span>' +
+                  '</div>' +
+                  '<div class="cr-mcp-template-card" data-template="custom">' +
+                    '<div class="cr-mcp-template-icon">' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
+                    '</div>' +
+                    '<span class="cr-mcp-template-name">Custom</span>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="cr-mcp-modal-section cr-mcp-server-config-section">' +
+                '<div class="cr-mcp-sec-title-left" style="margin-bottom:12px;">' +
+                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
+                  '<span class="cr-mcp-sec-heading">Server Configuration</span>' +
+                '</div>' +
+                '<div class="cr-mcp-form-group">' +
+                  '<label class="cr-mcp-form-label">Server Name <span class="cr-mcp-required">*</span></label>' +
+                  '<input type="text" id="mcpServerName" class="cr-mcp-form-input" value="github" placeholder="github">' +
+                  '<div class="cr-mcp-form-subtext">A friendly name to identify this server.</div>' +
+                '</div>' +
+                '<div class="cr-mcp-form-group">' +
+                  '<label class="cr-mcp-form-label">Transport Type <span class="cr-mcp-required">*</span> <span class="cr-mcp-info-badge" title="How the client connects to this MCP server">ⓘ</span></label>' +
+                  '<input type="radio" name="mcpTransportType" value="stdio" id="mcpRadioStdio" style="display:none;" checked>' +
+                  '<input type="radio" name="mcpTransportType" value="sse" id="mcpRadioSse" style="display:none;">' +
+                  '<div class="cr-mcp-transport-cards-row">' +
+                    '<div id="mcpTransportCardStdio" class="cr-mcp-transport-card active" data-type="stdio">' +
+                      '<div class="cr-mcp-transport-radio-circle"><div class="cr-mcp-transport-radio-dot"></div></div>' +
+                      '<div class="cr-mcp-transport-text-wrap">' +
+                        '<div class="cr-mcp-transport-title">Local Command</div>' +
+                        '<div class="cr-mcp-transport-sub">Run a local command (Python, Node, Binary)</div>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div id="mcpTransportCardSse" class="cr-mcp-transport-card" data-type="sse">' +
+                      '<div class="cr-mcp-transport-radio-circle"><div class="cr-mcp-transport-radio-dot"></div></div>' +
+                      '<div class="cr-mcp-transport-text-wrap">' +
+                        '<div class="cr-mcp-transport-title">Remote Server</div>' +
+                        '<div class="cr-mcp-transport-sub">Connect via SSE or HTTP URL</div>' +
+                      '</div>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div id="mcpStdioFields">' +
+                  '<div class="cr-mcp-form-group">' +
+                    '<label class="cr-mcp-form-label">Command <span class="cr-mcp-required">*</span></label>' +
+                    '<input type="text" id="mcpCommand" class="cr-mcp-form-input" value="npx" placeholder="npx">' +
+                    '<div class="cr-mcp-form-subtext">The command to start the MCP server.</div>' +
+                  '</div>' +
+                  '<div class="cr-mcp-form-group">' +
+                    '<label class="cr-mcp-form-label">Arguments / Script Path</label>' +
+                    '<input type="text" id="mcpArgs" class="cr-mcp-form-input" value="-y @modelcontextprotocol/server-github" placeholder="-y @modelcontextprotocol/server-github">' +
+                    '<div class="cr-mcp-form-subtext">Arguments for the command or path to your script.</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div id="mcpSseFields" style="display:none;">' +
+                  '<div class="cr-mcp-form-group">' +
+                    '<label class="cr-mcp-form-label">Server URL <span class="cr-mcp-required">*</span></label>' +
+                    '<input type="text" id="mcpUrl" class="cr-mcp-form-input" placeholder="http://localhost:8000/sse or https://mcp.domain.com/sse">' +
+                    '<div class="cr-mcp-form-subtext">The SSE or HTTP endpoint for the MCP server.</div>' +
+                  '</div>' +
+                  '<div class="cr-mcp-form-group">' +
+                    '<label class="cr-mcp-form-label">Headers / Auth (Optional)</label>' +
+                    '<input type="text" id="mcpHeaders" class="cr-mcp-form-input" placeholder="Authorization: Bearer mytoken">' +
+                    '<div class="cr-mcp-form-subtext">Comma-separated headers (e.g. Authorization: Bearer token).</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="cr-mcp-form-group">' +
+                  '<div class="cr-mcp-env-header-row">' +
+                    '<label class="cr-mcp-form-label" style="margin-bottom:0;">Environment Variables (Optional) <span class="cr-mcp-info-badge" title="Custom environment variables injected into the process">ⓘ</span></label>' +
+                    '<button type="button" id="mcpAddEnvVarBtn" class="cr-mcp-btn-add-var">+ Add Variable</button>' +
+                  '</div>' +
+                  '<div class="cr-mcp-env-table">' +
+                    '<div class="cr-mcp-env-table-header">' +
+                      '<span class="cr-mcp-env-th-key">Key</span>' +
+                      '<span class="cr-mcp-env-th-val">Value</span>' +
+                      '<span class="cr-mcp-env-th-act"></span>' +
+                    '</div>' +
+                    '<div id="mcpEnvRowsContainer" class="cr-mcp-env-rows-container">' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<details class="cr-mcp-advanced-details" id="mcpAdvancedDetails">' +
+                  '<summary class="cr-mcp-advanced-summary">' +
+                    '<div class="cr-mcp-adv-summary-left">' +
+                      '<svg class="cr-mcp-adv-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>' +
+                      '<span>Advanced Options</span>' +
+                    '</div>' +
+                    '<span id="mcpAdvToggleText" class="cr-mcp-adv-toggle-link">Show</span>' +
+                  '</summary>' +
+                  '<div class="cr-mcp-advanced-body">' +
+                    '<div class="cr-mcp-form-group">' +
+                      '<label class="cr-mcp-form-label">Custom Working Directory (Optional)</label>' +
+                      '<input type="text" id="mcpCwd" class="cr-mcp-form-input" placeholder="e.g. C:/projects/my-mcp-server">' +
+                    '</div>' +
+                    '<div class="cr-mcp-form-group">' +
+                      '<label class="cr-mcp-form-label">Initialization Timeout (Seconds)</label>' +
+                      '<input type="number" id="mcpTimeout" class="cr-mcp-form-input" value="15" min="5" max="120">' +
+                    '</div>' +
+                  '</div>' +
+                '</details>' +
+                '<div class="cr-mcp-perm-check-wrap">' +
+                  '<label class="cr-mcp-checkbox-container">' +
+                    '<input type="checkbox" id="mcpAlwaysAsk" checked class="cr-mcp-real-checkbox">' +
+                    '<span class="cr-mcp-checkbox-custom"></span>' +
+                    '<span class="cr-mcp-perm-label-texts">' +
+                      '<strong class="cr-mcp-perm-title">Always ask permission before executing tools</strong>' +
+                      '<span class="cr-mcp-perm-sub">When enabled, you\'ll be prompted to approve tool executions.</span>' +
+                    '</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div id="mcpModalError" class="cr-mcp-error-box" style="display:none;"></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="cr-mcp-modal-footer">' +
+              '<button id="cancelMcpModalBtn" type="button" class="cr-btn-modal-cancel">Cancel</button>' +
+              '<button id="saveMcpModalBtn" type="button" class="cr-btn-modal-primary">Connect & Save</button>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
       '</div>'
     );
@@ -767,6 +1011,51 @@
 
     var tracesBtn = document.getElementById("viewNavTracesBtn");
     if (tracesBtn) tracesBtn.onclick = handleViewNavTracesClick;
+
+    var railMcpBtn = document.getElementById("rail-mcp");
+    if (railMcpBtn) railMcpBtn.onclick = handleRailMcpClick;
+
+    var addMcpBtn = document.getElementById("addMcpServerBtn");
+    if (addMcpBtn) addMcpBtn.onclick = openAddMcpModal;
+
+    var closeMcpBtn = document.getElementById("closeMcpModalBtn");
+    if (closeMcpBtn) closeMcpBtn.onclick = closeAddMcpModal;
+
+    var cancelMcpBtn = document.getElementById("cancelMcpModalBtn");
+    if (cancelMcpBtn) cancelMcpBtn.onclick = closeAddMcpModal;
+
+    var saveMcpBtn = document.getElementById("saveMcpModalBtn");
+    if (saveMcpBtn) saveMcpBtn.onclick = handleSaveMcpServer;
+
+    var tCardStdio = document.getElementById("mcpTransportCardStdio");
+    var tCardSse = document.getElementById("mcpTransportCardSse");
+    if (tCardStdio) tCardStdio.onclick = handleTransportCardStdioClick;
+    if (tCardSse) tCardSse.onclick = handleTransportCardSseClick;
+
+    var globalToolsToggle = document.getElementById("mcpGlobalToolsToggle");
+    if (globalToolsToggle) {
+      globalToolsToggle.onchange = handleGlobalToolsToggleChange;
+    }
+
+    var templateCards = document.querySelectorAll(".cr-mcp-template-card");
+    for (var tc = 0; tc < templateCards.length; tc++) {
+      templateCards[tc].onclick = handleTemplateCardClick;
+    }
+
+    var addVarBtn = document.getElementById("mcpAddEnvVarBtn");
+    if (addVarBtn) addVarBtn.onclick = handleAddEnvVarClick;
+
+    var envRowsContainer = document.getElementById("mcpEnvRowsContainer");
+    if (envRowsContainer) envRowsContainer.onclick = handleEnvRowsContainerClick;
+
+    var advDetails = document.getElementById("mcpAdvancedDetails");
+    if (advDetails) advDetails.ontoggle = handleAdvancedDetailsToggle;
+
+    var viewAllBtn = document.getElementById("mcpViewAllTemplatesBtn");
+    if (viewAllBtn) viewAllBtn.onclick = handleViewAllTemplatesClick;
+
+    var modalOverlay = document.getElementById("mcpModalOverlay");
+    if (modalOverlay) modalOverlay.onclick = handleModalOverlayClick;
 
     document.addEventListener("keydown", handleDocumentKeyDown);
 
@@ -1348,6 +1637,859 @@
     }
   }
 
+  function handleRailMcpClick() {
+    switchPanel("panel-mcp", this);
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "loadMcpServers" });
+    }
+  }
+
+  function handleGlobalToolsToggleChange() {
+    var isEnabled = this.checked;
+    if (!state.settings) state.settings = {};
+    state.settings.enableTools = isEnabled;
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "saveSettings",
+        settings: { enableTools: isEnabled }
+      });
+    }
+  }
+
+  function handleTemplateCardClick() {
+    var tName = this.getAttribute("data-template");
+    selectMcpTemplate(tName);
+  }
+
+  function handleTransportCardStdioClick() {
+    setMcpTransportType("stdio");
+  }
+
+  function handleTransportCardSseClick() {
+    setMcpTransportType("sse");
+  }
+
+  function handleAddEnvVarClick() {
+    addEnvVarRow("", "");
+  }
+
+  function handleEnvRowsContainerClick(e) {
+    var target = e.target;
+    var btn = target ? target.closest(".cr-mcp-env-del-btn") : null;
+    if (btn) {
+      var row = btn.closest(".cr-mcp-env-row");
+      if (row && row.parentNode) {
+        row.parentNode.removeChild(row);
+      }
+    }
+  }
+
+  function handleAdvancedDetailsToggle() {
+    var toggleText = document.getElementById("mcpAdvToggleText");
+    if (toggleText) {
+      toggleText.textContent = this.open ? "Hide" : "Show";
+    }
+  }
+
+  function handleViewAllTemplatesClick() {
+    selectMcpTemplate("custom");
+  }
+
+  function handleModalOverlayClick(e) {
+    if (e.target === this) {
+      closeAddMcpModal();
+    }
+  }
+
+  function clearEnvVarRows() {
+    var container = document.getElementById("mcpEnvRowsContainer");
+    if (container) container.innerHTML = "";
+  }
+
+  function addEnvVarRow(key, val) {
+    var container = document.getElementById("mcpEnvRowsContainer");
+    if (!container) return;
+    var row = document.createElement("div");
+    row.className = "cr-mcp-env-row";
+    row.innerHTML =
+      '<input type="text" class="cr-mcp-form-input cr-mcp-env-key" placeholder="KEY" value="' + esc(key || "") + '">' +
+      '<input type="text" class="cr-mcp-form-input cr-mcp-env-val" placeholder="Value" value="' + esc(val || "") + '">' +
+      '<button type="button" class="cr-mcp-env-del-btn" title="Delete variable">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<polyline points="3 6 5 6 21 6"></polyline>' +
+          '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>' +
+        '</svg>' +
+      '</button>';
+    container.appendChild(row);
+  }
+
+  function getEnvVarsFromRows() {
+    var container = document.getElementById("mcpEnvRowsContainer");
+    if (!container) return {};
+    var rows = container.querySelectorAll(".cr-mcp-env-row");
+    var envObj = {};
+    for (var i = 0; i < rows.length; i++) {
+      var keyInput = rows[i].querySelector(".cr-mcp-env-key");
+      var valInput = rows[i].querySelector(".cr-mcp-env-val");
+      var k = keyInput ? keyInput.value.trim() : "";
+      var v = valInput ? valInput.value : "";
+      if (k) {
+        envObj[k] = v;
+      }
+    }
+    return envObj;
+  }
+
+  function setMcpTransportType(type) {
+    var cardStdio = document.getElementById("mcpTransportCardStdio");
+    var cardSse = document.getElementById("mcpTransportCardSse");
+    var radioStdio = document.getElementById("mcpRadioStdio");
+    var radioSse = document.getElementById("mcpRadioSse");
+    var stdioFields = document.getElementById("mcpStdioFields");
+    var sseFields = document.getElementById("mcpSseFields");
+
+    var isStdio = (type !== "sse");
+    if (cardStdio) {
+      if (isStdio) cardStdio.classList.add("active");
+      else cardStdio.classList.remove("active");
+    }
+    if (cardSse) {
+      if (!isStdio) cardSse.classList.add("active");
+      else cardSse.classList.remove("active");
+    }
+    if (radioStdio) radioStdio.checked = isStdio;
+    if (radioSse) radioSse.checked = !isStdio;
+
+    if (stdioFields) stdioFields.style.display = isStdio ? "block" : "none";
+    if (sseFields) sseFields.style.display = isStdio ? "none" : "block";
+  }
+
+  function selectMcpTemplate(tName) {
+    var cards = document.querySelectorAll(".cr-mcp-template-card");
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].getAttribute("data-template") === tName) {
+        cards[i].classList.add("active");
+      } else {
+        cards[i].classList.remove("active");
+      }
+    }
+
+    var nameInput = document.getElementById("mcpServerName");
+    var cmdInput = document.getElementById("mcpCommand");
+    var argsInput = document.getElementById("mcpArgs");
+    var urlInput = document.getElementById("mcpUrl");
+    var headersInput = document.getElementById("mcpHeaders");
+
+    setMcpTransportType("stdio");
+    clearEnvVarRows();
+
+    if (tName === "github") {
+      if (nameInput) nameInput.value = "github";
+      if (cmdInput) cmdInput.value = "npx";
+      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-github";
+      addEnvVarRow("GITHUB_PERSONAL_ACCESS_TOKEN", "your_token_here");
+    } else if (tName === "web-fetch") {
+      if (nameInput) nameInput.value = "web-fetch";
+      if (cmdInput) cmdInput.value = "npx";
+      if (argsInput) argsInput.value = "-y @infoinlet/mcp-fetch";
+    } else if (tName === "memory") {
+      if (nameInput) nameInput.value = "memory";
+      if (cmdInput) cmdInput.value = "npx";
+      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-memory";
+    } else if (tName === "postgres") {
+      if (nameInput) nameInput.value = "postgres";
+      if (cmdInput) cmdInput.value = "npx";
+      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb";
+    } else if (tName === "mysql") {
+      if (nameInput) nameInput.value = "mysql";
+      if (cmdInput) cmdInput.value = "npx";
+      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb";
+    } else {
+      if (nameInput) nameInput.value = "";
+      if (cmdInput) cmdInput.value = "";
+      if (argsInput) argsInput.value = "";
+      if (urlInput) urlInput.value = "";
+      if (headersInput) headersInput.value = "";
+      addEnvVarRow("", "");
+    }
+  }
+
+  function handleMcpTransportChange() {
+    var radioStdio = document.getElementById("mcpRadioStdio");
+    setMcpTransportType(radioStdio && radioStdio.checked ? "stdio" : "sse");
+  }
+
+  function openAddMcpModal() {
+    var overlay = document.getElementById("mcpModalOverlay");
+    var errEl = document.getElementById("mcpModalError");
+    if (errEl) {
+      errEl.textContent = "";
+      errEl.style.display = "none";
+    }
+    var permInput = document.getElementById("mcpAlwaysAsk");
+    if (permInput) permInput.checked = true;
+
+    var advDetails = document.getElementById("mcpAdvancedDetails");
+    if (advDetails) advDetails.open = false;
+    var toggleText = document.getElementById("mcpAdvToggleText");
+    if (toggleText) toggleText.textContent = "Show";
+
+    selectMcpTemplate("github");
+
+    if (overlay) overlay.style.display = "flex";
+  }
+
+  function openEditMcpModal(server) {
+    if (!server) return;
+    var overlay = document.getElementById("mcpModalOverlay");
+    var errEl = document.getElementById("mcpModalError");
+    if (errEl) {
+      errEl.textContent = "";
+      errEl.style.display = "none";
+    }
+
+    var nameInput = document.getElementById("mcpServerName");
+    var cmdInput = document.getElementById("mcpCommand");
+    var argsInput = document.getElementById("mcpArgs");
+    var urlInput = document.getElementById("mcpUrl");
+    var permInput = document.getElementById("mcpAlwaysAsk");
+    var cwdInput = document.getElementById("mcpCwd");
+    var timeoutInput = document.getElementById("mcpTimeout");
+
+    if (nameInput) nameInput.value = server.name || server.id || "";
+    if (cmdInput) cmdInput.value = server.command || "";
+    if (argsInput) argsInput.value = Array.isArray(server.args) ? server.args.join(" ") : (server.args || "");
+    if (urlInput) urlInput.value = server.url || "";
+    if (permInput) permInput.checked = !server.alwaysAllow;
+    if (cwdInput) cwdInput.value = server.cwd || "";
+    if (timeoutInput) timeoutInput.value = server.timeout || 15;
+
+    setMcpTransportType(server.transport === "sse" ? "sse" : "stdio");
+    clearEnvVarRows();
+
+    var envObj = server.env || {};
+    var envKeys = Object.keys(envObj);
+    if (envKeys.length > 0) {
+      for (var k = 0; k < envKeys.length; k++) {
+        addEnvVarRow(envKeys[k], envObj[envKeys[k]]);
+      }
+    } else {
+      addEnvVarRow("", "");
+    }
+
+    var cards = document.querySelectorAll(".cr-mcp-template-card");
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.remove("active");
+    }
+
+    if (overlay) overlay.style.display = "flex";
+  }
+
+  function closeAddMcpModal() {
+    var overlay = document.getElementById("mcpModalOverlay");
+    if (overlay) overlay.style.display = "none";
+  }
+
+  function handleSaveMcpServer() {
+    var nameInput = document.getElementById("mcpServerName");
+    var nameVal = nameInput ? nameInput.value.trim() : "";
+    var errEl = document.getElementById("mcpModalError");
+
+    if (!nameVal) {
+      if (errEl) {
+        errEl.textContent = "Please enter a server name.";
+        errEl.style.display = "block";
+        errEl.style.color = "#f85149";
+      }
+      return;
+    }
+
+    var radioSse = document.getElementById("mcpRadioSse");
+    var isSse = radioSse && radioSse.checked;
+
+    var serverData = {
+      name: nameVal,
+      transport: isSse ? "sse" : "stdio",
+      alwaysAllow: !((document.getElementById("mcpAlwaysAsk") || {}).checked),
+      enabled: true
+    };
+
+    if (isSse) {
+      var urlInput = document.getElementById("mcpUrl");
+      var urlVal = urlInput ? urlInput.value.trim() : "";
+      if (!urlVal) {
+        if (errEl) {
+          errEl.textContent = "Please enter the server URL.";
+          errEl.style.display = "block";
+          errEl.style.color = "#f85149";
+        }
+        return;
+      }
+      serverData.url = urlVal;
+
+      var headersInput = document.getElementById("mcpHeaders");
+      var headersVal = headersInput ? headersInput.value.trim() : "";
+      if (headersVal) {
+        var hObj = {};
+        var pairs = headersVal.split(",");
+        for (var i = 0; i < pairs.length; i++) {
+          var p = pairs[i].split(":");
+          if (p.length >= 2) {
+            var k = p[0].trim();
+            var v = p.slice(1).join(":").trim();
+            if (k) hObj[k] = v;
+          }
+        }
+        serverData.headers = hObj;
+      }
+    } else {
+      var cmdInput = document.getElementById("mcpCommand");
+      var cmdVal = cmdInput ? cmdInput.value.trim() : "";
+      if (!cmdVal) {
+        if (errEl) {
+          errEl.textContent = "Please enter a command (e.g. python, node, npx).";
+          errEl.style.display = "block";
+          errEl.style.color = "#f85149";
+        }
+        return;
+      }
+      serverData.command = cmdVal;
+
+      var argsInput = document.getElementById("mcpArgs");
+      var argsVal = argsInput ? argsInput.value.trim() : "";
+      if (argsVal) {
+        serverData.args = argsVal.split(/[\s,]+/).filter(Boolean);
+      } else {
+        serverData.args = [];
+      }
+
+      var envObj = getEnvVarsFromRows();
+      if (Object.keys(envObj).length > 0) {
+        serverData.env = envObj;
+      }
+    }
+
+    var cwdInput = document.getElementById("mcpCwd");
+    var cwdVal = cwdInput ? cwdInput.value.trim() : "";
+    if (cwdVal) {
+      serverData.cwd = cwdVal;
+    }
+    var timeoutInput = document.getElementById("mcpTimeout");
+    var timeoutVal = timeoutInput ? parseInt(timeoutInput.value, 10) : 15;
+    if (timeoutVal && !isNaN(timeoutVal)) {
+      serverData.timeout = timeoutVal;
+    }
+
+    if (errEl) {
+      errEl.textContent = "Connecting to MCP server and discovering tools...";
+      errEl.style.display = "block";
+      errEl.style.color = "#d29922";
+    }
+
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "addMcpServer",
+        server: serverData
+      });
+    }
+  }
+
+  function handleToggleMcpServer(serverId, enabled) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "toggleMcpServer",
+        serverId: serverId,
+        enabled: enabled
+      });
+    }
+  }
+
+  function handleRemoveMcpServer(serverId) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "removeMcpServer",
+        serverId: serverId
+      });
+    }
+  }
+
+  function handleRefreshMcpServer(serverId) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "refreshMcpServer",
+        serverId: serverId
+      });
+    }
+  }
+
+  function handleToggleMcpTool(serverId, toolName, enabled) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "toggleMcpTool",
+        serverId: serverId,
+        toolName: toolName,
+        enabled: enabled
+      });
+    }
+  }
+
+  function handleToggleBuiltinTool(toolName, enabled) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "toggleBuiltinTool",
+        toolName: toolName,
+        enabled: enabled
+      });
+    }
+  }
+
+  function handleToggleAllBuiltinTools(enabled) {
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "toggleAllBuiltinTools",
+        enabled: enabled
+      });
+    }
+  }
+
+  function renderMcpPanel(servers, builtinTools) {
+    var container = document.getElementById("mcpServerList");
+    if (!container) return;
+
+    var sList = Array.isArray(servers) ? servers : (state.mcpServers || []);
+    var bTools = Array.isArray(builtinTools) ? builtinTools : (state.builtinAgentTools || []);
+
+    var html = "";
+
+    // ── 1. Core Agent Built-in Tools Card ──────────────────────────────
+    if (bTools.length > 0) {
+      var bActiveCount = 0;
+      for (var bi = 0; bi < bTools.length; bi++) {
+        if (bTools[bi].enabled !== false) bActiveCount++;
+      }
+
+      var catIcons = {
+        filesystem: '📁',
+        search: '🔍',
+        terminal: '💻',
+        planning: '📋',
+        utility: '⚡',
+        database: '🗄️'
+      };
+      var catLabels = {
+        filesystem: 'Filesystem Tools',
+        search: 'Search & Code Intelligence',
+        terminal: 'Terminal & Command Execution',
+        planning: 'Plan & Checklist Management',
+        utility: 'Utilities & Network',
+        database: 'Database Queries'
+      };
+
+      var catMap = {};
+      for (var ti = 0; ti < bTools.length; ti++) {
+        var bt = bTools[ti];
+        var cat = bt.category || 'utility';
+        if (!catMap[cat]) catMap[cat] = [];
+        catMap[cat].push(bt);
+      }
+
+      var isOpen = state.builtinToolsOpen === true;
+      var openAttr = isOpen ? "open" : "";
+
+      html += '<div class="cr-builtin-tools-card">' +
+        '<details class="cr-builtin-tools-dropdown" id="crBuiltinToolsDropdown" ' + openAttr + '>' +
+          '<summary class="cr-builtin-tools-summary">' +
+            '<div class="cr-builtin-card-title-group">' +
+              '<svg class="cr-builtin-card-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e6edf3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>' +
+              '</svg>' +
+              '<strong class="cr-builtin-card-title">Core Agent Built-in Tools</strong>' +
+            '</div>' +
+            '<div class="cr-builtin-card-right-group">' +
+              '<span class="cr-builtin-counter-badge">' + bActiveCount + '/' + bTools.length + ' active</span>' +
+              '<svg class="cr-builtin-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>' +
+            '</div>' +
+          '</summary>' +
+          '<div class="cr-builtin-dropdown-body">' +
+            '<div class="cr-builtin-controls-bar">' +
+              '<div class="cr-builtin-search-wrap">' +
+                '<svg class="cr-builtin-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+                '<input type="text" id="crBuiltinToolsSearch" class="cr-builtin-search-input" placeholder="Search built-in tools...">' +
+              '</div>' +
+              '<div class="cr-builtin-bulk-btns">' +
+                '<button type="button" class="cr-mini-text-btn cr-builtin-bulk-btn" data-action="enable-all">Enable All</button>' +
+                '<button type="button" class="cr-mini-text-btn cr-builtin-bulk-btn" data-action="disable-all">Disable All</button>' +
+              '</div>' +
+            '</div>';
+
+      for (var catKey in catMap) {
+        var cList = catMap[catKey];
+        var cActiveCount = 0;
+        for (var ci = 0; ci < cList.length; ci++) {
+          if (cList[ci].enabled !== false) cActiveCount++;
+        }
+        var icon = catIcons[catKey] || '🔧';
+        var label = catLabels[catKey] || catKey.toUpperCase();
+
+        html += '<details class="cr-builtin-category-group" data-cat="' + esc(catKey) + '" open>' +
+          '<summary class="cr-builtin-category-summary">' +
+            '<div class="cr-builtin-category-left">' +
+              '<span class="cr-builtin-category-icon">' + icon + '</span>' +
+              '<strong class="cr-builtin-category-name">' + esc(label) + '</strong>' +
+              '<span class="cr-builtin-category-count">(' + cActiveCount + '/' + cList.length + ' active)</span>' +
+            '</div>' +
+            '<svg class="cr-builtin-category-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
+          '</summary>' +
+          '<div class="cr-builtin-category-tools">';
+
+        for (var cj = 0; cj < cList.length; cj++) {
+          var tObj = cList[cj];
+          var isActive = tObj.enabled !== false;
+          var checkedAttr = isActive ? "checked" : "";
+          var permText = tObj.dangerous ? "ASK PERMISSION" : "SAFE";
+
+          html += '<div class="cr-builtin-tool-row' + (isActive ? ' active-tool' : ' disabled-tool') + '" data-tool-name="' + esc(tObj.name) + '" data-tool-desc="' + esc(tObj.description || '') + '">' +
+            '<div class="cr-builtin-tool-header-row">' +
+              '<div class="cr-builtin-tool-left">' +
+                '<label class="cr-switch sm">' +
+                  '<input type="checkbox" class="cr-builtin-tool-toggle cr-switch-input" data-tool="' + esc(tObj.name) + '" ' + checkedAttr + '>' +
+                  '<span class="cr-switch-slider"></span>' +
+                '</label>' +
+                '<span class="cr-builtin-tool-name">' + esc(tObj.name) + '</span>' +
+              '</div>' +
+              '<div class="cr-builtin-tool-badges">' +
+                '<span class="cr-builtin-perm-tag ' + (tObj.dangerous ? 'dangerous' : 'safe') + '">' + esc(permText) + '</span>' +
+                '<span class="cr-mcp-tool-status ' + (isActive ? 'active' : 'inactive') + '">' +
+                  (isActive ? 'Active' : 'Disabled') +
+                '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="cr-builtin-tool-desc">' + esc(tObj.description || "Core agent tool.") + '</div>' +
+          '</div>';
+        }
+
+        html += '</div></details>';
+      }
+
+      html += '<div id="crBuiltinNoMatch" class="cr-builtin-no-match" style="display:none;">No matching tools found.</div>';
+      html += '</div></details></div>';
+    }
+
+    // ── 2. MCP SERVERS Header Row with Search ───────────────────────────
+    html += '<div class="cr-mcp-servers-header-row">' +
+      '<div class="cr-mcp-servers-title">MCP SERVERS</div>' +
+      '<div class="cr-mcp-search-wrap">' +
+        '<svg class="cr-mcp-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+        '<input type="text" id="crMcpServerSearch" class="cr-mcp-search-input" placeholder="Search servers...">' +
+      '</div>' +
+    '</div>';
+
+    if (sList.length === 0) {
+      html += '<div class="cr-mcp-empty">No MCP servers added yet. Click "+ Add MCP" to connect custom tools.</div>';
+    } else {
+      for (var i = 0; i < sList.length; i++) {
+        var s = sList[i];
+        var isBuiltin = !!s.builtin;
+        var isConnected = !!s.connected;
+        var isEnabled = s.enabled !== false;
+        var statusDotClass = !isEnabled ? "disabled" : (isConnected ? "connected" : (s.connecting ? "connecting" : "error"));
+        var transportLabel = (s.transport || "stdio").toUpperCase();
+        var isChecked = isEnabled ? "checked" : "";
+        var detailLine = s.transport === "sse" ? (s.url || "") : ((s.command || "") + " " + ((s.args || []).join(" ")));
+        var permBadge = s.alwaysAllow ? "ALWAYS ALLOWED" : "ASK PERMISSION";
+        var typeBadge = isBuiltin ? '<span class="cr-mcp-badge-free">100% FREE</span>' : '<span class="cr-mcp-badge-local">CUSTOM</span>';
+
+        html += '<div class="cr-mcp-card' + (!isEnabled ? ' disabled-server' : '') + '" data-server-id="' + esc(s.id) + '" data-server-name="' + esc(s.name || s.id) + '" data-server-desc="' + esc(s.description || '') + '" data-server-cmd="' + esc(detailLine) + '">' +
+          '<div class="cr-mcp-card-top-row">' +
+            '<div class="cr-mcp-card-left-group">' +
+              '<span class="cr-mcp-status-dot ' + statusDotClass + '" title="' + (isEnabled ? (isConnected ? 'Connected' : 'Connecting/Error') : 'Disabled') + '"></span>' +
+              '<strong class="cr-mcp-card-name">' + esc(s.name || s.id) + '</strong>' +
+              typeBadge +
+            '</div>' +
+            '<div class="cr-mcp-card-right-group">' +
+              '<label class="cr-switch sm" title="Enable or disable ' + esc(s.name || s.id) + '">' +
+                '<input type="checkbox" class="cr-mcp-toggle cr-switch-input" data-server="' + esc(s.id) + '" ' + isChecked + '>' +
+                '<span class="cr-switch-slider"></span>' +
+              '</label>' +
+              '<span class="cr-mcp-toggle-status-text">' + (isEnabled ? 'Enabled' : 'Disabled') + '</span>' +
+              '<div class="cr-mcp-dots-menu-wrap">' +
+                '<button type="button" class="cr-mcp-dots-btn" data-server="' + esc(s.id) + '" title="Server actions">⋮</button>' +
+                '<div class="cr-mcp-dropdown-menu" id="mcpMenu_' + esc(s.id) + '" style="display:none;">' +
+                  '<button type="button" class="cr-mcp-menu-item cr-mcp-edit-btn" data-server="' + esc(s.id) + '">✏️ Edit Server</button>' +
+                  '<button type="button" class="cr-mcp-menu-item cr-mcp-refresh-btn" data-server="' + esc(s.id) + '">↻ Reconnect & Refresh</button>';
+
+        if (!isBuiltin) {
+          html += '<button type="button" class="cr-mcp-menu-item cr-mcp-delete-btn" data-server="' + esc(s.id) + '">🗑️ Remove Server</button>';
+        }
+
+        html += '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        html += '<div class="cr-mcp-tags-row">' +
+          '<span class="cr-mcp-pill-stdio">' + esc(transportLabel) + '</span>' +
+          '<span class="cr-mcp-pill-perm">' + esc(permBadge) + '</span>' +
+        '</div>';
+
+        if (s.description) {
+          html += '<div class="cr-mcp-card-desc">' + esc(s.description) + '</div>';
+        }
+
+        html += '<div class="cr-mcp-cmd-box">' +
+          '<code class="cr-mcp-cmd-code">' + esc(detailLine) + '</code>' +
+          '<button type="button" class="cr-mcp-copy-btn" data-copy="' + esc(detailLine) + '" title="Copy command">' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+          '</button>' +
+        '</div>';
+
+        if (s.error) {
+          html += '<div class="cr-mcp-card-error"><strong>Error:</strong> ' + esc(s.error) + '</div>';
+        }
+
+        var tools = s.tools || [];
+        if (tools.length > 0) {
+          var activeCount = 0;
+          for (var ac = 0; ac < tools.length; ac++) {
+            if (tools[ac].enabled !== false) activeCount++;
+          }
+          html += '<details class="cr-mcp-tools-details">' +
+            '<summary class="cr-mcp-tools-summary">' +
+              '<span class="cr-mcp-tools-caret">▶</span>' +
+              '<span>Tools (' + activeCount + '/' + tools.length + ' active)</span>' +
+            '</summary>' +
+            '<div class="cr-mcp-tools-list">';
+          for (var t = 0; t < tools.length; t++) {
+            var toolItem = tools[t];
+            var isToolActive = toolItem.enabled !== false;
+            var toolChecked = isToolActive ? "checked" : "";
+            html += '<div class="cr-mcp-tool-item' + (isToolActive ? '' : ' disabled-tool') + '">' +
+              '<div class="cr-mcp-tool-top-row">' +
+                '<label class="cr-mcp-tool-check-label">' +
+                  '<input type="checkbox" class="cr-mcp-tool-toggle" data-server="' + esc(s.id) + '" data-tool="' + esc(toolItem.name) + '" ' + toolChecked + '> ' +
+                  '<strong class="cr-mcp-tool-name">' + esc(toolItem.name) + '</strong>' +
+                '</label>' +
+                '<span class="cr-mcp-tool-status ' + (isToolActive ? 'active' : 'inactive') + '">' +
+                  (isToolActive ? 'Active' : 'Disabled') +
+                '</span>' +
+              '</div>' +
+              '<div class="cr-mcp-tool-desc">' + esc(toolItem.description || "No description provided.") + '</div>' +
+            '</div>';
+          }
+          html += '</div></details>';
+        }
+
+        html += '</div>';
+      }
+    }
+
+    container.innerHTML = html;
+
+    function onBuiltinToolToggleChange() {
+      var tName = this.getAttribute("data-tool");
+      handleToggleBuiltinTool(tName, this.checked);
+    }
+
+    function onToggleChange() {
+      var sId = this.getAttribute("data-server");
+      handleToggleMcpServer(sId, this.checked);
+    }
+
+    function onEditClick(e) {
+      if (e) e.stopPropagation();
+      var sId = this.getAttribute("data-server");
+      var menu = document.getElementById("mcpMenu_" + sId);
+      if (menu) menu.style.display = "none";
+      var sObj = null;
+      for (var si = 0; si < sList.length; si++) {
+        if (sList[si].id === sId) {
+          sObj = sList[si];
+          break;
+        }
+      }
+      if (sObj) openEditMcpModal(sObj);
+    }
+
+    function onDeleteClick(e) {
+      if (e) e.stopPropagation();
+      var sId = this.getAttribute("data-server");
+      var menu = document.getElementById("mcpMenu_" + sId);
+      if (menu) menu.style.display = "none";
+      handleRemoveMcpServer(sId);
+    }
+
+    function onRefreshClick(e) {
+      if (e) e.stopPropagation();
+      var sId = this.getAttribute("data-server");
+      var menu = document.getElementById("mcpMenu_" + sId);
+      if (menu) menu.style.display = "none";
+      handleRefreshMcpServer(sId);
+    }
+
+    function onToolToggleChange() {
+      var sId = this.getAttribute("data-server");
+      var tName = this.getAttribute("data-tool");
+      handleToggleMcpTool(sId, tName, this.checked);
+    }
+
+    function onBulkBtnClick(e) {
+      if (e) e.stopPropagation();
+      var action = this.getAttribute("data-action");
+      if (action === "enable-all") {
+        handleToggleAllBuiltinTools(true);
+      } else if (action === "disable-all") {
+        handleToggleAllBuiltinTools(false);
+      }
+    }
+
+    function onMainDropdownToggle() {
+      state.builtinToolsOpen = this.open;
+    }
+
+    function onSearchInput(e) {
+      var query = (e.target.value || "").trim().toLowerCase();
+      var toolRows = container.querySelectorAll(".cr-builtin-tool-row");
+      var matchedTotal = 0;
+      var catGroups = container.querySelectorAll(".cr-builtin-category-group");
+
+      for (var tri = 0; tri < toolRows.length; tri++) {
+        var tr = toolRows[tri];
+        var tName = (tr.getAttribute("data-tool-name") || "").toLowerCase();
+        var tDesc = (tr.getAttribute("data-tool-desc") || "").toLowerCase();
+        var matches = !query || tName.indexOf(query) !== -1 || tDesc.indexOf(query) !== -1;
+        tr.style.display = matches ? "" : "none";
+        if (matches) matchedTotal++;
+      }
+
+      for (var cgi = 0; cgi < catGroups.length; cgi++) {
+        var cg = catGroups[cgi];
+        var visibleChildren = cg.querySelectorAll(".cr-builtin-tool-row");
+        var hasVisible = false;
+        for (var vci = 0; vci < visibleChildren.length; vci++) {
+          if (visibleChildren[vci].style.display !== "none") {
+            hasVisible = true;
+            break;
+          }
+        }
+        cg.style.display = hasVisible ? "" : "none";
+      }
+
+      var noMatchEl = container.querySelector("#crBuiltinNoMatch");
+      if (noMatchEl) {
+        noMatchEl.style.display = (matchedTotal === 0 && query) ? "block" : "none";
+      }
+    }
+
+    function onServerSearchInput(e) {
+      var q = (e.target.value || "").trim().toLowerCase();
+      var cards = container.querySelectorAll(".cr-mcp-card");
+      for (var ci = 0; ci < cards.length; ci++) {
+        var c = cards[ci];
+        var sName = (c.getAttribute("data-server-name") || "").toLowerCase();
+        var sDesc = (c.getAttribute("data-server-desc") || "").toLowerCase();
+        var sCmd = (c.getAttribute("data-server-cmd") || "").toLowerCase();
+        var match = !q || sName.indexOf(q) !== -1 || sDesc.indexOf(q) !== -1 || sCmd.indexOf(q) !== -1;
+        c.style.display = match ? "" : "none";
+      }
+    }
+
+    function onCopyCmdClick(e) {
+      if (e) e.stopPropagation();
+      var text = this.getAttribute("data-copy");
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      }
+      var btn = this;
+      btn.innerHTML = '<span style="color:#3fb950;font-size:11px;">✓</span>';
+      setTimeout(function restoreCopyIcon() {
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      }, 1200);
+    }
+
+    function onDotsBtnClick(e) {
+      if (e) e.stopPropagation();
+      var sId = this.getAttribute("data-server");
+      var menu = document.getElementById("mcpMenu_" + sId);
+      if (!menu) return;
+      var isShowing = menu.style.display === "block";
+      var allMenus = container.querySelectorAll(".cr-mcp-dropdown-menu");
+      for (var mi = 0; mi < allMenus.length; mi++) {
+        allMenus[mi].style.display = "none";
+      }
+      menu.style.display = isShowing ? "none" : "block";
+    }
+
+    function onContainerDocClick() {
+      var allMenus = container.querySelectorAll(".cr-mcp-dropdown-menu");
+      for (var mi = 0; mi < allMenus.length; mi++) {
+        allMenus[mi].style.display = "none";
+      }
+    }
+
+    container.onclick = onContainerDocClick;
+
+    var mainDropdown = container.querySelector("#crBuiltinToolsDropdown");
+    if (mainDropdown) {
+      mainDropdown.ontoggle = onMainDropdownToggle;
+    }
+
+    var searchInput = container.querySelector("#crBuiltinToolsSearch");
+    if (searchInput) {
+      searchInput.oninput = onSearchInput;
+    }
+
+    var serverSearch = container.querySelector("#crMcpServerSearch");
+    if (serverSearch) {
+      serverSearch.oninput = onServerSearchInput;
+    }
+
+    var copyBtns = container.querySelectorAll(".cr-mcp-copy-btn");
+    for (var cpi = 0; cpi < copyBtns.length; cpi++) {
+      copyBtns[cpi].onclick = onCopyCmdClick;
+    }
+
+    var dotsBtns = container.querySelectorAll(".cr-mcp-dots-btn");
+    for (var dti = 0; dti < dotsBtns.length; dti++) {
+      dotsBtns[dti].onclick = onDotsBtnClick;
+    }
+
+    var bulkBtns = container.querySelectorAll(".cr-builtin-bulk-btn");
+    for (var bii = 0; bii < bulkBtns.length; bii++) {
+      bulkBtns[bii].onclick = onBulkBtnClick;
+    }
+
+    var bToggles = container.querySelectorAll(".cr-builtin-tool-toggle");
+    for (var bIdx = 0; bIdx < bToggles.length; bIdx++) {
+      bToggles[bIdx].onchange = onBuiltinToolToggleChange;
+    }
+
+    var toggles = container.querySelectorAll(".cr-mcp-toggle");
+    for (var j = 0; j < toggles.length; j++) {
+      toggles[j].onchange = onToggleChange;
+    }
+
+    var editBtns = container.querySelectorAll(".cr-mcp-edit-btn");
+    for (var eb = 0; eb < editBtns.length; eb++) {
+      editBtns[eb].onclick = onEditClick;
+    }
+
+    var delBtns = container.querySelectorAll(".cr-mcp-delete-btn");
+    for (var k = 0; k < delBtns.length; k++) {
+      delBtns[k].onclick = onDeleteClick;
+    }
+
+    var refBtns = container.querySelectorAll(".cr-mcp-refresh-btn");
+    for (var m = 0; m < refBtns.length; m++) {
+      refBtns[m].onclick = onRefreshClick;
+    }
+
+    var toolToggles = container.querySelectorAll(".cr-mcp-tool-toggle");
+    for (var n = 0; n < toolToggles.length; n++) {
+      toolToggles[n].onchange = onToolToggleChange;
+    }
+  }
+
   function formatRulesTimestamp(d) {
     if (!d) d = new Date();
     var h = d.getHours();
@@ -1715,13 +2857,23 @@
     if (dot) dot.className = "cr-status-dot";
     if (text) text.textContent = "Online";
     var allModels = [];
+    state.modelContextWindows = state.modelContextWindows || {};
     if (data.models) {
       for (var i = 0; i < data.models.length; i++) {
-        allModels.push(data.models[i].name);
+        var mItem = data.models[i];
+        var mName = typeof mItem === 'object' ? (mItem.name || mItem.id || '') : String(mItem);
+        if (mName) allModels.push(mName);
+        if (typeof mItem === 'object' && mName) {
+          var ctx = mItem.context_window || mItem.context_length || (mItem.details && mItem.details.context_length);
+          if (ctx) state.modelContextWindows[mName] = ctx;
+        }
       }
     }
     state.models = allModels;
     state.modelsByProvider = { ollama: allModels };
+    try {
+      localStorage.setItem('coderun_model_context_windows', JSON.stringify(state.modelContextWindows));
+    } catch (_) {}
     renderModelOptions();
   }
 
@@ -2559,7 +3711,25 @@
 
       if (message.online && message.models) {
         delete state.providerErrors[currentProv];
-        state.modelsByProvider[currentProv] = message.models;
+        var parsedModels = [];
+        state.modelContextWindows = state.modelContextWindows || {};
+        for (var mi = 0; mi < message.models.length; mi++) {
+          var item = message.models[mi];
+          if (typeof item === 'object' && item !== null) {
+            var mId = item.id || item.name || '';
+            if (mId) parsedModels.push(mId);
+            var ctx = item.context_window || item.context_length || item.inputTokenLimit;
+            if (ctx && mId) {
+              state.modelContextWindows[mId] = ctx;
+            }
+          } else if (item) {
+            parsedModels.push(String(item));
+          }
+        }
+        state.modelsByProvider[currentProv] = parsedModels;
+        try {
+          localStorage.setItem('coderun_model_context_windows', JSON.stringify(state.modelContextWindows));
+        } catch (_) {}
 
         if (isActiveProvider) {
           state.isOnline = true;
@@ -2711,6 +3881,22 @@
         setRulesStatus("workspace", "saved");
       } else {
         setRulesStatus("workspace", "clean");
+      }
+    }
+    if (message.type === "mcpServersLoaded") {
+      state.mcpServers = message.servers || [];
+      if (message.builtinAgentTools) {
+        state.builtinAgentTools = message.builtinAgentTools;
+      }
+      renderMcpPanel(state.mcpServers, state.builtinAgentTools);
+      closeAddMcpModal();
+    }
+    if (message.type === "mcpServerError") {
+      var mcpErrEl = document.getElementById("mcpModalError");
+      if (mcpErrEl) {
+        mcpErrEl.textContent = message.error || "An error occurred while connecting to MCP server.";
+        mcpErrEl.style.display = "block";
+        mcpErrEl.style.color = "#f48771";
       }
     }
   }

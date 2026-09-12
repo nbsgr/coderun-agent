@@ -25,6 +25,7 @@ import * as events from './agents/events.js';
 import { buildCompactCheckpoint } from './context/compactionManager.js';
 import * as executionTrace from './execution/executionTrace.js';
 import * as rulesLoader from './context/rulesLoader.js';
+import * as mcpManager from './mcp/mcpManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,6 +184,13 @@ export async function activate(context) {
     await projectKnowledge.initialize(context);
   } catch (err) {
     console.error('[CODERUN] projectKnowledge init failed:', err);
+  }
+
+  // Initialize MCP Manager and connect enabled servers
+  try {
+    await mcpManager.initMcpManager();
+  } catch (mcpInitErr) {
+    console.error('[CODERUN] MCP Manager init failed:', mcpInitErr);
   }
 
 
@@ -444,6 +452,7 @@ async function sendCurrentSettings(webview) {
       streaming: cfg.streaming,
       showThinking: cfg.showThinking,
       confirmDangerous: cfg.confirmDangerous,
+      enableTools: cfg.enableTools !== false,
       hasApiKey: hasKey
     },
     providerConfigs: providerConfigs,
@@ -472,6 +481,13 @@ async function handleFrontendMessage(message, webview) {
         webview.postMessage({
           type: 'permissionState',
           decisions: permissions.listAlwaysDecisions()
+        });
+        var initialMcpServers = await mcpManager.getServersSummary();
+        var initialBuiltinTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: initialMcpServers,
+          builtinAgentTools: initialBuiltinTools
         });
       } catch (e) {
         console.error('[CODERUN] Failed to send initial data:', e);
@@ -795,6 +811,7 @@ async function handleFrontendMessage(message, webview) {
           if (message.settings.streaming !== undefined) settingsToUpdate.streaming = message.settings.streaming;
           if (message.settings.showThinking !== undefined) settingsToUpdate.showThinking = message.settings.showThinking;
           if (message.settings.confirmDangerous !== undefined) settingsToUpdate.confirmDangerous = message.settings.confirmDangerous;
+          if (message.settings.enableTools !== undefined) settingsToUpdate.enableTools = message.settings.enableTools;
 
           console.log('[CODERUN] Updating VS Code settings:', JSON.stringify(settingsToUpdate));
           await config.updateSettings(settingsToUpdate, vscode.ConfigurationTarget.Global);
@@ -1041,6 +1058,138 @@ async function handleFrontendMessage(message, webview) {
       break;
     }
 
+    case 'loadMcpServers': {
+      try {
+        var mcpList = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: mcpList,
+          builtinAgentTools: bTools
+        });
+      } catch (mcpErr) {
+        console.error('[CODERUN] Failed to load MCP servers:', mcpErr);
+      }
+      break;
+    }
+
+    case 'addMcpServer': {
+      try {
+        var addRes = await mcpManager.addServer(message.server);
+        var updatedServers = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: updatedServers,
+          builtinAgentTools: bTools,
+          success: true,
+          message: 'MCP server added successfully'
+        });
+      } catch (addErr) {
+        webview.postMessage({
+          type: 'mcpServerError',
+          error: addErr ? addErr.message : String(addErr)
+        });
+      }
+      break;
+    }
+
+    case 'removeMcpServer': {
+      try {
+        await mcpManager.removeServer(message.serverId);
+        var remainingServers = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: remainingServers,
+          builtinAgentTools: bTools
+        });
+      } catch (remErr) {
+        console.error('[CODERUN] Failed to remove MCP server:', remErr);
+      }
+      break;
+    }
+
+    case 'toggleMcpServer': {
+      try {
+        await mcpManager.toggleServer(message.serverId, message.enabled);
+        var toggledServers = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: toggledServers,
+          builtinAgentTools: bTools
+        });
+      } catch (togErr) {
+        console.error('[CODERUN] Failed to toggle MCP server:', togErr);
+      }
+      break;
+    }
+
+    case 'toggleMcpTool': {
+      try {
+        await mcpManager.toggleServerTool(message.serverId, message.toolName, message.enabled);
+        var toolToggledServers = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: toolToggledServers,
+          builtinAgentTools: bTools
+        });
+      } catch (toolTogErr) {
+        console.error('[CODERUN] Failed to toggle MCP tool:', toolTogErr);
+      }
+      break;
+    }
+
+    case 'toggleBuiltinTool': {
+      try {
+        await mcpManager.toggleBuiltinTool(message.toolName, message.enabled);
+        var currentServers = await mcpManager.getServersSummary();
+        var updatedBuiltinTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: currentServers,
+          builtinAgentTools: updatedBuiltinTools
+        });
+      } catch (builtinToolErr) {
+        console.error('[CODERUN] Failed to toggle builtin agent tool:', builtinToolErr);
+      }
+      break;
+    }
+
+    case 'toggleAllBuiltinTools': {
+      try {
+        await mcpManager.toggleAllBuiltinTools(message.enabled);
+        var curServers = await mcpManager.getServersSummary();
+        var allBTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: curServers,
+          builtinAgentTools: allBTools
+        });
+      } catch (allBuiltinErr) {
+        console.error('[CODERUN] Failed to toggle all builtin agent tools:', allBuiltinErr);
+      }
+      break;
+    }
+
+    case 'refreshMcpServer': {
+      try {
+        await mcpManager.refreshServer(message.serverId);
+        var refreshedServers = await mcpManager.getServersSummary();
+        var bTools = mcpManager.getBuiltinAgentTools();
+        webview.postMessage({
+          type: 'mcpServersLoaded',
+          servers: refreshedServers,
+          builtinAgentTools: bTools
+        });
+      } catch (refErr) {
+        console.error('[CODERUN] Failed to refresh MCP server:', refErr);
+      }
+      break;
+    }
+
     default: {
       console.log('[CODERUN] Unknown message type:', msgType);
     }
@@ -1173,6 +1322,9 @@ export async function deactivate() {
   permissions.cancelAllPermissions();
   try {
     await projectKnowledge.dispose();
+  } catch (_) {}
+  try {
+    mcpManager.stopAllServers();
   } catch (_) {}
   currentAbortController = null;
 }

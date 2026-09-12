@@ -23,6 +23,8 @@ import * as permissions from '../src/tools/permissions.js';
 import * as toolRegistry from '../src/tools/toolRegistry.js';
 import { registerAllTools } from '../src/tools/tools.js';
 import * as approvalSystem from '../src/tools/approvalSystem.js';
+import { createMcpClient } from '../src/mcp/mcpClient.js';
+import * as mcpManager from '../src/mcp/mcpManager.js';
 
 console.log('================================================================');
 console.log('=== STARTING COMPLETE ADVERSARIAL REGRESSION TEST SUITE ===');
@@ -723,13 +725,82 @@ var normalWithoutConfirm = approvalSystem.requiresApproval('run_terminal', { com
 assert.strictEqual(normalWithoutConfirm, false, 'Normal command does not require approval when confirmDangerous is false');
 console.log('✓ Vector 43 Passed: Terminal tool permission checks properly enforced across safety policies.');
 
+// 44. MCP Protocol Handshake, Dynamic Registration & Permissions
+console.log('--- TEST 44: MCP Protocol Handshake, Dynamic Registration & Permissions ---');
+var mcpScratchDir = path.resolve('scratch/test_adv_suite/mcp');
+if (!fs.existsSync(mcpScratchDir)) {
+  fs.mkdirSync(mcpScratchDir, { recursive: true });
+}
+var mockServerFile = path.join(mcpScratchDir, 'server.cjs');
+var mockServerContent = [
+  "const readline = require('readline');",
+  "const rl = readline.createInterface({ input: process.stdin, terminal: false });",
+  "rl.on('line', function handleLine(line) {",
+  "  const str = line.trim();",
+  "  if (!str) return;",
+  "  try {",
+  "    const msg = JSON.parse(str);",
+  "    if (msg.method === 'initialize') {",
+  "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'adv-mcp', version: '1.0' } } }) + '\\n');",
+  "    } else if (msg.method === 'tools/list') {",
+  "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'adv_echo', description: 'Echo tool', inputSchema: { type: 'object', properties: { msg: { type: 'string' } }, required: ['msg'] } }] } }) + '\\n');",
+  "    } else if (msg.method === 'tools/call') {",
+  "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'Echo: ' + (msg.params.arguments.msg || '') }] } }) + '\\n');",
+  "    }",
+  "  } catch (_) {}",
+  "});"
+].join('\n');
+fs.writeFileSync(mockServerFile, mockServerContent, 'utf8');
+
+var testMcpClient = createMcpClient({
+  name: 'adv-mcp',
+  transport: 'stdio',
+  command: 'node',
+  args: [mockServerFile]
+});
+var mcpInit = await testMcpClient.start();
+assert.ok(mcpInit, 'MCP client initialized');
+var mcpTools = await testMcpClient.listTools();
+assert.strictEqual(mcpTools.tools.length, 1, 'Discovered 1 MCP tool');
+var mcpCall = await testMcpClient.callTool('adv_echo', { msg: 'hello' });
+assert.ok(mcpCall.content[0].text.includes('Echo: hello'), 'MCP tool call returned expected echo output');
+testMcpClient.stop();
+
+var addMcpRes = await mcpManager.addServer({
+  id: 'adv_test_srv',
+  name: 'adv_test_srv',
+  transport: 'stdio',
+  command: 'node',
+  args: [mockServerFile],
+  enabled: true,
+  alwaysAllow: false
+});
+assert.ok(addMcpRes && addMcpRes.result && addMcpRes.result.success, 'MCP server added via mcpManager');
+var mcpToolName = 'mcp__adv_test_srv__adv_echo';
+assert.strictEqual(toolRegistry.has(mcpToolName), true, 'Tool registered in toolRegistry');
+assert.strictEqual(approvalSystem.requiresApproval(mcpToolName, { msg: 'hi' }), true, 'MCP tool requires human approval by default');
+
+var mcpGen = toolRegistry.execute(mcpToolName, { msg: 'test' }, { sessionId: 'test_mcp_sess' });
+var mcpAct = await mcpGen.next();
+assert.strictEqual(mcpAct.value.type, 'action', 'Yields action event');
+var mcpRes = await mcpGen.next();
+assert.strictEqual(mcpRes.value.type, 'tool_result', 'Yields tool_result event');
+assert.ok(mcpRes.value.content.includes('Echo: test'), 'Result contains tool output');
+
+await mcpManager.removeServer('adv_test_srv');
+assert.strictEqual(toolRegistry.has(mcpToolName), false, 'Tool unregistered after server removal');
+console.log('✓ Vector 44 Passed: MCP client handshake, tool discovery, dynamic registration, permissions, and execution verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
 } catch (_) {}
+try {
+  mcpManager.stopAllServers();
+} catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 43 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 44 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

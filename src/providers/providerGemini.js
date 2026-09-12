@@ -155,7 +155,13 @@ export async function listModels(config) {
   if (data.models) {
     for (var j = 0; j < data.models.length; j++) {
       var name = data.models[j].name || '';
-      nativeModels.push(name.replace(/^models\//, ''));
+      var cleanName = name.replace(/^models\//, '');
+      var ctx = data.models[j].inputTokenLimit || 0;
+      if (ctx) {
+        nativeModels.push({ id: cleanName, context_window: ctx });
+      } else {
+        nativeModels.push(cleanName);
+      }
     }
   }
   return nativeModels;

@@ -46,32 +46,49 @@ export async function* chat(config, messages, tools, reqOpts) {
 }
 
 export async function listModels(config) {
+  // Try native /api/tags first — raw fetch preserves context_length in details
+  try {
+    var baseUrl = getCleanOllamaBaseUrl(config.baseUrl);
+    var url = baseUrl + '/api/tags';
+    var res = await fetch(url);
+    if (res.ok) {
+      var data = await safeReadJson(res, 'Ollama');
+      var tagModels = [];
+      if (data.models) {
+        for (var j = 0; j < data.models.length; j++) {
+          var item = data.models[j];
+          var name = item.name;
+          var ctx2 = (item.details && item.details.context_length) || item.context_length || 0;
+          if (ctx2) {
+            tagModels.push({ id: name, context_window: ctx2 });
+          } else {
+            tagModels.push(name);
+          }
+        }
+      }
+      if (tagModels.length) return tagModels;
+    }
+  } catch (_) {
+    // Fall through to OpenAI SDK path
+  }
+
   try {
     var client = createClient(config);
     var response = await client.models.list();
     var models = [];
     if (response && response.data) {
       for (var i = 0; i < response.data.length; i++) {
-        models.push(response.data[i].id || response.data[i].name);
+        var mItem = response.data[i];
+        var mId = mItem.id || mItem.name;
+        models.push(mId);
       }
       if (models.length) return models;
     }
-  } catch (_) {
-    // Fallback to native /api/tags if OpenAI endpoint fails
+  } catch (_2) {
+    // Both paths failed
   }
 
-  var baseUrl = getCleanOllamaBaseUrl(config.baseUrl);
-  var url = baseUrl + '/api/tags';
-  var res = await fetch(url);
-  if (!res.ok) throw await handleApiResponseError(res, 'Ollama');
-  var data = await safeReadJson(res, 'Ollama');
-  var tagModels = [];
-  if (data.models) {
-    for (var j = 0; j < data.models.length; j++) {
-      tagModels.push(data.models[j].name);
-    }
-  }
-  return tagModels;
+  throw new Error('Could not list Ollama models. Check that Ollama is running.');
 }
 
 export async function embeddings(config, texts) {

@@ -21,7 +21,8 @@ export function getConfig() {
     autoScroll: cfg.get('autoScroll', true),
     confirmDangerous: cfg.get('confirmDangerous', true),
     organization: cfg.get('organization', null),
-    project: cfg.get('project', null)
+    project: cfg.get('project', null),
+    enableTools: cfg.get('enableTools', true)
   };
   return _cached;
 }
@@ -41,7 +42,8 @@ export function getProviderConfig() {
     maxIterations: cfg.maxIterations,
     needsKey: defaults.needsKey,
     organization: cfg.organization,
-    project: cfg.project
+    project: cfg.project,
+    enableTools: cfg.enableTools !== false
   };
 }
 

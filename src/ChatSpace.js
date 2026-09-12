@@ -270,6 +270,19 @@
       }
     }
     if (chatCtx.controlsPanel) chatCtx.controlsPanel.style.display = 'none';
+
+    var baseUsage = (chatCtx.conversation && chatCtx.conversation.usage) || S.sessionUsage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, context_tokens: 0 };
+    S.turnStartUsage = {
+      prompt_tokens: baseUsage.prompt_tokens || 0,
+      completion_tokens: baseUsage.completion_tokens || 0,
+      total_tokens: baseUsage.total_tokens || 0,
+      context_tokens: baseUsage.context_tokens || 0
+    };
+    S.currentTurnUsage = {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0
+    };
   }
 
   function parseChecklistItems(planStr) {
@@ -292,16 +305,31 @@
     return items;
   }
 
+  function extractPlanString(plan) {
+    if (!plan) return '';
+    if (typeof plan === 'string') return plan;
+    if (typeof plan.rawPlan === 'string' && plan.rawPlan.trim()) return plan.rawPlan;
+    return '';
+  }
+
   function mergeChatPlan(existingPlan, newPlan) {
     if (!existingPlan) return newPlan;
-    if (typeof newPlan !== 'string') return existingPlan;
-    if (typeof existingPlan !== 'string') return newPlan;
+    if (!newPlan) return existingPlan;
 
-    var existingItems = parseChecklistItems(existingPlan);
-    var newItems = parseChecklistItems(newPlan);
+    var existingStr = extractPlanString(existingPlan);
+    var newStr = extractPlanString(newPlan);
 
-    if (!existingItems.length) return newPlan;
-    if (!newItems.length) return existingPlan;
+    if (!existingStr && !newStr) {
+      return newPlan;
+    }
+    if (!existingStr) return newPlan;
+    if (!newStr) return existingPlan;
+
+    var existingItems = parseChecklistItems(existingStr);
+    var newItems = parseChecklistItems(newStr);
+
+    if (!existingItems.length) return newStr;
+    if (!newItems.length) return existingStr;
 
     var mergedMap = {};
     var orderList = [];
@@ -344,8 +372,10 @@
     }
 
     var steps = [];
-    if (typeof plan === 'string') {
-      var lines = plan.split('\n');
+    var planString = extractPlanString(plan);
+
+    if (planString) {
+      var lines = planString.split('\n');
       var autoId = 0;
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
@@ -1661,15 +1691,47 @@
           break;
         }
         case 'usage': {
+          if (!S.currentTurnUsage) {
+            S.currentTurnUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+          }
           if (ev.totalUsage) {
-            S.sessionUsage = ev.totalUsage;
-            updateUsageDisplay(chatCtx, ev.totalUsage);
+            S.currentTurnUsage.prompt_tokens = ev.totalUsage.prompt_tokens || 0;
+            S.currentTurnUsage.completion_tokens = ev.totalUsage.completion_tokens || 0;
+            S.currentTurnUsage.total_tokens = ev.totalUsage.total_tokens || 0;
           } else if (ev.usage) {
-            S.sessionUsage = S.sessionUsage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-            S.sessionUsage.prompt_tokens += (ev.usage.prompt_tokens || 0);
-            S.sessionUsage.completion_tokens += (ev.usage.completion_tokens || 0);
-            S.sessionUsage.total_tokens += (ev.usage.total_tokens || 0);
-            updateUsageDisplay(chatCtx, S.sessionUsage);
+            S.currentTurnUsage.prompt_tokens += (ev.usage.prompt_tokens || 0);
+            S.currentTurnUsage.completion_tokens += (ev.usage.completion_tokens || 0);
+            S.currentTurnUsage.total_tokens += (ev.usage.total_tokens || 0);
+          }
+
+          // Track the latest API call's prompt_tokens as the live context window usage.
+          // This is how many tokens were sent TO the model in the most recent API call,
+          // which directly represents how full the context window is right now.
+          if (ev.usage && ev.usage.prompt_tokens && ev.usage.prompt_tokens > 0) {
+            S.latestContextTokens = ev.usage.prompt_tokens;
+          }
+
+          var base = S.turnStartUsage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, context_tokens: 0 };
+
+          var prevUsage = (chatCtx.conversation && chatCtx.conversation.usage) || S.sessionUsage || {};
+          var prevPrompt = prevUsage.prompt_tokens || 0;
+          var prevCompletion = prevUsage.completion_tokens || 0;
+          var prevTotal = prevUsage.total_tokens || (prevPrompt + prevCompletion);
+
+          var calcPrompt = (base.prompt_tokens || 0) + (S.currentTurnUsage.prompt_tokens || 0);
+          var calcCompletion = (base.completion_tokens || 0) + (S.currentTurnUsage.completion_tokens || 0);
+          var calcTotal = (base.total_tokens || 0) + (S.currentTurnUsage.total_tokens || 0);
+
+          var cumulative = {
+            prompt_tokens: Math.max(calcPrompt, prevPrompt),
+            completion_tokens: Math.max(calcCompletion, prevCompletion),
+            total_tokens: Math.max(calcTotal, prevTotal),
+            context_tokens: S.latestContextTokens || 0
+          };
+          S.sessionUsage = cumulative;
+          updateUsageDisplay(chatCtx, cumulative);
+          if (chatCtx.conversation) {
+            chatCtx.conversation.usage = cumulative;
           }
           if (typeof window.updateConversationUsage === 'function' && chatCtx.convId && S.sessionUsage) {
             window.updateConversationUsage(chatCtx.convId, S.sessionUsage);
@@ -1820,9 +1882,18 @@
     S.thinkBlock = null; S.thinkPre = null;
     if (chatCtx.conversation && chatCtx.conversation.plan) {
       renderTodos(chatCtx, chatCtx.conversation.plan);
-    } else if (chatCtx.todosPanel) {
+    } else    if (chatCtx.todosPanel) {
       chatCtx.todosPanel.style.display = 'none';
       chatCtx.todosPanel.innerHTML = '';
+    }
+    if (S.sessionUsage) {
+      S.turnStartUsage = {
+        prompt_tokens: S.sessionUsage.prompt_tokens || 0,
+        completion_tokens: S.sessionUsage.completion_tokens || 0,
+        total_tokens: S.sessionUsage.total_tokens || 0,
+        context_tokens: S.sessionUsage.context_tokens || 0
+      };
+      S.currentTurnUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     }
   }
 
@@ -3113,11 +3184,69 @@
     return d;
   }
 
+  function getModelContextLimit(modelName) {
+    if (!modelName || typeof modelName !== 'string') return 131072;
+    if (typeof window.getModelContextWindow === 'function') {
+      var apiCtx = window.getModelContextWindow(modelName);
+      if (apiCtx && typeof apiCtx === 'number' && apiCtx > 0) return apiCtx;
+    }
+    try {
+      var cachedStr = localStorage.getItem('coderun_model_context_windows');
+      if (cachedStr) {
+        var cachedMap = JSON.parse(cachedStr);
+        if (cachedMap && cachedMap[modelName] && typeof cachedMap[modelName] === 'number') {
+          return cachedMap[modelName];
+        }
+      }
+    } catch (_) {}
+
+    var m = modelName.toLowerCase();
+    if (m.indexOf('gemini') !== -1) {
+      return 1048576;
+    }
+    if (m.indexOf('claude-3') !== -1 || m.indexOf('claude-3.5') !== -1 || m.indexOf('claude-3-7') !== -1) {
+      return 200000;
+    }
+    if (m.indexOf('gpt-4o') !== -1 || m.indexOf('o1') !== -1 || m.indexOf('o3') !== -1 || m.indexOf('gpt-4-turbo') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('llama-3.1') !== -1 || m.indexOf('llama-3.2') !== -1 || m.indexOf('llama-3.3') !== -1 ||
+        m.indexOf('llama3.1') !== -1 || m.indexOf('llama3.2') !== -1 || m.indexOf('llama3.3') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('deepseek') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('qwen2.5') !== -1 || m.indexOf('qwen-2.5') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('mistral-large') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('mistral') !== -1 || m.indexOf('codestral') !== -1 || m.indexOf('mixtral') !== -1) {
+      return 32768;
+    }
+    if (m.indexOf('phi-3') !== -1 || m.indexOf('phi-4') !== -1) {
+      return 128000;
+    }
+    if (m.indexOf('llama-3') !== -1 || m.indexOf('llama3') !== -1) {
+      return 8192;
+    }
+    if (m.indexOf('gpt-4') !== -1) {
+      return 8192;
+    }
+    if (m.indexOf('gpt-3.5') !== -1) {
+      return 16384;
+    }
+    return 131072;
+  }
+
   function updateUsageDisplay(chatCtx, usage) {
     if (!chatCtx || !chatCtx.container || !usage) return;
     var promptTokens = usage.prompt_tokens || 0;
     var completionTokens = usage.completion_tokens || 0;
     var totalTokens = usage.total_tokens || (promptTokens + completionTokens);
+    var contextTokens = usage.context_tokens || 0;
 
     function fmtNum(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -3130,6 +3259,29 @@
 
     var valTotal = chatCtx.container.querySelector('.cr-usage-val-total');
     if (valTotal) valTotal.textContent = totalTokens.toLocaleString() + ' tokens';
+
+    var currentModel = (window.getDashboardModel ? window.getDashboardModel() : '') || chatCtx.model || (chatCtx.conversation && chatCtx.conversation.model) || '';
+    var maxLimit = getModelContextLimit(currentModel);
+    var pct = 0;
+    if (maxLimit > 0 && contextTokens > 0) {
+      pct = Math.min(Math.round((contextTokens / maxLimit) * 100), 100);
+    }
+
+    var valContext = chatCtx.container.querySelector('.cr-usage-val-context');
+    if (valContext) {
+      if (contextTokens > 0) {
+        valContext.textContent = fmtNum(contextTokens) + ' / ' + fmtNum(maxLimit) + ' (' + pct + '%)';
+      } else {
+        valContext.textContent = '0 / ' + fmtNum(maxLimit) + ' (0%)';
+      }
+    }
+
+    var fillBar = chatCtx.container.querySelector('.cr-context-bar-fill');
+    if (fillBar) {
+      fillBar.style.width = pct + '%';
+      fillBar.classList.toggle('cr-context-bar-warn', pct >= 70 && pct < 90);
+      fillBar.classList.toggle('cr-context-bar-danger', pct >= 90);
+    }
 
     var valInput = chatCtx.container.querySelector('.cr-usage-val-input');
     if (valInput) valInput.textContent = promptTokens.toLocaleString();
@@ -3169,11 +3321,13 @@
                 '<div class="cr-usage-card-title">Session Info</div>' +
                 '<div class="cr-usage-card-section">' +
                   '<div class="cr-usage-card-label-row">' +
-                    '<span>Total Tokens</span>' +
+                    '<span>Total Consumed</span>' +
                     '<span class="cr-usage-val-total">0 tokens</span>' +
                   '</div>' +
                 '</div>' +
                 '<div class="cr-usage-card-breakdown">' +
+                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Context Window:</span><span class="cr-usage-val-context">—</span></div>' +
+                  '<div class="cr-context-bar-wrap"><div class="cr-context-bar-fill" style="width: 0%;"></div></div>' +
                   '<div class="cr-usage-row"><span class="cr-usage-sublabel">Input / System:</span><span class="cr-usage-val-input">0</span></div>' +
                   '<div class="cr-usage-row"><span class="cr-usage-sublabel">Output / Response:</span><span class="cr-usage-val-output">0</span></div>' +
                 '</div>' +
@@ -3277,8 +3431,16 @@
       if (conversation.usage) {
         S.sessionUsage = conversation.usage;
       } else {
-        S.sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        S.sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, context_tokens: 0 };
       }
+      S.turnStartUsage = {
+        prompt_tokens: S.sessionUsage.prompt_tokens || 0,
+        completion_tokens: S.sessionUsage.completion_tokens || 0,
+        total_tokens: S.sessionUsage.total_tokens || 0,
+        context_tokens: S.sessionUsage.context_tokens || 0
+      };
+      S.currentTurnUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      S.latestContextTokens = S.sessionUsage.context_tokens || 0;
       updateUsageDisplay(chatCtx, S.sessionUsage);
 
       function onStopStream() { stopCurrentChatStream(chatCtx); }
@@ -3369,11 +3531,19 @@
         });
       }
 
+      window._activeChatCtx = chatCtx;
     } catch (e) {
       console.error("[CHATSPACE] Error inside renderChatSpace:", e);
     }
   }
   window.renderChatSpace = renderChatSpace;
+
+  function refreshActiveChatUsage() {
+    if (window._activeChatCtx && window._activeChatCtx.S && window._activeChatCtx.S.sessionUsage) {
+      updateUsageDisplay(window._activeChatCtx, window._activeChatCtx.S.sessionUsage);
+    }
+  }
+  window.refreshActiveChatUsage = refreshActiveChatUsage;
 
   function handleWindowMessage(event) {
     var message = event.data || {};
@@ -3413,6 +3583,9 @@
         for (var ci = 0; ci < convs.length; ci++) {
           if (convs[ci].id === message.conversationId || (window.getDashboardActiveConversationId && convs[ci].id === window.getDashboardActiveConversationId())) {
             convs[ci].compactCheckpoint = cpData;
+            if (convs[ci].usage) {
+              convs[ci].usage.context_tokens = Math.round(((cpData && cpData.content) ? cpData.content.length : 0) / 4) + 600;
+            }
             break;
           }
         }
@@ -3424,6 +3597,12 @@
       if (msgListEl) {
         appendCompactCheckpoint(msgListEl, cpData);
         msgListEl.scrollTop = msgListEl.scrollHeight;
+      }
+      var valContextEl = document.querySelector('.cr-usage-val-context');
+      if (valContextEl && cpData && cpData.content) {
+        var estTokens = Math.round(cpData.content.length / 4) + 600;
+        var estDisplay = estTokens >= 1000 ? (estTokens / 1000).toFixed(1) + 'K' : String(estTokens);
+        valContextEl.textContent = '~' + estDisplay + ' (compacted)';
       }
       var cBtn = document.querySelector('#cr-compact-btn');
       if (cBtn) {

@@ -1440,6 +1440,98 @@ export function migrateLegacyPlan(legacy) {
   };
 }
 
+export function parseChecklistPlan(planText) {
+  if (typeof planText !== 'string') return [];
+  var items = [];
+  var lines = planText.split('\n');
+  var autoId = 0;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    var match = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
+    if (match) {
+      autoId++;
+      var mark = match[1];
+      var id = match[2] || match[3] || String(autoId);
+      var desc = match[4] || line;
+      var status = (mark === 'x' || mark === 'X' || mark === '✓') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
+      items.push({ id: id, description: desc, status: status, mark: mark });
+    }
+  }
+  return items;
+}
+
+export function buildPlanFromChecklist(planText, sessionId) {
+  var items = parseChecklistPlan(planText);
+  if (!items.length) return null;
+
+  var planId = generatePlanId();
+  var tasks = [];
+  var completedCount = 0;
+
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    if (item.status === 'completed') completedCount++;
+    tasks.push({
+      id: item.id || generateTaskId(1, i + 1),
+      phaseId: 'phase_1',
+      planId: planId,
+      description: item.description,
+      status: item.status,
+      complexity: 'medium',
+      action: 'custom',
+      target: '',
+      toolType: 'custom',
+      dependsOn: i > 0 ? [tasks[i - 1].id] : [],
+      parallelWith: [],
+      requiredContext: [],
+      expectedOutput: '',
+      actualOutput: '',
+      observations: [],
+      retries: 0,
+      maxRetries: 3,
+      estimatedDuration: 0,
+      actualDuration: 0,
+      createdAt: Date.now()
+    });
+  }
+
+  var allDone = tasks.length > 0 && completedCount === tasks.length;
+  var phase = {
+    id: 'phase_1',
+    planId: planId,
+    name: 'Execution',
+    description: 'Execution Plan',
+    order: 1,
+    status: allDone ? 'completed' : 'active',
+    tasks: tasks,
+    parallelGroups: detectParallelGroups(tasks)
+  };
+
+  var firstTask = tasks[0];
+  var plan = {
+    id: planId,
+    sessionId: sessionId,
+    goal: firstTask ? firstTask.description : 'Execution Plan',
+    summary: '',
+    status: allDone ? 'completed' : 'active',
+    estimatedIterations: tasks.length * 2,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    phases: [phase],
+    complexity: { score: tasks.length, label: tasks.length > 5 ? 'high' : tasks.length > 3 ? 'medium' : 'low' },
+    risks: [],
+    requiredTools: [],
+    suggestions: [],
+    executionGraph: buildExecutionGraph([phase]),
+    observations: [],
+    rawPlan: planText
+  };
+
+  plan.summary = summarizePlan(plan);
+  persistPlan(plan);
+  return plan;
+}
+
 // ═══════════════════════════════════════════════════════════
 // INTERNAL: Utilities
 // ═══════════════════════════════════════════════════════════

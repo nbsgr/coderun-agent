@@ -732,9 +732,34 @@ select {
 }
 
 .cr-usage-val-input,
-.cr-usage-val-output {
+.cr-usage-val-output,
+.cr-usage-val-context {
   font-weight: 500;
   color: var(--vscode-foreground, #e0e0e0);
+}
+
+.cr-context-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  margin: 2px 0 4px 0;
+  overflow: hidden;
+}
+
+.cr-context-bar-fill {
+  height: 100%;
+  background: var(--vscode-textLink-foreground, #3794ff);
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.cr-context-bar-fill.cr-context-bar-warn {
+  background: #cca700;
+}
+
+.cr-context-bar-fill.cr-context-bar-danger {
+  background: #f14c4c;
 }
 
 /* ── Markdown inside .cr-content-block ───────────────── */

@@ -1100,8 +1100,11 @@ async function* update_plan(args, context) {
       }
       runtime.updatePlan(activePlan);
     } else {
-      var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
-      var planObj = planningEngine.buildPlan(analysis, sessionId);
+      var planObj = planningEngine.buildPlanFromChecklist(planText, sessionId);
+      if (!planObj) {
+        var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
+        planObj = planningEngine.buildPlan(analysis, sessionId);
+      }
       planObj.rawPlan = planText;
       if (allDone) {
         planObj.status = 'completed';
@@ -1147,8 +1150,11 @@ async function* create_plan(args, context) {
   var sessionId = (context && context.sessionId) || 'default';
 
   try {
-    var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
-    var planObj = planningEngine.buildPlan(analysis, sessionId);
+    var planObj = planningEngine.buildPlanFromChecklist(planText, sessionId);
+    if (!planObj) {
+      var analysis = planningEngine.analyzeRequest(planText, { workspace: workspace }, workspace);
+      planObj = planningEngine.buildPlan(analysis, sessionId);
+    }
     planObj.rawPlan = planText;
     runtime.registerPlan(planObj);
     runtime.setCurrentPlan(planObj, sessionId);

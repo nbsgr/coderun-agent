@@ -47,7 +47,14 @@ export async function listModels(config) {
   var models = [];
   if (response && response.data) {
     for (var i = 0; i < response.data.length; i++) {
-      models.push(response.data[i].id);
+      var m = response.data[i];
+      var mId = m.id || m.name;
+      var ctx = m.context_window || m.context_length || m.max_tokens || 0;
+      if (ctx) {
+        models.push({ id: mId, context_window: ctx });
+      } else {
+        models.push(mId);
+      }
     }
   }
   return models;
