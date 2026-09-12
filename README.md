@@ -24,6 +24,7 @@ Whether you are running completely offline with local models via **Ollama**, lev
 *   **Unified Model Dropdown:** All models from your active and saved providers are dynamically retrieved and presented in a single, clean dropdown, grouped logically by provider.
 *   **API Type Selection:** Custom compatible providers support setting the underlying **API Type** (**OpenAI Compatible**, **Anthropic Compatible**, or **Google Gemini Compatible**) to correctly format request bodies, endpoint paths, and API headers.
 *   **Cloudflare Workers AI Support:** Dynamically parses Cloudflare base URLs to extract your Account ID and retrieve model lists using Cloudflare's search API.
+*   **Google Gemini Protobuf & Schema Sanitization:** Automatic schema normalization recursively strips unsupported JSON Schema keywords (`additionalProperties`, `$schema`, `title`, `$defs`, `definitions`) before submitting to Gemini endpoints, preventing HTTP 400 rejection on complex schemas (such as Puppeteer browser tools). Automatically normalizes model names to prevent HTTP 404 lookup failures.
 
 ### 💻 Interactive Terminal Execution & REPLs
 *   **Full Interactive Session Lifecycle:** Launch interactive REPLs (Node, Python, Ruby, MySQL, npm init, etc.) with `run_terminal` (`interactive: true`).
@@ -44,6 +45,13 @@ Whether you are running completely offline with local models via **Ollama**, lev
 *   **Per-File Mutation Serialization:** Atomic file write locking via `fileLockManager.js` ensures sequential safety during concurrent writes.
 *   **Repetitive Failure Circuit Breaker:** Automatically detects repeated tool failures on identical arguments, halting loops and prompting reflection.
 *   **Reasoning Models Support:** Captures and renders thoughts from reasoning models (Gemma 4, DeepSeek-R1, o3-mini) in dedicated collapsible **Thought Process** blocks.
+*   **Signal Cancellation & Safe Stop:** Abort signals propagate cleanly into active tool invocations, auto-retries, and recovery steps without race conditions.
+
+### 🛡️ Clean Error Boundary & Dynamic Auto-Sizing
+*   **Dynamic Card Sizing:** Error notification cards automatically adapt their height and width to fit the exact volume of text and diagnostic details without awkward clipping.
+*   **Complete Boundary Containment:** Long uninterrupted URLs (e.g. Google API rate limit links, stack traces) and JSON payloads wrap cleanly using `overflow-wrap: anywhere` and `word-break: break-word`, preventing text from spilling outside the red card boundaries.
+*   **Top-Aligned Status Icons:** The error icon is neatly pinned to the top-left of multi-line error blocks rather than floating vertically in the center.
+*   **Deduplicated Error Pipeline:** Webview error handling unifies internal agent loop events and terminal stream failures, stripping redundant `"Error: "` prefixes and preventing duplicate stacked error cards.
 
 ### 🔍 Diff Management & Approval Pipeline
 *   **SHA-256 Optimistic Concurrency:** Stages proposed file changes in memory with baseline SHA-256 hashing to prevent overwriting external disk edits.
@@ -199,56 +207,84 @@ node test/runAllTests.js
 
 ## 📖 Deep Dive: CodeRun Architecture
 
-CodeRun's engine is split into isolated manager modules that govern the lifecycle of a task execution. The **terminal execution pipeline** provides interactive REPL sessions, automatic shell detection, ANSI cleaning, structured results, and a canonical execution status enum ensuring consistent SUCCESS/FAILED/CANCELLED/TIMEOUT states across all UI elements. The **MCP subsystem** connects external tool servers via standard JSON-RPC over stdio, while the **token engine** tracks monotonic consumption and live context window saturation.
+CodeRun's engine is split into isolated modular layers that govern the lifecycle of every agent execution:
 
 ```
 src/
-├── extension.js              ← VS Code activation, IPC message bridge, secrets, health checks
-├── agentLoop.js              ← Core agentic loop (gathers context, plans steps, streams LLM output)
-├── promptBuilder.js          ← Assembles system prompt with workspace, planning, and memory contexts
+├── extension.js                  ← VS Code activation, IPC message bridge, secrets, health checks
+├── Dashboard.js / .css           ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings,
+│                                    unified model dropdown, modelContextWindows store
+├── ChatSpace.js / .css           ← Chat space: collapsible tool cards, live token tracking badge,
+│                                    live context window gauge, dynamic auto-sizing error cards,
+│                                    inline terminal cards with live streaming, permission dialogs, diff reviews
+├── MarkdownRenderer.js           ← Client-side markdown processor with tables, code, XSS sanitization & syntax highlighting
+├── webview-shared.js             ← Shared utilities (esc, truncate, stripAnsi) between Dashboard & ChatSpace
 │
-├── context/
-│   ├── contextManager.js     ← Identifies request intent, extracts editor state & active file details
-│   ├── rulesLoader.js        ← Loads user-defined project rules & conventions
-│   ├── goalTracker.js        ← Tracks goals, subgoals, and plan execution metrics
-│   ├── memoryManager.js      ← Session-scoped memory and key facts store
-│   └── compactionManager.js  ← Pure local 0ms conversation compaction engine & checkpoint generator
+├── agents/                       ← Core agent orchestration engine
+│   ├── agent.js                  ← Public agent wrapper API
+│   ├── agentLoop.js              ← Core agentic loop (Think → Plan → Act → Verify)
+│   ├── agentState.js             ← Formal finite state machine for the agent loop
+│   ├── promptBuilder.js          ← Assembles system prompt with workspace, planning, and memory contexts
+│   ├── runtime.js                ← Execution session runtime, goals, and plan counts
+│   ├── events.js                 ← Internal pub/sub event bus
+│   └── constants.js              ← Magic numbers, event types, default system prompt
 │
-├── execution/
-│   ├── executionTrace.js     ← Real-time trace engine (LLM calls, tools, errors, disk persistence)
-│   ├── verificationManager.js← Runs post-execution tests (build checks, syntax checks, output matches)
-│   ├── recoveryEngine.js     ← Automatic error recovery and LLM diagnostic advice
-│   └── timelineManager.js    ← Logs chronological workspace events to timeline history
+├── context/                      ← Context extraction and knowledge systems
+│   ├── contextManager.js         ← Identifies request intent, extracts editor state & active file details
+│   ├── compactionManager.js      ← Pure local 0ms conversation compaction engine & checkpoint generator
+│   ├── gitIntelligence.js        ← Workspace git status, active branch, and diff summary fragments
+│   ├── goalTracker.js            ← Tracks goals, subgoals, and plan execution metrics
+│   ├── learningManager.js        ← Extracts and stores repository conventions and user preferences
+│   ├── memoryManager.js          ← Session-scoped memory and key facts store
+│   ├── planningEngine.js         ← Generates structured multi-step plans
+│   ├── planningManager.js        ← Plan file management and execution status context
+│   ├── projectKnowledge.js       ← SQLite-backed project knowledge base and indexing pipeline
+│   ├── rulesLoader.js            ← Loads user-defined project rules & conventions (~/.coderun/rules, .coderunrules)
+│   ├── searchManager.js          ← Disk-verified search indexing and query filters
+│   ├── symbolParser.js           ← AST/Regex parsing for classes, functions, and symbols
+│   ├── workspaceContext.js       ← Active workspace directory resolution
+│   └── workspaceIntelligence.js  ← Non-blocking asynchronous repository profiling and language stats
 │
-├── planningManager.js        ← Generates step-by-step plans written to a database-backed plan file
-├── checkpointManager.js      ← Manages file backups, snapshot comparison, and rollback operations
-├── diffManager.js            ← Staged diff patches with SHA-256 concurrency checks
+├── execution/                    ← Execution diagnostics and verification
+│   ├── executionTrace.js         ← Real-time trace engine (LLM calls, tools, errors, disk persistence)
+│   ├── multiAgentRuntime.js      ← Role-based prompt mapping across execution states
+│   ├── observationEngine.js      ← Analyzes tool results to produce synthetic observations
+│   ├── recoveryEngine.js         ← Automatic error diagnosis, 1-retry cap, and LLM diagnostic advice
+│   ├── reviewEngine.js           ← Automated post-execution code review and sanity checks
+│   ├── timelineManager.js        ← Logs chronological workspace events to timeline history
+│   ├── verificationManager.js    ← Automated verification heuristics (empty file protection, build checks)
+│   └── workflowEngine.js         ← Step sequence coordinator
 │
-├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
-│                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
-│                                ANSI escape stripping, interactive REPL support, and stop_terminal
+├── mcp/                          ← Model Context Protocol (MCP) subsystem
+│   ├── mcpClient.js              ← JSON-RPC stdio and HTTP client transport, handshake & dispatch
+│   ├── mcpManager.js             ← Server catalog, lifecycle management, auto-browser detection (Chrome/Edge/Brave)
+│   └── builtinServers/           ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
 │
-├── mcp/                      ← Model Context Protocol (MCP) subsystem
-│   ├── mcpClient.js          ← JSON-RPC stdio client transport, handshake & request dispatch
-│   ├── mcpManager.js         ← Server catalog, lifecycle management, auto-browser detection (Chrome/Edge/Brave)
-│   └── builtinServers/       ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
+├── providers/                    ← Multi-provider LLM integrations
+│   ├── providerManager.js        ← Factory to instantiate the correct provider SDK
+│   ├── providerGemini.js         ← Native REST & OpenAI-compatible Gemini with Protobuf schema sanitization
+│   ├── providerAnthropic.js      ← Anthropic Claude Messages API with SSE buffer flushing
+│   ├── providerOpenAI.js         ← OpenAI Chat Completions with function calling & o3-mini support
+│   ├── providerOllama.js         ← Local Ollama streaming with model context length discovery
+│   ├── providerGroq.js           ← Groq high-speed inference with dynamic context limit detection
+│   ├── providerOpenRouter.js     ← OpenRouter API with dynamic model list and context window fetching
+│   ├── providerXAI.js            ← xAI Grok API integration
+│   └── providerCompatible.js     ← Custom OpenAI/Anthropic/Gemini compatible endpoints
 │
-├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
-├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
-├── tools.js                  ← 20 active async generators across 6 core categories
-│
-├── providerManager.js        ← Factory to instantiate the correct provider SDK
-├── providerOllama.js / OpenAI.js / Anthropic.js / Gemini.js / Groq.js / OpenRouter.js ...
-│                                (raw REST model & context limit discovery for OpenRouter, Groq, Ollama, Gemini)
-│
-├── Dashboard.js / .css       ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings,
-│                                unified model dropdown, modelContextWindows store
-├── ChatSpace.js / .css       ← Chat space: collapsible tool cards, live token tracking badge,
-│                                live context window gauge & progress bar, Session Info card,
-│                                inline terminal cards with live streaming, permission dialogs, diff reviews
-├── MarkdownRenderer.js       ← Client-side markdown processor with tables, code & syntax highlighting
-├── webview-shared.js         ← Shared utilities (esc, truncate, stripAnsi) between Dashboard & ChatSpace
-└── agentState.js             ← Formal finite state machine for the agent loop
+└── tools/                        ← Active tool implementations and security
+    ├── tools.js                  ← 20 active async generators across 6 core categories
+    ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
+    ├── toolExecutor.js           ← Tool call argument parsing, execution reporting, and result formatting
+    ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
+    ├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
+    │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
+    │                                ANSI escape stripping, interactive REPL support, and stop_terminal
+    ├── checkpointManager.js      ← SQLite-backed file backups, snapshot comparison, and rollback operations
+    ├── diffManager.js            ← Staged diff patches with SHA-256 concurrency checks
+    ├── fileLockManager.js        ← Hierarchical lock coordination for concurrent directory and file mutations
+    ├── permissions.js            ← Session-isolated permission management and always-allow rules
+    ├── approvalSystem.js         ← Dangerous command policy checks and approval workflows
+    └── pathSecurity.js           ← Canonical path traversal guard and workspace boundary validation
 ```
 
 ---

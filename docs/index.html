@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeRun AI Agent — Official Documentation & Architecture Guide</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --bg-card: rgba(22, 27, 34, 0.85);
+      --border-color: #30363d;
+      --border-focus: #58a6ff;
+      --text-primary: #f0f6fc;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-purple: #bc8cff;
+      --accent-amber: #d29922;
+      --accent-red: #f85149;
+      --code-bg: #090d13;
+      --sidebar-width: 280px;
+      --toc-width: 240px;
+      --header-height: 64px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      font-size: 15px;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-primary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+    /* Top Navbar */
+    header.doc-navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--header-height);
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 1000;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .nav-logo-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1f6feb 0%, #238636 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(31, 111, 235, 0.3);
+    }
+
+    .nav-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .nav-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(56, 139, 253, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 139, 253, 0.3);
+      padding: 2px 7px;
+      border-radius: 12px;
+    }
+
+    .nav-search-wrap {
+      flex: 1;
+      max-width: 440px;
+      margin: 0 32px;
+      position: relative;
+    }
+
+    .nav-search-input {
+      width: 100%;
+      height: 36px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0 14px 0 36px;
+      color: var(--text-primary);
+      font-size: 13.5px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-search-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+
+    .nav-search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-link-btn {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-link-btn:hover {
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
+    }
+
+    /* Layout */
+    .doc-container {
+      display: flex;
+      margin-top: var(--header-height);
+      min-height: calc(100vh - var(--header-height));
+    }
+
+    /* Left Sidebar */
+    aside.doc-sidebar {
+      width: var(--sidebar-width);
+      position: fixed;
+      top: var(--header-height);
+      bottom: 0;
+      left: 0;
+      background: var(--bg-primary);
+      border-right: 1px solid var(--border-color);
+      padding: 24px 16px;
+      overflow-y: auto;
+      z-index: 900;
+    }
+
+    .sidebar-group {
+      margin-bottom: 24px;
+    }
+
+    .sidebar-group-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      padding: 0 10px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-menu {
+      list-style: none;
+    }
+
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13.5px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      font-weight: 450;
+    }
+
+    .sidebar-link:hover {
+      color: var(--text-primary);
+      background: var(--bg-secondary);
+    }
+
+    .sidebar-link.active {
+      color: var(--accent-blue);
+      background: rgba(88, 166, 255, 0.1);
+      font-weight: 600;
+    }
+
+    .sidebar-link svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    /* Main Content */
+    main.doc-main {
+      flex: 1;
+      margin-left: var(--sidebar-width);
+      margin-right: var(--toc-width);
+      padding: 40px 56px 120px 56px;
+      max-width: 980px;
+    }
+
+    /* Right TOC */
+    aside.doc-toc {
+      width: var(--toc-width);
+      position: fixed;
+      top: var(--header-height);
+      bottom: 0;
+      right: 0;
+      padding: 36px 20px;
+      overflow-y: auto;
+      border-left: 1px solid var(--border-color);
+    }
+
+    .toc-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .toc-list {
+      list-style: none;
+    }
+
+    .toc-item {
+      margin-bottom: 8px;
+    }
+
+    .toc-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.4;
+      display: block;
+      transition: color 0.15s ease;
+    }
+
+    .toc-link:hover {
+      color: var(--text-primary);
+    }
+
+    .toc-link.active {
+      color: var(--accent-blue);
+      font-weight: 500;
+    }
+
+    /* Hero Banner */
+    .hero-banner {
+      padding: 40px 0 32px 0;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 40px;
+    }
+
+    .hero-badge-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    .pill-badge.green {
+      background: rgba(63, 185, 80, 0.12);
+      border-color: rgba(63, 185, 80, 0.3);
+      color: var(--accent-green);
+    }
+
+    .hero-title {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      line-height: 1.2;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, #58a6ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: 17px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 760px;
+    }
+
+    /* Typography & Section Styles */
+    h2.section-heading {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      margin-top: 56px;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h3.subsection-heading {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      margin-top: 32px;
+      margin-bottom: 12px;
+      color: #e6edf3;
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: #c9d1d9;
+      line-height: 1.65;
+    }
+
+    strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      color: #c9d1d9;
+    }
+
+    /* Cards & Grids */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+    }
+
+    .feature-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 20px;
+      transition: all 0.2s ease;
+    }
+
+    .feature-card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-icon {
+      font-size: 24px;
+      margin-bottom: 12px;
+      display: inline-block;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+
+    .card-text {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 0;
+    }
+
+    /* Callout Alerts */
+    .callout {
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid;
+      background: var(--bg-secondary);
+      font-size: 14px;
+    }
+
+    .callout.tip {
+      border-color: var(--accent-green);
+      background: rgba(63, 185, 80, 0.08);
+    }
+
+    .callout.info {
+      border-color: var(--accent-blue);
+      background: rgba(88, 166, 255, 0.08);
+    }
+
+    .callout.warning {
+      border-color: var(--accent-amber);
+      background: rgba(210, 153, 34, 0.08);
+    }
+
+    .callout.danger {
+      border-color: var(--accent-red);
+      background: rgba(248, 81, 73, 0.08);
+    }
+
+    .callout-header {
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .callout.tip .callout-header { color: var(--accent-green); }
+    .callout.info .callout-header { color: var(--accent-blue); }
+    .callout.warning .callout-header { color: var(--accent-amber); }
+    .callout.danger .callout-header { color: var(--accent-red); }
+
+    /* Code Blocks */
+    .code-container {
+      position: relative;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin: 18px 0;
+      overflow: hidden;
+    }
+
+    .code-header {
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-color);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+    }
+
+    pre code {
+      display: block;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #e6edf3;
+      line-height: 1.55;
+      overflow-x: auto;
+    }
+
+    code:not(pre code) {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      background: rgba(110, 118, 129, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #e6edf3;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-muted);
+      padding: 3px 8px;
+      font-size: 11.5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+
+    .copy-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    /* Tables */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+    }
+
+    th {
+      background: var(--bg-secondary);
+      color: #e6edf3;
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: #c9d1d9;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    /* Steps Flow */
+    .step-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin: 24px 0;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 16px;
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(88, 166, 255, 0.15);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent-blue);
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-body {
+      flex: 1;
+    }
+
+    .step-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1100px) {
+      aside.doc-toc { display: none; }
+      main.doc-main { margin-right: 0; }
+    }
+
+    @media (max-width: 768px) {
+      aside.doc-sidebar { display: none; }
+      main.doc-main { margin-left: 0; padding: 24px 20px; }
+      .nav-search-wrap { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <header class="doc-navbar">
+    <a href="#introduction" class="nav-brand">
+      <div class="nav-logo-mark">R</div>
+      <div class="nav-title">
+        CodeRun AI Agent
+        <span class="nav-badge">v1.4.5</span>
+      </div>
+    </a>
+
+    <div class="nav-search-wrap">
+      <svg class="nav-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" id="docSearchInput" class="nav-search-input" placeholder="Search documentation, tools, MCP, providers...">
+    </div>
+
+    <div class="nav-links">
+      <a href="https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent" target="_blank" class="nav-link-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        Marketplace
+      </a>
+      <a href="https://github.com/nbsgr/coderun-agent" target="_blank" class="nav-link-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <div class="doc-container">
+
+    <!-- Left Sidebar Navigation -->
+    <aside class="doc-sidebar">
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Getting Started</div>
+        <ul class="sidebar-menu">
+          <li><a href="#introduction" class="sidebar-link active">Overview & Core Concept</a></li>
+          <li><a href="#architecture" class="sidebar-link">Agentic Loop & Engine</a></li>
+          <li><a href="#installation" class="sidebar-link">Installation & Setup</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Providers & Models</div>
+        <ul class="sidebar-menu">
+          <li><a href="#providers-overview" class="sidebar-link">Supported Providers</a></li>
+          <li><a href="#saving-providers" class="sidebar-link">How to Save Providers</a></li>
+          <li><a href="#provider-reflection" class="sidebar-link">How Providers Reflect</a></li>
+          <li><a href="#gemini-sanitization" class="sidebar-link">Gemini Schema Sanitization</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Model Context Protocol</div>
+        <ul class="sidebar-menu">
+          <li><a href="#mcp-overview" class="sidebar-link">What is MCP?</a></li>
+          <li><a href="#builtin-mcp" class="sidebar-link">Built-in MCP Catalog</a></li>
+          <li><a href="#adding-mcp" class="sidebar-link">How to Add & Save MCP</a></li>
+          <li><a href="#mcp-reflection" class="sidebar-link">How MCP Reflects in Execution</a></li>
+          <li><a href="#browser-automation" class="sidebar-link">Zero-Config Browser Discovery</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Tools & Execution</div>
+        <ul class="sidebar-menu">
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 20-Tool Matrix</a></li>
+          <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
+          <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
+          <li><a href="#error-containment" class="sidebar-link">Dynamic Error Boundary</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Security & Operations</div>
+        <ul class="sidebar-menu">
+          <li><a href="#token-tracking" class="sidebar-link">Live Context & Token Gauge</a></li>
+          <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
+          <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
+          <li><a href="#test-suite" class="sidebar-link">44 Adversarial Tests</a></li>
+          <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="doc-main">
+
+      <!-- Hero Section -->
+      <section class="hero-banner" id="introduction">
+        <div class="hero-badge-row">
+          <span class="pill-badge green">● Active Development</span>
+          <span class="pill-badge">Zero Token Loss</span>
+          <span class="pill-badge">100% Local SQLite Indexing</span>
+          <span class="pill-badge">MCP Stdio & HTTP</span>
+        </div>
+        <h1 class="hero-title">CodeRun AI Agent Documentation</h1>
+        <p class="hero-desc">
+          The comprehensive developer reference manual and architecture specification for <strong>CodeRun AI Agent</strong> (<code>AI-AGENT</code>) — Visual Studio Code's multi-provider autonomous software engineer.
+        </p>
+      </section>
+
+      <!-- Architecture -->
+      <section id="architecture">
+        <h2 class="section-heading">🧠 Architecture & The Agentic Loop</h2>
+        <p>
+          CodeRun operates on a rigorous multi-step cognitive pipeline: <strong>Think → Plan → Act → Verify</strong>. Rather than streaming text directly into your editor, CodeRun acts as an autonomous agent reasoning over project context, proposing structured tool actions, enforcing permission safety boundaries, and verifying changes on disk.
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">💭</div>
+            <div class="card-title">1. Think (Cognitive Brain)</div>
+            <div class="card-text">Gathers workspace context, active editor state, git diffs, and project conventions to reason about user intent.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📋</div>
+            <div class="card-title">2. Plan (Hierarchical Todos)</div>
+            <div class="card-text">Creates and updates structured checklist plans tracked live in the composer with visual progress bars.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">3. Act (Tool Execution)</div>
+            <div class="card-text">Dispatches tools with parallel read concurrency and per-file atomic mutation locking to prevent data loss.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🛡️</div>
+            <div class="card-title">4. Verify (Post-Checks)</div>
+            <div class="card-text">Inspects syntax, builds, and test outputs to confirm the objective has been reached before completing.</div>
+          </div>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            Pure Local 0ms Context Compaction
+          </div>
+          CodeRun features deterministic local context compaction. When conversation history grows, old tool calls and large listings are compacted into chronological checkpoint summaries with zero external API calls or token costs.
+        </div>
+      </section>
+
+      <!-- Providers Overview -->
+      <section id="providers-overview">
+        <h2 class="section-heading">🤖 Supported Providers</h2>
+        <p>
+          CodeRun supports 8 native provider backends. Each backend communicates natively with its respective protocol and leverages vision capabilities, system prompt structures, and function calling mechanisms:
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Protocol</th>
+                <th>Default Base URL</th>
+                <th>Key Required?</th>
+                <th>Vision Support</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Ollama</strong></td>
+                <td>Ollama Native REST</td>
+                <td><code>http://localhost:11434</code></td>
+                <td>No</td>
+                <td>✅ <code>images</code> Base64 Array</td>
+              </tr>
+              <tr>
+                <td><strong>Google Gemini</strong></td>
+                <td>REST v1beta & OpenAI</td>
+                <td><code>https://generativelanguage.googleapis.com/v1beta</code></td>
+                <td>Yes</td>
+                <td>✅ <code>inline_data</code> Parts</td>
+              </tr>
+              <tr>
+                <td><strong>Anthropic Claude</strong></td>
+                <td>Messages API v1</td>
+                <td><code>https://api.anthropic.com/v1</code></td>
+                <td>Yes</td>
+                <td>✅ <code>image</code> Source Blocks</td>
+              </tr>
+              <tr>
+                <td><strong>OpenAI</strong></td>
+                <td>Chat Completions v1</td>
+                <td><code>https://api.openai.com/v1</code></td>
+                <td>Yes</td>
+                <td>✅ <code>image_url</code> Objects</td>
+              </tr>
+              <tr>
+                <td><strong>Groq</strong></td>
+                <td>OpenAI Compatible</td>
+                <td><code>https://api.groq.com/openai/v1</code></td>
+                <td>Yes</td>
+                <td>✅ Vision models supported</td>
+              </tr>
+              <tr>
+                <td><strong>OpenRouter</strong></td>
+                <td>OpenAI Compatible</td>
+                <td><code>https://openrouter.ai/api/v1</code></td>
+                <td>Yes</td>
+                <td>✅ 200+ Multi-Modal Models</td>
+              </tr>
+              <tr>
+                <td><strong>xAI (Grok)</strong></td>
+                <td>OpenAI Compatible</td>
+                <td><code>https://api.x.ai/v1</code></td>
+                <td>Yes</td>
+                <td>✅ <code>grok-2-vision</code></td>
+              </tr>
+              <tr>
+                <td><strong>Compatible Endpoints</strong></td>
+                <td>Custom API Selection</td>
+                <td>Custom URL (LM Studio, vLLM, Cloudflare)</td>
+                <td>Optional</td>
+                <td>✅ Multi-modal routing</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- How to Save Providers -->
+      <section id="saving-providers">
+        <h2 class="section-heading">💾 How to Save Providers: Step-by-Step Guide</h2>
+        <p>
+          CodeRun allows you to save credentials and endpoints for <strong>multiple providers simultaneously</strong>. You do not need to re-enter your API keys or base URLs when switching between local and cloud models.
+        </p>
+
+        <div class="step-flow">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Open the Settings Panel</div>
+              <p>Click the <strong>⚙ Settings</strong> icon on the left navigation rail inside the CodeRun sidebar view.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Select the Provider</div>
+              <p>In the <strong>Provider</strong> dropdown, select the service you want to configure (e.g. <code>Google Gemini</code>, <code>Anthropic</code>, <code>OpenAI</code>, <code>Ollama</code>, or <code>OpenAI Compatible</code>).</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Custom Compatible Options (When using Compatible / Cloudflare / LocalAI)</div>
+              <p>When selecting <code>OpenAI Compatible</code>, two special fields appear:</p>
+              <ul>
+                <li><strong>Custom Provider Name:</strong> Enter a friendly nickname (e.g. <code>Cloudflare Workers</code>, <code>LM Studio</code>, <code>vLLM Local</code>).</li>
+                <li><strong>API Type:</strong> Select the underlying API flavor:
+                  <ul>
+                    <li><code>OpenAI Compatible</code> — Standard <code>/chat/completions</code> format.</li>
+                    <li><code>Anthropic Compatible</code> — Formats headers with <code>x-api-key</code> and <code>anthropic-version</code>.</li>
+                    <li><code>Google Gemini Compatible</code> — Formats Google Protobuf contents structure.</li>
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Enter Base URL & API Key</div>
+              <p>Paste your endpoint URL into <strong>Base URL</strong> (e.g. <code>https://api.openai.com/v1</code> or <code>http://localhost:11434</code>). Enter your secret token in <strong>API Key</strong> (stored securely in VS Code SecretStorage).</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Discover & Set Default Model</div>
+              <p>Click the <strong>↻ (Refresh Models)</strong> icon to dynamically poll available models, or manually type your model ID (e.g. <code>gemini-2.0-flash</code>, <code>claude-3-7-sonnet</code>, <code>qwen2.5-coder</code>).</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">6</div>
+            <div class="step-body">
+              <div class="step-title">Click "Save Settings"</div>
+              <p>Click the prominent <strong>Save Settings</strong> button. The button briefly turns green with <code>✓ Saved!</code>, confirming persistent storage.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- How Providers Reflect -->
+      <section id="provider-reflection">
+        <h2 class="section-heading">🔄 How Saved Providers Reflect in CodeRun</h2>
+        <p>
+          Once saved, CodeRun immediately binds the configuration across the entire extension lifecycle:
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">📋</div>
+            <div class="card-title">Saved Providers List</div>
+            <div class="card-text">Appears under the Settings panel with a <code>🔑</code> icon indicating a stored key, the truncated endpoint URL, a <strong>Load</strong> button, and a remove <code>✕</code> button.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">Unified Model Dropdown</div>
+            <div class="card-text">All models across all saved providers are aggregated into the top model combobox, grouped by provider. You can switch models on the fly in the middle of a chat!</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🏷️</div>
+            <div class="card-title">Live Header Badge</div>
+            <div class="card-text">The header model badge updates dynamically to display the active model name and its provider tag (e.g. <code>gemini-2.0-flash [Google Gemini]</code>).</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📏</div>
+            <div class="card-title">Dynamic Context Discovery</div>
+            <div class="card-text">CodeRun automatically retrieves the maximum context window size (e.g. 1,048,576 tokens for Gemini, 200,000 for Claude) via raw REST discovery to power the live saturation gauge.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Gemini Sanitization -->
+      <section id="gemini-sanitization">
+        <h2 class="section-heading">🛡️ Google Gemini Schema Sanitization</h2>
+        <p>
+          Google Gemini's Protobuf schema parser rejects complex JSON Schema attributes that standard OpenAI models permit. When using Gemini (via Google's REST API or OpenAI-compatible gateway), CodeRun automatically runs a deep recursive schema filter:
+        </p>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>providerGemini.js — Schema Sanitization Rule</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>// Recursively strips attributes that cause Gemini HTTP 400 Bad Request
+function sanitizeGeminiSchema(schema) {
+  // Prunes: additionalProperties, $schema, title, $defs, definitions
+  // Normalizes model strings: models/gemini-2.0-flash -> gemini-2.0-flash
+}</code></pre>
+        </div>
+
+        <div class="callout tip">
+          <div class="callout-header">Why this matters</div>
+          Without this filter, tools like Puppeteer MCP (which use <code>additionalProperties: false</code> and <code>$defs</code>) immediately crash Gemini with HTTP 400. CodeRun's automatic sanitization ensures 100% plug-and-play compatibility.
+        </div>
+      </section>
+
+      <!-- MCP Overview -->
+      <section id="mcp-overview">
+        <h2 class="section-heading">🔌 Model Context Protocol (MCP) Integration</h2>
+        <p>
+          The <strong>Model Context Protocol (MCP)</strong> is an open specification enabling AI models to safely access external data sources and execution runtimes. CodeRun provides a full <strong>stdio</strong> and <strong>SSE/HTTP</strong> client, allowing the agent to dynamically discover tools, read schemas, and invoke functions in real-time.
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🌐</div>
+            <div class="card-title">Web Fetcher (Built-in)</div>
+            <div class="card-text">Headless web fetcher converting HTML to clean markdown for fast internet search and research.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🧠</div>
+            <div class="card-title">Memory Graph (Built-in)</div>
+            <div class="card-text">Persistent knowledge graph storing entities, relations, and repository facts across chat sessions.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🐙</div>
+            <div class="card-title">GitHub (Built-in)</div>
+            <div class="card-text">Interact with remote GitHub repositories, manage issues, read commits, and open pull requests.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🎭</div>
+            <div class="card-title">Puppeteer Browser (Built-in)</div>
+            <div class="card-text">Full headless or headful browser automation with screenshot capture and JavaScript evaluation.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- How to Add MCP -->
+      <section id="adding-mcp">
+        <h2 class="section-heading">⚙️ How to Add & Save Custom MCP Servers</h2>
+        <p>
+          You can attach any community or custom MCP server directly in the CodeRun interface:
+        </p>
+
+        <div class="step-flow">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Navigate to the MCP Panel</div>
+              <p>Click the <strong>MCP</strong> icon in the navigation rail (below the Rules icon).</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Click "+ Add MCP"</div>
+              <p>Click the <strong>+ Add MCP</strong> button at the top right to open the configuration modal.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Select a Quick Template or Custom</div>
+              <p>Choose from popular pre-built templates (<code>GitHub</code>, <code>Web Fetch</code>, <code>Memory</code>, <code>PostgreSQL</code>, <code>MySQL</code>, or <code>Custom</code>) to pre-fill standard arguments.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Fill in Server Details</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Description</th>
+                      <th>Example</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>Server Name</strong></td>
+                      <td>Unique identifier for the server</td>
+                      <td><code>github</code>, <code>puppeteer</code>, <code>postgres-db</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Transport Type</strong></td>
+                      <td>Local Command (stdio) or Remote Server (SSE)</td>
+                      <td><code>Local Command</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Command</strong></td>
+                      <td>Executable command on your system</td>
+                      <td><code>npx</code>, <code>node</code>, <code>python</code>, <code>uvx</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Arguments</strong></td>
+                      <td>Flags and package name</td>
+                      <td><code>-y @modelcontextprotocol/server-github</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Environment Variables</strong></td>
+                      <td>Custom tokens, API keys, or connection strings</td>
+                      <td><code>GITHUB_PERSONAL_ACCESS_TOKEN = ghp_...</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Working Directory</strong></td>
+                      <td>Optional working directory</td>
+                      <td><code>C:/projects/my-mcp-server</code></td>
+                    </tr>
+                    <tr>
+                      <td><strong>Always Ask Permission</strong></td>
+                      <td>Safety approval prompt toggle</td>
+                      <td>Checked (Recommended)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Click "Add Server"</div>
+              <p>CodeRun starts the server, performs the JSON-RPC initialization handshake, queries <code>tools/list</code>, and activates the server.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MCP Reflection -->
+      <section id="mcp-reflection">
+        <h2 class="section-heading">🔍 How MCP Reflects in Execution</h2>
+        <p>
+          Once an MCP server connects, CodeRun dynamically integrates its capabilities:
+        </p>
+        <ul>
+          <li><strong>Connection Status Indicator:</strong> The server card shows a bright green dot (<code>Connected</code>) and a pill badge indicating transport (<code>STDIO</code> or <code>SSE</code>).</li>
+          <li><strong>Discovered Tools Accordion:</strong> Expand the <strong>Tools (X/Y active)</strong> dropdown to inspect every tool discovered from the server. Each tool has its own toggle switch so you can enable or disable specific tools individually.</li>
+          <li><strong>Namespaced Registration:</strong> Tools are registered into the agent loop with namespaced identifiers: <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> (e.g. <code>mcp__puppeteer__navigate</code>, <code>mcp__github__create_pull_request</code>).</li>
+          <li><strong>Permission Prompting:</strong> When the model requests an MCP tool, CodeRun displays an interactive permission prompt in the chat card with arguments preview, allowing you to <strong>Allow Once</strong>, <strong>Always Allow</strong>, or <strong>Deny</strong>.</li>
+        </ul>
+      </section>
+
+      <!-- Browser Automation -->
+      <section id="browser-automation">
+        <h2 class="section-heading">🌐 Zero-Config Browser Automation</h2>
+        <p>
+          CodeRun features embedded browser discovery for <strong>Puppeteer</strong>. It automatically scans your operating system for installed browsers:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">Windows</div>
+            <div class="card-text">Checks Program Files, LocalAppData for Chrome, Edge, Brave, and Chromium.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">macOS</div>
+            <div class="card-text">Checks <code>/Applications</code> for Google Chrome, Brave Browser, Microsoft Edge, Chromium.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Linux</div>
+            <div class="card-text">Checks <code>/usr/bin/google-chrome</code>, <code>/usr/bin/chromium</code>, <code>brave-browser</code>.</div>
+          </div>
+        </div>
+        <p>You never have to download or configure separate Chrome binaries or Chromium drivers manually.</p>
+      </section>
+
+      <!-- 20 Tools Matrix -->
+      <section id="tools-matrix">
+        <h2 class="section-heading">🧰 The Complete 20-Tool Matrix</h2>
+        <p>
+          CodeRun comes equipped with 20 built-in core tools across 6 operational categories:
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Tool</th>
+                <th>Description</th>
+                <th>Permission</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>📁 Filesystem</strong></td>
+                <td><code>read_file</code></td>
+                <td>Reads file contents with line limits and offset controls</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>write_file</code></td>
+                <td>Creates or replaces file with full staged diff preview</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>edit_file</code></td>
+                <td>Precision search-and-replace of single code chunks</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>patch_file</code></td>
+                <td>Applies multiple search-and-replace blocks in one pass</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>delete_file</code></td>
+                <td>Permanently deletes file with SQLite rollback snapshot</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>create_folder</code></td>
+                <td>Creates directory tree including parent folders</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>delete_folder</code></td>
+                <td>Recursively deletes directory with subtree rollback snapshot</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>get_file_info</code></td>
+                <td>Retrieves file metadata (size, lines, modified date, MIME)</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🔍 Search</strong></td>
+                <td><code>search_files</code></td>
+                <td>Finds files matching glob patterns (e.g. <code>src/**/*.js</code>)</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>find_in_files</code></td>
+                <td>Searches workspace file contents for text patterns</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>list_symbols</code></td>
+                <td>Parses functions, classes, and methods with line numbers</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>list_directory</code></td>
+                <td>Lists folder contents with recursive depth controls</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>💻 Terminal</strong></td>
+                <td><code>run_terminal</code></td>
+                <td>Executes shell commands in VS Code terminal or background</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>terminal_input</code></td>
+                <td>Sends keystrokes and answers to active REPL sessions</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>stop_terminal</code></td>
+                <td>Sends <code>Ctrl+C</code> interrupt signal to active command</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>📋 Planning</strong></td>
+                <td><code>create_plan</code></td>
+                <td>Initializes a multi-step checklist plan</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>update_plan</code></td>
+                <td>Updates task states: <code>[ ]</code> pending, <code>[/]</code> in-progress, <code>[x]</code> done</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🌐 Utility</strong></td>
+                <td><code>web_request</code></td>
+                <td>Performs external HTTP requests (GET, POST, PUT, DELETE)</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>get_current_datetime</code></td>
+                <td>Retrieves current local and ISO timestamps</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🗄️ Database</strong></td>
+                <td><code>query_project_db</code></td>
+                <td>Safe read-only SQL queries on the SQLite knowledge database</td>
+                <td>Safe</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Terminal REPLs -->
+      <section id="terminal-repl">
+        <h2 class="section-heading">💻 Interactive Terminal REPLs & Command Execution</h2>
+        <p>
+          Unlike basic assistants that fail when a command asks for user input, CodeRun has full <strong>interactive terminal lifecycle support</strong>:
+        </p>
+        <ul>
+          <li><strong>Interactive Flag:</strong> When running commands like <code>python -i</code>, <code>node</code>, <code>npm init</code>, or interactive CLI prompts, the agent passes <code>interactive: true</code>.</li>
+          <li><strong>Live Keystroke Delivery:</strong> Using <code>terminal_input</code>, CodeRun sends stdin keystrokes directly into the active pseudo-terminal.</li>
+          <li><strong>Foreground Interrupts:</strong> <code>stop_terminal</code> sends clean <code>Ctrl+C</code> (<code></code>) signals to interrupt long-running commands without terminating your VS Code shell.</li>
+          <li><strong>ANSI Stripping:</strong> All terminal outputs are stripped of ANSI escapes and OSC codes before presentation.</li>
+        </ul>
+      </section>
+
+      <!-- Dynamic Error Boundary -->
+      <section id="error-containment">
+        <h2 class="section-heading">🛡️ Dynamic Error Boundary & Card Containment</h2>
+        <p>
+          In CodeRun v1.4.5, error notifications are encapsulated in responsive, auto-expanding cards:
+        </p>
+        <ul>
+          <li><strong>Zero Boundary Spill:</strong> Long uninterrupted URLs (such as Google Gemini API rate limits or stack traces) break cleanly onto new lines using <code>overflow-wrap: anywhere</code> and <code>word-break: break-word</code>.</li>
+          <li><strong>Dynamic Card Height:</strong> The red card expands vertically as needed to accommodate the entire diagnostic message without clipping.</li>
+          <li><strong>Top-Aligned Status Icons:</strong> Status icons are pinned to the top-left of multi-line error blocks rather than floating in the center.</li>
+          <li><strong>Deduplication Pipeline:</strong> Webview error handling unifies internal agent loop events and terminal stream failures, stripping redundant <code>Error:</code> prefixes and preventing duplicate stacked error cards.</li>
+        </ul>
+      </section>
+
+      <!-- Token Tracking -->
+      <section id="token-tracking">
+        <h2 class="section-heading">📊 Live Context Window & Monotonic Token Tracking</h2>
+        <p>
+          CodeRun features an intelligent context saturation monitoring system:
+        </p>
+        <ul>
+          <li><strong>Monotonic Accumulation:</strong> Token counts strictly accumulate across turns and tool iterations. Total Consumed never decrements or resets unexpectedly.</li>
+          <li><strong>Live Context Window Gauge:</strong> Visual progress bar and token ratio (<code>X / Y (Z%)</code>) indicating current occupancy.</li>
+          <li><strong>Saturation Alerts:</strong> Progress bar shifts from blue to amber (<code>≥70%</code>) and critical red (<code>≥90%</code>) as the context window fills.</li>
+          <li><strong>Session Info Modal:</strong> Click the token badge anytime to inspect Total Consumed, active Context Window usage, Input / System tokens, Output / Response tokens, and trigger 1-click conversation compaction.</li>
+        </ul>
+      </section>
+
+      <!-- Rules Engine -->
+      <section id="rules-engine">
+        <h2 class="section-heading">📜 Global & Workspace Rules Engine</h2>
+        <p>
+          Instruct CodeRun on coding conventions, style rules, and repository architectural patterns:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🌐</div>
+            <div class="card-title">Global Rules (<code>~/.coderun/rules</code>)</div>
+            <div class="card-text">Universal developer rules that apply across every project on your workstation (e.g. "Always use ES modules", "Never use TypeScript").</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📂</div>
+            <div class="card-title">Workspace Rules (<code>.coderunrules</code>)</div>
+            <div class="card-text">Repository-specific guidelines stored in your project root (e.g. "Use PostgreSQL syntax", "Follow clean architecture in src/core").</div>
+          </div>
+        </div>
+        <p>
+          Rules follow a strict precedence hierarchy: <strong>Global Rules → Workspace Rules → Active Chat Instructions</strong>.
+        </p>
+      </section>
+
+      <!-- Adversarial Test Suite -->
+      <section id="test-suite">
+        <h2 class="section-heading">🧪 44 Adversarial Regression Test Suite</h2>
+        <p>
+          Every build of CodeRun is verified against a 44-group adversarial test suite with 0 external dependencies:
+        </p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>Terminal Execution</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>node test/runAllTests.js</code></pre>
+        </div>
+        <p>
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, and MCP dynamic registration.
+        </p>
+      </section>
+
+      <!-- Troubleshooting -->
+      <section id="troubleshooting">
+        <h2 class="section-heading">❓ Troubleshooting & FAQ</h2>
+
+        <div class="callout warning">
+          <div class="callout-header">Gemini HTTP 400 Bad Request: Unknown name "additionalProperties"</div>
+          <strong>Resolved in v1.4.5:</strong> Gemini Protobuf schema parser rejects complex JSON Schema fields. CodeRun's automatic schema sanitizer recursively strips unsupported keywords before dispatching tool calls.
+        </div>
+
+        <div class="callout warning">
+          <div class="callout-header">Gemini HTTP 404: models/models/... Not Found</div>
+          <strong>Resolved in v1.4.5:</strong> CodeRun normalizes model strings by stripping redundant <code>models/</code> prefixes and ensuring native REST endpoints never append duplicate model path segments.
+        </div>
+
+        <div class="callout info">
+          <div class="callout-header">How do I abort a stuck command?</div>
+          Click the red <strong>Stop</strong> button in the chat interface or use <code>stop_terminal</code> to send an interrupt signal.
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Right Table of Contents -->
+    <aside class="doc-toc">
+      <div class="toc-title">On this page</div>
+      <ul class="toc-list">
+        <li class="toc-item"><a href="#introduction" class="toc-link">Overview</a></li>
+        <li class="toc-item"><a href="#architecture" class="toc-link">Agentic Loop</a></li>
+        <li class="toc-item"><a href="#providers-overview" class="toc-link">Supported Providers</a></li>
+        <li class="toc-item"><a href="#saving-providers" class="toc-link">How to Save Providers</a></li>
+        <li class="toc-item"><a href="#provider-reflection" class="toc-link">How Providers Reflect</a></li>
+        <li class="toc-item"><a href="#gemini-sanitization" class="toc-link">Gemini Sanitization</a></li>
+        <li class="toc-item"><a href="#mcp-overview" class="toc-link">What is MCP?</a></li>
+        <li class="toc-item"><a href="#adding-mcp" class="toc-link">How to Add MCP</a></li>
+        <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">20-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
+        <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
+        <li class="toc-item"><a href="#token-tracking" class="toc-link">Live Token Gauge</a></li>
+        <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">Test Suite</a></li>
+        <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting & FAQ</a></li>
+      </ul>
+    </aside>
+
+  </div>
+
+  <script>
+    function copyCode(btn) {
+      var container = btn.closest('.code-container');
+      if (!container) return;
+      var codeEl = container.querySelector('pre code');
+      if (!codeEl) return;
+      var text = codeEl.textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      }
+      var orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(function restoreCopy() {
+        btn.textContent = orig;
+      }, 1500);
+    }
+
+    function handleDocSearch() {
+      var query = this.value.toLowerCase().trim();
+      var sections = document.querySelectorAll('main.doc-main section');
+      if (!query) {
+        for (var i = 0; i < sections.length; i++) {
+          sections[i].style.display = 'block';
+        }
+        return;
+      }
+      for (var j = 0; j < sections.length; j++) {
+        var text = sections[j].textContent.toLowerCase();
+        if (text.indexOf(query) !== -1) {
+          sections[j].style.display = 'block';
+        } else {
+          sections[j].style.display = 'none';
+        }
+      }
+    }
+
+    function initDocSearch() {
+      var searchInput = document.getElementById('docSearchInput');
+      if (searchInput) {
+        searchInput.oninput = handleDocSearch;
+      }
+    }
+
+    function updateActiveToc() {
+      var sections = document.querySelectorAll('main.doc-main section[id]');
+      var scrollPos = window.scrollY + 100;
+      var currentId = '';
+
+      for (var i = 0; i < sections.length; i++) {
+        var sec = sections[i];
+        if (sec.offsetTop <= scrollPos) {
+          currentId = sec.getAttribute('id');
+        }
+      }
+
+      if (currentId) {
+        var tocLinks = document.querySelectorAll('.toc-link');
+        for (var j = 0; j < tocLinks.length; j++) {
+          var href = tocLinks[j].getAttribute('href');
+          if (href === '#' + currentId) {
+            tocLinks[j].classList.add('active');
+          } else {
+            tocLinks[j].classList.remove('active');
+          }
+        }
+
+        var sidebarLinks = document.querySelectorAll('.sidebar-link');
+        for (var k = 0; k < sidebarLinks.length; k++) {
+          var sHref = sidebarLinks[k].getAttribute('href');
+          if (sHref === '#' + currentId) {
+            sidebarLinks[k].classList.add('active');
+          } else {
+            sidebarLinks[k].classList.remove('active');
+          }
+        }
+      }
+    }
+
+    window.addEventListener('scroll', updateActiveToc);
+    document.addEventListener('DOMContentLoaded', function onDocLoaded() {
+      initDocSearch();
+      updateActiveToc();
+    });
+  </script>
+</body>
+</html>
