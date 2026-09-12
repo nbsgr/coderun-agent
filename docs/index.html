@@ -610,7 +610,1013 @@
       margin-bottom: 6px;
     }
 
+    
+    /* ════════════════════════════════════════════════════
+       Interactive Simulator Containers & Window Frames
+       ════════════════════════════════════════════════════ */
+    .sim-window {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 24px 0;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .sim-window-header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .sim-window-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sim-window-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .sim-window-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .sim-window-dot.red { background: #ff5f56; }
+    .sim-window-dot.yellow { background: #ffbd2e; }
+    .sim-window-dot.green { background: #27c93f; }
+
+    .sim-window-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #c9d1d9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sim-window-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 12px;
+      background: rgba(56, 139, 253, 0.15);
+      border: 1px solid rgba(56, 139, 253, 0.3);
+      color: #58a6ff;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .sim-window-tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .sim-window-tab {
+      padding: 4px 10px;
+      font-size: 11.5px;
+      color: #8b949e;
+      border-radius: 4px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sim-window-tab:hover {
+      color: #f0f6fc;
+      background: #21262d;
+    }
+    .sim-window-tab.active {
+      color: #58a6ff;
+      background: rgba(56, 139, 253, 0.12);
+      font-weight: 600;
+    }
+
+    .sim-window-body {
+      background: #0d1117;
+      padding: 16px;
+      position: relative;
+    }
+
+    /* VS Code Form Elements inside Sim */
+    .cr-sim-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 12px;
+    }
+
+    .cr-sim-form-group label {
+      color: #8b949e;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .cr-sim-form-group.checkbox-row {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+    .cr-sim-form-group.checkbox-row label {
+      color: #c9d1d9;
+      cursor: pointer;
+    }
+
+    .cr-sim-input,
+    .cr-sim-select {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #f0f6fc;
+      font-size: 13px;
+      padding: 7px 11px;
+      outline: none;
+      transition: all 0.15s ease;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .cr-sim-input:focus,
+    .cr-sim-select:focus {
+      border-color: #58a6ff;
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+    }
+
+    .cr-sim-btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      margin-bottom: 16px;
+    }
+
+    .cr-sim-save-btn {
+      background: #1f6feb;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .cr-sim-save-btn:hover {
+      background: #388bfd;
+    }
+    .cr-sim-save-btn.saved {
+      background: #238636;
+      border-color: #2ea043;
+    }
+
+    .cr-sim-reset-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .cr-sim-reset-btn:hover {
+      background: #30363d;
+      color: #f0f6fc;
+    }
+
+    /* Saved Providers List inside Sim */
+    .cr-sim-saved-wrap {
+      border-top: 1px solid #30363d;
+      padding-top: 14px;
+      margin-top: 8px;
+    }
+
+    .cr-sim-saved-heading {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #8b949e;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .cr-sim-provider-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      transition: all 0.15s;
+    }
+    .cr-sim-provider-item:hover {
+      border-color: #58a6ff;
+      background: #1c2128;
+    }
+
+    .cr-sim-provider-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .cr-sim-provider-name {
+      font-weight: 600;
+      font-size: 12.5px;
+      color: #f0f6fc;
+      white-space: nowrap;
+    }
+
+    .cr-sim-provider-url {
+      font-size: 11.5px;
+      color: #8b949e;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      font-family: monospace;
+    }
+
+    .cr-sim-provider-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cr-sim-load-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #58a6ff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .cr-sim-load-btn:hover {
+      background: #1f6feb;
+      color: #ffffff;
+      border-color: #388bfd;
+    }
+
+    .cr-sim-remove-btn {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .cr-sim-remove-btn:hover {
+      color: #f85149;
+      background: rgba(248, 81, 73, 0.15);
+    }
+
+    /* Switch Toggles */
+    .cr-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .cr-switch.sm {
+      width: 30px;
+      height: 16px;
+    }
+    .cr-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .cr-switch-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #30363d;
+      transition: .2s;
+      border-radius: 20px;
+    }
+    .cr-switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #ffffff;
+      transition: .2s;
+      border-radius: 50%;
+    }
+    .cr-switch.sm .cr-switch-slider:before {
+      height: 10px;
+      width: 10px;
+      left: 3px;
+      bottom: 3px;
+    }
+    .cr-switch input:checked + .cr-switch-slider {
+      background-color: #238636;
+    }
+    .cr-switch input:checked + .cr-switch-slider:before {
+      transform: translateX(16px);
+    }
+    .cr-switch.sm input:checked + .cr-switch-slider:before {
+      transform: translateX(14px);
+    }
+
+    /* MCP Dashboard styles inside Sim */
+    .cr-mcp-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .cr-mcp-top-title-group h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f0f6fc;
+      margin: 0;
+    }
+
+    .cr-mcp-top-title-group p {
+      font-size: 12px;
+      color: #8b949e;
+      margin: 2px 0 0 0;
+    }
+
+    .cr-mcp-primary-add-btn {
+      background: #238636;
+      border: 1px solid #2ea043;
+      color: #ffffff;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .cr-mcp-primary-add-btn:hover {
+      background: #2ea043;
+      box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+    }
+
+    .cr-mcp-global-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .cr-mcp-global-card-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cr-mcp-global-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .cr-mcp-global-card-sub {
+      font-size: 11.5px;
+      color: #8b949e;
+    }
+
+    /* Core Agent Builtin Tools dropdown card */
+    .cr-builtin-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+
+    .cr-builtin-summary {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      background: #161b22;
+    }
+
+    .cr-builtin-summary-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .cr-builtin-badge {
+      font-size: 10px;
+      font-weight: 700;
+      background: #238636;
+      color: #ffffff;
+      padding: 1px 6px;
+      border-radius: 10px;
+    }
+
+    .cr-builtin-body {
+      padding: 12px 14px;
+      border-top: 1px solid #30363d;
+      background: #0d1117;
+    }
+
+    .cr-builtin-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .cr-builtin-search {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 10px;
+      color: #f0f6fc;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .cr-builtin-bulk-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .cr-builtin-bulk-btn:hover {
+      background: #30363d;
+      color: #ffffff;
+    }
+
+    .cr-builtin-tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 6px;
+    }
+
+    .cr-builtin-tool-pill {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 5px 8px;
+      font-size: 11.5px;
+    }
+
+    .cr-builtin-tool-pill span.name {
+      font-family: monospace;
+      color: #58a6ff;
+      font-weight: 600;
+    }
+
+    .cr-builtin-tool-pill span.perm {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .cr-builtin-tool-pill span.perm.safe {
+      background: rgba(46, 160, 67, 0.2);
+      color: #3fb950;
+    }
+    .cr-builtin-tool-pill span.perm.danger {
+      background: rgba(248, 81, 73, 0.2);
+      color: #f85149;
+    }
+
+    /* Server Card in Sim */
+    .cr-mcp-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-left: 3px solid #2ea043;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cr-mcp-card-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .cr-mcp-card-left-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cr-mcp-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #2ea043;
+      box-shadow: 0 0 6px rgba(46, 160, 67, 0.4);
+    }
+
+    .cr-mcp-card-name {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .cr-mcp-badge-free {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: #133820;
+      border: 1px solid #238636;
+      color: #3fb950;
+    }
+
+    .cr-mcp-tags-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .cr-mcp-pill-stdio {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #0d2847;
+      border: 1px solid #1a5fb4;
+      color: #58a6ff;
+    }
+
+    .cr-mcp-pill-perm {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #342407;
+      border: 1px solid #9e6a03;
+      color: #f0883e;
+    }
+
+    .cr-mcp-cmd-box {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 5px;
+      padding: 6px 9px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #c9d1d9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cr-mcp-tools-details summary {
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      color: #58a6ff;
+      user-select: none;
+    }
+
+    .cr-mcp-tools-list {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-left: 8px;
+    }
+
+    .cr-mcp-tool-item {
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 2px solid #58a6ff;
+      padding: 5px 8px;
+      border-radius: 0 4px 4px 0;
+      font-size: 11px;
+    }
+
+    .cr-mcp-tool-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .cr-mcp-tool-name {
+      color: #f0f6fc;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* Simulated Modal Dialog inside Docs */
+    .sim-modal-container {
+      background: #11141a;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 20px 0;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+    }
+
+    .cr-mcp-modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+    }
+
+    .cr-mcp-modal-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .cr-mcp-modal-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(56, 139, 253, 0.22), rgba(31, 111, 235, 0.08));
+      border: 1px solid rgba(56, 139, 253, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .cr-mcp-modal-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .cr-mcp-modal-subtitle {
+      margin: 2px 0 0 0;
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .cr-mcp-modal-close-btn {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .cr-mcp-modal-body {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .cr-mcp-modal-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .cr-mcp-sec-title-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .cr-mcp-sec-heading {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .cr-mcp-sec-sub {
+      font-size: 11px;
+      color: #8b949e;
+      margin-left: 24px;
+    }
+
+    .cr-mcp-templates-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .cr-mcp-template-card {
+      height: 68px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      padding: 4px;
+    }
+
+    .cr-mcp-template-card:hover {
+      border-color: #58a6ff;
+      background: #1c2128;
+    }
+
+    .cr-mcp-template-card.active {
+      border: 1.5px solid #388bfd;
+      background: rgba(56, 139, 253, 0.12);
+      box-shadow: 0 0 0 1px #388bfd;
+    }
+
+    .cr-mcp-template-name {
+      font-size: 11px;
+      font-weight: 500;
+      color: #c9d1d9;
+    }
+    .cr-mcp-template-card.active .cr-mcp-template-name {
+      color: #58a6ff;
+      font-weight: 600;
+    }
+
+    .cr-mcp-transport-cards-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .cr-mcp-transport-card {
+      flex: 1;
+      padding: 10px 12px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .cr-mcp-transport-card:hover {
+      border-color: #58a6ff;
+    }
+    .cr-mcp-transport-card.active {
+      border: 1.5px solid #388bfd;
+      background: rgba(56, 139, 253, 0.08);
+    }
+
+    .cr-mcp-transport-radio-circle {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid #6e7681;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+    }
+    .cr-mcp-transport-card.active .cr-mcp-transport-radio-circle {
+      border-color: #388bfd;
+      background: #388bfd;
+    }
+
+    .cr-mcp-transport-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+    .cr-mcp-transport-sub {
+      font-size: 10.5px;
+      color: #8b949e;
+    }
+
+    .cr-mcp-env-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .cr-mcp-btn-add-var {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #58a6ff;
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .cr-mcp-env-table {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .cr-mcp-env-table-header {
+      display: flex;
+      padding: 5px 8px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      font-size: 11px;
+      color: #8b949e;
+    }
+
+    .cr-mcp-env-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+    }
+    .cr-mcp-env-row:last-child {
+      border-bottom: none;
+    }
+
+    .cr-mcp-env-row input {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 4px 7px;
+      color: #f0f6fc;
+      font-size: 11px;
+      font-family: monospace;
+    }
+
+    .cr-mcp-env-del-btn {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 5px;
+    }
+    .cr-mcp-env-del-btn:hover {
+      color: #f85149;
+    }
+
+    .cr-mcp-perm-check-wrap {
+      margin-top: 4px;
+    }
+
+    .cr-mcp-modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 12px 18px;
+      border-top: 1px solid #21262d;
+      background: #161b22;
+    }
+
+    .cr-btn-modal-cancel {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 12.5px;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+
+    .cr-btn-modal-primary {
+      background: #0078d4;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #ffffff;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 16px;
+      cursor: pointer;
+    }
+    .cr-btn-modal-primary:hover {
+      background: #106ebe;
+    }
+
+    .cr-sim-notification {
+      background: rgba(46, 160, 67, 0.15);
+      border: 1px solid #2ea043;
+      color: #3fb950;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 10px;
+      display: none;
+    }
+  
     /* Responsive */
+    
+    /* Screenshot Cards */
+    .doc-screenshot-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 22px 0;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.2s;
+    }
+
+    .doc-screenshot-card:hover {
+      border-color: var(--accent-blue);
+    }
+
+    .doc-screenshot-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .doc-screenshot-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .doc-screenshot-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .doc-screenshot-dot.red { background: #ff5f56; }
+    .doc-screenshot-dot.yellow { background: #ffbd2e; }
+    .doc-screenshot-dot.green { background: #27c93f; }
+
+    .doc-screenshot-img-wrap {
+      background: #090d13;
+      padding: 12px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .doc-screenshot-img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: block;
+    }
+
+    .doc-screenshot-caption {
+      padding: 11px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      background: var(--bg-secondary);
+      border-top: 1px solid rgba(48, 54, 61, 0.5);
+      line-height: 1.45;
+    }
+  
     @media (max-width: 1100px) {
       aside.doc-toc { display: none; }
       main.doc-main { margin-right: 0; }
@@ -910,7 +1916,126 @@
             </div>
           </div>
         </div>
-      </section>
+
+        
+        <!-- Live Interactive Settings Simulator -->
+        <div class="sim-window" id="simSettingsWindow">
+          <div class="sim-window-header">
+            <div class="sim-window-left">
+              <div class="sim-window-dots">
+                <span class="sim-window-dot red"></span>
+                <span class="sim-window-dot yellow"></span>
+                <span class="sim-window-dot green"></span>
+              </div>
+              <div class="sim-window-title">
+                CodeRun Settings &amp; Saved Providers
+                <span class="sim-window-badge">Live Interactive Simulator</span>
+              </div>
+            </div>
+            <div class="sim-window-tabs">
+              <button type="button" class="sim-window-tab active" id="simTabSettings">Settings Form</button>
+              <button type="button" class="sim-window-tab" id="simTabScreenshot">Static Screenshot</button>
+            </div>
+          </div>
+
+          <div class="sim-window-body">
+            <!-- Tab 1: Interactive Form -->
+            <div id="simSettingsInteractiveView">
+              <div class="cr-sim-form-group">
+                <label for="simCfgProvider">Provider</label>
+                <select id="simCfgProvider" class="cr-sim-select">
+                  <option value="ollama">Ollama</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="xai">xAI (Grok)</option>
+                  <option value="groq">Groq</option>
+                  <option value="compatible" selected>OpenAI Compatible</option>
+                </select>
+              </div>
+
+              <div class="cr-sim-form-group" id="simCfgCompatibleNameGroup">
+                <label for="simCfgCompatibleName">Custom Provider Name</label>
+                <input type="text" id="simCfgCompatibleName" class="cr-sim-input" value="test" placeholder="e.g. Cloudflare, LM Studio, vLLM">
+              </div>
+
+              <div class="cr-sim-form-group" id="simCfgCompatibleApiTypeGroup">
+                <label for="simCfgCompatibleApiType">API Type</label>
+                <select id="simCfgCompatibleApiType" class="cr-sim-select">
+                  <option value="openai" selected>OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic Compatible</option>
+                  <option value="gemini">Google Gemini Compatible</option>
+                </select>
+              </div>
+
+              <div class="cr-sim-form-group">
+                <label for="simCfgBaseUrl">Base URL</label>
+                <input type="text" id="simCfgBaseUrl" class="cr-sim-input" value="https://generativelanguage.googleapis.com/v1beta/openai" placeholder="e.g. https://api.openai.com/v1">
+              </div>
+
+              <div class="cr-sim-form-group">
+                <label for="simCfgApiKey">API Key</label>
+                <input type="password" id="simCfgApiKey" class="cr-sim-input" value="••••••••••••••••" placeholder="sk-...">
+              </div>
+
+              <div class="cr-sim-form-group">
+                <label for="simCfgModel">Model</label>
+                <input type="text" id="simCfgModel" class="cr-sim-input" value="gemini-2.0-flash" placeholder="Model name (e.g. gemini-2.0-flash, gpt-4)">
+              </div>
+
+              <div class="cr-sim-form-group">
+                <label for="simCfgMaxIterations">Max Iterations</label>
+                <input type="number" id="simCfgMaxIterations" class="cr-sim-input" value="50" min="1" max="100">
+              </div>
+
+              <div class="cr-sim-form-group checkbox-row">
+                <input type="checkbox" id="simCfgStreaming" checked>
+                <label for="simCfgStreaming">Enable Streaming</label>
+              </div>
+
+              <div class="cr-sim-form-group checkbox-row">
+                <input type="checkbox" id="simCfgShowThinking" checked>
+                <label for="simCfgShowThinking">Show Thinking</label>
+              </div>
+
+              <div class="cr-sim-form-group checkbox-row">
+                <input type="checkbox" id="simCfgConfirmDangerous" checked>
+                <label for="simCfgConfirmDangerous">Confirm Dangerous Actions</label>
+              </div>
+
+              <div class="cr-sim-btn-row">
+                <button type="button" id="simSaveSettingsBtn" class="cr-sim-save-btn">Save Settings</button>
+                <button type="button" id="simResetSettingsBtn" class="cr-sim-reset-btn">Reset Form</button>
+              </div>
+
+              <div id="simSettingsAlert" class="cr-sim-notification">
+                ✓ Provider credentials saved successfully to state!
+              </div>
+
+              <!-- Saved Providers list reflecting live state -->
+              <div class="cr-sim-saved-wrap">
+                <div class="cr-sim-saved-heading">
+                  <span>Saved Providers (<span id="simSavedCount">3</span>)</span>
+                  <span style="font-size:10px;color:#3fb950;">● Live Multi-Endpoint Store</span>
+                </div>
+                <div id="simSavedProvidersList">
+                  <!-- Dynamically populated -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 2: Static Screenshot Fallback -->
+            <div id="simSettingsScreenshotView" style="display:none;">
+              <img src="./images/provider-settings-form.png" alt="CodeRun Provider Settings Form" class="doc-screenshot-img" style="width:100%;">
+              <p class="doc-screenshot-caption" style="margin-top:10px;">
+                <strong>Figure 1 (Static Capture):</strong> The Provider Settings panel inside CodeRun sidebar showing the Custom Compatible provider configured.
+              </p>
+            </div>
+          </div>
+        </div>
+  
+        </section>
 
       <!-- How Providers Reflect -->
       <section id="provider-reflection">
@@ -941,7 +2066,9 @@
             <div class="card-text">CodeRun automatically retrieves the maximum context window size (e.g. 1,048,576 tokens for Gemini, 200,000 for Claude) via raw REST discovery to power the live saturation gauge.</div>
           </div>
         </div>
-      </section>
+
+        
+        </section>
 
       <!-- Gemini Sanitization -->
       <section id="gemini-sanitization">
@@ -997,7 +2124,97 @@ function sanitizeGeminiSchema(schema) {
             <div class="card-text">Full headless or headful browser automation with screenshot capture and JavaScript evaluation.</div>
           </div>
         </div>
-      </section>
+
+        
+        <!-- Live Interactive MCP Dashboard Simulator -->
+        <div class="sim-window" id="simMcpWindow">
+          <div class="sim-window-header">
+            <div class="sim-window-left">
+              <div class="sim-window-dots">
+                <span class="sim-window-dot red"></span>
+                <span class="sim-window-dot yellow"></span>
+                <span class="sim-window-dot green"></span>
+              </div>
+              <div class="sim-window-title">
+                Model Context Protocol (MCP) Dashboard
+                <span class="sim-window-badge">Live Interactive Simulator</span>
+              </div>
+            </div>
+            <div class="sim-window-tabs">
+              <button type="button" class="sim-window-tab active" id="simTabMcpLive">Live Dashboard</button>
+              <button type="button" class="sim-window-tab" id="simTabMcpScreenshot">Static Screenshot</button>
+            </div>
+          </div>
+
+          <div class="sim-window-body">
+            <!-- Tab 1: Live Interactive MCP View -->
+            <div id="simMcpLiveView">
+              <div class="cr-mcp-top-bar">
+                <div class="cr-mcp-top-title-group">
+                  <h3>MCP (Model Context Protocol)</h3>
+                  <p>Manage and configure external tool servers for the AI agent</p>
+                </div>
+                <button type="button" id="simOpenAddMcpBtn" class="cr-mcp-primary-add-btn">
+                  <span>+ Add MCP</span>
+                </button>
+              </div>
+
+              <!-- Global Function Calling Toggle -->
+              <div class="cr-mcp-global-card">
+                <label class="cr-switch">
+                  <input type="checkbox" id="simGlobalToolsToggle" checked>
+                  <span class="cr-switch-slider"></span>
+                </label>
+                <div class="cr-mcp-global-card-text">
+                  <strong class="cr-mcp-global-card-title">Enable Function Calling / Agent Tools</strong>
+                  <div class="cr-mcp-global-card-sub">When disabled, tools parameter is omitted from API requests so models/APIs that block tools will not error.</div>
+                </div>
+              </div>
+
+              <!-- Core Agent Built-in Tools Card -->
+              <div class="cr-builtin-card">
+                <details id="simBuiltinDropdown" open>
+                  <summary class="cr-builtin-summary">
+                    <div class="cr-builtin-summary-left">
+                      <span>⚡ Core Agent Built-in Tools</span>
+                      <span class="cr-builtin-badge">Built-in (20 active)</span>
+                    </div>
+                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning</span>
+                  </summary>
+                  <div class="cr-builtin-body">
+                    <div class="cr-builtin-toolbar">
+                      <input type="text" id="simBuiltinSearch" class="cr-builtin-search" placeholder="🔍 Filter built-in tools...">
+                      <button type="button" id="simEnableAllToolsBtn" class="cr-builtin-bulk-btn">Enable All</button>
+                      <button type="button" id="simDisableAllToolsBtn" class="cr-builtin-bulk-btn">Disable All</button>
+                    </div>
+                    <div id="simBuiltinToolsGrid" class="cr-builtin-tools-grid">
+                      <!-- Populated via script -->
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <!-- Active MCP Servers Section -->
+              <div style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+                Connected MCP Servers (<span id="simMcpServerCount">2</span>)
+              </div>
+
+              <div id="simMcpServerList">
+                <!-- Populated via script with web-fetch and memory -->
+              </div>
+            </div>
+
+            <!-- Tab 2: Static Screenshot Fallback -->
+            <div id="simMcpScreenshotView" style="display:none;">
+              <img src="./images/mcp-panel-overview.png" alt="CodeRun MCP Panel Overview" class="doc-screenshot-img" style="width:100%;">
+              <p class="doc-screenshot-caption" style="margin-top:10px;">
+                <strong>Figure 3 (Static Capture):</strong> The CodeRun MCP Panel displaying native function calling toggle, Core Agent Built-in Tools, and Web Fetcher card.
+              </p>
+            </div>
+          </div>
+        </div>
+  
+        </section>
 
       <!-- How to Add MCP -->
       <section id="adding-mcp">
@@ -1030,6 +2247,9 @@ function sanitizeGeminiSchema(schema) {
               <p>Choose from popular pre-built templates (<code>GitHub</code>, <code>Web Fetch</code>, <code>Memory</code>, <code>PostgreSQL</code>, <code>MySQL</code>, or <code>Custom</code>) to pre-fill standard arguments.</p>
             </div>
           </div>
+
+        
+  
 
           <div class="step-item">
             <div class="step-num">4</div>
@@ -1083,14 +2303,189 @@ function sanitizeGeminiSchema(schema) {
                   </tbody>
                 </table>
               </div>
+
+        
+        <!-- Live Interactive Add MCP Server Modal Simulator -->
+        <div class="sim-modal-container" id="simAddMcpModalContainer">
+          <div class="cr-mcp-modal-header">
+            <div class="cr-mcp-modal-title-wrap">
+              <div class="cr-mcp-modal-icon-box">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+              </div>
+              <div>
+                <h3 class="cr-mcp-modal-title">Add MCP Server</h3>
+                <p class="cr-mcp-modal-subtitle">Connect an MCP server to extend your agent with external tools.</p>
+              </div>
             </div>
+            <button type="button" class="cr-mcp-modal-close-btn" title="Reset Modal" id="simModalResetBtn">✕</button>
+          </div>
+
+          <div class="cr-mcp-modal-body">
+            <!-- Section 1: Quick Setup Templates -->
+            <div class="cr-mcp-modal-section">
+              <div class="cr-mcp-sec-title-left">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                <span class="cr-mcp-sec-heading">Quick Setup (Popular Servers)</span>
+              </div>
+              <div class="cr-mcp-sec-sub">Click a template card to test real-time auto-filling of command, arguments, and environment keys.</div>
+
+              <div class="cr-mcp-templates-grid">
+                <div class="cr-mcp-template-card active" data-template="github" id="simTplGithub">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#f0f6fc"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">GitHub</span>
+                </div>
+
+                <div class="cr-mcp-template-card" data-template="web-fetch" id="simTplWebFetch">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#388bfd" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">Web Fetch</span>
+                </div>
+
+                <div class="cr-mcp-template-card" data-template="memory" id="simTplMemory">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f778ba" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"></path></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">Memory</span>
+                </div>
+
+                <div class="cr-mcp-template-card" data-template="postgres" id="simTplPostgres">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2"><path d="M19 11V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7"></path></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">PostgreSQL</span>
+                </div>
+
+                <div class="cr-mcp-template-card" data-template="mysql" id="simTplMysql">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e3b341" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">MySQL</span>
+                </div>
+
+                <div class="cr-mcp-template-card" data-template="custom" id="simTplCustom">
+                  <div class="cr-mcp-template-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2"><circle cx="12" cy="12" r="3"></circle></svg>
+                  </div>
+                  <span class="cr-mcp-template-name">Custom</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section 2: Server Configuration Form -->
+            <div class="cr-mcp-modal-section">
+              <div class="cr-sim-form-group">
+                <label>Server Name <span style="color:#f85149;">*</span></label>
+                <input type="text" id="simMcpServerName" class="cr-sim-input" value="github">
+                <div style="font-size:11px;color:#8b949e;margin-top:3px;">A friendly name to identify this server.</div>
+              </div>
+
+              <!-- Transport Cards -->
+              <div class="cr-sim-form-group">
+                <label>Transport Type <span style="color:#f85149;">*</span></label>
+                <div class="cr-mcp-transport-cards-row">
+                  <div id="simMcpCardStdio" class="cr-mcp-transport-card active">
+                    <div class="cr-mcp-transport-radio-circle"><div style="width:6px;height:6px;border-radius:50%;background:#fff;"></div></div>
+                    <div>
+                      <div class="cr-mcp-transport-title">Local Command</div>
+                      <div class="cr-mcp-transport-sub">Run a local command (Python, Node, Binary)</div>
+                    </div>
+                  </div>
+                  <div id="simMcpCardSse" class="cr-mcp-transport-card">
+                    <div class="cr-mcp-transport-radio-circle"></div>
+                    <div>
+                      <div class="cr-mcp-transport-title">Remote Server</div>
+                      <div class="cr-mcp-transport-sub">Connect via SSE or HTTP URL</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Stdio Fields -->
+              <div id="simMcpStdioFields">
+                <div class="cr-sim-form-group">
+                  <label>Command <span style="color:#f85149;">*</span></label>
+                  <input type="text" id="simMcpCommand" class="cr-sim-input" value="npx">
+                  <div style="font-size:11px;color:#8b949e;margin-top:3px;">The command to start the MCP server.</div>
+                </div>
+
+                <div class="cr-sim-form-group">
+                  <label>Arguments / Script Path</label>
+                  <input type="text" id="simMcpArgs" class="cr-sim-input" value="-y @modelcontextprotocol/server-github">
+                  <div style="font-size:11px;color:#8b949e;margin-top:3px;">Arguments for the command or path to your script.</div>
+                </div>
+              </div>
+
+              <!-- SSE Fields (hidden by default) -->
+              <div id="simMcpSseFields" style="display:none;">
+                <div class="cr-sim-form-group">
+                  <label>Server URL <span style="color:#f85149;">*</span></label>
+                  <input type="text" id="simMcpUrl" class="cr-sim-input" placeholder="http://localhost:8000/sse or https://mcp.domain.com/sse">
+                </div>
+                <div class="cr-sim-form-group">
+                  <label>Headers / Auth (Optional)</label>
+                  <input type="text" id="simMcpHeaders" class="cr-sim-input" placeholder="Authorization: Bearer mytoken">
+                </div>
+              </div>
+
+              <!-- Environment Variables -->
+              <div class="cr-sim-form-group">
+                <div class="cr-mcp-env-header-row">
+                  <label style="margin-bottom:0;">Environment Variables (Optional)</label>
+                  <button type="button" id="simAddEnvVarBtn" class="cr-mcp-btn-add-var">+ Add Variable</button>
+                </div>
+                <div class="cr-mcp-env-table">
+                  <div class="cr-mcp-env-table-header">
+                    <span style="flex:1;">Key</span>
+                    <span style="flex:1.4;">Value</span>
+                    <span style="width:30px;"></span>
+                  </div>
+                  <div id="simEnvRowsContainer">
+                    <div class="cr-mcp-env-row">
+                      <input type="text" value="GITHUB_PERSONAL_ACCESS_TOKEN" placeholder="KEY">
+                      <input type="text" value="your_token_here" placeholder="Value">
+                      <button type="button" class="cr-mcp-env-del-btn" onclick="this.closest('.cr-mcp-env-row').remove()">🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Permission Checkbox -->
+              <div class="cr-sim-form-group checkbox-row" style="margin-top:10px;">
+                <input type="checkbox" id="simMcpAlwaysAsk" checked>
+                <div>
+                  <label for="simMcpAlwaysAsk" style="font-weight:600;color:#f0f6fc;">Always ask permission before executing tools</label>
+                  <div style="font-size:11px;color:#8b949e;">When enabled, you'll be prompted to approve tool executions.</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="simMcpSaveNotification" class="cr-sim-notification">
+              ✓ Server connected and added to the active MCP Dashboard!
+            </div>
+          </div>
+
+          <div class="cr-mcp-modal-footer">
+            <button type="button" id="simMcpCancelBtn" class="cr-btn-modal-cancel">Reset Fields</button>
+            <button type="button" id="simMcpConnectSaveBtn" class="cr-btn-modal-primary">Connect &amp; Save</button>
+          </div>
+        </div>
+  
+              </div>
           </div>
 
           <div class="step-item">
             <div class="step-num">5</div>
             <div class="step-body">
-              <div class="step-title">Click "Add Server"</div>
-              <p>CodeRun starts the server, performs the JSON-RPC initialization handshake, queries <code>tools/list</code>, and activates the server.</p>
+              <div class="step-title">Click "Connect &amp; Save"</div>
+              <p>Click the prominent <strong>Connect &amp; Save</strong> button. CodeRun starts the server process, performs the JSON-RPC protocol handshake, queries <code>tools/list</code>, and activates the discovered tools inside your active agent session.</p>
             </div>
           </div>
         </div>
@@ -1490,5 +2885,607 @@ function sanitizeGeminiSchema(schema) {
       updateActiveToc();
     });
   </script>
+
+  <script>
+    // ══════════════════════════════════════════════════════════════════════
+    // Interactive CodeRun Playground (Settings & MCP Simulators)
+    // ══════════════════════════════════════════════════════════════════════
+
+    var SIM_PROVIDERS_STORE = [
+      { id: 'ollama', name: 'Ollama', url: 'http://localhost:11434', hasKey: false, model: 'llama3:8b', apiType: 'ollama' },
+      { id: 'groq', name: 'Groq', url: 'https://api.groq.com/openai/v1', hasKey: true, model: 'llama-3.3-70b-versatile', apiType: 'openai' },
+      { id: 'compatible:test', name: 'test', url: 'https://generativelanguage.googleapis.com/v1beta/openai', hasKey: true, model: 'gemini-2.0-flash', apiType: 'openai' }
+    ];
+
+    var SIM_BUILTIN_TOOLS = [
+      { name: 'read_file', cat: 'filesystem', perm: 'safe' },
+      { name: 'write_file', cat: 'filesystem', perm: 'danger' },
+      { name: 'edit_file', cat: 'filesystem', perm: 'danger' },
+      { name: 'patch_file', cat: 'filesystem', perm: 'danger' },
+      { name: 'delete_file', cat: 'filesystem', perm: 'danger' },
+      { name: 'create_folder', cat: 'filesystem', perm: 'safe' },
+      { name: 'delete_folder', cat: 'filesystem', perm: 'danger' },
+      { name: 'get_file_info', cat: 'filesystem', perm: 'safe' },
+      { name: 'search_files', cat: 'search', perm: 'safe' },
+      { name: 'find_in_files', cat: 'search', perm: 'safe' },
+      { name: 'list_symbols', cat: 'search', perm: 'safe' },
+      { name: 'list_directory', cat: 'search', perm: 'safe' },
+      { name: 'run_terminal', cat: 'terminal', perm: 'danger' },
+      { name: 'terminal_input', cat: 'terminal', perm: 'danger' },
+      { name: 'stop_terminal', cat: 'terminal', perm: 'safe' },
+      { name: 'create_plan', cat: 'planning', perm: 'safe' },
+      { name: 'update_plan', cat: 'planning', perm: 'safe' },
+      { name: 'get_plan', cat: 'planning', perm: 'safe' },
+      { name: 'web_fetch', cat: 'utility', perm: 'safe' },
+      { name: 'query_sqlite', cat: 'utility', perm: 'safe' }
+    ];
+
+    var SIM_MCP_SERVERS = [
+      {
+        id: 'web-fetch',
+        name: 'Web Fetcher',
+        type: 'Built-in (STDIO)',
+        status: 'Connected',
+        cmd: 'npx -y @infoinlet/mcp-fetch',
+        tools: ['fetch_html', 'fetch_markdown', 'search_web']
+      },
+      {
+        id: 'memory',
+        name: 'Memory Graph',
+        type: 'STDIO',
+        status: 'Connected',
+        cmd: 'npx -y @modelcontextprotocol/server-memory',
+        tools: ['read_graph', 'create_entities', 'create_relations', 'search_nodes']
+      }
+    ];
+
+    var SIM_DEFAULT_URLS = {
+      ollama: 'http://localhost:11434',
+      openai: 'https://api.openai.com/v1',
+      anthropic: 'https://api.anthropic.com/v1',
+      gemini: 'https://generativelanguage.googleapis.com/v1beta',
+      openrouter: 'https://openrouter.ai/api/v1',
+      xai: 'https://api.x.ai/v1',
+      groq: 'https://api.groq.com/openai/v1',
+      compatible: 'https://generativelanguage.googleapis.com/v1beta/openai'
+    };
+
+    function renderSimSavedProviders() {
+      var container = document.getElementById('simSavedProvidersList');
+      var countBadge = document.getElementById('simSavedCount');
+      if (!container) return;
+
+      container.innerHTML = '';
+      if (countBadge) countBadge.textContent = String(SIM_PROVIDERS_STORE.length);
+
+      for (var i = 0; i < SIM_PROVIDERS_STORE.length; i++) {
+        var p = SIM_PROVIDERS_STORE[i];
+        var item = document.createElement('div');
+        item.className = 'cr-sim-provider-item';
+
+        var keyIcon = p.hasKey ? '🔑 ' : '';
+        item.innerHTML =
+          '<div class="cr-sim-provider-info">' +
+            '<span class="cr-sim-provider-name">' + keyIcon + escHtml(p.name) + '</span>' +
+            '<span class="cr-sim-provider-url">' + escHtml(p.url) + '</span>' +
+          '</div>' +
+          '<div class="cr-sim-provider-actions">' +
+            '<button type="button" class="cr-sim-load-btn" data-index="' + i + '">Load</button>' +
+            '<button type="button" class="cr-sim-remove-btn" data-index="' + i + '">✕</button>' +
+          '</div>';
+
+        container.appendChild(item);
+      }
+
+      var loadBtns = container.querySelectorAll('.cr-sim-load-btn');
+      for (var lb = 0; lb < loadBtns.length; lb++) {
+        loadBtns[lb].onclick = handleSimLoadProvider;
+      }
+
+      var removeBtns = container.querySelectorAll('.cr-sim-remove-btn');
+      for (var rb = 0; rb < removeBtns.length; rb++) {
+        removeBtns[rb].onclick = handleSimRemoveProvider;
+      }
+    }
+
+    function handleSimLoadProvider() {
+      var idx = parseInt(this.getAttribute('data-index'), 10);
+      var item = SIM_PROVIDERS_STORE[idx];
+      if (!item) return;
+
+      var sel = document.getElementById('simCfgProvider');
+      var urlInput = document.getElementById('simCfgBaseUrl');
+      var modelInput = document.getElementById('simCfgModel');
+      var nameGroup = document.getElementById('simCfgCompatibleNameGroup');
+      var nameInput = document.getElementById('simCfgCompatibleName');
+
+      if (item.id.indexOf('compatible') === 0) {
+        if (sel) sel.value = 'compatible';
+        if (nameGroup) nameGroup.style.display = 'block';
+        if (nameInput) nameInput.value = item.name;
+      } else {
+        if (sel) sel.value = item.id;
+        if (nameGroup) nameGroup.style.display = 'none';
+      }
+
+      if (urlInput) urlInput.value = item.url;
+      if (modelInput) modelInput.value = item.model || '';
+
+      var alertBox = document.getElementById('simSettingsAlert');
+      if (alertBox) {
+        alertBox.textContent = '✓ Loaded "' + item.name + '" into settings form!';
+        alertBox.style.display = 'block';
+        function hideLoadedAlert() {
+          alertBox.style.display = 'none';
+        }
+        setTimeout(hideLoadedAlert, 2000);
+      }
+    }
+
+    function handleSimRemoveProvider() {
+      var idx = parseInt(this.getAttribute('data-index'), 10);
+      if (idx >= 0 && idx < SIM_PROVIDERS_STORE.length) {
+        SIM_PROVIDERS_STORE.splice(idx, 1);
+        renderSimSavedProviders();
+      }
+    }
+
+    function handleSimSaveSettings() {
+      var provSelect = document.getElementById('simCfgProvider');
+      var selVal = provSelect ? provSelect.value : 'ollama';
+      var compName = document.getElementById('simCfgCompatibleName').value.trim();
+      var urlVal = document.getElementById('simCfgBaseUrl').value.trim();
+      var keyVal = document.getElementById('simCfgApiKey').value.trim();
+      var modelVal = document.getElementById('simCfgModel').value.trim();
+
+      var displayName = selVal === 'compatible' ? (compName || 'Compatible Custom') : selVal;
+      var storeId = selVal === 'compatible' ? ('compatible:' + displayName) : selVal;
+
+      var found = false;
+      for (var i = 0; i < SIM_PROVIDERS_STORE.length; i++) {
+        if (SIM_PROVIDERS_STORE[i].id === storeId) {
+          SIM_PROVIDERS_STORE[i].url = urlVal;
+          SIM_PROVIDERS_STORE[i].model = modelVal;
+          SIM_PROVIDERS_STORE[i].hasKey = !!keyVal;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        SIM_PROVIDERS_STORE.push({
+          id: storeId,
+          name: displayName,
+          url: urlVal,
+          hasKey: !!keyVal,
+          model: modelVal,
+          apiType: 'openai'
+        });
+      }
+
+      var saveBtn = document.getElementById('simSaveSettingsBtn');
+      if (saveBtn) {
+        saveBtn.textContent = '✓ Saved!';
+        saveBtn.classList.add('saved');
+        function resetSaveBtn() {
+          saveBtn.textContent = 'Save Settings';
+          saveBtn.classList.remove('saved');
+        }
+        setTimeout(resetSaveBtn, 1500);
+      }
+
+      var alertBox = document.getElementById('simSettingsAlert');
+      if (alertBox) {
+        alertBox.textContent = '✓ Provider "' + displayName + '" saved to persistent storage!';
+        alertBox.style.display = 'block';
+        function hideAlert() {
+          alertBox.style.display = 'none';
+        }
+        setTimeout(hideAlert, 2200);
+      }
+
+      renderSimSavedProviders();
+    }
+
+    function handleSimProviderChange() {
+      var val = this.value;
+      var nameGroup = document.getElementById('simCfgCompatibleNameGroup');
+      var typeGroup = document.getElementById('simCfgCompatibleApiTypeGroup');
+      var urlInput = document.getElementById('simCfgBaseUrl');
+
+      if (val === 'compatible') {
+        if (nameGroup) nameGroup.style.display = 'block';
+        if (typeGroup) typeGroup.style.display = 'block';
+      } else {
+        if (nameGroup) nameGroup.style.display = 'none';
+        if (typeGroup) typeGroup.style.display = 'none';
+      }
+
+      if (urlInput && SIM_DEFAULT_URLS[val]) {
+        urlInput.value = SIM_DEFAULT_URLS[val];
+      }
+    }
+
+    function renderSimBuiltinTools(filter) {
+      var grid = document.getElementById('simBuiltinToolsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      var query = (filter || '').toLowerCase();
+
+      for (var i = 0; i < SIM_BUILTIN_TOOLS.length; i++) {
+        var t = SIM_BUILTIN_TOOLS[i];
+        if (query && t.name.indexOf(query) === -1 && t.cat.indexOf(query) === -1) {
+          continue;
+        }
+        var pill = document.createElement('div');
+        pill.className = 'cr-builtin-tool-pill';
+        pill.innerHTML =
+          '<span class="name">' + escHtml(t.name) + '</span>' +
+          '<span class="perm ' + t.perm + '">' + (t.perm === 'safe' ? 'Safe' : '⚠️ Danger') + '</span>';
+        grid.appendChild(pill);
+      }
+    }
+
+    function renderSimMcpServers() {
+      var container = document.getElementById('simMcpServerList');
+      var countSpan = document.getElementById('simMcpServerCount');
+      if (!container) return;
+
+      container.innerHTML = '';
+      if (countSpan) countSpan.textContent = String(SIM_MCP_SERVERS.length);
+
+      for (var i = 0; i < SIM_MCP_SERVERS.length; i++) {
+        var s = SIM_MCP_SERVERS[i];
+        var card = document.createElement('div');
+        card.className = 'cr-mcp-card';
+
+        var toolsHtml = '';
+        for (var k = 0; k < s.tools.length; k++) {
+          toolsHtml +=
+            '<div class="cr-mcp-tool-item">' +
+              '<div class="cr-mcp-tool-top-row">' +
+                '<span class="cr-mcp-tool-name">' + escHtml(s.tools[k]) + '</span>' +
+                '<span style="color:#3fb950;font-size:10px;font-weight:600;">Active</span>' +
+              '</div>' +
+            '</div>';
+        }
+
+        card.innerHTML =
+          '<div class="cr-mcp-card-top-row">' +
+            '<div class="cr-mcp-card-left-group">' +
+              '<span class="cr-mcp-status-dot"></span>' +
+              '<strong class="cr-mcp-card-name">' + escHtml(s.name) + '</strong>' +
+              '<span class="cr-mcp-badge-free">CONNECTED</span>' +
+            '</div>' +
+            '<button type="button" class="cr-sim-remove-btn" data-mcp-index="' + i + '" title="Remove server">✕</button>' +
+          '</div>' +
+          '<div class="cr-mcp-tags-row">' +
+            '<span class="cr-mcp-pill-stdio">' + escHtml(s.type) + '</span>' +
+            '<span class="cr-mcp-pill-perm">SAFE GATED</span>' +
+          '</div>' +
+          '<div class="cr-mcp-cmd-box">' +
+            '<code>' + escHtml(s.cmd) + '</code>' +
+          '</div>' +
+          '<details class="cr-mcp-tools-details">' +
+            '<summary>Discovered Tools (' + s.tools.length + '/' + s.tools.length + ' active)</summary>' +
+            '<div class="cr-mcp-tools-list">' + toolsHtml + '</div>' +
+          '</details>';
+
+        container.appendChild(card);
+      }
+
+      var delBtns = container.querySelectorAll('.cr-sim-remove-btn[data-mcp-index]');
+      for (var d = 0; d < delBtns.length; d++) {
+        delBtns[d].onclick = handleSimRemoveMcpServer;
+      }
+    }
+
+    function handleSimRemoveMcpServer() {
+      var idx = parseInt(this.getAttribute('data-mcp-index'), 10);
+      if (idx >= 0 && idx < SIM_MCP_SERVERS.length) {
+        SIM_MCP_SERVERS.splice(idx, 1);
+        renderSimMcpServers();
+      }
+    }
+
+    function selectSimMcpTemplate(name) {
+      var cards = document.querySelectorAll('.cr-mcp-template-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].classList.toggle('active', cards[i].getAttribute('data-template') === name);
+      }
+
+      var nameInput = document.getElementById('simMcpServerName');
+      var cmdInput = document.getElementById('simMcpCommand');
+      var argsInput = document.getElementById('simMcpArgs');
+      var envContainer = document.getElementById('simEnvRowsContainer');
+
+      setSimMcpTransport('stdio');
+
+      if (envContainer) envContainer.innerHTML = '';
+
+      if (name === 'github') {
+        if (nameInput) nameInput.value = 'github';
+        if (cmdInput) cmdInput.value = 'npx';
+        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-github';
+        addSimEnvRow('GITHUB_PERSONAL_ACCESS_TOKEN', 'your_token_here');
+      } else if (name === 'web-fetch') {
+        if (nameInput) nameInput.value = 'web-fetch';
+        if (cmdInput) cmdInput.value = 'npx';
+        if (argsInput) argsInput.value = '-y @infoinlet/mcp-fetch';
+      } else if (name === 'memory') {
+        if (nameInput) nameInput.value = 'memory';
+        if (cmdInput) cmdInput.value = 'npx';
+        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-memory';
+      } else if (name === 'postgres') {
+        if (nameInput) nameInput.value = 'postgres';
+        if (cmdInput) cmdInput.value = 'npx';
+        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb';
+      } else if (name === 'mysql') {
+        if (nameInput) nameInput.value = 'mysql';
+        if (cmdInput) cmdInput.value = 'npx';
+        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb';
+      } else {
+        if (nameInput) nameInput.value = '';
+        if (cmdInput) cmdInput.value = '';
+        if (argsInput) argsInput.value = '';
+        addSimEnvRow('', '');
+      }
+    }
+
+    function setSimMcpTransport(type) {
+      var stdioCard = document.getElementById('simMcpCardStdio');
+      var sseCard = document.getElementById('simMcpCardSse');
+      var stdioFields = document.getElementById('simMcpStdioFields');
+      var sseFields = document.getElementById('simMcpSseFields');
+
+      var isStdio = type !== 'sse';
+      if (stdioCard) stdioCard.classList.toggle('active', isStdio);
+      if (sseCard) sseCard.classList.toggle('active', !isStdio);
+      if (stdioFields) stdioFields.style.display = isStdio ? 'block' : 'none';
+      if (sseFields) sseFields.style.display = isStdio ? 'none' : 'block';
+    }
+
+    function addSimEnvRow(key, val) {
+      var container = document.getElementById('simEnvRowsContainer');
+      if (!container) return;
+      var row = document.createElement('div');
+      row.className = 'cr-mcp-env-row';
+      row.innerHTML =
+        '<input type="text" value="' + escHtml(key || '') + '" placeholder="KEY">' +
+        '<input type="text" value="' + escHtml(val || '') + '" placeholder="Value">' +
+        '<button type="button" class="cr-mcp-env-del-btn">🗑️</button>';
+      
+      var delBtn = row.querySelector('.cr-mcp-env-del-btn');
+      if (delBtn) {
+        function onDelClick() {
+          row.remove();
+        }
+        delBtn.onclick = onDelClick;
+      }
+      container.appendChild(row);
+    }
+
+    function handleSimMcpConnectSave() {
+      var nameInput = document.getElementById('simMcpServerName');
+      var cmdInput = document.getElementById('simMcpCommand');
+      var argsInput = document.getElementById('simMcpArgs');
+      var urlInput = document.getElementById('simMcpUrl');
+      var stdioCard = document.getElementById('simMcpCardStdio');
+      var isStdio = stdioCard && stdioCard.classList.contains('active');
+
+      var serverName = nameInput ? nameInput.value.trim() : 'custom-server';
+      if (!serverName) serverName = 'custom-server';
+
+      var cmdDisplay = isStdio 
+        ? ((cmdInput ? cmdInput.value.trim() : 'npx') + ' ' + (argsInput ? argsInput.value.trim() : ''))
+        : (urlInput ? urlInput.value.trim() : 'http://localhost:8000/sse');
+
+      var toolsFound = ['query', 'execute', 'inspect_state'];
+      if (serverName.indexOf('git') !== -1) {
+        toolsFound = ['create_pull_request', 'list_commits', 'create_issue'];
+      } else if (serverName.indexOf('fetch') !== -1) {
+        toolsFound = ['fetch_html', 'fetch_markdown'];
+      }
+
+      SIM_MCP_SERVERS.push({
+        id: serverName.toLowerCase().replace(/s+/g, '-'),
+        name: serverName,
+        type: isStdio ? 'STDIO' : 'SSE',
+        status: 'Connected',
+        cmd: cmdDisplay,
+        tools: toolsFound
+      });
+
+      var notice = document.getElementById('simMcpSaveNotification');
+      if (notice) {
+        notice.style.display = 'block';
+        notice.textContent = '✓ Server "' + serverName + '" connected and ' + toolsFound.length + ' tools registered!';
+        function hideNotice() {
+          notice.style.display = 'none';
+        }
+        setTimeout(hideNotice, 2600);
+      }
+
+      renderSimMcpServers();
+    }
+
+    function escHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function onResetFormClick() {
+      var compNameEl = document.getElementById('simCfgCompatibleName');
+      var baseUrlEl = document.getElementById('simCfgBaseUrl');
+      var apiKeyEl = document.getElementById('simCfgApiKey');
+      var modelEl = document.getElementById('simCfgModel');
+      if (compNameEl) compNameEl.value = '';
+      if (baseUrlEl) baseUrlEl.value = 'https://generativelanguage.googleapis.com/v1beta/openai';
+      if (apiKeyEl) apiKeyEl.value = '';
+      if (modelEl) modelEl.value = 'gemini-2.0-flash';
+    }
+
+    function onTabSetLiveClick() {
+      var tabSetLive = document.getElementById('simTabSettings');
+      var tabSetSc = document.getElementById('simTabScreenshot');
+      var viewSetLive = document.getElementById('simSettingsInteractiveView');
+      var viewSetSc = document.getElementById('simSettingsScreenshotView');
+      if (tabSetLive) tabSetLive.classList.add('active');
+      if (tabSetSc) tabSetSc.classList.remove('active');
+      if (viewSetLive) viewSetLive.style.display = 'block';
+      if (viewSetSc) viewSetSc.style.display = 'none';
+    }
+
+    function onTabSetScClick() {
+      var tabSetLive = document.getElementById('simTabSettings');
+      var tabSetSc = document.getElementById('simTabScreenshot');
+      var viewSetLive = document.getElementById('simSettingsInteractiveView');
+      var viewSetSc = document.getElementById('simSettingsScreenshotView');
+      if (tabSetSc) tabSetSc.classList.add('active');
+      if (tabSetLive) tabSetLive.classList.remove('active');
+      if (viewSetLive) viewSetLive.style.display = 'none';
+      if (viewSetSc) viewSetSc.style.display = 'block';
+    }
+
+    function onBuiltinSearchInput(e) {
+      renderSimBuiltinTools(e.target.value);
+    }
+
+    function onEnableAllToolsClick() {
+      renderSimBuiltinTools('');
+    }
+
+    function onDisableAllToolsClick() {
+      var grid = document.getElementById('simBuiltinToolsGrid');
+      if (grid) grid.innerHTML = '<div style="padding:12px;color:#8b949e;font-size:12px;">All tools disabled.</div>';
+    }
+
+    function onTabMcpLiveClick() {
+      var tabMcpLive = document.getElementById('simTabMcpLive');
+      var tabMcpSc = document.getElementById('simTabMcpScreenshot');
+      var viewMcpLive = document.getElementById('simMcpLiveView');
+      var viewMcpSc = document.getElementById('simMcpScreenshotView');
+      if (tabMcpLive) tabMcpLive.classList.add('active');
+      if (tabMcpSc) tabMcpSc.classList.remove('active');
+      if (viewMcpLive) viewMcpLive.style.display = 'block';
+      if (viewMcpSc) viewMcpSc.style.display = 'none';
+    }
+
+    function onTabMcpScClick() {
+      var tabMcpLive = document.getElementById('simTabMcpLive');
+      var tabMcpSc = document.getElementById('simTabMcpScreenshot');
+      var viewMcpLive = document.getElementById('simMcpLiveView');
+      var viewMcpSc = document.getElementById('simMcpScreenshotView');
+      if (tabMcpSc) tabMcpSc.classList.add('active');
+      if (tabMcpLive) tabMcpLive.classList.remove('active');
+      if (viewMcpLive) viewMcpLive.style.display = 'none';
+      if (viewMcpSc) viewMcpSc.style.display = 'block';
+    }
+
+    function onTplCardClick() {
+      selectSimMcpTemplate(this.getAttribute('data-template'));
+    }
+
+    function onCardStdioClick() {
+      setSimMcpTransport('stdio');
+    }
+
+    function onCardSseClick() {
+      setSimMcpTransport('sse');
+    }
+
+    function onAddEnvVarClick() {
+      addSimEnvRow('', '');
+    }
+
+    function onResetModalClick() {
+      selectSimMcpTemplate('github');
+    }
+
+    function onOpenAddMcpClick() {
+      var modal = document.getElementById('simAddMcpModalContainer');
+      if (modal) {
+        modal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        modal.style.border = '2px solid #58a6ff';
+        function resetBorder() {
+          modal.style.border = '1px solid #30363d';
+        }
+        setTimeout(resetBorder, 1500);
+      }
+    }
+
+    function initInteractivePlayground() {
+      // 1. Settings Simulator
+      renderSimSavedProviders();
+      var provSelect = document.getElementById('simCfgProvider');
+      if (provSelect) provSelect.onchange = handleSimProviderChange;
+
+      var saveBtn = document.getElementById('simSaveSettingsBtn');
+      if (saveBtn) saveBtn.onclick = handleSimSaveSettings;
+
+      var resetBtn = document.getElementById('simResetSettingsBtn');
+      if (resetBtn) resetBtn.onclick = onResetFormClick;
+
+      var tabSetLive = document.getElementById('simTabSettings');
+      var tabSetSc = document.getElementById('simTabScreenshot');
+      if (tabSetLive) tabSetLive.onclick = onTabSetLiveClick;
+      if (tabSetSc) tabSetSc.onclick = onTabSetScClick;
+
+      // 2. MCP Dashboard Simulator
+      renderSimBuiltinTools('');
+      renderSimMcpServers();
+
+      var builtinSearch = document.getElementById('simBuiltinSearch');
+      if (builtinSearch) builtinSearch.oninput = onBuiltinSearchInput;
+
+      var enAllBtn = document.getElementById('simEnableAllToolsBtn');
+      if (enAllBtn) enAllBtn.onclick = onEnableAllToolsClick;
+
+      var disAllBtn = document.getElementById('simDisableAllToolsBtn');
+      if (disAllBtn) disAllBtn.onclick = onDisableAllToolsClick;
+
+      var tabMcpLive = document.getElementById('simTabMcpLive');
+      var tabMcpSc = document.getElementById('simTabMcpScreenshot');
+      if (tabMcpLive) tabMcpLive.onclick = onTabMcpLiveClick;
+      if (tabMcpSc) tabMcpSc.onclick = onTabMcpScClick;
+
+      // 3. Add MCP Server Modal Simulator
+      var tplCards = document.querySelectorAll('.cr-mcp-template-card');
+      for (var tc = 0; tc < tplCards.length; tc++) {
+        tplCards[tc].onclick = onTplCardClick;
+      }
+
+      var cardStdio = document.getElementById('simMcpCardStdio');
+      var cardSse = document.getElementById('simMcpCardSse');
+      if (cardStdio) cardStdio.onclick = onCardStdioClick;
+      if (cardSse) cardSse.onclick = onCardSseClick;
+
+      var addVarBtn = document.getElementById('simAddEnvVarBtn');
+      if (addVarBtn) addVarBtn.onclick = onAddEnvVarClick;
+
+      var connectSaveBtn = document.getElementById('simMcpConnectSaveBtn');
+      if (connectSaveBtn) connectSaveBtn.onclick = handleSimMcpConnectSave;
+
+      var resetModalBtn = document.getElementById('simModalResetBtn');
+      if (resetModalBtn) resetModalBtn.onclick = onResetModalClick;
+
+      var cancelModalBtn = document.getElementById('simMcpCancelBtn');
+      if (cancelModalBtn) cancelModalBtn.onclick = onResetModalClick;
+
+      var openAddMcpBtn = document.getElementById('simOpenAddMcpBtn');
+      if (openAddMcpBtn) openAddMcpBtn.onclick = onOpenAddMcpClick;
+    }
+
+    function onInteractivePlaygroundLoaded() {
+      initInteractivePlayground();
+    }
+
+    document.addEventListener('DOMContentLoaded', onInteractivePlaygroundLoaded);
+  </script>
+  
 </body>
 </html>
