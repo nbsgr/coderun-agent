@@ -3003,19 +3003,28 @@ select {
 }
 
 .cr-checkpoint-chevron {
-  display: flex;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #94a3b8;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
 
-.cr-checkpoint-bubble[open] > .cr-checkpoint-summary .cr-checkpoint-chevron {
-  transform: rotate(0deg);
+.cr-checkpoint-chevron svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .cr-checkpoint-bubble:not([open]) > .cr-checkpoint-summary .cr-checkpoint-chevron {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
+}
+
+.cr-checkpoint-bubble[open] > .cr-checkpoint-summary .cr-checkpoint-chevron {
+  transform: rotate(90deg);
 }
 
 .cr-checkpoint-body {

@@ -2343,7 +2343,7 @@ function initializeChatSpace() {
       var statusBadge = mk('span', 'cr-checkpoint-status');
       statusBadge.innerHTML = '<span class="cr-status-check">✓</span> Completed';
       var chevronSpan = mk('span', 'cr-checkpoint-chevron');
-      chevronSpan.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>';
+      chevronSpan.innerHTML = I.chevron;
       headRight.appendChild(statusBadge);
       headRight.appendChild(chevronSpan);
 

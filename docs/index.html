@@ -1698,7 +1698,8 @@
         <div class="sidebar-group-title">Tools & Execution</div>
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 21-Tool Matrix</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 25-Tool Matrix</a></li>
+          <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
           <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
           <li><a href="#error-containment" class="sidebar-link">Dynamic Error Boundary</a></li>
@@ -1709,11 +1710,12 @@
         <div class="sidebar-group-title">Security & Operations</div>
         <ul class="sidebar-menu">
           <li><a href="#token-tracking" class="sidebar-link">Live Context & Token Gauge</a></li>
+          <li><a href="#context-compaction" class="sidebar-link">0ms Context Compaction</a></li>
           <li><a href="#context-optimization" class="sidebar-link">Context Optimization</a></li>
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">49 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">50 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2453,9 +2455,9 @@ function sanitizeGeminiSchema(schema) {
                   <summary class="cr-builtin-summary">
                     <div class="cr-builtin-summary-left">
                       <span>⚡ Core Agent Built-in Tools</span>
-                      <span class="cr-builtin-badge">Built-in (20 active)</span>
+                      <span class="cr-builtin-badge">Built-in (25 active)</span>
                     </div>
-                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning</span>
+                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning, Interaction</span>
                   </summary>
                   <div class="cr-builtin-body">
                     <div class="cr-builtin-toolbar">
@@ -2834,11 +2836,11 @@ function sanitizeGeminiSchema(schema) {
         </div>
       </section>
 
-      <!-- 21 Tools Matrix -->
+      <!-- 25 Tools Matrix -->
       <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 21-Tool Matrix</h2>
+        <h2 class="section-heading">🧰 The Complete 25-Tool Matrix</h2>
         <p>
-          CodeRun comes equipped with 21 built-in core tools across 6 operational categories:
+          CodeRun comes equipped with 25 built-in core tools across 7 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -2901,7 +2903,7 @@ function sanitizeGeminiSchema(schema) {
                 <td>Safe</td>
               </tr>
               <tr>
-                <td><strong>🔍 Search</strong></td>
+                <td><strong>🔍 Search &amp; LSP</strong></td>
                 <td><code>search_files</code></td>
                 <td>Finds files matching glob patterns (e.g. <code>src/**/*.js</code>)</td>
                 <td>Safe</td>
@@ -2916,6 +2918,24 @@ function sanitizeGeminiSchema(schema) {
                 <td></td>
                 <td><code>list_symbols</code></td>
                 <td>Parses functions, classes, and methods with line numbers</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>get_definition</code></td>
+                <td>Native VS Code LSP: Jump directly to symbol definition</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>find_references</code></td>
+                <td>Native VS Code LSP: Find all call sites and usages</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>document_symbols</code></td>
+                <td>Native VS Code LSP: Extract complete file symbol hierarchy</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -2940,6 +2960,12 @@ function sanitizeGeminiSchema(schema) {
                 <td></td>
                 <td><code>stop_terminal</code></td>
                 <td>Sends <code>Ctrl+C</code> interrupt signal to active command</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>💬 Interaction</strong></td>
+                <td><code>ask_question</code></td>
+                <td>Ask user clarification questions with option chips and write-in input</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -2980,6 +3006,31 @@ function sanitizeGeminiSchema(schema) {
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- Interactive User Questions -->
+      <section id="ask-question">
+        <h2 class="section-heading">💬 Interactive User Questions (ask_question)</h2>
+        <p>
+          When the model encounters architectural ambiguity, design options, or missing configuration details, it invokes <code>ask_question</code> to render an interactive decision banner directly inside the chat interface:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🔘</div>
+            <div class="card-title">Interactive Option Chips</div>
+            <div class="card-text">Presents single or multi-select option chips with real-time selection dots, visual highlights, and keyboard accessibility.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">✏️</div>
+            <div class="card-title">Custom Write-In Support</div>
+            <div class="card-text">Allows developers to type custom explanations or instructions directly into an integrated write-in input field.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🔒</div>
+            <div class="card-title">Session-Isolated Lifecycle</div>
+            <div class="card-text">Managed by <code>questionManager.js</code> with strict session isolation, preventing cross-session interference and providing single-source resolution.</div>
+          </div>
         </div>
       </section>
 
@@ -3025,9 +3076,39 @@ function sanitizeGeminiSchema(schema) {
         </ul>
       </section>
 
+      <!-- 0ms Local Context Compaction -->
+      <section id="context-compaction">
+        <h2 class="section-heading">📦 0ms Local Context Compaction &amp; Checkpoint Cards</h2>
+        <p>
+          CodeRun features zero-latency, zero-cost deterministic conversation compaction implemented in <code>compactionManager.js</code>. Rather than making external LLM summarization API calls that eat tokens, CodeRun synthesizes structured chronological checkpoints locally:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🏷️</div>
+            <div class="card-title">Turn Boundary Range Display</div>
+            <div class="card-text">Every checkpoint bubble explicitly displays turn range tracking <code>(Turns 1 - N)</code>, with boundary protections that prevent truncation on wide views.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🃏</div>
+            <div class="card-title">Native Tool Card Styling</div>
+            <div class="card-text">Sub-sections use the project's native card design (<code>.cr-tool-card.cr-cp-card</code>) with dark backgrounds, inline icons, timing metadata, and rotating chevrons.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">✨</div>
+            <div class="card-title">Full Model Output Preservation</div>
+            <div class="card-text">The Response Summary completely preserves full assistant responses, markdown tables, and multi-step numbered lists without arbitrary character cuts.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">Zero API Overhead</div>
+            <div class="card-text">Executes instantly on your local workstation with 0ms delay and zero external token consumption.</div>
+          </div>
+        </div>
+      </section>
+
       <!-- Context Optimization -->
       <section id="context-optimization">
-        <h2 class="section-heading">⚡ Multi-Turn Context Optimization & Historical Tool Compaction</h2>
+        <h2 class="section-heading">⚡ Multi-Turn Context Optimization &amp; Historical Tool Compaction</h2>
         <span id="diff-concurrency"></span>
         <p>
           In multi-turn coding sessions, repeated tool outputs (such as large file reads or verbose build logs from earlier turns) can quickly saturate the LLM's context window. CodeRun solves this with intelligent two-phase context optimization:
@@ -3045,7 +3126,7 @@ function sanitizeGeminiSchema(schema) {
           </div>
         </div>
         <p style="margin-top: 16px;">
-          <strong>Selective Failure & Mutation Protection:</strong>
+          <strong>Selective Failure &amp; Mutation Protection:</strong>
         </p>
         <ul>
           <li><strong>Failures Preserved:</strong> If any tool execution fails, the complete error message, stack trace, and exit codes are preserved in full so the model remembers what went wrong.</li>
@@ -3057,7 +3138,7 @@ function sanitizeGeminiSchema(schema) {
 
       <!-- Rules Engine -->
       <section id="rules-engine">
-        <h2 class="section-heading">📜 Global & Workspace Rules Engine</h2>
+        <h2 class="section-heading">📜 Global &amp; Workspace Rules Engine</h2>
         <p>
           Instruct CodeRun on coding conventions, style rules, and repository architectural patterns:
         </p>
@@ -3122,9 +3203,9 @@ node --check src/agents/agentLoop.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 49 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 50 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against a 49-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against a 50-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3134,7 +3215,7 @@ node --check src/agents/agentLoop.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools & terminal CWD synchronization, and multi-turn historical tool result optimization.
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation (Vector 46), and interactive user question lifecycle &amp; cross-session isolation (Vector 50).
         </p>
       </section>
 
@@ -3177,15 +3258,17 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
         <li class="toc-item"><a href="#browser-automation" class="toc-link">Browser Automation</a></li>
         <li class="toc-item"><a href="#user-sandbox" class="toc-link">User Sandbox</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">21-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">25-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
         <li class="toc-item"><a href="#token-tracking" class="toc-link">Live Token Gauge</a></li>
+        <li class="toc-item"><a href="#context-compaction" class="toc-link">Context Compaction</a></li>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">49 Test Suite</a></li>
-        <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting & FAQ</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">50 Test Suite</a></li>
+        <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting &amp; FAQ</a></li>
       </ul>
     </aside>
 
@@ -3299,15 +3382,20 @@ node --check src/agents/agentLoop.js</code></pre>
       { name: 'search_files', cat: 'search', perm: 'safe' },
       { name: 'find_in_files', cat: 'search', perm: 'safe' },
       { name: 'list_symbols', cat: 'search', perm: 'safe' },
+      { name: 'get_definition', cat: 'search', perm: 'safe' },
+      { name: 'find_references', cat: 'search', perm: 'safe' },
+      { name: 'document_symbols', cat: 'search', perm: 'safe' },
       { name: 'list_directory', cat: 'search', perm: 'safe' },
       { name: 'run_terminal', cat: 'terminal', perm: 'danger' },
       { name: 'terminal_input', cat: 'terminal', perm: 'danger' },
       { name: 'stop_terminal', cat: 'terminal', perm: 'safe' },
+      { name: 'ask_question', cat: 'interaction', perm: 'safe' },
       { name: 'create_plan', cat: 'planning', perm: 'safe' },
       { name: 'update_plan', cat: 'planning', perm: 'safe' },
-      { name: 'get_plan', cat: 'planning', perm: 'safe' },
-      { name: 'web_fetch', cat: 'utility', perm: 'safe' },
-      { name: 'query_sqlite', cat: 'utility', perm: 'safe' }
+      { name: 'web_request', cat: 'utility', perm: 'safe' },
+      { name: 'get_current_datetime', cat: 'utility', perm: 'safe' },
+      { name: 'sandbox', cat: 'utility', perm: 'safe' },
+      { name: 'query_project_db', cat: 'database', perm: 'safe' }
     ];
 
     var SIM_MCP_SERVERS = [

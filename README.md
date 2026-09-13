@@ -29,7 +29,7 @@ The repository follows a deliberately small JavaScript architecture:
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 49-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 50-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -58,6 +58,11 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Graceful Auto-Hide on Completion:** When all tasks finish (`Todos (13/13) ✓`), the panel confirms completion and smoothly fades out after 5 seconds to keep the workspace clean.
 *   **Collapsible & Inspectable:** Click the Todos header anytime to expand and review all checklist steps.
 
+### 💬 Interactive User Questions (`ask_question`)
+*   **Proactive Clarification Prompts:** When encountering ambiguous architectural decisions or missing configuration values, CodeRun pauses and presents interactive question banners directly in the chat.
+*   **Clickable Option Chips & Write-In:** Choose from pre-configured single or multi-select chips with real-time visual selection indicators, or type custom freeform answers.
+*   **Non-Blocking & Session-Isolated:** Question lifecycles are strictly session-isolated in `questionManager.js`, with seamless auto-focus and keyboard submission.
+
 ### 🧠 Advanced Agent Loop & Concurrency
 *   **Think → Plan → Act → Verify:** Multi-iteration loop executing tool actions, verifying outputs, and learning repository patterns.
 *   **Parallel Concurrency for Read-Only Tools:** Concurrent execution of independent read and search operations (`read_file`, `search_files`, `find_in_files`, `get_file_info`) via `Promise.all` for maximum speed.
@@ -82,10 +87,15 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Single-Click Undo:** Real-time **Undo** buttons appear directly under assistant responses for instant rollback.
 *   **Command Palette Integration:** Run `CodeRun: Undo Last Edit` at any time.
 
-### 📦 0ms Local Context Compaction
-*   **Deterministic Tool Compaction:** Compacts verbose outputs and directory listings into concise status summaries (`Read file`, `Wrote file`, `Patched file`).
-*   **Zero-Loss History Preservation:** Injects structured chronological checkpoints with 4 sub-dropdowns: User Messages, Thinking, Response Summary, and Tool Executions.
-*   **Instant Local Execution:** Runs 100% locally with zero API latency or token cost.
+### 📦 0ms Local Context Compaction & Checkpoint Cards
+*   **Deterministic Local Compaction:** Automatically compacts verbose conversational turns, inspection tools, and directory listings into concise status summaries (`Read file`, `Wrote file`, `Patched file`) with 0ms execution time and zero token costs.
+*   **Turn Range Boundaries:** Displays explicit turn boundary counters `(Turns 1 - N)` on the checkpoint bubble header, protected against overflow or truncation.
+*   **Unified Native Tool Card Styling:** Collapsible sub-sections use the project's native card design (`.cr-tool-card.cr-cp-card`) with dark backgrounds (`#0b0f17`), subtle borders, inline icons, timing metadata, and rotating chevrons:
+    *   💬 **User Message (N):** Expands to show formatted user inputs.
+    *   🕒 **Thought Process:** Captures model thinking steps with duration timing.
+    *   🔧 **Tool Calls (N):** Shows full executed tools table with tool names, parameters, execution times, and success/failure badges, immune to boundary overflow on long names.
+    *   ✨ **Response Summary:** Completely preserves the model's full final response, numbered lists, and instructions without premature truncation.
+*   **Instant Local Execution:** Runs 100% on the client machine without external LLM summarization API overhead.
 
 ### ⚡ Multi-Turn Context Optimization & Historical Tool Compaction
 *   **Active Turn Full-Fidelity:** In the active agent loop iteration, tools like `read_file` and `run_terminal` deliver complete, raw outputs so the LLM has full fidelity to reason, analyze code, and execute changes.
@@ -251,7 +261,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **49 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **50 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -262,7 +272,8 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Terminal tool execution approval, safe command policies, and interactive terminal lifecycle.
 * MCP protocol handshake, dynamic tool discovery, permission authorization, and runtime tool execution.
 * Historical tool result optimization, failure retention, mutation diff preservation, and active iteration raw output fidelity.
-* Deterministic conversation compaction checkpoint resolution, tool argument mapping, and clean text boundaries.
+* Deterministic conversation compaction checkpoint resolution, tool argument mapping, complete response retention, and clean text boundaries.
+* Interactive user questions (`ask_question`) lifecycle, option selection, write-in support, and session-isolated resolution.
 
 Run all tests anytime:
 ```bash
@@ -297,7 +308,7 @@ src/
 │
 ├── context/                      ← Context extraction and knowledge systems
 │   ├── contextManager.js         ← Identifies request intent, extracts editor state & active file details
-│   ├── compactionManager.js      ← Pure local 0ms conversation compaction engine & checkpoint generator
+│   ├── compactionManager.js      ← Local 0ms conversation compaction engine, turn range tracking & checkpoint generator
 │   ├── gitIntelligence.js        ← Workspace git status, active branch, and diff summary fragments
 │   ├── goalTracker.js            ← Tracks goals, subgoals, and plan execution metrics
 │   ├── learningManager.js        ← Extracts and stores repository conventions and user preferences
@@ -338,10 +349,11 @@ src/
 │   └── providerCompatible.js     ← Custom OpenAI/Anthropic/Gemini compatible endpoints
 │
 └── tools/                        ← Active tool implementations and security
-    ├── tools.js                  ← 21 active async generators across 6 core categories
+    ├── tools.js                  ← 25 active async generators across 7 core categories
     ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
     ├── toolExecutor.js           ← Tool call argument parsing, execution reporting, and result formatting
     ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
+    ├── questionManager.js        ← Interactive user question lifecycle, option selection & write-in resolution
     ├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
     │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
     │                                ANSI escape stripping, interactive REPL support, and stop_terminal
