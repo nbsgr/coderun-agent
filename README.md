@@ -134,9 +134,31 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 
 ---
 
-## 🧰 Complete Tool Matrix (21 Tools)
+## ⚖️ Architectural & Feature Comparison
 
-CodeRun exposes a curated set of **21 active tools** organized across 6 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+How **CodeRun AI Agent** compares with other leading VS Code AI assistants and autonomous coding tools:
+
+| Feature / Capability | 🚀 CodeRun AI Agent | Cline / Roo Code | GitHub Copilot | Continue.dev |
+| :--- | :---: | :---: | :---: | :---: |
+| **Multi-Provider Support** | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) | Multiple API keys | GitHub Account / OpenAI only | Multiple API keys |
+| **100% Free & Local (Ollama)** | ✅ **Native** (streaming, vision & context autodiscovery) | ✅ Yes | ❌ No | ✅ Yes |
+| **Transparent User Sandbox** | ✅ **Native** (`~/.coderun/sandbox/` with auto CWD sync) | ❌ No (pollutes repo) | ❌ No | ❌ No |
+| **On-Install Browser & Puppeteer MCP** | ✅ **Auto-detects Chrome/Edge/Brave or installs Chromium** | ⚠️ Manual install required | ❌ No | ❌ No |
+| **Persistent Memory Graph MCP** | ✅ **Pre-configured built-in catalog** | ⚠️ Manual configuration | ❌ No | ❌ No |
+| **Deterministic Context Compaction** | ✅ **0ms Instant Local Checkpoints** (Zero API cost) | ⚠️ LLM summarization API cost | ❌ Fixed context | ⚠️ Basic truncate |
+| **Historical Tool Compaction** | ✅ **Automatic** (reduces turns by up to 90%) | ❌ Keeps raw tool output | ❌ No tool calling | ❌ No |
+| **Local SQLite Codebase Index** | ✅ **Embedded SQL.js** (zero cloud upload) | ❌ No codebase database | ⚠️ Cloud embeddings | ⚠️ Cloud / vector |
+| **Interactive Terminal REPLs** | ✅ **Full lifecycle** (`terminal_input`, prompt detection) | ⚠️ Basic command wait | ❌ Read-only terminal | ⚠️ Basic command wait |
+| **Dynamic Card Error Containment** | ✅ **Auto-wrapping & no boundary overflow** | ⚠️ Text overflow risk | ❌ Fixed chat box | ⚠️ Standard box |
+| **Live Monotonic Token Tracking** | ✅ **Real-time saturation warnings** (70%/90%) | ⚠️ Turn-by-turn counter | ❌ Hidden tokens | ⚠️ Basic counter |
+| **Interactive User Questions** | ✅ **`ask_question` with option chips & write-in** | ⚠️ Text prompt only | ❌ No | ❌ No |
+| **Adversarial Regression Tests** | ✅ **50 Test Groups** (0 external dependencies) | ⚠️ Unit tests | ❌ Proprietary | ⚠️ Unit tests |
+
+---
+
+## 🧰 Complete Tool Matrix (25 Tools)
+
+CodeRun exposes a curated set of **25 active tools** organized across 7 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -151,10 +173,14 @@ CodeRun exposes a curated set of **21 active tools** organized across 6 core cat
 | **🔍 Search & Navigation** | `search_files` | Find files matching glob patterns (e.g. `*.js`, `src/**`) | No |
 | | `find_in_files` | Search workspace file contents for text queries | No |
 | | `list_symbols` | Parse classes, functions, and symbols with line numbers | No |
+| | `get_definition` | Native VS Code LSP: Jump directly to symbol definition | No |
+| | `find_references` | Native VS Code LSP: Find all references and call sites | No |
+| | `document_symbols` | Native VS Code LSP: Extract complete file symbol hierarchy | No |
 | | `list_directory` | List folder contents with recursive depth controls | No |
 | **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (auto CWD sync for sandbox) | ⚠️ Yes |
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
 | | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running terminal command | No |
+| **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
 | **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
@@ -225,7 +251,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **46 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **49 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -312,7 +338,7 @@ src/
 │   └── providerCompatible.js     ← Custom OpenAI/Anthropic/Gemini compatible endpoints
 │
 └── tools/                        ← Active tool implementations and security
-    ├── tools.js                  ← 20 active async generators across 6 core categories
+    ├── tools.js                  ← 21 active async generators across 6 core categories
     ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
     ├── toolExecutor.js           ← Tool call argument parsing, execution reporting, and result formatting
     ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering

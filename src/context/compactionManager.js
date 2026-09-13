@@ -4,6 +4,24 @@
 
 import { COMPACT_TURN_THRESHOLD } from '../agents/constants.js';
 
+// Helper to extract text from string or multimodal/structured content
+function getMessageText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    var parts = [];
+    for (var i = 0; i < content.length; i++) {
+      var item = content[i];
+      if (typeof item === 'string') {
+        parts.push(item);
+      } else if (item && item.type === 'text' && typeof item.text === 'string') {
+        parts.push(item.text);
+      }
+    }
+    return parts.join('\n');
+  }
+  return '';
+}
+
 // Compact a single tool result into a one-liner status string
 function compactToolResult(toolName, toolMsg) {
   var result = (toolMsg && toolMsg.result) || {};
@@ -25,6 +43,7 @@ function compactToolResult(toolName, toolMsg) {
 
     case 'edit_file':
     case 'patch_file':
+    case 'apply_diff':
       return (success ? '✅' : '❌') + " Patched file '" + (filePath || 'file') + "' " + statusWord;
 
     case 'delete_file':
@@ -40,10 +59,12 @@ function compactToolResult(toolName, toolMsg) {
       return (success ? '✅' : '❌') + " Listed directory '" + (filePath || '.') + "' " + statusWord;
 
     case 'search_files':
+    case 'find_by_name':
       var pattern = result.pattern || result.glob_pattern || '';
       return (success ? '✅' : '❌') + " Searched files for '" + pattern + "' " + statusWord;
 
     case 'find_in_files':
+    case 'grep_search':
       var query = result.query || '';
       return (success ? '✅' : '❌') + " Found matches for '" + query + "' " + statusWord;
 
@@ -85,6 +106,10 @@ function compactToolResult(toolName, toolMsg) {
     case 'query_project_db':
       return (success ? '✅' : '❌') + ' Queried project database ' + statusWord;
 
+    case 'ask_question':
+      var ans = result.answer || result.output || '';
+      return '❓ Asked user: ' + (result.question || 'clarification') + (ans ? ' -> Answered: "' + ans + '"' : '');
+
     default:
       var actionTarget = filePath || result.command || result.query || result.pattern || '';
       var label = toolName ? toolName : (actionTarget ? actionTarget : 'action');
@@ -96,12 +121,18 @@ function compactToolResult(toolName, toolMsg) {
 function extractUserPrompts(messages) {
   var prompts = [];
   var promptIndex = 0;
+  if (!Array.isArray(messages)) return prompts;
+
   for (var i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'user') {
+    if (messages[i] && messages[i].role === 'user') {
+      var raw = getMessageText(messages[i].content);
+      var text = String(raw || '').trim();
+      if (text.startsWith('## COMPACTED CONTEXT CHECKPOINT')) {
+        continue;
+      }
       promptIndex++;
-      var text = String(messages[i].content || '').trim();
-      if (text.length > 200) {
-        text = text.substring(0, 200) + '...';
+      if (text.length > 250) {
+        text = text.substring(0, 250) + '...';
       }
       prompts.push('Prompt ' + promptIndex + ': "' + text.replace(/\n/g, ' ') + '"');
     }
@@ -113,10 +144,19 @@ function extractUserPrompts(messages) {
 function extractAssistantContent(messages) {
   var thinkingParts = [];
   var assistantResponses = [];
+  var finalAssistantResponse = '';
+
+  if (!Array.isArray(messages)) {
+    return {
+      thinkingSummary: 'No thinking content recorded.',
+      responseSummary: 'Completed requested actions.',
+      assistantResponses: []
+    };
+  }
 
   for (var i = 0; i < messages.length; i++) {
     var msg = messages[i];
-    if (msg.role !== 'assistant') continue;
+    if (!msg || msg.role !== 'assistant') continue;
 
     // Check reasoning_content / thinking keys
     var thinking = msg.reasoning_content || msg.thinking || msg.reasoning || '';
@@ -124,7 +164,9 @@ function extractAssistantContent(messages) {
       thinkingParts.push(String(thinking).trim());
     }
 
-    var content = String(msg.content || '').trim();
+    var rawContent = getMessageText(msg.content);
+    var content = String(rawContent || '').trim();
+
     // Remove thinking tags if embedded in content
     var thinkTagStart = content.indexOf('<think>');
     var thinkTagEnd = content.indexOf('</think>');
@@ -137,26 +179,15 @@ function extractAssistantContent(messages) {
     }
 
     if (content) {
-      // If a single turn's response is very long, truncate at a clean sentence or word boundary (never mid-word)
-      if (content.length > 500) {
-        var cleanCut = content.substring(0, 500);
-        var lastPunct = Math.max(cleanCut.lastIndexOf('. '), cleanCut.lastIndexOf('.\n'), cleanCut.lastIndexOf('!\n'), cleanCut.lastIndexOf('? '));
-        if (lastPunct > 250) {
-          content = cleanCut.substring(0, lastPunct + 1);
-        } else {
-          var lastSpace = cleanCut.lastIndexOf(' ');
-          if (lastSpace > 350) {
-            cleanCut = cleanCut.substring(0, lastSpace);
-          }
-          content = cleanCut + '...';
-        }
-      }
       assistantResponses.push(content);
+      // The final non-empty assistant output from the model is preserved as the conclusive response
+      finalAssistantResponse = content;
     }
   }
 
   var thinkingSummary = thinkingParts.length ? thinkingParts.join('\n---\n') : 'No thinking content recorded.';
-  var responseSummary = assistantResponses.length ? assistantResponses.join('\n\n') : 'Completed requested actions.';
+  // The final output from the model is the Response Summary (never abruptly truncated)
+  var responseSummary = finalAssistantResponse || (assistantResponses.length ? assistantResponses[assistantResponses.length - 1] : 'Completed requested actions.');
 
   return {
     thinkingSummary: thinkingSummary,
@@ -266,12 +297,14 @@ function formatCheckpointContent(checkpoint) {
   }
   lines.push('');
   lines.push('### Assistant Summary & Reasoning');
-  if (checkpoint.assistantResponses && checkpoint.assistantResponses.length) {
+  if (checkpoint.responseSummary) {
+    lines.push('- ' + checkpoint.responseSummary);
+  } else if (checkpoint.assistantResponses && checkpoint.assistantResponses.length) {
     for (var a = 0; a < checkpoint.assistantResponses.length; a++) {
       lines.push('- ' + checkpoint.assistantResponses[a]);
     }
   } else {
-    lines.push('- ' + (checkpoint.responseSummary || checkpoint.assistantSummary || 'Completed requested actions.'));
+    lines.push('- ' + (checkpoint.assistantSummary || 'Completed requested actions.'));
   }
   lines.push('');
   lines.push('### Tool Executions Log');
@@ -284,9 +317,13 @@ function formatCheckpointContent(checkpoint) {
 // Count user turns in messages
 function countUserTurns(messages) {
   var count = 0;
+  if (!Array.isArray(messages)) return count;
   for (var i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'user') {
-      count++;
+    if (messages[i] && messages[i].role === 'user') {
+      var raw = getMessageText(messages[i].content);
+      if (!String(raw || '').startsWith('## COMPACTED CONTEXT CHECKPOINT')) {
+        count++;
+      }
     }
   }
   return count;

@@ -20,6 +20,7 @@ import * as projectKnowledge from '../context/projectKnowledge.js';
 import * as pathSecurity from './pathSecurity.js';
 import * as fileLockManager from './fileLockManager.js';
 import * as checkpointManager from './checkpointManager.js';
+import * as questionManager from './questionManager.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
@@ -1770,6 +1771,67 @@ async function* query_project_db(args, workspace) {
   }
 }
 
+async function* ask_question(args, context) {
+  var question = (args && args.question) || '';
+  var options = (args && args.options) || [];
+  var sessionId = (context && context.sessionId) || 'default';
+
+  if (!question) {
+    yield {
+      type: 'tool_result',
+      tool: 'ask_question',
+      success: false,
+      message: 'Missing required question parameter.'
+    };
+    return;
+  }
+
+  yield {
+    type: 'action',
+    action: 'ask_question',
+    message: 'Asking user: ' + question
+  };
+
+  var qRecord = questionManager.createQuestion(question, options, sessionId);
+
+  yield {
+    type: 'ask_question',
+    id: qRecord.id,
+    question: question,
+    options: options,
+    sessionId: sessionId
+  };
+
+  try {
+    var outcome = await qRecord.promise;
+    if (outcome && outcome.answered) {
+      yield {
+        type: 'tool_result',
+        tool: 'ask_question',
+        success: true,
+        question: question,
+        answer: outcome.answer,
+        message: 'User answered: ' + outcome.answer
+      };
+    } else {
+      yield {
+        type: 'tool_result',
+        tool: 'ask_question',
+        success: false,
+        question: question,
+        message: (outcome && outcome.message) || 'Question was not answered.'
+      };
+    }
+  } catch (err) {
+    yield {
+      type: 'tool_result',
+      tool: 'ask_question',
+      success: false,
+      message: err.message
+    };
+  }
+}
+
 // =====================================================
 // REGISTER ALL TOOLS — using descriptor-based toolRegistry
 // =====================================================
@@ -1996,6 +2058,28 @@ export function registerAllTools() {
       sql_query: { type: 'string', description: 'Read-only SELECT query to run (e.g. SELECT * FROM symbols WHERE type = \'function\')' }
     },
     required: ['sql_query']
+  });
+
+  // ── Interaction ────────────────────────────────────
+  reg('ask_question', ask_question, {
+    aliases: ['ask_user_question', 'ask_user'],
+    category: 'interaction',
+    description: 'Ask the user a structured clarification question with selectable choices and descriptions when requirements or decisions are ambiguous. Pauses the agent turn until the user responds.',
+    parameters: {
+      question: { type: 'string', description: 'The question to ask the user' },
+      options: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: 'The short display title of the option' },
+            description: { type: 'string', description: 'Optional explanation of what this option does' }
+          }
+        },
+        description: 'List of 2-4 concrete choices (can be objects with label and description, or plain strings)'
+      }
+    },
+    required: ['question']
   });
 
   console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');

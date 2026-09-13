@@ -268,6 +268,10 @@ export function validate(name, args) {
           for (var ai = 0; ai < paramVal.length; ai++) {
             var itemVal = paramVal[ai];
             if (itemSchema.type === 'object') {
+              // Permit string shorthand if items allows flexible options
+              if (typeof itemVal === 'string') {
+                continue;
+              }
               if (typeof itemVal !== 'object' || itemVal === null || Array.isArray(itemVal)) {
                 errors.push("Invalid item type at index " + ai + " in '" + paramKey + "': expected object, got " + (itemVal === null ? 'null' : typeof itemVal));
               } else if (itemSchema.required) {

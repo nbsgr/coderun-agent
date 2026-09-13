@@ -3237,6 +3237,67 @@ function initializeDashboard() {
     return 'Call ' + stepTool.toolName;
   }
 
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) return "";
+    var date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "";
+    var now = new Date();
+    var diffMs = now.getTime() - date.getTime();
+    var diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      var hours = date.getHours();
+      var minutes = date.getMinutes();
+      var ampm = hours >= 12 ? "PM" : "AM";
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      var strMinutes = minutes < 10 ? "0" + minutes : minutes;
+      return hours + ":" + strMinutes + " " + ampm;
+    } else if (diffDays === 1) {
+      return "Yesterday";
+    } else if (diffDays < 7) {
+      var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      return days[date.getDay()];
+    } else {
+      var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return months[date.getMonth()] + " " + date.getDate();
+    }
+  }
+
+  function getConversationPreview(conversation) {
+    if (!conversation) return "";
+    if (conversation.messages && conversation.messages.length) {
+      var lastUserMsg = null;
+      var lastMsg = conversation.messages[conversation.messages.length - 1];
+      for (var i = conversation.messages.length - 1; i >= 0; i--) {
+        if (conversation.messages[i].role === "user" && conversation.messages[i].content) {
+          lastUserMsg = conversation.messages[i];
+          break;
+        }
+      }
+      var targetMsg = lastUserMsg || lastMsg;
+      if (targetMsg && targetMsg.content) {
+        var clean = targetMsg.content.replace(/\s+/g, " ").trim();
+        return clean.length > 55 ? clean.slice(0, 52) + "..." : clean;
+      }
+    }
+    return "No messages yet";
+  }
+
+  function getConversationTime(conversation) {
+    if (!conversation) return "";
+    if (conversation.messages && conversation.messages.length) {
+      var lastMsg = conversation.messages[conversation.messages.length - 1];
+      if (lastMsg && lastMsg.timestamp) {
+        return formatRelativeTime(lastMsg.timestamp);
+      }
+    }
+    if (conversation.createdAt) {
+      return formatRelativeTime(conversation.createdAt);
+    }
+    return "";
+  }
+
   function renderSidebar() {
     var list = document.getElementById("thread-list");
     if (!list) return;
@@ -3260,8 +3321,17 @@ function initializeDashboard() {
         input.value = state.renameValue;
         item.appendChild(input);
       } else {
+        var preview = getConversationPreview(conversation);
+        var timeStr = getConversationTime(conversation);
         item.innerHTML =
-          '<span class="cr-thread-title">' + esc(conversation.title || "New chat") + '</span>' +
+          '<span class="cr-thread-icon">💬</span>' +
+          '<div class="cr-thread-content">' +
+            '<div class="cr-thread-top-row">' +
+              '<span class="cr-thread-title">' + esc(conversation.title || "New chat") + '</span>' +
+              (timeStr ? '<span class="cr-thread-time">' + esc(timeStr) + '</span>' : '') +
+            '</div>' +
+            '<span class="cr-thread-preview">' + esc(preview) + '</span>' +
+          '</div>' +
           '<span class="cr-thread-actions">' +
             '<button class="cr-thread-dots" title="Rename" data-action="rename" data-id="' + esc(conversation.id) + '">✎</button>' +
             '<button class="cr-thread-delete" title="Delete" data-action="delete" data-id="' + esc(conversation.id) + '">×</button>' +

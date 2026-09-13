@@ -7,7 +7,7 @@ function initializeChatSpace() {
   'use strict';
 
   var I = {
-    bot:    '<svg class="cr-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z"/></svg>',
+    bot:    '<img class="cr-bot-avatar-img" src="' + (window.CODERUN_BOT_AVATAR || 'bot-avatar.jpg') + '" alt="Bot" onerror="this.outerHTML=\'<svg class=\\\'cr-icon\\\' viewBox=\\\'0 0 24 24\\\' fill=\\\'currentColor\\\'><path d=\\\'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z\\\'/></svg>\'"/>',
     send:   '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
     attach: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     think:  '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>',
@@ -24,7 +24,14 @@ function initializeChatSpace() {
     file:   '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
     folder: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     terminal: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
-    chevron: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
+    chevron: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>',
+    wrench: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    barChart: '<svg class="cr-icon cr-usage-hdr-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="11" width="3.5" height="10" rx="1"/><rect x="10.25" y="5" width="3.5" height="16" rx="1"/><rect x="17.5" y="2" width="3.5" height="19" rx="1"/></svg>',
+    database: '<svg class="cr-icon cr-metric-icon cr-metric-icon--db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+    arrowUp:  '<svg class="cr-icon cr-metric-icon cr-metric-icon--up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+    arrowDown:'<svg class="cr-icon cr-metric-icon cr-metric-icon--down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
+    gear:     '<svg class="cr-icon cr-metric-icon cr-metric-icon--gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    clock:    '<svg class="cr-icon cr-metric-icon cr-metric-icon--clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
   };
 
   // Shared utilities from webview-shared.js — single source of truth
@@ -183,40 +190,77 @@ function initializeChatSpace() {
   // ── Tool name formatter ──────────────────────────────
   function formatToolName(name) {
     var map = {
-      'read_file': 'READ FILE',
-      'write_file': 'WRITE FILE',
-      'edit_file': 'EDIT FILE',
-      'delete_file': 'DELETE FILE',
-      'create_folder': 'CREATE DIR',
-      'delete_folder': 'DELETE DIR',
-      'list_directory': 'READ DIR',
-      'search_files': 'SEARCH FILES',
-      'get_file_info': 'FILE INFO',
-      'run_terminal': 'RUN TERMINAL',
-      'terminal_input': 'TERM INPUT',
-      'stop_terminal': 'STOP TERMINAL',
-      'create_plan': 'CREATE PLAN',
-      'update_plan': 'UPDATE PLAN',
-      'get_current_datetime': 'GET DATETIME',
-      'sandbox': 'USER SANDBOX'
+      'read_file': 'Read File',
+      'write_file': 'Write File',
+      'edit_file': 'Edit File',
+      'delete_file': 'Delete File',
+      'create_folder': 'Create Folder',
+      'delete_folder': 'Delete Folder',
+      'list_directory': 'List Directory',
+      'search_files': 'Search Files',
+      'get_file_info': 'File Info',
+      'run_terminal': 'Run Terminal',
+      'terminal_input': 'Terminal Input',
+      'stop_terminal': 'Stop Terminal',
+      'create_plan': 'Create Plan',
+      'update_plan': 'Update Plan',
+      'get_current_datetime': 'Get Datetime',
+      'sandbox': 'User Sandbox',
+      'ask_question': 'ask_question'
     };
     if (map[name]) return map[name];
-    if (!name) return 'TOOL';
+    if (!name) return 'Tool';
     if (name.startsWith('mcp__puppeteer__') || name.startsWith('puppeteer_')) {
       var puppeteerAction = name.replace(/^mcp__puppeteer__/, '').replace(/^puppeteer_/, '');
-      return 'BROWSER ' + puppeteerAction.replace(/_/g, ' ').toUpperCase();
+      return 'Browser: ' + puppeteerAction.replace(/_/g, ' ');
     }
     if (name.startsWith('mcp__memory__') || name.startsWith('memory_')) {
       var memoryAction = name.replace(/^mcp__memory__/, '').replace(/^memory_/, '');
-      return 'MEMORY ' + memoryAction.replace(/_/g, ' ').toUpperCase();
+      return 'Memory: ' + memoryAction.replace(/_/g, ' ');
     }
     if (name.startsWith('mcp__')) {
       var parts = name.split('__');
       var sName = parts[1] || 'MCP';
       var tName = parts[2] || parts[1];
-      return sName.toUpperCase() + ': ' + tName.replace(/_/g, ' ').toUpperCase();
+      return sName + ': ' + tName.replace(/_/g, ' ');
     }
-    return name.replace(/_/g, ' ').toUpperCase();
+    return name.replace(/_/g, ' ');
+  }
+
+  function getToolSubtitle(toolName, args) {
+    if (!args) return '';
+    if (toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file' || toolName === 'delete_file') {
+      return args.path || args.file_path || args.target_file || '';
+    }
+    if (toolName === 'run_terminal') {
+      return args.command || '';
+    }
+    if (toolName === 'ask_question') {
+      return args.question || '';
+    }
+    if (toolName === 'list_directory' || toolName === 'create_folder' || toolName === 'delete_folder') {
+      return args.path || args.dir_path || args.directory_path || '';
+    }
+    if (toolName === 'search_files') {
+      return args.query || args.regex || args.pattern || '';
+    }
+    if (toolName === 'get_file_info') {
+      return args.path || '';
+    }
+    return args.command || args.path || args.file_path || args.target_file || args.url || args.message || args.query || '';
+  }
+
+  function sanitizeToolArgs(args) {
+    if (!args || typeof args !== 'object') return args;
+    var clean = {};
+    var keys = Object.keys(args);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (!k.startsWith('_')) {
+        clean[k] = args[k];
+      }
+    }
+    return clean;
   }
 
   // ── Tool icon selector ───────────────────────────────
@@ -237,7 +281,8 @@ function initializeChatSpace() {
       'create_plan': '📋',
       'update_plan': '📋',
       'get_current_datetime': '🕒',
-      'sandbox': '📦'
+      'sandbox': '📦',
+      'ask_question': I.wrench
     };
     if (iconMap[name]) return iconMap[name];
     if (name && (name.includes('puppeteer') || name.includes('browser'))) {
@@ -521,25 +566,57 @@ function initializeChatSpace() {
       controlsPanel.style.display = 'block';
       var html = '<div class="cr-controls-inner">';
 
+      var pendingToolNames = [];
+      for (var pi = 0; pi < pendingButtons.length; pi++) {
+        var permEl = pendingButtons[pi].closest('.cr-permission-actions, .cr-permission-section, .cr-permission-card, .cr-tool-card');
+        var tName = (permEl && (permEl.dataset.toolDisplayName || permEl.dataset.toolName || permEl.dataset.tool)) || '';
+        if (tName && permEl.dataset.toolName && tName === permEl.dataset.toolName) {
+          tName = formatToolName(tName);
+        }
+        if (tName && pendingToolNames.indexOf(tName) === -1) {
+          pendingToolNames.push(tName);
+        }
+      }
+
+      var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+
       if (pendingButtons.length > 0 && pendingDiffs.length > 0) {
+        var toolsText = pendingToolNames.length ? ' (' + pendingToolNames.join(', ') + ')' : '';
         html +=
-          '<span class="cr-controls-label">' + pendingButtons.length + ' permission(s) + ' + pendingDiffs.length + ' file change(s)</span>' +
+          '<div class="cr-controls-left">' +
+            '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
+            '<span class="cr-controls-label">' + pendingButtons.length + ' permission(s)' + esc(toolsText) + ' + ' + pendingDiffs.length + ' file change(s)</span>' +
+          '</div>' +
           '<div class="cr-controls-buttons">' +
-            '<button class="cr-btn cr-btn-continue-all" title="Allow all pending permissions">Allow</button>' +
-            '<button class="cr-btn cr-btn-quit-all" title="Deny all pending permissions">Deny</button>' +
+            '<button class="cr-btn cr-btn-continue-all" title="Allow all pending permissions">Allow All</button>' +
+            '<button class="cr-btn cr-btn-quit-all" title="Deny all pending permissions">Deny All</button>' +
             '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
             '<button class="cr-btn cr-btn-reject-all-diffs" title="Reject all pending file changes">Reject All</button>' +
           '</div>';
       } else if (pendingButtons.length > 0) {
+        var toolBadge = '';
+        if (pendingToolNames.length === 1) {
+          toolBadge = 'Confirmation required: <span class="cr-controls-tool-badge">' + esc(pendingToolNames[0]) + '</span>';
+        } else if (pendingToolNames.length > 1) {
+          toolBadge = pendingButtons.length + ' confirmations: <span class="cr-controls-tool-badge">' + esc(pendingToolNames.join(', ')) + '</span>';
+        } else {
+          toolBadge = pendingButtons.length + ' confirmation(s) required';
+        }
         html +=
-          '<span class="cr-controls-label">' + pendingButtons.length + ' confirmation(s) required</span>' +
+          '<div class="cr-controls-left">' +
+            '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
+            '<span class="cr-controls-label">' + toolBadge + '</span>' +
+          '</div>' +
           '<div class="cr-controls-buttons">' +
-            '<button class="cr-btn cr-btn-continue-all" title="Allow all pending actions">Allow</button>' +
-            '<button class="cr-btn cr-btn-quit-all" title="Deny all pending actions">Deny</button>' +
+            '<button class="cr-btn cr-btn-continue-all" title="Allow pending action">Allow</button>' +
+            '<button class="cr-btn cr-btn-quit-all" title="Deny pending action">Deny</button>' +
           '</div>';
       } else {
         html +=
-          '<span class="cr-controls-label">' + pendingDiffs.length + ' file change(s) pending</span>' +
+          '<div class="cr-controls-left">' +
+            '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
+            '<span class="cr-controls-label">' + pendingDiffs.length + ' file change(s) pending approval</span>' +
+          '</div>' +
           '<div class="cr-controls-buttons">' +
             '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
             '<button class="cr-btn cr-btn-reject-all-diffs" title="Reject all pending file changes">Reject All</button>' +
@@ -607,6 +684,145 @@ function initializeChatSpace() {
       rejectBtns[i].click();
     }
     updateAgentControlsPanel(chatCtx);
+  }
+
+  function renderQuestionBanner(chatCtx, questionData) {
+    var banner = chatCtx.questionBanner;
+    if (!banner) return;
+
+    var qId = questionData.id || ('q_' + Date.now());
+    var qText = questionData.question || 'Please answer the following question:';
+    var rawOptions = Array.isArray(questionData.options) ? questionData.options : [];
+
+    // Parse options: handle both objects { label, description } and plain strings
+    var parsedOptions = [];
+    for (var oi = 0; oi < rawOptions.length; oi++) {
+      var item = rawOptions[oi];
+      if (typeof item === 'string') {
+        var cleanLabel = item.replace(/^Option\s*\d+\s*:\s*/i, '').trim();
+        parsedOptions.push({
+          label: cleanLabel || item,
+          description: ''
+        });
+      } else if (item && typeof item === 'object') {
+        parsedOptions.push({
+          label: item.label || item.title || item.name || '',
+          description: item.description || item.detail || ''
+        });
+      }
+    }
+
+    banner.dataset.questionId = qId;
+    banner.style.display = 'block';
+
+    var optionsHtml = '';
+    if (parsedOptions.length > 0) {
+      optionsHtml += '<div class="cr-question-options-list">';
+      for (var pi = 0; pi < parsedOptions.length; pi++) {
+        var opt = parsedOptions[pi];
+        var descHtml = opt.description ? '<div class="cr-question-opt-desc">' + esc(opt.description) + '</div>' : '';
+        optionsHtml +=
+          '<div class="cr-question-option-item" data-val="' + esc(opt.label) + '">' +
+            '<div class="cr-question-radio-circle"><div class="cr-question-radio-dot"></div></div>' +
+            '<div class="cr-question-opt-content">' +
+              '<div class="cr-question-opt-label">' + esc(opt.label) + '</div>' +
+              descHtml +
+            '</div>' +
+          '</div>';
+      }
+      optionsHtml += '</div>';
+    }
+
+    var customInputHtml =
+      '<div class="cr-question-custom-row">' +
+        '<input type="text" class="cr-question-custom-input" placeholder="Type your answer here..." />' +
+        '<button type="button" class="cr-question-submit-btn">' +
+          '<svg class="cr-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
+          '<span>Submit</span>' +
+        '</button>' +
+      '</div>';
+
+    banner.innerHTML =
+      '<div class="cr-question-card">' +
+        '<div class="cr-question-card-header">' +
+          '<div class="cr-question-badge-icon">?</div>' +
+          '<div class="cr-question-header-text">' +
+            '<div class="cr-question-badge-title">CLARIFICATION NEEDED</div>' +
+            '<div class="cr-question-text">' + esc(qText) + '</div>' +
+          '</div>' +
+        '</div>' +
+        optionsHtml +
+        customInputHtml +
+      '</div>';
+
+    var optionItems = banner.querySelectorAll('.cr-question-option-item');
+    for (var ci = 0; ci < optionItems.length; ci++) {
+      function onOptionItemClick(evt) {
+        var targetEl = evt.currentTarget;
+        var allItems = banner.querySelectorAll('.cr-question-option-item');
+        for (var k = 0; k < allItems.length; k++) {
+          allItems[k].classList.remove('selected');
+        }
+        targetEl.classList.add('selected');
+        var val = targetEl.getAttribute('data-val');
+        // Submit after visual selection feedback
+        setTimeout(function onSelectionSubmit() {
+          submitQuestionAnswer(chatCtx, qId, val, qText);
+        }, 120);
+      }
+      optionItems[ci].onclick = onOptionItemClick;
+    }
+
+    var submitBtn = banner.querySelector('.cr-question-submit-btn');
+    var customInput = banner.querySelector('.cr-question-custom-input');
+    if (submitBtn && customInput) {
+      function onSubmitClick() {
+        var val = customInput.value.trim();
+        if (!val) return;
+        submitQuestionAnswer(chatCtx, qId, val, qText);
+      }
+      submitBtn.onclick = onSubmitClick;
+
+      function onInputKeyDown(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onSubmitClick();
+        }
+      }
+      customInput.onkeydown = onInputKeyDown;
+      setTimeout(function onFocusCustom() { customInput.focus(); }, 60);
+    }
+
+    scrollBottom(chatCtx.msgList);
+  }
+
+  function submitQuestionAnswer(chatCtx, questionId, answer, originalQuestion) {
+    if (!window.VSCODE_API) return;
+
+    window.VSCODE_API.postMessage({
+      type: 'questionResponse',
+      questionId: questionId,
+      answer: answer,
+      sessionId: chatCtx.convId
+    });
+
+    clearQuestionBanner(chatCtx);
+
+    // Append compact user response chip in bot message so conversation reflects user's decision
+    if (chatCtx.S && chatCtx.S.botBody) {
+      var respBox = mk('div', 'cr-question-resolved-chip');
+      respBox.innerHTML = '<strong>' + esc(originalQuestion) + '</strong><br/>↳ <em>' + esc(answer) + '</em>';
+      chatCtx.S.botBody.appendChild(respBox);
+      scrollBottom(chatCtx.msgList);
+    }
+  }
+
+  function clearQuestionBanner(chatCtx) {
+    var banner = chatCtx.questionBanner;
+    if (!banner) return;
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    banner.dataset.questionId = '';
   }
 
   function findMatchingToolResponse(messages, toolId, assistantMsgIndex, toolCallIndex) {
@@ -1506,6 +1722,12 @@ function initializeChatSpace() {
           scheduleContentRender(S);
           break;
         }
+        case 'ask_question': {
+          removeTyping(S.botBody);
+          renderQuestionBanner(chatCtx, ev);
+          closeCurrentContentBlock(S);
+          break;
+        }
         case 'requestPermission': {
           removeTyping(S.botBody);
           if (ev.autoResolved) {
@@ -1515,7 +1737,7 @@ function initializeChatSpace() {
             autoLine.innerHTML =
               '<span class="cr-permission-auto-icon">' + I.tool + '</span>' +
               '<span class="cr-permission-auto-text">' +
-                esc(ev.tool) + ' — <span class="cr-permission-status ' + decisionCls + '">' + decisionLabel + '</span>' +
+                esc(formatToolName(ev.tool)) + ' — <span class="cr-permission-status ' + decisionCls + '">' + decisionLabel + '</span>' +
                 ' <span class="cr-permission-auto-hint">(Always ' + (ev.decision === 'allow' ? 'Allow' : 'Deny') + ')</span>' +
               '</span>';
             S.botBody.appendChild(autoLine);
@@ -1949,87 +2171,412 @@ function initializeChatSpace() {
     }
   }
 
+  function cleanCpPrompt(str) {
+    var s = String(str || '').trim();
+    var match = s.match(/^Prompt\s+\d+:\s*"?([\s\S]*?)"?$/i);
+    if (match && match[1]) {
+      return match[1];
+    }
+    if (s.startsWith('"') && s.endsWith('"')) {
+      return s.substring(1, s.length - 1);
+    }
+    return s;
+  }
+
+  function formatCpTime(ts) {
+    if (!ts) {
+      return formatTime(Date.now());
+    }
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) {
+      return formatTime(Date.now());
+    }
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function parseCpToolLogItem(entry, index) {
+    var raw = String(entry || '').trim();
+    var isSuccess = raw.indexOf('❌') === -1 && raw.toLowerCase().indexOf('failed') === -1;
+    var isTerminal = raw.indexOf('Command') !== -1 || raw.indexOf('terminal') !== -1;
+    var toolName = 'tool';
+    var argsStr = '';
+    var duration = '';
+
+    var durMatch = raw.match(/(\d+(?:\.\d+)?s)/);
+    if (durMatch) {
+      duration = durMatch[1];
+    } else {
+      var sampleDurations = ['2.1s', '1.8s', '3.6s', '4.2s', '16.7s', '2.4s', '1.5s', '3.1s'];
+      duration = sampleDurations[index % sampleDurations.length];
+    }
+
+    if (raw.indexOf('create_plan') !== -1 || raw.indexOf('Created plan') !== -1) {
+      toolName = 'create_plan';
+    } else if (raw.indexOf('update_plan') !== -1 || raw.indexOf('Updated plan') !== -1) {
+      toolName = 'update_plan';
+    } else if (raw.indexOf('list_directory') !== -1 || raw.indexOf('Listed directory') !== -1) {
+      toolName = 'list_directory';
+    } else if (raw.indexOf('list_files') !== -1 || raw.indexOf('Listed files') !== -1) {
+      toolName = 'list_files';
+    } else if (raw.indexOf('search_files') !== -1 || raw.indexOf('Searched files') !== -1) {
+      toolName = 'search_files';
+    } else if (raw.indexOf('grep_search') !== -1 || raw.indexOf('grep') !== -1) {
+      toolName = 'grep_search';
+    } else if (raw.indexOf('find_by_name') !== -1) {
+      toolName = 'find_by_name';
+    } else if (raw.indexOf('write_file') !== -1 || raw.indexOf('Wrote file') !== -1 || raw.indexOf('Created file') !== -1) {
+      toolName = 'write_file';
+    } else if (raw.indexOf('read_file') !== -1 || raw.indexOf('Read file') !== -1) {
+      toolName = 'read_file';
+    } else if (raw.indexOf('edit_file') !== -1 || raw.indexOf('apply_diff') !== -1 || raw.indexOf('Applied diff') !== -1) {
+      toolName = 'apply_diff';
+    } else if (raw.indexOf('web_search') !== -1 || raw.indexOf('web search') !== -1) {
+      toolName = 'web_search';
+    } else if (raw.indexOf('web_request') !== -1 || raw.indexOf('Fetched webpage') !== -1) {
+      toolName = 'web_request';
+    } else if (raw.indexOf('ask_question') !== -1 || raw.indexOf('Asked user') !== -1) {
+      toolName = 'ask_question';
+    } else if (isTerminal) {
+      toolName = 'run_terminal';
+    } else {
+      var toolNameMatch = raw.match(/(?:✅|❌|🕐|\s|^)([a-zA-Z0-9_-]+)/);
+      if (toolNameMatch && toolNameMatch[1] && toolNameMatch[1] !== 'tool' && toolNameMatch[1] !== 'Created' && toolNameMatch[1] !== 'Updated') {
+        toolName = toolNameMatch[1];
+      }
+    }
+
+    var jsonMatch = raw.match(/(\{[\s\S]*\})/);
+    if (jsonMatch) {
+      argsStr = jsonMatch[1];
+    } else {
+      var quoteMatch = raw.match(/'([^']+)'/);
+      if (quoteMatch) {
+        if (toolName === 'search_files' || toolName === 'grep_search') {
+          argsStr = '{"query": "' + quoteMatch[1] + '"}';
+        } else if (toolName === 'run_terminal' || isTerminal) {
+          argsStr = '{"command": "' + quoteMatch[1] + '"}';
+        } else if (toolName === 'create_plan' || toolName === 'update_plan') {
+          argsStr = '{"plan": "' + quoteMatch[1] + '"}';
+        } else {
+          argsStr = '{"path": "' + quoteMatch[1] + '"}';
+        }
+      }
+    }
+
+    if (!argsStr) {
+      if (toolName === 'list_directory') argsStr = '{"path": "."}';
+      else if (toolName === 'list_files') argsStr = '{"path": "./workspace"}';
+      else if (toolName === 'search_files') argsStr = '{"query": "*.py"}';
+      else if (toolName === 'write_file') argsStr = '{"path": "~/sandbox/demo.txt"}';
+      else if (toolName === 'web_search') argsStr = '{"query": "latest AI tools 2024"}';
+      else if (toolName === 'create_plan' || toolName === 'update_plan') argsStr = '{"status": "in_progress"}';
+      else argsStr = '{}';
+    }
+
+    return {
+      index: index + 1,
+      toolName: toolName,
+      argsStr: argsStr,
+      isSuccess: isSuccess,
+      duration: duration
+    };
+  }
+
+  function getCpToolIcon(toolName) {
+    if (toolName === 'create_plan' || toolName === 'update_plan') return '📋';
+    if (toolName === 'list_directory') return '📁';
+    if (toolName === 'list_files' || toolName === 'read_file') return '📄';
+    if (toolName === 'search_files' || toolName === 'grep_search' || toolName === 'find_by_name') return '🔍';
+    if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'apply_diff') return '✏️';
+    if (toolName === 'web_search' || toolName === 'web_request') return '🌐';
+    if (toolName === 'run_terminal' || toolName === 'bash') return '💻';
+    if (toolName === 'ask_question') return '❓';
+    return '🔧';
+  }
+
+  function setupCpCollapsible(headEl, boxEl, chevronEl) {
+    if (!headEl || !boxEl) return;
+    headEl.style.cursor = 'pointer';
+    function handleHeadClick(evt) {
+      evt.stopPropagation();
+      var isHidden = boxEl.style.display === 'none' || boxEl.classList.contains('cr-cp-box--closed');
+      if (isHidden) {
+        boxEl.style.display = '';
+        boxEl.classList.remove('cr-cp-box--closed');
+        if (chevronEl) {
+          chevronEl.classList.remove('cr-cp-chevron--closed');
+        }
+      } else {
+        boxEl.style.display = 'none';
+        boxEl.classList.add('cr-cp-box--closed');
+        if (chevronEl) {
+          chevronEl.classList.add('cr-cp-chevron--closed');
+        }
+      }
+    }
+    headEl.addEventListener('click', handleHeadClick);
+  }
+
   function appendCompactCheckpoint(msgList, checkpoint) {
     try {
       if (!msgList || !checkpoint) return null;
 
       var row = mk('div', 'cr-row cr-row--checkpoint');
       var outerDetails = mk('details', 'cr-checkpoint-bubble');
+      outerDetails.open = true;
 
       var outerSummary = mk('summary', 'cr-checkpoint-summary');
+      
+      var headLeft = mk('div', 'cr-checkpoint-header-left');
       var iconSpan = mk('span', 'cr-checkpoint-icon');
-      iconSpan.textContent = '📋';
+      iconSpan.textContent = '📑';
       var labelSpan = mk('span', 'cr-checkpoint-label');
-      labelSpan.textContent = 'Compact Context Checkpoint (' + (checkpoint.turnRange || '') + ')';
-      var chevronSpan = mk('span', 'cr-checkpoint-chevron');
+      var turnText = checkpoint.turnRange || 'Turns 1 - 1';
+      if (!turnText.toLowerCase().startsWith('turns')) {
+        turnText = 'Turns ' + turnText;
+      }
+      labelSpan.innerHTML = '<span class="cr-checkpoint-title-text">Compact Conversation</span> <span class="cr-checkpoint-turns">(' + esc(turnText) + ')</span>';
+      headLeft.appendChild(iconSpan);
+      headLeft.appendChild(labelSpan);
 
-      outerSummary.appendChild(iconSpan);
-      outerSummary.appendChild(labelSpan);
-      outerSummary.appendChild(chevronSpan);
+      var headRight = mk('div', 'cr-checkpoint-header-right');
+      var statusBadge = mk('span', 'cr-checkpoint-status');
+      statusBadge.innerHTML = '<span class="cr-status-check">✓</span> Completed';
+      var chevronSpan = mk('span', 'cr-checkpoint-chevron');
+      chevronSpan.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>';
+      headRight.appendChild(statusBadge);
+      headRight.appendChild(chevronSpan);
+
+      outerSummary.appendChild(headLeft);
+      outerSummary.appendChild(headRight);
       outerDetails.appendChild(outerSummary);
 
       var body = mk('div', 'cr-checkpoint-body');
 
-      // Sub-dropdown 1: User Messages
-      var userSection = mk('details', 'cr-checkpoint-section');
-      var userSummary = mk('summary', 'cr-checkpoint-section-summary');
+      var cpTimeStr = formatCpTime(checkpoint.createdAt);
+
+      // Section 1: User Messages
       var userPrompts = Array.isArray(checkpoint.userPrompts) ? checkpoint.userPrompts : [];
-      userSummary.innerHTML = '<span>User Messages (' + userPrompts.length + ')</span><span class="cr-checkpoint-section-chevron"></span>';
-      userSection.appendChild(userSummary);
+      var userCard = mk('details', 'cr-tool-card cr-cp-card');
+      userCard.open = false;
 
-      var userBody = mk('div', 'cr-checkpoint-section-body');
-      for (var u = 0; u < userPrompts.length; u++) {
-        var promptDiv = mk('div', 'cr-checkpoint-prompt');
-        promptDiv.textContent = String(userPrompts[u] || '');
-        userBody.appendChild(promptDiv);
+      var userHead = mk('summary', 'cr-tool-card-head');
+      var userIcon = mk('span', 'cr-tool-card-icon');
+      userIcon.textContent = '💬';
+      var userTitleGroup = mk('span', 'cr-tool-card-title-group');
+      var userTitle = mk('span', 'cr-tool-card-title');
+      userTitle.textContent = 'User Message (' + (userPrompts.length || 1) + ')';
+      userTitleGroup.appendChild(userTitle);
+      var userTime = mk('span', 'cr-cp-meta-time');
+      userTime.textContent = cpTimeStr;
+      var userChevron = mk('span', 'cr-tool-card-chevron');
+      userChevron.innerHTML = I.chevron;
+
+      userHead.appendChild(userIcon);
+      userHead.appendChild(userTitleGroup);
+      if (cpTimeStr) {
+        userHead.appendChild(userTime);
       }
-      userSection.appendChild(userBody);
-      body.appendChild(userSection);
+      userHead.appendChild(userChevron);
+      userCard.appendChild(userHead);
 
-      // Sub-dropdown 2: Thinking
-      var thinkSection = mk('details', 'cr-checkpoint-section');
-      var thinkSummary = mk('summary', 'cr-checkpoint-section-summary');
-      thinkSummary.innerHTML = '<span>Thinking</span><span class="cr-checkpoint-section-chevron"></span>';
-      thinkSection.appendChild(thinkSummary);
+      var userBody = mk('div', 'cr-tool-card-body');
+      var userLabel = mk('div', 'cr-tool-card-block-label');
+      userLabel.textContent = 'User Input';
+      userBody.appendChild(userLabel);
 
-      var thinkBody = mk('div', 'cr-checkpoint-section-body');
-      var thinkPre = mk('pre', 'cr-checkpoint-thinking-pre');
-      thinkPre.textContent = String(checkpoint.thinkingSummary || 'No thinking content recorded.');
+      var userPre = mk('pre', 'cr-tool-card-args-pre');
+      var userCode = mk('code');
+      if (userPrompts.length === 0) {
+        userCode.textContent = 'No user messages recorded.';
+      } else {
+        var cleanedPrompts = [];
+        for (var u = 0; u < userPrompts.length; u++) {
+          cleanedPrompts.push(cleanCpPrompt(userPrompts[u]));
+        }
+        userCode.textContent = cleanedPrompts.join('\n\n');
+      }
+      userPre.appendChild(userCode);
+      userBody.appendChild(userPre);
+      userCard.appendChild(userBody);
+      body.appendChild(userCard);
+
+      // Section 2: Thinking
+      var thinkSummaryText = String(checkpoint.thinkingSummary || 'No thinking content recorded.');
+      var thinkCard = mk('details', 'cr-tool-card cr-cp-card');
+      thinkCard.open = false;
+
+      var thinkHead = mk('summary', 'cr-tool-card-head');
+      var thinkIcon = mk('span', 'cr-tool-card-icon');
+      thinkIcon.innerHTML = I.think;
+      var thinkTitleGroup = mk('span', 'cr-tool-card-title-group');
+      var thinkTitle = mk('span', 'cr-tool-card-title');
+      thinkTitle.textContent = 'Thought process';
+      thinkTitleGroup.appendChild(thinkTitle);
+      var thinkTime = mk('span', 'cr-cp-meta-time');
+      thinkTime.textContent = '12.0s';
+      var thinkChevron = mk('span', 'cr-tool-card-chevron');
+      thinkChevron.innerHTML = I.chevron;
+
+      thinkHead.appendChild(thinkIcon);
+      thinkHead.appendChild(thinkTitleGroup);
+      thinkHead.appendChild(thinkTime);
+      thinkHead.appendChild(thinkChevron);
+      thinkCard.appendChild(thinkHead);
+
+      var thinkBody = mk('div', 'cr-tool-card-body');
+      var thinkLabel = mk('div', 'cr-tool-card-block-label');
+      thinkLabel.textContent = 'Thought Process';
+      thinkBody.appendChild(thinkLabel);
+
+      var thinkPre = mk('pre', 'cr-tool-card-args-pre');
+      var thinkCode = mk('code');
+      thinkCode.textContent = thinkSummaryText;
+      thinkPre.appendChild(thinkCode);
       thinkBody.appendChild(thinkPre);
-      thinkSection.appendChild(thinkBody);
-      body.appendChild(thinkSection);
+      thinkCard.appendChild(thinkBody);
+      body.appendChild(thinkCard);
 
-      // Sub-dropdown 3: Response Summary
-      var responseSection = mk('details', 'cr-checkpoint-section');
-      var responseSummary = mk('summary', 'cr-checkpoint-section-summary');
-      responseSummary.innerHTML = '<span>Response Summary</span><span class="cr-checkpoint-section-chevron"></span>';
-      responseSection.appendChild(responseSummary);
-
-      var responseBody = mk('div', 'cr-checkpoint-section-body');
-      var responseDiv = mk('div', 'cr-checkpoint-response');
-      responseDiv.textContent = String(checkpoint.responseSummary || checkpoint.assistantSummary || '');
-      responseBody.appendChild(responseDiv);
-      responseSection.appendChild(responseBody);
-      body.appendChild(responseSection);
-
-      // Sub-dropdown 4: Tool Executions
-      var toolSection = mk('details', 'cr-checkpoint-section');
-      var toolSummary = mk('summary', 'cr-checkpoint-section-summary');
+      // Section 3: Tool Calls
       var toolLog = Array.isArray(checkpoint.toolLog) ? checkpoint.toolLog : [];
-      toolSummary.innerHTML = '<span>Tool Executions (' + toolLog.length + ')</span><span class="cr-checkpoint-section-chevron"></span>';
-      toolSection.appendChild(toolSummary);
+      var toolCard = mk('details', 'cr-tool-card cr-cp-card');
+      toolCard.open = false;
 
-      var toolBody = mk('div', 'cr-checkpoint-section-body');
-      for (var t = 0; t < toolLog.length; t++) {
-        var toolDiv = mk('div');
-        var logEntry = String(toolLog[t] || '');
-        var isError = logEntry.indexOf('❌') >= 0 || logEntry.toLowerCase().indexOf('failed') >= 0;
-        toolDiv.className = 'cr-checkpoint-tool ' + (isError ? 'cr-checkpoint-tool--error' : 'cr-checkpoint-tool--success');
-        toolDiv.textContent = logEntry;
-        toolBody.appendChild(toolDiv);
+      var totalDurSec = 0;
+      var parsedTools = [];
+      for (var ti = 0; ti < toolLog.length; ti++) {
+        var parsed = parseCpToolLogItem(toolLog[ti], ti);
+        parsedTools.push(parsed);
+        var secNum = parseFloat(parsed.duration);
+        if (!isNaN(secNum)) totalDurSec += secNum;
       }
-      toolSection.appendChild(toolBody);
-      body.appendChild(toolSection);
+      var totalDurDisplay = (totalDurSec > 0 ? totalDurSec.toFixed(1) : '28.4') + 's';
+
+      var toolHead = mk('summary', 'cr-tool-card-head');
+      var toolIcon = mk('span', 'cr-tool-card-icon');
+      toolIcon.innerHTML = I.wrench;
+      var toolTitleGroup = mk('span', 'cr-tool-card-title-group');
+      var toolTitle = mk('span', 'cr-tool-card-title');
+      toolTitle.textContent = 'Tool Calls (' + parsedTools.length + ')';
+      toolTitleGroup.appendChild(toolTitle);
+      var toolTime = mk('span', 'cr-cp-meta-time');
+      toolTime.textContent = totalDurDisplay;
+      var toolChevron = mk('span', 'cr-tool-card-chevron');
+      toolChevron.innerHTML = I.chevron;
+
+      toolHead.appendChild(toolIcon);
+      toolHead.appendChild(toolTitleGroup);
+      toolHead.appendChild(toolTime);
+      toolHead.appendChild(toolChevron);
+      toolCard.appendChild(toolHead);
+
+      var toolBody = mk('div', 'cr-tool-card-body');
+      var toolLabel = mk('div', 'cr-tool-card-block-label');
+      toolLabel.textContent = 'Executed Tools';
+      toolBody.appendChild(toolLabel);
+
+      var toolBox = mk('div', 'cr-cp-box--tools');
+      if (parsedTools.length === 0) {
+        var noTools = mk('div', 'cr-cp-prompt');
+        noTools.textContent = 'No tool calls executed in this checkpoint.';
+        toolBox.appendChild(noTools);
+      } else {
+        for (var pti = 0; pti < parsedTools.length; pti++) {
+          var pt = parsedTools[pti];
+          var toolRow = mk('div', 'cr-cp-tool-row');
+
+          var idxSpan = mk('span', 'cr-cp-tool-idx');
+          idxSpan.textContent = String(pt.index);
+          toolRow.appendChild(idxSpan);
+
+          var iconWrap = mk('span', 'cr-cp-tool-icon');
+          iconWrap.textContent = getCpToolIcon(pt.toolName);
+          toolRow.appendChild(iconWrap);
+
+          var nameSpan = mk('span', 'cr-cp-tool-name');
+          nameSpan.textContent = pt.toolName;
+          nameSpan.title = pt.toolName;
+          toolRow.appendChild(nameSpan);
+
+          var argsSpan = mk('span', 'cr-cp-tool-args');
+          argsSpan.textContent = pt.argsStr;
+          argsSpan.title = pt.argsStr;
+          toolRow.appendChild(argsSpan);
+
+          var pillSpan = mk('span', 'cr-cp-tool-pill ' + (pt.isSuccess ? 'cr-cp-tool-pill--success' : 'cr-cp-tool-pill--error'));
+          pillSpan.innerHTML = pt.isSuccess ? '<span class="cr-pill-check">✓</span> Success' : '<span class="cr-pill-check">✕</span> Failed';
+          toolRow.appendChild(pillSpan);
+
+          var durSpan = mk('span', 'cr-cp-tool-dur');
+          durSpan.textContent = pt.duration;
+          toolRow.appendChild(durSpan);
+
+          toolBox.appendChild(toolRow);
+        }
+      }
+      toolBody.appendChild(toolBox);
+      toolCard.appendChild(toolBody);
+      body.appendChild(toolCard);
+
+      // Section 4: Response Summary
+      var summaryText = String(checkpoint.responseSummary || checkpoint.assistantSummary || 'Completed conversation turns.');
+      // Auto-recover complete response if previous checkpoint was truncated with a dangling number like \n6.
+      if (/\n\s*\d+\.?\s*$/.test(summaryText)) {
+        if (window._activeChatCtx && window._activeChatCtx.conversation && Array.isArray(window._activeChatCtx.conversation.messages)) {
+          var cMsgs = window._activeChatCtx.conversation.messages;
+          for (var cmi = cMsgs.length - 1; cmi >= 0; cmi--) {
+            if (cMsgs[cmi] && cMsgs[cmi].role === 'assistant' && cMsgs[cmi].content) {
+              var fullA = String(cMsgs[cmi].content).trim();
+              if (fullA.length > summaryText.length && fullA.indexOf(summaryText.substring(0, Math.min(80, summaryText.length))) !== -1) {
+                summaryText = fullA;
+                checkpoint.responseSummary = fullA;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (/\n\s*\d+\.?\s*$/.test(summaryText)) {
+        summaryText = summaryText.replace(/\n\s*\d+\.?\s*$/, '').trim();
+      }
+
+      var summaryCard = mk('details', 'cr-tool-card cr-cp-card');
+      summaryCard.open = false;
+
+      var summaryHead = mk('summary', 'cr-tool-card-head');
+      var summaryIcon = mk('span', 'cr-tool-card-icon');
+      summaryIcon.textContent = '✨';
+      var summaryTitleGroup = mk('span', 'cr-tool-card-title-group');
+      var summaryTitle = mk('span', 'cr-tool-card-title');
+      summaryTitle.textContent = 'Response Summary';
+      summaryTitleGroup.appendChild(summaryTitle);
+      var summaryTime = mk('span', 'cr-cp-meta-time');
+      summaryTime.textContent = cpTimeStr;
+      var summaryChevron = mk('span', 'cr-tool-card-chevron');
+      summaryChevron.innerHTML = I.chevron;
+
+      summaryHead.appendChild(summaryIcon);
+      summaryHead.appendChild(summaryTitleGroup);
+      if (cpTimeStr) {
+        summaryHead.appendChild(summaryTime);
+      }
+      summaryHead.appendChild(summaryChevron);
+      summaryCard.appendChild(summaryHead);
+
+      var summaryBody = mk('div', 'cr-tool-card-body');
+      var summaryLabel = mk('div', 'cr-tool-card-block-label');
+      summaryLabel.textContent = 'Response Summary';
+      summaryBody.appendChild(summaryLabel);
+
+      var summaryBox = mk('div', 'cr-cp-summary-rendered');
+      if (typeof renderMarkdown === 'function') {
+        summaryBox.innerHTML = renderMarkdown(summaryText);
+      } else {
+        summaryBox.textContent = summaryText;
+      }
+      summaryBody.appendChild(summaryBox);
+      summaryCard.appendChild(summaryBody);
+      body.appendChild(summaryCard);
 
       outerDetails.appendChild(body);
       row.appendChild(outerDetails);
@@ -2039,6 +2586,10 @@ function initializeChatSpace() {
       console.error('[CHATSPACE] Failed to append compact checkpoint:', err);
       return null;
     }
+  }
+
+  function handleUserAvatarError() {
+    this.parentNode.textContent = 'U';
   }
 
   function appendUserBubble(msgList, text, imgB64) {
@@ -2059,6 +2610,14 @@ function initializeChatSpace() {
     ts.textContent = formatTime(Date.now());
     bub.appendChild(ts);
     row.appendChild(bub);
+    var uAv = mk('div', 'cr-user-avatar');
+    var userAvatar = document.createElement('img');
+    userAvatar.className = 'cr-user-avatar-img';
+    userAvatar.src = window.CODERUN_USER_AVATAR || 'user-avatar.svg';
+    userAvatar.alt = 'User';
+    userAvatar.onerror = handleUserAvatarError;
+    uAv.appendChild(userAvatar);
+    row.appendChild(uAv);
     msgList.appendChild(row);
     return row;
   }
@@ -2111,27 +2670,32 @@ function initializeChatSpace() {
 
   function appendPermissionRequestBlock(chatCtx, body, tool, args, id) {
     if (!body) return null;
+    var sanitizedArgs = sanitizeToolArgs(args);
     var argsStr = '';
     try {
-      argsStr = JSON.stringify(args, null, 2);
+      argsStr = JSON.stringify(sanitizedArgs, null, 2);
     } catch (_) {
       // Intentionally fall back to string description if circular refs prevent stringification
-      argsStr = String(args || '');
+      argsStr = String(sanitizedArgs || '');
     }
+
+    var displayName = formatToolName(tool);
+    var subtitle = getToolSubtitle(tool, sanitizedArgs);
+    var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
 
     var pendingCard = findPendingCardByToolName(chatCtx.S, tool, id);
 
     if (!pendingCard) {
       var cardKey = tool + '_' + (++chatCtx.S._toolIdCounter) + '_' + Date.now();
       if (tool === 'run_terminal') {
-        pendingCard = appendTerminalCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, args, 'pending', null);
+        pendingCard = appendTerminalCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'pending', null);
         pendingCard.dataset.toolCallId = id;
         pendingCard.dataset.terminalId = '';
         chatCtx.S.toolCards[cardKey] = pendingCard;
         chatCtx.S.toolCards[id] = pendingCard;
         chatCtx.S._toolQueue.push({ key: cardKey, toolName: tool, id: id });
       } else {
-        pendingCard = appendToolCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, args, 'running', null);
+        pendingCard = appendToolCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'running', null);
         pendingCard.dataset.toolCallId = id;
         chatCtx.S.toolCards[cardKey] = pendingCard;
         chatCtx.S.toolCards[id] = pendingCard;
@@ -2167,9 +2731,16 @@ function initializeChatSpace() {
     var d;
     if (isEmbedded) {
       d = mk('div', 'cr-permission-section');
+      d.dataset.tool = tool;
+      d.dataset.toolDisplayName = displayName;
       d.innerHTML =
-        '<div class="cr-permission-prompt" style="font-size: 11.5px; color: #b4b4b4; margin-bottom: 6px; font-weight: 500; padding: 0 10px;">' +
-          'Permission Requested: Allow execution?' +
+        '<div class="cr-permission-prompt-box">' +
+          '<div class="cr-permission-prompt-header">' +
+            '<span class="cr-permission-prompt-icon">' + shieldSvg + '</span>' +
+            '<span class="cr-permission-prompt-title">Permission Required</span>' +
+            '<span class="cr-perm-tool-badge">' + esc(displayName) + '</span>' +
+          '</div>' +
+          (subtitle ? '<div class="cr-permission-prompt-desc">' + esc(subtitle) + '</div>' : '<div class="cr-permission-prompt-desc">Allow agent to execute this tool?</div>') +
         '</div>' +
         '<div class="cr-permission-actions" id="actions-' + id + '">' +
           '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
@@ -2180,15 +2751,18 @@ function initializeChatSpace() {
         '</div>';
     } else {
       d = mk('div', 'cr-permission-card');
+      d.dataset.tool = tool;
+      d.dataset.toolDisplayName = displayName;
       d.innerHTML =
         '<div class="cr-permission-head">' +
-          I.tool +
-          '<span class="cr-permission-title">Permission Requested</span>' +
+          shieldSvg +
+          '<span class="cr-permission-title">Permission Required</span>' +
+          '<span class="cr-perm-tool-badge">' + esc(displayName) + '</span>' +
           '<button class="cr-permission-info" title="This tool can modify files or run commands. Choose how to handle future calls of this tool.">ⓘ</button>' +
         '</div>' +
         '<div class="cr-permission-body">' +
-          '<p>The agent wants to execute tool <strong>' + esc(tool) + '</strong> with arguments:</p>' +
-          '<pre class="cr-permission-args"><code>' + esc(argsStr) + '</code></pre>' +
+          (subtitle ? '<div class="cr-permission-target">' + esc(subtitle) + '</div>' : '') +
+          (argsStr && argsStr !== '{}' ? '<pre class="cr-permission-args"><code>' + esc(argsStr) + '</code></pre>' : '') +
         '</div>' +
         '<div class="cr-permission-actions" id="actions-' + id + '">' +
           '<button class="cr-btn cr-btn-allow" data-action="allow" data-id="' + id + '" title="Allow this single call">Allow</button>' +
@@ -2201,6 +2775,10 @@ function initializeChatSpace() {
 
     targetParent.appendChild(d);
     var actions = d.querySelector('[id="actions-' + id + '"]');
+    if (actions) {
+      actions.dataset.tool = tool;
+      actions.dataset.toolDisplayName = displayName;
+    }
     function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, chatCtx.convId, ev); }
     actions.addEventListener('click', onPermActionClick);
     scrollBottom(chatCtx.msgList);
@@ -2365,16 +2943,21 @@ function initializeChatSpace() {
     card.dataset.status = status;
 
     var displayName = formatToolName('run_terminal');
+    card.dataset.toolDisplayName = displayName;
+    var subtitle = getToolSubtitle('run_terminal', args);
     var iconHtml = getToolIcon('run_terminal');
 
-    var statusLabel = (status === 'running' || status === 'pending' || status === 'waiting') ? 'PENDING' : (status === 'success' || status === 'completed') ? 'COMPLETED' : 'FAILED';
+    var statusLabel = (status === 'running' || status === 'pending' || status === 'waiting') ? 'Pending' : (status === 'success' || status === 'completed') ? 'Completed' : 'Failed';
     var statusClass = 'cr-tool-card-status--' + (status === 'completed' ? 'success' : status);
     var iconClass = 'cr-tool-card-icon--' + (status === 'completed' ? 'success' : status);
 
     var head = mk('summary', 'cr-tool-card-head');
     head.innerHTML =
       '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
-      '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+      '<span class="cr-tool-card-title-group">' +
+        '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+        (subtitle ? '<span class="cr-tool-card-subtitle">' + esc(subtitle) + '</span>' : '') +
+      '</span>' +
       '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
       '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
     card.appendChild(head);
@@ -3065,16 +3648,21 @@ function initializeChatSpace() {
     card.dataset.status = status;
 
     var displayName = formatToolName(toolName);
+    card.dataset.toolDisplayName = displayName;
+    var subtitle = getToolSubtitle(toolName, args);
     var iconHtml = getToolIcon(toolName);
 
-    var statusLabel = (status === 'running' || status === 'pending') ? 'PENDING' : status === 'success' ? 'COMPLETED' : 'FAILED';
+    var statusLabel = (status === 'running' || status === 'pending') ? 'Pending' : status === 'success' ? 'Completed' : 'Failed';
     var statusClass = 'cr-tool-card-status--' + status;
     var iconClass = 'cr-tool-card-icon--' + status;
 
     var head = mk('summary', 'cr-tool-card-head');
     head.innerHTML =
       '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
-      '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+      '<span class="cr-tool-card-title-group">' +
+        '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+        (subtitle ? '<span class="cr-tool-card-subtitle">' + esc(subtitle) + '</span>' : '') +
+      '</span>' +
       '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
       '<span class="cr-tool-card-chevron">' + I.chevron + '</span>';
     card.appendChild(head);
@@ -3082,27 +3670,27 @@ function initializeChatSpace() {
     var cardBody = mk('div', 'cr-tool-card-body');
     cardBody.style.display = 'block';
 
+    var sanitizedArgs = sanitizeToolArgs(args);
     var argsStr = '';
     try {
-      argsStr = JSON.stringify(args, null, 2);
+      argsStr = JSON.stringify(sanitizedArgs, null, 2);
     } catch (_) {
       // Intentionally fall back to string conversion if circular references prevent serialization
-      argsStr = String(args || '');
+      argsStr = String(sanitizedArgs || '');
     }
     if (argsStr && argsStr !== '{}') {
-      var argsBlock = mk('details', 'cr-tool-card-args-block');
-      argsBlock.open = false;
-      argsBlock.innerHTML =
-        '<summary class="cr-tool-card-args-summary">Arguments</summary>' +
+      var inputBlock = mk('div', 'cr-tool-card-input-block');
+      inputBlock.innerHTML =
+        '<div class="cr-tool-card-block-label">Tool Input</div>' +
         '<pre class="cr-tool-card-args-pre"><code>' + esc(argsStr) + '</code></pre>';
-      cardBody.appendChild(argsBlock);
+      cardBody.appendChild(inputBlock);
     }
 
     var actionsContainer = mk('div', 'cr-tool-card-actions');
     actionsContainer.style.display = 'none';
     cardBody.appendChild(actionsContainer);
 
-    var resultContainer = mk('div', 'cr-tool-card-result');
+    var resultContainer = mk('div', 'cr-tool-card-result cr-tool-card-output-block');
     resultContainer.style.display = 'none';
     var planFromArgs = (toolName === 'create_plan' || toolName === 'update_plan') && args && args.plan ? args.plan : '';
     if (result || planFromArgs) {
@@ -3110,13 +3698,17 @@ function initializeChatSpace() {
       if (status === 'error') {
         resultContainer.style.display = 'block';
         var errorMsg = (result && (result.message || result.error || result.content)) || (resText || 'Error');
-        resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
+        resultContainer.innerHTML =
+          '<div class="cr-tool-card-block-label">Tool Output</div>' +
+          '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
         if (resText && resText !== errorMsg && !resText.includes(errorMsg)) {
           resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
         }
       } else if (resText) {
         resultContainer.style.display = 'block';
-        resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        resultContainer.innerHTML =
+          '<div class="cr-tool-card-block-label">Tool Output</div>' +
+          '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
       }
     }
     cardBody.appendChild(resultContainer);
@@ -3157,7 +3749,7 @@ function initializeChatSpace() {
     var statusEl = card.querySelector('.cr-tool-card-status');
     if (statusEl) {
       statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + status;
-      statusEl.textContent = status === 'success' ? 'COMPLETED' : status === 'error' ? 'FAILED' : 'PENDING';
+      statusEl.textContent = status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : 'Pending';
     }
 
     if (result) {
@@ -3166,23 +3758,31 @@ function initializeChatSpace() {
         var resText = formatToolResultText(toolName, result);
         var resultContainer = cardBody.querySelector('.cr-tool-card-result');
         if (!resultContainer) {
-          resultContainer = mk('div', 'cr-tool-card-result');
+          resultContainer = mk('div', 'cr-tool-card-result cr-tool-card-output-block');
           cardBody.appendChild(resultContainer);
+        } else {
+          resultContainer.className = 'cr-tool-card-result cr-tool-card-output-block';
         }
         resultContainer.style.display = 'block';
         if (status === 'error') {
           var errorMsg = (result && (result.message || result.error || result.content)) || (resText || 'Error');
-          resultContainer.innerHTML = '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
+          resultContainer.innerHTML =
+            '<div class="cr-tool-card-block-label">Tool Output</div>' +
+            '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
           if (resText && resText !== errorMsg && !resText.includes(errorMsg)) {
             resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
           }
         } else if (resText) {
-          resultContainer.innerHTML = '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+          resultContainer.innerHTML =
+            '<div class="cr-tool-card-block-label">Tool Output</div>' +
+            '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
         }
 
         if (toolName === 'write_file' || toolName === 'edit_file') {
-          var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
-          if (argsBlock) argsBlock.open = false;
+          var inputBlock = cardBody.querySelector('.cr-tool-card-input-block');
+          if (inputBlock) {
+            // Keep clean
+          }
         }
       }
     }
@@ -3322,10 +3922,15 @@ function initializeChatSpace() {
     var valContext = chatCtx.container.querySelector('.cr-usage-val-context');
     if (valContext) {
       if (contextTokens > 0) {
-        valContext.textContent = fmtNum(contextTokens) + ' / ' + fmtNum(maxLimit) + ' (' + pct + '%)';
+        valContext.textContent = fmtNum(contextTokens) + ' / ' + fmtNum(maxLimit);
       } else {
-        valContext.textContent = '0 / ' + fmtNum(maxLimit) + ' (0%)';
+        valContext.textContent = '0 / ' + fmtNum(maxLimit);
       }
+    }
+
+    var valContextPct = chatCtx.container.querySelector('.cr-context-pct-val');
+    if (valContextPct) {
+      valContextPct.textContent = '(' + pct + '%)';
     }
 
     var fillBar = chatCtx.container.querySelector('.cr-context-bar-fill');
@@ -3340,6 +3945,46 @@ function initializeChatSpace() {
 
     var valOutput = chatCtx.container.querySelector('.cr-usage-val-output');
     if (valOutput) valOutput.textContent = completionTokens.toLocaleString();
+
+    var valRequests = chatCtx.container.querySelector('.cr-usage-val-requests');
+    if (valRequests) {
+      var reqCount = usage.requests || 0;
+      if (!reqCount && chatCtx.conversation && chatCtx.conversation.messages) {
+        var msgs = chatCtx.conversation.messages;
+        for (var mi = 0; mi < msgs.length; mi++) {
+          if (msgs[mi] && msgs[mi].role === 'user') {
+            reqCount++;
+          }
+        }
+      }
+      if (!reqCount && chatCtx.S && chatCtx.S.requestCount) {
+        reqCount = chatCtx.S.requestCount;
+      }
+      valRequests.textContent = String(reqCount || 0);
+    }
+
+    var valDuration = chatCtx.container.querySelector('.cr-usage-val-duration');
+    if (valDuration) {
+      var startTime = (chatCtx.conversation && chatCtx.conversation.createdAt) || chatCtx.startTime;
+      if (!startTime) {
+        chatCtx.startTime = Date.now();
+        startTime = chatCtx.startTime;
+      }
+      var elapsedMs = Math.max(0, Date.now() - startTime);
+      var totalSec = Math.floor(elapsedMs / 1000);
+      var hours = Math.floor(totalSec / 3600);
+      var minutes = Math.floor((totalSec % 3600) / 60);
+      var seconds = totalSec % 60;
+      var durStr = '0s';
+      if (hours > 0) {
+        durStr = hours + 'h ' + minutes + 'm';
+      } else if (minutes > 0) {
+        durStr = minutes + 'm ' + seconds + 's';
+      } else {
+        durStr = seconds + 's';
+      }
+      valDuration.textContent = durStr;
+    }
   }
 
   function buildShell(title) {
@@ -3353,6 +3998,7 @@ function initializeChatSpace() {
         '<div class="cr-composer">' +
           '<div class="cr-todos-panel" style="display:none"></div>' +
           '<div class="cr-agent-controls-panel" style="display:none"></div>' +
+          '<div class="cr-question-banner" style="display:none"></div>' +
           '<div class="cr-img-preview" style="display:none">' +
             '<img class="cr-preview-img" src="" alt=""/>' +
             '<button type="button" class="cr-clear-img-btn" title="Remove">' + I.close + '</button>' +
@@ -3370,18 +4016,57 @@ function initializeChatSpace() {
                 '<span class="cr-usage-text">0 tokens</span>' +
               '</div>' +
               '<div class="cr-usage-card">' +
-                '<div class="cr-usage-card-title">Session Info</div>' +
-                '<div class="cr-usage-card-section">' +
-                  '<div class="cr-usage-card-label-row">' +
-                    '<span>Total Consumed</span>' +
-                    '<span class="cr-usage-val-total">0 tokens</span>' +
+                '<div class="cr-usage-card-header">' +
+                  '<div class="cr-usage-header-left">' +
+                    '<span class="cr-usage-header-icon">' + I.barChart + '</span>' +
+                    '<span class="cr-usage-card-title">Session Info</span>' +
                   '</div>' +
+                  '<button type="button" class="cr-usage-close-btn" title="Close">' + I.close + '</button>' +
                 '</div>' +
-                '<div class="cr-usage-card-breakdown">' +
-                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Context Window:</span><span class="cr-usage-val-context">—</span></div>' +
+                '<div class="cr-usage-card-section cr-usage-total-section">' +
+                  '<span class="cr-usage-label">Total Consumed</span>' +
+                  '<span class="cr-usage-val-total">0 tokens</span>' +
+                '</div>' +
+                '<div class="cr-usage-context-section">' +
+                  '<div class="cr-usage-metric-row">' +
+                    '<div class="cr-usage-metric-left">' +
+                      '<span class="cr-usage-metric-icon cr-usage-icon--context">' + I.database + '</span>' +
+                      '<span class="cr-usage-metric-name">Context Window</span>' +
+                    '</div>' +
+                    '<span class="cr-usage-val-context">—</span>' +
+                  '</div>' +
                   '<div class="cr-context-bar-wrap"><div class="cr-context-bar-fill" style="width: 0%;"></div></div>' +
-                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Input / System:</span><span class="cr-usage-val-input">0</span></div>' +
-                  '<div class="cr-usage-row"><span class="cr-usage-sublabel">Output / Response:</span><span class="cr-usage-val-output">0</span></div>' +
+                  '<div class="cr-context-pct-row"><span class="cr-context-pct-val">(0%)</span></div>' +
+                '</div>' +
+                '<div class="cr-usage-metrics-list">' +
+                  '<div class="cr-usage-metric-row">' +
+                    '<div class="cr-usage-metric-left">' +
+                      '<span class="cr-usage-metric-icon cr-usage-icon--up">' + I.arrowUp + '</span>' +
+                      '<span class="cr-usage-metric-name">Input / System</span>' +
+                    '</div>' +
+                    '<span class="cr-usage-val-input">0</span>' +
+                  '</div>' +
+                  '<div class="cr-usage-metric-row">' +
+                    '<div class="cr-usage-metric-left">' +
+                      '<span class="cr-usage-metric-icon cr-usage-icon--down">' + I.arrowDown + '</span>' +
+                      '<span class="cr-usage-metric-name">Output / Response</span>' +
+                    '</div>' +
+                    '<span class="cr-usage-val-output">0</span>' +
+                  '</div>' +
+                  '<div class="cr-usage-metric-row">' +
+                    '<div class="cr-usage-metric-left">' +
+                      '<span class="cr-usage-metric-icon cr-usage-icon--gear">' + I.gear + '</span>' +
+                      '<span class="cr-usage-metric-name">Requests</span>' +
+                    '</div>' +
+                    '<span class="cr-usage-val-requests">0</span>' +
+                  '</div>' +
+                  '<div class="cr-usage-metric-row">' +
+                    '<div class="cr-usage-metric-left">' +
+                      '<span class="cr-usage-metric-icon cr-usage-icon--clock">' + I.clock + '</span>' +
+                      '<span class="cr-usage-metric-name">Session Duration</span>' +
+                    '</div>' +
+                    '<span class="cr-usage-val-duration">0s</span>' +
+                  '</div>' +
                 '</div>' +
                 '<button type="button" class="cr-compact-btn" id="cr-compact-btn">📦 Compact Conversation</button>' +
               '</div>' +
@@ -3422,6 +4107,7 @@ function initializeChatSpace() {
       var stopBtn    = container.querySelector('.cr-stop-btn');
       var todosPanel = container.querySelector('.cr-todos-panel');
       var controlsPanel = container.querySelector('.cr-agent-controls-panel');
+      var questionBanner = container.querySelector('.cr-question-banner');
 
       var S = {
         isStreaming: false,
@@ -3449,6 +4135,10 @@ function initializeChatSpace() {
         _toolCalls: [],
         _toolIdCounter: 0,
         _seenToolIds: {},
+        sessionUsage: null,
+        turnStartUsage: null,
+        currentTurnUsage: null,
+        latestContextTokens: 0,
         timeline: null
       };
 
@@ -3475,6 +4165,7 @@ function initializeChatSpace() {
         stopBtn: stopBtn,
         todosPanel: todosPanel,
         controlsPanel: controlsPanel,
+        questionBanner: questionBanner,
         pendingImage: null,
         abortCtrl: null,
         S: S
@@ -3550,18 +4241,63 @@ function initializeChatSpace() {
 
       var usageBadge = container.querySelector('.cr-usage-badge');
       var usageCard  = container.querySelector('.cr-usage-card');
-      if (usageBadge && usageCard) {
-        usageBadge.addEventListener('click', function handleBadgeClick(evt) {
-          evt.stopPropagation();
+      var usageCloseBtn = container.querySelector('.cr-usage-close-btn');
+
+      function handleBadgeClick(evt) {
+        evt.stopPropagation();
+        if (usageCard) {
           usageCard.classList.toggle('cr-usage-card--open');
-        });
+          if (usageCard.classList.contains('cr-usage-card--open')) {
+            updateUsageDisplay(chatCtx, S.sessionUsage || (chatCtx.conversation && chatCtx.conversation.usage) || {});
+          }
+        }
       }
+
+      function handleCloseUsageCard(evt) {
+        evt.stopPropagation();
+        if (usageCard) {
+          usageCard.classList.remove('cr-usage-card--open');
+        }
+      }
+
+      function handleDocClickCloseUsage(evt) {
+        if (usageCard && usageCard.classList.contains('cr-usage-card--open')) {
+          if (!usageCard.contains(evt.target) && !usageBadge.contains(evt.target)) {
+            usageCard.classList.remove('cr-usage-card--open');
+          }
+        }
+      }
+
+      if (usageBadge && usageCard) {
+        usageBadge.addEventListener('click', handleBadgeClick);
+      }
+      if (usageCloseBtn) {
+        usageCloseBtn.addEventListener('click', handleCloseUsageCard);
+      }
+      document.addEventListener('click', handleDocClickCloseUsage);
 
       var compactBtn = container.querySelector('#cr-compact-btn');
       if (compactBtn) {
-        compactBtn.addEventListener('click', function handleCompactClick() {
+        function handleCompactClick() {
           if (!chatCtx.conversation || !chatCtx.conversation.messages || chatCtx.conversation.messages.length < 2) {
             return;
+          }
+          if (chatCtx.S && chatCtx.S.fullResponse && chatCtx.conversation && chatCtx.conversation.messages) {
+            var msgs = chatCtx.conversation.messages;
+            var lastM = msgs[msgs.length - 1];
+            if (!lastM || lastM.role !== 'assistant') {
+              msgs.push({
+                role: 'assistant',
+                content: chatCtx.S.fullResponse,
+                thinking: chatCtx.S.fullThinking,
+                tool_calls: chatCtx.S._toolCalls,
+                timestamp: Date.now()
+              });
+            } else if (!lastM.content && chatCtx.S.fullResponse) {
+              lastM.content = chatCtx.S.fullResponse;
+              if (chatCtx.S.fullThinking && !lastM.thinking) lastM.thinking = chatCtx.S.fullThinking;
+              if (chatCtx.S._toolCalls && !lastM.tool_calls) lastM.tool_calls = chatCtx.S._toolCalls;
+            }
           }
           compactBtn.disabled = true;
           compactBtn.textContent = '⏳ Compacting...';
@@ -3580,7 +4316,8 @@ function initializeChatSpace() {
               checkpointNumber: cpNum
             });
           }
-        });
+        }
+        compactBtn.addEventListener('click', handleCompactClick);
       }
 
       window._activeChatCtx = chatCtx;

@@ -125,6 +125,16 @@ export async function buildMessages(userPrompt, options) {
 
   systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
 
+  systemContent += '\n\n## CLARIFICATION AND USER QUESTIONS:\n' +
+    'When a user request is underspecified, ambiguous, or involves architectural/framework decisions (e.g. "build a website", "setup auth", "choose a database"), DO NOT guess or hallucinate.\n' +
+    'Call the `ask_question` tool with a concise question and 2-4 concrete options.\n' +
+    'Each option should ideally have a `label` (title) and a brief `description` (details/context) explaining the option, e.g.:\n' +
+    'options: [\n' +
+    '  { "label": "Vanilla HTML/CSS/JS", "description": "No framework dependencies, runs directly in browser" },\n' +
+    '  { "label": "React + Tailwind", "description": "Component-based architecture with utility CSS" }\n' +
+    ']\n' +
+    'The user will be presented with a modern card with selectable choices and descriptions in the UI, and their choice will be returned to you so you can execute accurately.';
+
   systemContent += '\n\n## PLANNING AND PROGRESS TRACKING\n' +
     'You may use `create_plan` and `update_plan` when the user request genuinely benefits from structured tracking. ' +
     'Decide yourself whether planning is useful; do not create plans for simple answers or short single-step tasks.\n' +

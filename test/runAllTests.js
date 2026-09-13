@@ -20,6 +20,7 @@ import * as planningManager from '../src/context/planningManager.js';
 import * as planningEngine from '../src/context/planningEngine.js';
 import * as terminalManager from '../src/tools/terminalManager.js';
 import * as permissions from '../src/tools/permissions.js';
+import * as questionManager from '../src/tools/questionManager.js';
 import * as toolRegistry from '../src/tools/toolRegistry.js';
 import { registerAllTools } from '../src/tools/tools.js';
 import * as approvalSystem from '../src/tools/approvalSystem.js';
@@ -1070,8 +1071,29 @@ assert.ok(foundReadMain, "Preserves pre-compacted status string without mangling
 // Verify assistant responses truncation cleanliness (no mid-word cuts like 'mod...')
 assert.ok(compactCp.content.includes("COMPACTED CONTEXT CHECKPOINT"), 'Markdown content generated');
 assert.ok(!compactCp.content.includes('mod...'), 'Assistant content is not cut mid-word');
+assert.strictEqual(
+  compactCp.responseSummary,
+  'I have checked the repository status for you. On branch master, staged changes: git_demo.txt. Unstaged changes: demo/hello.txt and git_demo.txt are both marked as deleted. Untracked files: main.py. Let me know if you would like to stage, commit, or otherwise modify any of these files.',
+  'Response summary must be the complete final output from the model'
+);
 
-console.log('✓ Vector 46 Passed: Compact conversation tool log resolution, argument mapping, and text cleanliness verified.');
+// Verify multi-step conversation with long numbered list (>600 chars) is never cut at item 6
+var mockLongListMessages = [
+  { role: 'user', content: 'Do tasks' },
+  { role: 'assistant', content: 'Starting tasks...', tool_calls: [{ id: 'tc_1', type: 'function', function: { name: 'list_directory', arguments: '{}' } }] },
+  { role: 'tool', tool_call_id: 'tc_1', content: 'Listed directory' },
+  {
+    role: 'assistant',
+    content: '1. I have analyzed the repository structure.\n2. I updated all CSS styles and alignments.\n3. I fixed the dropdown collapse state handlers.\n4. I updated the compaction manager engine.\n5. I verified test cases and edge cases.\n6. I tested that numbered items are never truncated at 500 chars.\n7. All requirements are fully completed.'
+  }
+];
+
+var longListCp = buildCompactCheckpoint(mockLongListMessages, 2);
+assert.ok(longListCp.responseSummary.includes('6. I tested that numbered items are never truncated at 500 chars.'), 'Response summary does not cut off item 6');
+assert.ok(longListCp.responseSummary.includes('7. All requirements are fully completed.'), 'Response summary includes item 7');
+assert.ok(!longListCp.responseSummary.endsWith('6.'), 'Response summary does not end abruptly at 6.');
+
+console.log('✓ Vector 46 Passed: Compact conversation tool log resolution, argument mapping, text cleanliness, and full final response preservation verified.');
 
 // 47. Sandbox Path Security & On-Install Browser Setup
 console.log('--- TEST 47: Sandbox Path Security & Browser Setup ---');
@@ -1279,6 +1301,75 @@ toolRegistry.unregisterMcpServer('memory');
 
 console.log('✓ Vector 49 Passed: Dedicated sandbox tool, MCP prompt context, Puppeteer & Memory Graph alias resolution verified.');
 
+// --- TEST 50: Interactive User Questions (ask_question tool, questionManager, and UI flow) ---
+console.log('--- TEST 50: Interactive User Questions (ask_question tool & lifecycle) ---');
+
+// 1. Tool registration and schema verification
+var hasAskQuestion = toolRegistry.has('ask_question');
+var hasAliasUserQuestion = toolRegistry.has('ask_user_question');
+assert.strictEqual(hasAskQuestion, true, 'Tool ask_question is registered');
+assert.strictEqual(hasAliasUserQuestion, true, 'Alias ask_user_question resolves');
+var askDef = toolRegistry.getDefinition('ask_question');
+assert.ok(askDef && askDef.function, 'ask_question schema exists');
+assert.strictEqual(askDef.function.name, 'ask_question', 'Function name matches');
+assert.ok(askDef.function.parameters.properties.question, 'Schema has question property');
+assert.ok(askDef.function.parameters.properties.options, 'Schema has options property');
+
+// 2. Question lifecycle creation and cross-session safety
+var q1 = questionManager.createQuestion('Select framework:', ['React', 'Vue', 'Vanilla'], 'sess_a');
+assert.ok(q1.id && q1.id.startsWith('q_'), 'Question ID created with q_ prefix');
+assert.strictEqual(q1.sessionId, 'sess_a', 'Session ID properly assigned');
+
+var pendingListA = questionManager.listPendingQuestions('sess_a');
+assert.strictEqual(pendingListA.length, 1, 'sess_a has 1 pending question');
+var pendingListB = questionManager.listPendingQuestions('sess_b');
+assert.strictEqual(pendingListB.length, 0, 'sess_b has 0 pending questions');
+
+// 3. Cross-session resolution rejection
+var intruderRes = questionManager.resolveQuestion(q1.id, 'React', 'sess_intruder');
+assert.strictEqual(intruderRes.success, false, 'Cross-session resolution rejected');
+
+// 4. Authorized resolution
+var legitRes = questionManager.resolveQuestion(q1.id, 'React + Tailwind', 'sess_a');
+assert.strictEqual(legitRes.success, true, 'Authorized resolution accepted');
+var outcomeA = await q1.promise;
+assert.strictEqual(outcomeA.answered, true, 'Promise resolved as answered');
+assert.strictEqual(outcomeA.answer, 'React + Tailwind', 'Outcome contains exact user response');
+
+// 5. Cancellation cleanup
+var qCancel = questionManager.createQuestion('Do you want to continue?', ['Yes', 'No'], 'sess_cancel');
+assert.strictEqual(questionManager.listPendingQuestions('sess_cancel').length, 1, 'Question pending before cancel');
+questionManager.cancelSessionQuestions('sess_cancel');
+assert.strictEqual(questionManager.listPendingQuestions('sess_cancel').length, 0, 'Question cleared on session cancel');
+var cancelOutcome = await qCancel.promise;
+assert.strictEqual(cancelOutcome.answered, false, 'Outcome answered is false on cancel');
+assert.strictEqual(cancelOutcome.cancelled, true, 'Outcome marked cancelled');
+
+// 6. End-to-end generator execution
+var toolGen = toolRegistry.execute('ask_question', {
+  question: 'Choose styling library:',
+  options: ['Tailwind', 'Bootstrap']
+}, { workspace: '.', sessionId: 'sess_e2e' });
+
+var firstActionEv = await toolGen.next();
+assert.strictEqual(firstActionEv.value.type, 'action', 'First event is action event');
+var secondAskEv = await toolGen.next();
+assert.strictEqual(secondAskEv.value.type, 'ask_question', 'Second event is ask_question UI event');
+assert.ok(secondAskEv.value.id, 'Event carries question ID');
+assert.strictEqual(secondAskEv.value.question, 'Choose styling library:', 'Event carries question text');
+assert.strictEqual(secondAskEv.value.options.length, 2, 'Event carries 2 choices');
+
+// Simulate user choosing option in webview
+questionManager.resolveQuestion(secondAskEv.value.id, 'Tailwind', 'sess_e2e');
+
+var toolResultEv = await toolGen.next();
+assert.strictEqual(toolResultEv.value.type, 'tool_result', 'Yields tool_result event');
+assert.strictEqual(toolResultEv.value.success, true, 'Tool result is successful');
+assert.strictEqual(toolResultEv.value.answer, 'Tailwind', 'Tool result carries chosen answer');
+assert.strictEqual(toolResultEv.value.message, 'User answered: Tailwind', 'Tool result has formatted message');
+
+console.log('✓ Vector 50 Passed: Interactive user question lifecycle, session isolation, and tool execution verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -1286,9 +1377,12 @@ try {
 try {
   mcpManager.stopAllServers();
 } catch (_) {}
+try {
+  questionManager.cancelAllQuestions();
+} catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 49 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 50 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

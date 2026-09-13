@@ -1668,6 +1668,7 @@
         <ul class="sidebar-menu">
           <li><a href="#introduction" class="sidebar-link active">Overview & Core Concept</a></li>
           <li><a href="#architecture" class="sidebar-link">Agentic Loop & Engine</a></li>
+          <li><a href="#comparison" class="sidebar-link">Feature Comparison</a></li>
           <li><a href="#installation" class="sidebar-link">Installation & Setup</a></li>
         </ul>
       </div>
@@ -1772,6 +1773,121 @@
             Pure Local 0ms Context Compaction
           </div>
           CodeRun features deterministic local context compaction. When conversation history grows, old tool calls and large listings are compacted into chronological checkpoint summaries with zero external API calls or token costs.
+        </div>
+      </section>
+
+      <!-- Feature Comparison -->
+      <section id="comparison">
+        <h2 class="section-heading">⚖️ Architectural & Feature Comparison</h2>
+        <p>
+          See how <strong>CodeRun AI Agent</strong> stacks up against other popular VS Code coding assistants and autonomous agents:
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature / Capability</th>
+                <th>🚀 CodeRun AI Agent</th>
+                <th>Cline / Roo Code</th>
+                <th>GitHub Copilot</th>
+                <th>Continue.dev</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Multi-Provider Engine</strong></td>
+                <td><span class="pill-badge green">8 Providers</span> (Ollama, Gemini, Claude, OpenAI, Groq, OpenRouter, xAI, Custom)</td>
+                <td>Multiple API Keys</td>
+                <td>GitHub / OpenAI only</td>
+                <td>Multiple API Keys</td>
+              </tr>
+              <tr>
+                <td><strong>100% Free &amp; Offline (Ollama)</strong></td>
+                <td><span class="pill-badge green">✅ Native</span> (Full streaming, vision, dynamic context discovery)</td>
+                <td>✅ Supported</td>
+                <td>❌ No offline support</td>
+                <td>✅ Supported</td>
+              </tr>
+              <tr>
+                <td><strong>Isolated User Sandbox</strong></td>
+                <td><span class="pill-badge green">✅ Native</span> (<code>~/.coderun/sandbox/</code> with auto CWD sync)</td>
+                <td>❌ Pollutes workspace repo</td>
+                <td>❌ No sandbox</td>
+                <td>❌ No sandbox</td>
+              </tr>
+              <tr>
+                <td><strong>On-Install Browser Automation</strong></td>
+                <td><span class="pill-badge green">✅ Automatic</span> (Auto-locates Chrome/Edge/Brave or installs Chromium)</td>
+                <td>⚠️ Manual install required</td>
+                <td>❌ No browser automation</td>
+                <td>❌ No browser automation</td>
+              </tr>
+              <tr>
+                <td><strong>Persistent Memory Graph MCP</strong></td>
+                <td><span class="pill-badge green">✅ Built-in</span> (Pre-configured 1-click catalog)</td>
+                <td>⚠️ Manual JSON config</td>
+                <td>❌ Not supported</td>
+                <td>❌ Not supported</td>
+              </tr>
+              <tr>
+                <td><strong>Deterministic Context Compaction</strong></td>
+                <td><span class="pill-badge green">✅ 0ms Instant</span> (Local checkpoint summaries, 0 API cost)</td>
+                <td>⚠️ LLM API calls required</td>
+                <td>❌ Fixed context window</td>
+                <td>⚠️ Basic truncation</td>
+              </tr>
+              <tr>
+                <td><strong>Historical Tool Compaction</strong></td>
+                <td><span class="pill-badge green">✅ Automatic</span> (Compact old turns up to 90%, preserve failures)</td>
+                <td>❌ Keeps raw bloated outputs</td>
+                <td>❌ No autonomous tools</td>
+                <td>❌ Keeps raw outputs</td>
+              </tr>
+              <tr>
+                <td><strong>Local SQLite Codebase Index</strong></td>
+                <td><span class="pill-badge green">✅ Embedded SQL.js</span> (Fast indexing, 0 cloud leakage)</td>
+                <td>❌ No database engine</td>
+                <td>⚠️ Cloud vector store</td>
+                <td>⚠️ Cloud / Vector</td>
+              </tr>
+              <tr>
+                <td><strong>Interactive Terminal REPLs</strong></td>
+                <td><span class="pill-badge green">✅ Full Lifecycle</span> (Interactive stdin keystrokes &amp; prompts)</td>
+                <td>⚠️ Basic command wait</td>
+                <td>❌ Read-only terminal</td>
+                <td>⚠️ Basic command wait</td>
+              </tr>
+              <tr>
+                <td><strong>Dynamic Card Error Containment</strong></td>
+                <td><span class="pill-badge green">✅ Auto-wrapping</span> (No boundary spill on long URLs/JSON)</td>
+                <td>⚠️ Text overflow risks</td>
+                <td>❌ Standard card</td>
+                <td>⚠️ Standard box</td>
+              </tr>
+              <tr>
+                <td><strong>Live Monotonic Token Tracking</strong></td>
+                <td><span class="pill-badge green">✅ Real-time Gauge</span> (Dynamic warnings at 70% and 90%)</td>
+                <td>⚠️ Turn-by-turn counter</td>
+                <td>❌ Opaque / hidden tokens</td>
+                <td>⚠️ Basic counter</td>
+              </tr>
+              <tr>
+                <td><strong>Interactive User Questions</strong></td>
+                <td><span class="pill-badge green">✅ ask_question</span> (Interactive option chips + custom write-in)</td>
+                <td>⚠️ Text prompt only</td>
+                <td>❌ No</td>
+                <td>❌ No</td>
+              </tr>
+              <tr>
+                <td><strong>Adversarial Regression Test Suite</strong></td>
+                <td><span class="pill-badge green">✅ 50 Test Groups</span> (Zero external dependencies)</td>
+                <td>⚠️ Unit tests</td>
+                <td>❌ Proprietary</td>
+                <td>⚠️ Unit tests</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -3050,6 +3166,7 @@ node --check src/agents/agentLoop.js</code></pre>
       <ul class="toc-list">
         <li class="toc-item"><a href="#introduction" class="toc-link">Overview</a></li>
         <li class="toc-item"><a href="#architecture" class="toc-link">Agentic Loop</a></li>
+        <li class="toc-item"><a href="#comparison" class="toc-link">Feature Comparison</a></li>
         <li class="toc-item"><a href="#installation" class="toc-link">Installation & Setup</a></li>
         <li class="toc-item"><a href="#providers-overview" class="toc-link">Supported Providers</a></li>
         <li class="toc-item"><a href="#saving-providers" class="toc-link">How to Save Providers</a></li>

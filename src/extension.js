@@ -17,6 +17,7 @@ import * as permissions from './tools/permissions.js';
 import * as projectKnowledge from './context/projectKnowledge.js';
 import * as checkpointManager from './tools/checkpointManager.js';
 import * as diffManager from './tools/diffManager.js';
+import * as questionManager from './tools/questionManager.js';
 import * as pathSecurity from './tools/pathSecurity.js';
 import * as workspaceIntelligence from './context/workspaceIntelligence.js';
 import { PROVIDER_DEFAULTS } from './agents/constants.js';
@@ -347,6 +348,8 @@ function getWebviewHtml(webview, extensionUri) {
   var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'webview-shared.js'))).toString() + '?cb=' + cb;
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.js'))).toString() + '?cb=' + cb;
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js'))).toString() + '?cb=' + cb;
+  var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'bot-avatar.jpg'))).toString();
+  var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'user-avatar.svg'))).toString();
 
   var workspaceFolder = getWorkspaceFolder();
   var cfg = config.getConfig();
@@ -358,6 +361,24 @@ function getWebviewHtml(webview, extensionUri) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval'; connect-src https: http:;">
   <title>CodeRun Agent</title>
+  <style>
+    html, body {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+    #app {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+  </style>
   <link rel="stylesheet" href="${dashboardCss}">
   <link rel="stylesheet" href="${chatSpaceCss}">
 </head>
@@ -367,6 +388,8 @@ function getWebviewHtml(webview, extensionUri) {
   <script nonce="${nonce}">
     window.CODERUN_CONFIG = ${JSON.stringify({ provider: cfg.provider, baseUrl: cfg.baseUrl, model: cfg.model })};
     window.WORKSPACE_FOLDER = ${JSON.stringify(workspaceFolder)};
+    window.CODERUN_BOT_AVATAR = "${botAvatarUri}";
+    window.CODERUN_USER_AVATAR = "${userAvatarUri}";
     window.VSCODE = true;
     try {
       const vscode = acquireVsCodeApi();
@@ -619,6 +642,7 @@ async function handleFrontendMessage(message, webview) {
         }
         permissions.cancelSessionPending(stopSessionId);
         diffManager.cancelSession(stopSessionId);
+        questionManager.cancelSessionQuestions(stopSessionId);
         terminalManager.stopTerminal(stopSessionId);
       } else {
         for (var sidKey in abortControllers) {
@@ -629,8 +653,15 @@ async function handleFrontendMessage(message, webview) {
         }
         permissions.cancelAllPermissions();
         diffManager.cancelAll();
+        questionManager.cancelAllQuestions();
         terminalManager.dispose();
       }
+      break;
+    }
+
+    case 'questionResponse': {
+      var qRespSessionId = message.sessionId || message.conversationId || 'default';
+      questionManager.resolveQuestion(message.questionId, message.answer, qRespSessionId);
       break;
     }
 
