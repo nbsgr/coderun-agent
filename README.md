@@ -144,25 +144,26 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 
 ---
 
-## ⚖️ Architectural & Feature Comparison
+## 🏛️ Architecture and Features
 
-How **CodeRun AI Agent** compares with other leading VS Code AI assistants and autonomous coding tools:
+Key architectural design decisions, technical capabilities, and built-in subsystems powering **CodeRun AI Agent**:
 
-| Feature / Capability | 🚀 CodeRun AI Agent | Cline / Roo Code | GitHub Copilot | Continue.dev |
-| :--- | :---: | :---: | :---: | :---: |
-| **Multi-Provider Support** | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) | Multiple API keys | GitHub Account / OpenAI only | Multiple API keys |
-| **100% Free & Local (Ollama)** | ✅ **Native** (streaming, vision & context autodiscovery) | ✅ Yes | ❌ No | ✅ Yes |
-| **Transparent User Sandbox** | ✅ **Native** (`~/.coderun/sandbox/` with auto CWD sync) | ❌ No (pollutes repo) | ❌ No | ❌ No |
-| **On-Install Browser & Puppeteer MCP** | ✅ **Auto-detects Chrome/Edge/Brave or installs Chromium** | ⚠️ Manual install required | ❌ No | ❌ No |
-| **Persistent Memory Graph MCP** | ✅ **Pre-configured built-in catalog** | ⚠️ Manual configuration | ❌ No | ❌ No |
-| **Deterministic Context Compaction** | ✅ **0ms Instant Local Checkpoints** (Zero API cost) | ⚠️ LLM summarization API cost | ❌ Fixed context | ⚠️ Basic truncate |
-| **Historical Tool Compaction** | ✅ **Automatic** (reduces turns by up to 90%) | ❌ Keeps raw tool output | ❌ No tool calling | ❌ No |
-| **Local SQLite Codebase Index** | ✅ **Embedded SQL.js** (zero cloud upload) | ❌ No codebase database | ⚠️ Cloud embeddings | ⚠️ Cloud / vector |
-| **Interactive Terminal REPLs** | ✅ **Full lifecycle** (`terminal_input`, prompt detection) | ⚠️ Basic command wait | ❌ Read-only terminal | ⚠️ Basic command wait |
-| **Dynamic Card Error Containment** | ✅ **Auto-wrapping & no boundary overflow** | ⚠️ Text overflow risk | ❌ Fixed chat box | ⚠️ Standard box |
-| **Live Monotonic Token Tracking** | ✅ **Real-time saturation warnings** (70%/90%) | ⚠️ Turn-by-turn counter | ❌ Hidden tokens | ⚠️ Basic counter |
-| **Interactive User Questions** | ✅ **`ask_question` with option chips & write-in** | ⚠️ Text prompt only | ❌ No | ❌ No |
-| **Adversarial Regression Tests** | ✅ **50 Test Groups** (0 external dependencies) | ⚠️ Unit tests | ❌ Proprietary | ⚠️ Unit tests |
+| Feature / Capability | Architectural Design | Implementation & Highlights |
+| :--- | :--- | :--- |
+| **Multi-Provider Support** | Modular provider adapters in `src/providers/` with unified normalization & streaming | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) |
+| **100% Free & Local (Ollama)** | Native Ollama streaming adapter with model context length discovery | ✅ **Native** streaming, vision & context autodiscovery |
+| **Transparent User Sandbox** | Dedicated user sandbox directory (`~/.coderun/sandbox/`) with automatic CWD sync | ✅ **Native** isolated execution without polluting workspace git repo |
+| **On-Install Browser & Puppeteer MCP** | Embedded browser discovery in `src/mcp/mcpManager.js` + Puppeteer MCP server | ✅ **Auto-detects Chrome/Edge/Brave** or installs Chromium with screenshot capture |
+| **Persistent Memory Graph MCP** | Built-in stdio-based knowledge graph server (`src/mcp/builtinServers/memoryGraphServer.cjs`) | ✅ **Pre-configured built-in catalog** for cross-session entity & relation tracking |
+| **Deterministic Context Compaction** | Local 0ms checkpoint generator (`src/context/compactionManager.js`) | ✅ **0ms Instant Local Checkpoints** with zero external API calls or token cost |
+| **Historical Tool Compaction** | Wire-protocol optimizer in `src/context/contextManager.js` | ✅ **Automatic** reduction of old tool turns by up to 90% while retaining full active outputs & failure diffs |
+| **Local SQLite Codebase Index** | Embedded SQL.js database (`src/context/projectKnowledge.js`) with serialized disk persistence | ✅ **Embedded SQL.js** for fast local symbol & file indexing with zero cloud upload |
+| **Interactive Terminal REPLs** | VS Code Terminal API bridge with shell integration & prompt detection (`src/tools/terminalManager.js`) | ✅ **Full lifecycle** (`terminal_input`, prompt detection, `stop_terminal` Ctrl+C) |
+| **Dynamic Card Error Containment** | Dynamic card sizing & auto-wrapping CSS (`overflow-wrap: anywhere`) | ✅ **Auto-wrapping & no boundary overflow** on long uninterrupted URLs and JSON payloads |
+| **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
+| **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **50 Test Groups** covering concurrency, permissions, SSRF, locks, recovery & tools |
+
 
 ---
 
