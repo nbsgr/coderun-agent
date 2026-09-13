@@ -25,6 +25,8 @@ import { registerAllTools } from '../src/tools/tools.js';
 import * as approvalSystem from '../src/tools/approvalSystem.js';
 import { createMcpClient } from '../src/mcp/mcpClient.js';
 import * as mcpManager from '../src/mcp/mcpManager.js';
+import { buildMessages, optimizeHistoricalToolMessage } from '../src/agents/promptBuilder.js';
+import { buildCompactCheckpoint } from '../src/context/compactionManager.js';
 
 console.log('================================================================');
 console.log('=== STARTING COMPLETE ADVERSARIAL REGRESSION TEST SUITE ===');
@@ -791,6 +793,264 @@ await mcpManager.removeServer('adv_test_srv');
 assert.strictEqual(toolRegistry.has(mcpToolName), false, 'Tool unregistered after server removal');
 console.log('✓ Vector 44 Passed: MCP client handshake, tool discovery, dynamic registration, permissions, and execution verified.');
 
+// 45. Historical Tool Result Optimization & Wire Protocol Integrity
+console.log('--- TEST 45: Historical Tool Result Optimization & Wire Protocol Integrity ---');
+
+var massiveContent = 'X'.repeat(50000);
+var sampleHistory = [
+  { role: 'user', content: 'Please inspect the project.' },
+  {
+    role: 'assistant',
+    content: 'Inspecting src/main.js and running tests.',
+    tool_calls: [
+      {
+        id: 'call_read_success',
+        type: 'function',
+        function: {
+          name: 'read_file',
+          arguments: JSON.stringify({ file_path: 'src/main.js' })
+        }
+      },
+      {
+        id: 'call_read_fail',
+        type: 'function',
+        function: {
+          name: 'read_file',
+          arguments: JSON.stringify({ file_path: 'src/missing.js' })
+        }
+      },
+      {
+        id: 'call_write_mutation',
+        type: 'function',
+        function: {
+          name: 'write_file',
+          arguments: JSON.stringify({ file_path: 'src/new.js', content: 'console.log(1);' })
+        }
+      },
+      {
+        id: 'call_term_success',
+        type: 'function',
+        function: {
+          name: 'run_terminal',
+          arguments: JSON.stringify({ command: 'npm test' })
+        }
+      },
+      {
+        id: 'call_term_fail',
+        type: 'function',
+        function: {
+          name: 'run_terminal',
+          arguments: JSON.stringify({ command: 'node bad.js' })
+        }
+      }
+    ]
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_read_success',
+    tool_name: 'read_file',
+    content: 'Tool: read_file\nSuccess: true\nContent:\n' + massiveContent,
+    result: { success: true, file_path: 'src/main.js', content: massiveContent }
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_read_fail',
+    tool_name: 'read_file',
+    content: 'Tool: read_file\nSuccess: false\nMessage: File not found: src/missing.js',
+    result: { success: false, message: 'File not found: src/missing.js' }
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_write_mutation',
+    tool_name: 'write_file',
+    content: 'Tool: write_file\nSuccess: true\nWrote 18 bytes to src/new.js',
+    result: { success: true, file_path: 'src/new.js', is_new_file: true }
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_term_success',
+    tool_name: 'run_terminal',
+    content: 'Tool: run_terminal\nSuccess: true\nStdout:\n' + massiveContent,
+    result: { success: true, command: 'npm test', exit_code: 0, stdout: massiveContent }
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_term_fail',
+    tool_name: 'run_terminal',
+    content: 'Tool: run_terminal\nSuccess: false\nError: Command failed with exit code 1: SyntaxError',
+    result: { success: false, command: 'node bad.js', exit_code: 1, stderr: 'SyntaxError' }
+  }
+];
+
+var activeTurnToolResults = [
+  {
+    tool_name: 'read_file',
+    tool_call_id: 'call_active_reading',
+    formattedResult: 'ACTIVE_RAW_CONTENT:\n' + massiveContent
+  }
+];
+
+var builtMessages = await buildMessages('Next instruction: update the tests.', {
+  history: sampleHistory,
+  toolResults: activeTurnToolResults
+});
+
+// 1. Verify successful historical read_file was compacted
+var histReadSuccessMsg = null;
+var histReadFailMsg = null;
+var histWriteMsg = null;
+var histTermSuccessMsg = null;
+var histTermFailMsg = null;
+var activeToolMsg = null;
+
+for (var bmi = 0; bmi < builtMessages.length; bmi++) {
+  var bMsg = builtMessages[bmi];
+  if (bMsg.role === 'tool') {
+    if (bMsg.tool_call_id === 'call_read_success') histReadSuccessMsg = bMsg;
+    if (bMsg.tool_call_id === 'call_read_fail') histReadFailMsg = bMsg;
+    if (bMsg.tool_call_id === 'call_write_mutation') histWriteMsg = bMsg;
+    if (bMsg.tool_call_id === 'call_term_success') histTermSuccessMsg = bMsg;
+    if (bMsg.tool_call_id === 'call_term_fail') histTermFailMsg = bMsg;
+    if (bMsg.tool_call_id === 'call_active_reading') activeToolMsg = bMsg;
+  }
+}
+
+assert.ok(histReadSuccessMsg, 'Historical read success message exists');
+assert.ok(histReadSuccessMsg.content.includes('Read file'), 'Compacted to read file status');
+assert.ok(histReadSuccessMsg.content.length < 200, 'Historical read success is dramatically compacted (< 200 chars vs 50000+ chars)');
+assert.ok(!histReadSuccessMsg.content.includes(massiveContent), 'Does not include 50k raw content in history');
+
+assert.ok(histReadFailMsg, 'Historical read fail message exists');
+assert.ok(histReadFailMsg.content.includes('File not found: src/missing.js'), 'Full failure message preserved');
+
+assert.ok(histWriteMsg, 'Historical write message exists');
+assert.ok(histWriteMsg.content.includes('Wrote 18 bytes to src/new.js'), 'Mutation tool response preserved in full');
+
+assert.ok(histTermSuccessMsg, 'Historical terminal success message exists');
+assert.ok(histTermSuccessMsg.content.includes("Command 'npm test' executed successfully"), 'Compacted to terminal success summary');
+assert.ok(histTermSuccessMsg.content.length < 200, 'Terminal success is compacted (< 200 chars vs 50000+ chars)');
+
+assert.ok(histTermFailMsg, 'Historical terminal fail message exists');
+assert.ok(histTermFailMsg.content.includes('Command failed with exit code 1: SyntaxError'), 'Terminal failure output preserved in full');
+
+assert.ok(activeToolMsg, 'Active turn tool result exists');
+assert.ok(activeToolMsg.content.includes(massiveContent), 'Active turn tool result preserves full raw output without compaction');
+
+console.log('✓ Vector 45 Passed: Historical tool result optimization, mutation preservation, failure retention, and active raw output verified.');
+
+// 46. Compaction Checkpoint Resolution & Text Cleanliness
+console.log('--- TEST 46: Compaction Checkpoint Resolution & Text Cleanliness ---');
+var mockSessionMessages = [
+  {
+    role: 'user',
+    content: 'check now once'
+  },
+  {
+    role: 'assistant',
+    content: 'The user says "check now once". I will list directory to see what is here.',
+    tool_calls: [
+      {
+        id: 'call_list_dir_1',
+        type: 'function',
+        function: {
+          name: 'list_directory',
+          arguments: '{}'
+        }
+      }
+    ]
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_list_dir_1',
+    content: '- [DIRECTORY] .git\n- [FILE] main.py'
+  },
+  {
+    role: 'user',
+    content: 'remove .git'
+  },
+  {
+    role: 'assistant',
+    content: 'User wants to remove .git folder.',
+    tool_calls: [
+      {
+        id: 'call_del_folder_1',
+        type: 'function',
+        function: {
+          name: 'delete_folder',
+          arguments: JSON.stringify({ folder_path: '.git' })
+        }
+      }
+    ]
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_del_folder_1',
+    result: {},
+    content: 'Deleted: .git'
+  },
+  {
+    role: 'user',
+    content: 'read the file main.py'
+  },
+  {
+    role: 'assistant',
+    content: 'Let me read the file main.py for you.',
+    tool_calls: [
+      {
+        id: 'call_read_file_1',
+        type: 'function',
+        function: {
+          name: 'read_file',
+          arguments: JSON.stringify({ file_path: 'main.py' })
+        }
+      }
+    ]
+  },
+  {
+    role: 'tool',
+    tool_call_id: 'call_read_file_1',
+    content: "✅ Read file 'main.py' successfully"
+  },
+  {
+    role: 'assistant',
+    content: 'I have checked the repository status for you. On branch master, staged changes: git_demo.txt. Unstaged changes: demo/hello.txt and git_demo.txt are both marked as deleted. Untracked files: main.py. Let me know if you would like to stage, commit, or otherwise modify any of these files.'
+  }
+];
+
+var compactCp = buildCompactCheckpoint(mockSessionMessages, 1);
+
+assert.ok(compactCp, 'Compact checkpoint created successfully');
+assert.ok(compactCp.toolLog.length >= 3, 'Tool log contains all tool calls');
+
+// Verify: NO 'tool successfully' or generic empty names
+for (var tli = 0; tli < compactCp.toolLog.length; tli++) {
+  var logItem = compactCp.toolLog[tli];
+  assert.ok(!logItem.includes('tool successfully'), 'No generic "tool successfully" in tool log: ' + logItem);
+  assert.ok(!logItem.includes("Deleted folder ''"), 'No empty folder path in delete_folder: ' + logItem);
+}
+
+// Verify specific expected tool items
+var foundListedDir = false;
+var foundDeletedGit = false;
+var foundReadMain = false;
+
+for (var cpi = 0; cpi < compactCp.toolLog.length; cpi++) {
+  var entry = compactCp.toolLog[cpi];
+  if (entry.includes("Listed directory '.' successfully")) foundListedDir = true;
+  if (entry.includes("Deleted folder '.git' successfully")) foundDeletedGit = true;
+  if (entry.includes("Read file 'main.py' successfully")) foundReadMain = true;
+}
+
+assert.ok(foundListedDir, "Resolves list_directory default path '.'");
+assert.ok(foundDeletedGit, "Resolves delete_folder args from assistant tool_calls: '.git'");
+assert.ok(foundReadMain, "Preserves pre-compacted status string without mangling");
+
+// Verify assistant responses truncation cleanliness (no mid-word cuts like 'mod...')
+assert.ok(compactCp.content.includes("COMPACTED CONTEXT CHECKPOINT"), 'Markdown content generated');
+assert.ok(!compactCp.content.includes('mod...'), 'Assistant content is not cut mid-word');
+
+console.log('✓ Vector 46 Passed: Compact conversation tool log resolution, argument mapping, and text cleanliness verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -800,7 +1060,8 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 44 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 46 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);
+

@@ -3,9 +3,72 @@
 
 import { SYSTEM_PROMPT } from './constants.js';
 import { loadRules } from '../context/rulesLoader.js';
+import { compactToolResult } from '../context/compactionManager.js';
 
 function formatMemoryItem(m) {
   return '- ' + m;
+}
+
+function isMutationTool(toolName) {
+  var name = String(toolName || '').toLowerCase();
+  return name === 'write_file' ||
+    name === 'edit_file' ||
+    name === 'patch_file' ||
+    name === 'delete_file' ||
+    name === 'create_folder' ||
+    name === 'delete_folder' ||
+    name === 'create_plan' ||
+    name === 'update_plan';
+}
+
+function isToolResultFailed(toolMsg) {
+  if (!toolMsg) return false;
+  if (toolMsg.result && toolMsg.result.success === false) return true;
+  if (toolMsg.result && toolMsg.result.exit_code !== undefined && toolMsg.result.exit_code !== null && toolMsg.result.exit_code !== 0) return true;
+  if (toolMsg.error) return true;
+  var content = String(toolMsg.content || '');
+  if (content.indexOf('Success: false') !== -1) return true;
+  if (content.indexOf('Command failed with exit code') !== -1) return true;
+  if (content.indexOf('File not found:') !== -1) return true;
+  if (content.indexOf('Execution error:') !== -1) return true;
+  return false;
+}
+
+function optimizeHistoricalToolMessage(msg, toolCallMap) {
+  if (!msg || msg.role !== 'tool') return msg;
+
+  var callId = msg.tool_call_id || '';
+  var callInfo = (callId && toolCallMap && toolCallMap[callId]) || {};
+  var toolName = msg.tool_name || callInfo.name || '';
+  if (!toolName && msg.content) {
+    var toolMatch = String(msg.content).match(/^Tool:\s*(\S+)/);
+    if (toolMatch) {
+      toolName = toolMatch[1];
+    }
+  }
+
+  // 1. If tool failed, preserve full output so LLM understands the error
+  if (isToolResultFailed(msg)) {
+    return msg;
+  }
+
+  // 2. If tool is a mutation tool (write, edit, patch), preserve full output
+  if (isMutationTool(toolName)) {
+    return msg;
+  }
+
+  // 3. For read, search, terminal, and inspection tools that succeeded:
+  var mergedResult = Object.assign({}, callInfo.args || {}, msg.result || {});
+  var syntheticMsg = {
+    result: mergedResult,
+    content: msg.content || ''
+  };
+
+  var compactedContent = compactToolResult(toolName, syntheticMsg);
+
+  var optimized = Object.assign({}, msg);
+  optimized.content = compactedContent;
+  return optimized;
 }
 
 export async function buildMessages(userPrompt, options) {
@@ -174,21 +237,52 @@ export async function buildMessages(userPrompt, options) {
   }
 
   // 3. History (skip system messages, start after checkpoint boundary)
+  var toolCallMap = {};
+  for (var hi = historyStartIndex; hi < history.length; hi++) {
+    var hMsg = history[hi];
+    if (hMsg && hMsg.tool_calls && Array.isArray(hMsg.tool_calls)) {
+      for (var tci = 0; tci < hMsg.tool_calls.length; tci++) {
+        var tc = hMsg.tool_calls[tci];
+        if (tc && tc.id) {
+          var tcName = (tc.function && tc.function.name) || tc.name || '';
+          var tcArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
+          if (typeof tcArgs === 'string') {
+            try {
+              tcArgs = JSON.parse(tcArgs);
+            } catch (_) {
+              tcArgs = {};
+            }
+          }
+          toolCallMap[tc.id] = {
+            name: tcName,
+            args: tcArgs
+          };
+        }
+      }
+    }
+  }
+
   for (var i = historyStartIndex; i < history.length; i++) {
     var msg = history[i];
     if (msg.role === 'system') continue;
+
+    var targetMsg = msg;
+    if (msg.role === 'tool') {
+      targetMsg = optimizeHistoricalToolMessage(msg, toolCallMap);
+    }
+
     var historyMsg = {
-      role: msg.role,
-      content: msg.content || '',
-      model: msg.model || '',
-      provider: msg.provider || ''
+      role: targetMsg.role,
+      content: targetMsg.content || '',
+      model: targetMsg.model || '',
+      provider: targetMsg.provider || ''
     };
-    if (msg.thinking) historyMsg.thinking = msg.thinking;
-    if (msg.error) historyMsg.error = msg.error;
-    if (msg.tool_calls) historyMsg.tool_calls = msg.tool_calls;
-    if (msg.tool_call_id) historyMsg.tool_call_id = msg.tool_call_id;
-    if (msg.images) historyMsg.images = msg.images;
-    if (msg.image && !historyMsg.images) historyMsg.images = [msg.image];
+    if (targetMsg.thinking) historyMsg.thinking = targetMsg.thinking;
+    if (targetMsg.error) historyMsg.error = targetMsg.error;
+    if (targetMsg.tool_calls) historyMsg.tool_calls = targetMsg.tool_calls;
+    if (targetMsg.tool_call_id) historyMsg.tool_call_id = targetMsg.tool_call_id;
+    if (targetMsg.images) historyMsg.images = targetMsg.images;
+    if (targetMsg.image && !historyMsg.images) historyMsg.images = [targetMsg.image];
     messages.push(historyMsg);
   }
 
@@ -244,3 +338,6 @@ export async function buildSystemPromptOnly(workspace, skills, memory, mcpContex
   }
   return { role: 'system', content: content };
 }
+
+export { optimizeHistoricalToolMessage };
+

@@ -1707,9 +1707,10 @@
         <div class="sidebar-group-title">Security & Operations</div>
         <ul class="sidebar-menu">
           <li><a href="#token-tracking" class="sidebar-link">Live Context & Token Gauge</a></li>
+          <li><a href="#context-optimization" class="sidebar-link">Context Optimization</a></li>
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
-          <li><a href="#test-suite" class="sidebar-link">44 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">46 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2874,6 +2875,35 @@ function sanitizeGeminiSchema(schema) {
         </ul>
       </section>
 
+      <!-- Context Optimization -->
+      <section id="context-optimization">
+        <h2 class="section-heading">⚡ Multi-Turn Context Optimization & Historical Tool Compaction</h2>
+        <p>
+          In multi-turn coding sessions, repeated tool outputs (such as large file reads or verbose build logs from earlier turns) can quickly saturate the LLM's context window. CodeRun solves this with intelligent two-phase context optimization:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🎯</div>
+            <div class="card-title">Active Turn Full-Fidelity</div>
+            <div class="card-text">During the active agent loop, tools like <code>read_file</code>, <code>run_terminal</code>, and <code>find_in_files</code> deliver complete, unadulterated raw output so the model has full context to analyze, plan, and execute code changes.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">Historical Turn Compaction</div>
+            <div class="card-text">When starting subsequent conversation turns, historical inspection, search, and terminal outputs are automatically compacted into lightweight status lines (e.g. <code>✅ Read file 'main.py' successfully</code>), saving thousands of tokens per turn.</div>
+          </div>
+        </div>
+        <p style="margin-top: 16px;">
+          <strong>Selective Failure & Mutation Protection:</strong>
+        </p>
+        <ul>
+          <li><strong>Failures Preserved:</strong> If any tool execution fails, the complete error message, stack trace, and exit codes are preserved in full so the model remembers what went wrong.</li>
+          <li><strong>Mutations Preserved:</strong> File modification tools (<code>write_file</code>, <code>edit_file</code>, <code>patch_file</code>, <code>delete_file</code>) retain their complete responses so the model remembers what code was written or edited.</li>
+          <li><strong>100% Wire Protocol Integrity:</strong> The assistant's <code>tool_calls</code> and the tool's <code>tool_call_id</code> remain strictly matched, ensuring full compatibility with OpenAI, Anthropic, Gemini, and Ollama function-calling schemas.</li>
+          <li><strong>Zero UI / Storage Regression:</strong> Webview tool cards, execution traces, checkpoints, and SQLite logs retain 100% full-fidelity history.</li>
+        </ul>
+      </section>
+
       <!-- Rules Engine -->
       <section id="rules-engine">
         <h2 class="section-heading">📜 Global & Workspace Rules Engine</h2>
@@ -2899,9 +2929,9 @@ function sanitizeGeminiSchema(schema) {
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 44 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 46 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against a 44-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against a 46-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -2911,7 +2941,7 @@ function sanitizeGeminiSchema(schema) {
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, and MCP dynamic registration.
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, and multi-turn historical tool result optimization.
         </p>
       </section>
 
@@ -2955,8 +2985,9 @@ function sanitizeGeminiSchema(schema) {
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
         <li class="toc-item"><a href="#token-tracking" class="toc-link">Live Token Gauge</a></li>
+        <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">46 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting & FAQ</a></li>
       </ul>
     </aside>

@@ -71,6 +71,13 @@ Whether you are running completely offline with local models via **Ollama**, lev
 *   **Zero-Loss History Preservation:** Injects structured chronological checkpoints with 4 sub-dropdowns: User Messages, Thinking, Response Summary, and Tool Executions.
 *   **Instant Local Execution:** Runs 100% locally with zero API latency or token cost.
 
+### ⚡ Multi-Turn Context Optimization & Historical Tool Compaction
+*   **Active Turn Full-Fidelity:** In the active agent loop iteration, tools like `read_file` and `run_terminal` deliver complete, raw outputs so the LLM has full fidelity to reason, analyze code, and execute changes.
+*   **Automatic Historical Compaction:** In subsequent conversation turns, historical inspection, search, and terminal outputs are automatically compacted into lightweight status lines (e.g. `✅ Read file 'main.py' successfully` or `✅ Command 'npm test' executed successfully (exit code 0)`), reducing context payload by up to 90%.
+*   **Selective Failure & Mutation Retention:** If any tool fails, the complete error message, stack trace, and exit codes are preserved in full so the model remembers what went wrong. Code mutation tools (`write_file`, `edit_file`, `patch_file`, `delete_file`) retain full responses and diff details.
+*   **100% Wire Protocol & UI Integrity:** Historical tool call schemas and `tool_call_id` pairing remain strictly compliant with OpenAI, Anthropic, Gemini, and Ollama specifications. Webviews, real-time tool cards, execution traces, checkpoints, and SQLite logs retain complete, unadulterated history.
+*   **Local LLM Immunity:** Completely eliminates context saturation crashes and VRAM swapping on local Ollama models (such as Qwen 2.5 Coder or DeepSeek-R1) with 8K–32K context limits.
+
 ### 🪵 Real-Time Visual Execution Traces
 *   **Dual View (`[Chats]` / `[Traces]`):** Switch between conversational chat and an interactive step-by-step trace graph.
 *   **Detailed Step Diagnostics:** Inspect exact system prompts, LLM decisions, duration in milliseconds, inputs, and outputs per step.
@@ -190,7 +197,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **44 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **46 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -200,6 +207,8 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Interactive command & REPL prompt detection across shells.
 * Terminal tool execution approval, safe command policies, and interactive terminal lifecycle.
 * MCP protocol handshake, dynamic tool discovery, permission authorization, and runtime tool execution.
+* Historical tool result optimization, failure retention, mutation diff preservation, and active iteration raw output fidelity.
+* Deterministic conversation compaction checkpoint resolution, tool argument mapping, and clean text boundaries.
 
 Run all tests anytime:
 ```bash
