@@ -30,6 +30,7 @@ import * as executionTrace from '../execution/executionTrace.js';
 import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import * as memoryManager from '../context/memoryManager.js';
 import * as diffManager from '../tools/diffManager.js';
+import * as mcpManager from '../mcp/mcpManager.js';
 
 var DEBUG = false;
 function dbg() {
@@ -846,6 +847,11 @@ export async function runAgentLoop(userPrompt, config, options) {
     // Intentionally ignored to allow safe execution fallback
   }
 
+  var mcpCtx = '';
+  try {
+    mcpCtx = mcpManager.getMcpPromptContext();
+  } catch (_) {}
+
   var messages = await buildMessages(userPrompt, {
     workspace: workspace,
     history: history,
@@ -854,6 +860,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     images: options.images || [],
     model: config.model,
     provider: config.provider,
+    mcpContext: mcpCtx,
     shellName: terminalManager.getShellName(),
     platformName: terminalManager.getPlatformName()
   });

@@ -1696,7 +1696,8 @@
       <div class="sidebar-group">
         <div class="sidebar-group-title">Tools & Execution</div>
         <ul class="sidebar-menu">
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 20-Tool Matrix</a></li>
+          <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 21-Tool Matrix</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
           <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
           <li><a href="#error-containment" class="sidebar-link">Dynamic Error Boundary</a></li>
@@ -1711,7 +1712,7 @@
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">46 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">49 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2672,9 +2673,9 @@ function sanitizeGeminiSchema(schema) {
 
       <!-- Browser Automation -->
       <section id="browser-automation">
-        <h2 class="section-heading">🌐 Zero-Config Browser Automation</h2>
+        <h2 class="section-heading">🌐 Zero-Config Browser Automation & On-Install Setup</h2>
         <p>
-          CodeRun features embedded browser discovery for <strong>Puppeteer</strong>. It automatically scans your operating system for installed browsers:
+          CodeRun features intelligent browser discovery and auto-installation for <strong>Puppeteer</strong>. It automatically scans your operating system for installed browsers:
         </p>
         <div class="card-grid">
           <div class="feature-card">
@@ -2690,14 +2691,38 @@ function sanitizeGeminiSchema(schema) {
             <div class="card-text">Checks <code>/usr/bin/google-chrome</code>, <code>/usr/bin/chromium</code>, <code>brave-browser</code>.</div>
           </div>
         </div>
-        <p>You never have to download or configure separate Chrome binaries or Chromium drivers manually.</p>
+        <p>
+          <strong>On-Install Dedicated Chromium Fallback:</strong> If no system browser is found, CodeRun automatically installs a self-contained, dedicated Chromium binary into <code>~/.coderun/browser/</code> using <code>@puppeteer/browsers</code>. Puppeteer MCP tools (such as <code>puppeteer_navigate</code>, <code>puppeteer_screenshot</code>, <code>puppeteer_click</code>, <code>puppeteer_fill</code>, <code>puppeteer_select</code>, <code>puppeteer_hover</code>, and <code>puppeteer_evaluate</code>) work out-of-the-box without requiring manual browser installation or external driver configuration.
+        </p>
       </section>
 
-      <!-- 20 Tools Matrix -->
-      <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 20-Tool Matrix</h2>
+      <!-- User Sandbox -->
+      <section id="user-sandbox">
+        <h2 class="section-heading">📦 Transparent User Sandbox & Terminal CWD Synchronization</h2>
         <p>
-          CodeRun comes equipped with 20 built-in core tools across 6 operational categories:
+          In addition to the active project workspace, CodeRun transparently provisions a dedicated user scratch sandbox at <code>~/.coderun/sandbox/</code>:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">Dedicated Scratch Workspace</div>
+            <div class="card-text">Test snippets, scripts, temporary outputs, or experimental libraries without polluting the project Git repository.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Automatic Terminal CWD Sync</div>
+            <div class="card-text">Terminal execution automatically detects commands targeting the sandbox directory and sets working directory (CWD) to <code>~/.coderun/sandbox/</code>.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Full Path Traversal Safety</div>
+            <div class="card-text">All core file operations (read, write, edit, patch, delete) seamlessly support sandbox paths with canonical path boundary verification.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 21 Tools Matrix -->
+      <section id="tools-matrix">
+        <h2 class="section-heading">🧰 The Complete 21-Tool Matrix</h2>
+        <p>
+          CodeRun comes equipped with 21 built-in core tools across 6 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -2823,6 +2848,12 @@ function sanitizeGeminiSchema(schema) {
                 <td></td>
                 <td><code>get_current_datetime</code></td>
                 <td>Retrieves current local and ISO timestamps</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>📦 Sandbox</strong></td>
+                <td><code>sandbox</code></td>
+                <td>Inspect, list, or clean the transparent user sandbox directory (<code>~/.coderun/sandbox/</code>)</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -2975,9 +3006,9 @@ node --check src/agents/agentLoop.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 46 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 49 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against a 46-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against a 49-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -2987,7 +3018,7 @@ node --check src/agents/agentLoop.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, and multi-turn historical tool result optimization.
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools & terminal CWD synchronization, and multi-turn historical tool result optimization.
         </p>
       </section>
 
@@ -3027,14 +3058,16 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#mcp-overview" class="toc-link">What is MCP?</a></li>
         <li class="toc-item"><a href="#adding-mcp" class="toc-link">How to Add MCP</a></li>
         <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">20-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#browser-automation" class="toc-link">Browser Automation</a></li>
+        <li class="toc-item"><a href="#user-sandbox" class="toc-link">User Sandbox</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">21-Tool Matrix</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
         <li class="toc-item"><a href="#token-tracking" class="toc-link">Live Token Gauge</a></li>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">46 Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">49 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting & FAQ</a></li>
       </ul>
     </aside>

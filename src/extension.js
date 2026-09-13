@@ -186,12 +186,10 @@ export async function activate(context) {
     console.error('[CODERUN] projectKnowledge init failed:', err);
   }
 
-  // Initialize MCP Manager and connect enabled servers
-  try {
-    await mcpManager.initMcpManager();
-  } catch (mcpInitErr) {
+  // Initialize MCP Manager and connect enabled servers (non-blocking background task)
+  mcpManager.initMcpManager().catch(function onMcpErr(mcpInitErr) {
     console.error('[CODERUN] MCP Manager init failed:', mcpInitErr);
-  }
+  });
   // Ensure user-accessible sandbox directory exists (~/.coderun/sandbox/)
   try {
     pathSecurity.getCanonicalSandboxRoot();

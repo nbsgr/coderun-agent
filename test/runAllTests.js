@@ -1169,6 +1169,116 @@ terminalManager.removeSession(termSessionId);
 
 console.log('✓ Vector 48 Passed: Terminal cwd switching between workspace and sandbox, path expansion, and cwd security verified.');
 
+// 49. End-to-End MCP Flow, Tool Aliases & Dedicated Sandbox Tool
+console.log('--- TEST 49: End-to-End MCP Flow, Tool Aliases & Dedicated Sandbox Tool ---');
+
+// 1. Dedicated sandbox tool status
+var sbStatusGen = toolRegistry.execute('sandbox', { action: 'status' }, { workspace: wsRoot });
+var sbStatusRes = null;
+for await (var sev of sbStatusGen) {
+  if (sev.type === 'tool_result') {
+    sbStatusRes = sev;
+  }
+}
+assert.ok(sbStatusRes, 'Sandbox tool returned result');
+assert.strictEqual(sbStatusRes.success, true, 'Sandbox status action succeeded');
+assert.ok(sbStatusRes.sandbox_path.includes('.coderun'), 'Sandbox path points to .coderun/sandbox');
+
+// 2. Dedicated sandbox tool list and clean
+var sbListGen = toolRegistry.execute('sandbox', { action: 'list' }, { workspace: wsRoot });
+var sbListRes = null;
+for await (var lev of sbListGen) {
+  if (lev.type === 'tool_result') {
+    sbListRes = lev;
+  }
+}
+assert.ok(sbListRes, 'Sandbox list returned result');
+assert.strictEqual(sbListRes.success, true, 'Sandbox list action succeeded');
+assert.ok(Array.isArray(sbListRes.items), 'Sandbox list items is an array');
+
+// 3. Dedicated sandbox tool security rejection on traversal
+var sbEscapeGen = toolRegistry.execute('sandbox', { action: 'list', subpath: '../../Windows' }, { workspace: wsRoot });
+var sbEscapeRes = null;
+for await (var eev of sbEscapeGen) {
+  if (eev.type === 'tool_result') {
+    sbEscapeRes = eev;
+  }
+}
+assert.ok(sbEscapeRes, 'Sandbox escape returned result');
+assert.strictEqual(sbEscapeRes.success, false, 'Sandbox path traversal rejected');
+
+// 4. MCP Context and Tool Aliases
+var mcpPromptCtx = mcpManager.getMcpPromptContext();
+assert.strictEqual(typeof mcpPromptCtx, 'string', 'getMcpPromptContext returns string');
+
+// Verify MCP descriptor registration preserves raw alias in toolRegistry
+var mockMcpClient = {
+  listTools: async function mockListTools() {
+    return {
+      tools: [
+        {
+          name: 'puppeteer_navigate',
+          description: 'Navigate to URL',
+          inputSchema: { properties: { url: { type: 'string' } }, required: ['url'] }
+        }
+      ]
+    };
+  }
+};
+
+await mcpManager.registerServerTools(mockMcpClient, {
+  id: 'test_puppeteer',
+  name: 'Test Puppeteer',
+  alwaysAllow: true
+});
+
+// Both namespaced name and raw alias must resolve in toolRegistry
+var resolvedNamespaced = toolRegistry.resolveAlias('mcp__test_puppeteer__puppeteer_navigate');
+var resolvedRaw = toolRegistry.resolveAlias('puppeteer_navigate');
+assert.strictEqual(resolvedNamespaced, 'mcp__test_puppeteer__puppeteer_navigate', 'Resolves namespaced MCP tool name');
+assert.strictEqual(resolvedRaw, 'mcp__test_puppeteer__puppeteer_navigate', 'Resolves raw un-prefixed alias to MCP tool');
+
+// Clean up test server
+toolRegistry.unregisterMcpServer('test_puppeteer');
+
+// 5. Memory Graph MCP Registration & Alias Resolution
+var mockMemoryClient = {
+  listTools: async function mockListMemoryTools() {
+    return {
+      tools: [
+        {
+          name: 'create_entities',
+          description: 'Create multiple new entities in the knowledge graph',
+          inputSchema: { properties: { entities: { type: 'array' } }, required: ['entities'] }
+        },
+        {
+          name: 'search_nodes',
+          description: 'Search for nodes in the knowledge graph based on query',
+          inputSchema: { properties: { query: { type: 'string' } }, required: ['query'] }
+        }
+      ]
+    };
+  }
+};
+
+await mcpManager.registerServerTools(mockMemoryClient, {
+  id: 'memory',
+  name: 'Memory Graph',
+  alwaysAllow: true
+});
+
+var resolvedMemNamespaced = toolRegistry.resolveAlias('mcp__memory__create_entities');
+var resolvedMemRaw = toolRegistry.resolveAlias('create_entities');
+var resolvedMemSearch = toolRegistry.resolveAlias('search_nodes');
+assert.strictEqual(resolvedMemNamespaced, 'mcp__memory__create_entities', 'Resolves namespaced memory tool');
+assert.strictEqual(resolvedMemRaw, 'mcp__memory__create_entities', 'Resolves raw alias for create_entities');
+assert.strictEqual(resolvedMemSearch, 'mcp__memory__search_nodes', 'Resolves raw alias for search_nodes');
+
+// Clean up test memory server
+toolRegistry.unregisterMcpServer('memory');
+
+console.log('✓ Vector 49 Passed: Dedicated sandbox tool, MCP prompt context, Puppeteer & Memory Graph alias resolution verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -1178,7 +1288,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 48 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 49 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

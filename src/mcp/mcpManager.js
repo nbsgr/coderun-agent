@@ -230,6 +230,7 @@ export async function registerServerTools(client, serverConfig) {
 
     var descriptor = {
       name: namespacedName,
+      aliases: [t.name, serverId + '_' + t.name, serverId + '__' + t.name],
       description: toolDesc,
       parameters: props,
       required: req,
@@ -700,6 +701,23 @@ export async function initMcpManager() {
       });
     }
   }
+}
+
+export function getMcpPromptContext() {
+  var lines = [];
+  for (var id in serverStatusMap) {
+    var status = serverStatusMap[id];
+    if (status && status.connected && status.tools && status.tools.length > 0) {
+      lines.push('### MCP Server: ' + id);
+      for (var i = 0; i < status.tools.length; i++) {
+        var t = status.tools[i];
+        if (t.enabled !== false) {
+          lines.push('- `' + t.namespacedName + '`: ' + (t.description || t.name));
+        }
+      }
+    }
+  }
+  return lines.join('\n');
 }
 
 export function stopAllServers() {

@@ -197,9 +197,26 @@ function initializeChatSpace() {
       'stop_terminal': 'STOP TERMINAL',
       'create_plan': 'CREATE PLAN',
       'update_plan': 'UPDATE PLAN',
-      'get_current_datetime': 'GET DATETIME'
+      'get_current_datetime': 'GET DATETIME',
+      'sandbox': 'USER SANDBOX'
     };
-    return map[name] || (name ? name.replace(/_/g, ' ').toUpperCase() : 'TOOL');
+    if (map[name]) return map[name];
+    if (!name) return 'TOOL';
+    if (name.startsWith('mcp__puppeteer__') || name.startsWith('puppeteer_')) {
+      var puppeteerAction = name.replace(/^mcp__puppeteer__/, '').replace(/^puppeteer_/, '');
+      return 'BROWSER ' + puppeteerAction.replace(/_/g, ' ').toUpperCase();
+    }
+    if (name.startsWith('mcp__memory__') || name.startsWith('memory_')) {
+      var memoryAction = name.replace(/^mcp__memory__/, '').replace(/^memory_/, '');
+      return 'MEMORY ' + memoryAction.replace(/_/g, ' ').toUpperCase();
+    }
+    if (name.startsWith('mcp__')) {
+      var parts = name.split('__');
+      var sName = parts[1] || 'MCP';
+      var tName = parts[2] || parts[1];
+      return sName.toUpperCase() + ': ' + tName.replace(/_/g, ' ').toUpperCase();
+    }
+    return name.replace(/_/g, ' ').toUpperCase();
   }
 
   // ── Tool icon selector ───────────────────────────────
@@ -219,9 +236,20 @@ function initializeChatSpace() {
       'stop_terminal': '🛑',
       'create_plan': '📋',
       'update_plan': '📋',
-      'get_current_datetime': '🕒'
+      'get_current_datetime': '🕒',
+      'sandbox': '📦'
     };
-    return iconMap[name] || '🛠️';
+    if (iconMap[name]) return iconMap[name];
+    if (name && (name.includes('puppeteer') || name.includes('browser'))) {
+      return '🌐';
+    }
+    if (name && name.includes('memory')) {
+      return '🧠';
+    }
+    if (name && name.includes('github')) {
+      return '🐙';
+    }
+    return '🛠️';
   }
 
   function toUpperCaseChar(c) {

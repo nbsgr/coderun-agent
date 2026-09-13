@@ -522,6 +522,128 @@ async function* get_file_info(args, context) {
 }
 
 // =====================================================
+// USER SANDBOX TOOLS — Transparent Scratch Workspace
+// =====================================================
+
+async function* sandbox(args, context) {
+  var action = (args && args.action) || 'status';
+  var subpath = (args && args.subpath) || '';
+  var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
+
+  yield { type: 'action', action: 'sandbox', message: 'Sandbox action: ' + action };
+
+  try {
+    if (action === 'status') {
+      var exists = existsSync(canonicalSandbox);
+      var count = 0;
+      var totalBytes = 0;
+      var fileNames = [];
+      if (exists) {
+        var entries = await fs.readdir(canonicalSandbox, { withFileTypes: true });
+        for (var i = 0; i < entries.length; i++) {
+          count++;
+          var full = path.join(canonicalSandbox, entries[i].name);
+          try {
+            var st = await fs.stat(full);
+            totalBytes += st.size;
+            fileNames.push((entries[i].isDirectory() ? '[DIR] ' : '') + entries[i].name);
+          } catch (_) {}
+        }
+      }
+      yield {
+        type: 'tool_result',
+        tool: 'sandbox',
+        success: true,
+        action: 'status',
+        sandbox_path: canonicalSandbox,
+        exists: exists,
+        item_count: count,
+        total_bytes: totalBytes,
+        items: fileNames,
+        message: 'Sandbox directory is ready at ' + canonicalSandbox + ' (' + count + ' items, ' + totalBytes + ' bytes)'
+      };
+      return;
+    }
+
+    if (action === 'list') {
+      var targetDir = subpath ? path.resolve(canonicalSandbox, subpath) : canonicalSandbox;
+      var secCheck = pathSecurity.resolveSafePath(targetDir, canonicalSandbox);
+      if (!secCheck.safe) {
+        yield { type: 'tool_result', tool: 'sandbox', success: false, message: 'Invalid sandbox subpath: ' + subpath };
+        return;
+      }
+      if (!existsSync(targetDir)) {
+        yield { type: 'tool_result', tool: 'sandbox', success: true, items: [], message: 'Sandbox path does not exist yet.' };
+        return;
+      }
+      var listEntries = await fs.readdir(targetDir, { withFileTypes: true });
+      var itemList = [];
+      for (var j = 0; j < listEntries.length; j++) {
+        var ent = listEntries[j];
+        itemList.push({
+          name: ent.name,
+          type: ent.isDirectory() ? 'directory' : 'file',
+          path: path.join(subpath || '', ent.name).replace(/\\/g, '/')
+        });
+      }
+      yield {
+        type: 'tool_result',
+        tool: 'sandbox',
+        success: true,
+        action: 'list',
+        sandbox_path: targetDir,
+        items: itemList,
+        message: 'Listed ' + itemList.length + ' item(s) in sandbox' + (subpath ? ('/' + subpath) : '')
+      };
+      return;
+    }
+
+    if (action === 'clean') {
+      var cleanTarget = subpath ? path.resolve(canonicalSandbox, subpath) : canonicalSandbox;
+      var secCheckClean = pathSecurity.resolveSafePath(cleanTarget, canonicalSandbox);
+      if (!secCheckClean.safe) {
+        yield { type: 'tool_result', tool: 'sandbox', success: false, message: 'Invalid sandbox clean path: ' + subpath };
+        return;
+      }
+      var cleanCount = 0;
+      if (existsSync(cleanTarget)) {
+        var toClean = await fs.readdir(cleanTarget);
+        for (var c = 0; c < toClean.length; c++) {
+          var itemPath = path.join(cleanTarget, toClean[c]);
+          try {
+            await fs.rm(itemPath, { recursive: true, force: true });
+            cleanCount++;
+          } catch (_) {}
+        }
+      }
+      yield {
+        type: 'tool_result',
+        tool: 'sandbox',
+        success: true,
+        action: 'clean',
+        deleted_count: cleanCount,
+        message: 'Cleaned ' + cleanCount + ' item(s) from sandbox.'
+      };
+      return;
+    }
+
+    yield {
+      type: 'tool_result',
+      tool: 'sandbox',
+      success: false,
+      message: 'Unknown sandbox action: ' + action + '. Valid actions are status, list, clean.'
+    };
+  } catch (err) {
+    yield {
+      type: 'tool_result',
+      tool: 'sandbox',
+      success: false,
+      message: 'Sandbox error: ' + err.message
+    };
+  }
+}
+
+// =====================================================
 // TERMINAL TOOLS — Uses VS Code Terminal Shell Integration
 // =====================================================
 
@@ -1839,6 +1961,16 @@ export function registerAllTools() {
     required: ['url'],
     dangerous: true,
     needsPermission: true
+  });
+  reg('sandbox', sandbox, {
+    aliases: ['sandbox_tools', 'user_sandbox', 'manage_sandbox'],
+    category: 'utility',
+    description: 'Inspect, list, clean, or manage the transparent user sandbox directory (~/.coderun/sandbox/) used for scratch work and safe experimentation.',
+    parameters: {
+      action: { type: 'string', description: 'Action to perform: status (default), list, clean' },
+      subpath: { type: 'string', description: 'Optional subpath inside the sandbox' }
+    },
+    required: []
   });
 
   // ── Planning ───────────────────────────────────────

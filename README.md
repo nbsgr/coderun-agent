@@ -29,7 +29,7 @@ The repository follows a deliberately small JavaScript architecture:
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 46-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 49-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -115,6 +115,17 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Dynamic Context Limit Discovery:** Automatically fetches accurate context window sizes (`context_length`, `context_window`, `inputTokenLimit`) directly from provider APIs (OpenRouter, Groq, Ollama, Gemini) via raw REST discovery, with heuristic architectural fallbacks.
 *   **Detailed Session Info Modal:** Click the token badge anytime to inspect Total Consumed, active Context Window usage, Input / System tokens, Output / Response tokens, and trigger 1-click conversation compaction.
 
+### 📦 Transparent User Sandbox Directory & Terminal CWD Synchronization
+*   **Dedicated Isolated Workspace:** Transparently provides a dedicated scratch sandbox directory at `~/.coderun/sandbox/` alongside the main workspace.
+*   **Automatic Terminal CWD Synchronization:** When running terminal commands targeting sandbox files or test scripts, CodeRun automatically sets the terminal working directory (`cwd`) to `~/.coderun/sandbox/`, allowing relative script and tool execution without dirtying the repository.
+*   **Built-in Path Isolation & Security:** All standard file operations (`read_file`, `write_file`, `edit_file`, `patch_file`, `delete_file`) natively accept paths inside the user sandbox directory, with automatic path canonicalization and directory traversal protection.
+*   **Dedicated `sandbox` Management Tool:** Inspect sandbox status, list sandbox contents, or clean temporary files on demand (`action: 'status' | 'list' | 'clean'`).
+
+### 🎭 On-Install Browser Setup & Zero-Config Puppeteer MCP
+*   **Local Browser Auto-Detection:** Automatically discovers installed Google Chrome, Microsoft Edge, Brave, and Chromium executables across Windows, macOS, and Linux.
+*   **Zero-Friction Fallback Installation:** If no system browser is found, CodeRun automatically installs a lightweight, dedicated Chromium binary into `~/.coderun/browser/` on first run via `@puppeteer/browsers`—completely eliminating runtime browser missing errors.
+*   **Dual-Resolution Tool Aliases:** MCP tools resolve seamlessly whether invoked with full namespaced names (`mcp__puppeteer__puppeteer_navigate`) or direct aliases (`puppeteer_navigate`), preventing "Tool not found" execution stalls across different LLM providers.
+
 ### 🔌 Model Context Protocol (MCP) & Extensibility
 *   **Full MCP Client Integration:** Seamless stdio-based Model Context Protocol client with capability negotiation, automated tool schema extraction, and dynamic registration into the agent loop.
 *   **Built-in Server Catalog:** Pre-configured support for Web Fetcher (`web-fetch`), Memory Graph (`memory`), GitHub (`github`), and Puppeteer (`puppeteer`).
@@ -123,13 +134,13 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 
 ---
 
-## 🧰 Complete Tool Matrix (20 Tools)
+## 🧰 Complete Tool Matrix (21 Tools)
 
-CodeRun exposes a curated set of **20 active tools** organized across 6 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **21 active tools** organized across 6 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
-| **📁 File Operations** | `read_file` | Read complete file contents at a relative path | No |
+| **📁 File Operations** | `read_file` | Read complete file contents at a relative path or inside sandbox | No |
 | | `write_file` | Create or overwrite a file with full diff preview | ⚠️ Yes |
 | | `edit_file` | Find and replace a single exact string occurrence | ⚠️ Yes |
 | | `patch_file` | Apply multiple search-and-replace edit blocks | ⚠️ Yes |
@@ -141,24 +152,25 @@ CodeRun exposes a curated set of **20 active tools** organized across 6 core cat
 | | `find_in_files` | Search workspace file contents for text queries | No |
 | | `list_symbols` | Parse classes, functions, and symbols with line numbers | No |
 | | `list_directory` | List folder contents with recursive depth controls | No |
-| **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (or child_process fallback) | ⚠️ Yes |
+| **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (auto CWD sync for sandbox) | ⚠️ Yes |
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
 | | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running terminal command | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
 | **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
 | | `get_current_datetime` | Retrieve current date and time in ISO format | No |
+| **📦 Utilities & Sandbox** | `sandbox` | Inspect, list, or clean the transparent user sandbox directory (`~/.coderun/sandbox/`) | No |
 | **🗄️ Database** | `query_project_db` | Execute safe read-only SQL queries on the project knowledge database | No |
 
 ### 🔌 Model Context Protocol (MCP) Dynamic Tools
-When MCP servers are enabled in Settings, their tools dynamically register into the agent's active schema with namespaced IDs:
+When MCP servers are enabled in Settings, their tools dynamically register into the agent's active schema with namespaced IDs and direct aliases:
 
 | MCP Server | Dynamically Registered Tools | Capabilities |
 | :--- | :--- | :--- |
 | **🌐 Web Fetcher** (`web-fetch`) | `mcp__web-fetch__fetch_web_content`, `mcp__web-fetch__http_get` | Headless page fetching, HTML-to-markdown conversion, web extraction |
 | **🧠 Memory Graph** (`memory`) | `mcp__memory__create_entities`, `mcp__memory__create_relations`, `mcp__memory__read_graph`, `mcp__memory__search_nodes`, `mcp__memory__open_nodes` | Persistent knowledge graph storing facts, entities, and observations across sessions |
 | **🐙 GitHub** (`github`) | `mcp__github__create_or_update_file`, `mcp__github__search_repositories`, `mcp__github__get_issue`, `mcp__github__create_pull_request`, ... | Full GitHub API repository, issue, commit, and pull request manipulation |
-| **🎭 Puppeteer** (`puppeteer`) | `mcp__puppeteer__navigate`, `mcp__puppeteer__screenshot`, `mcp__puppeteer__click`, `mcp__puppeteer__fill`, `mcp__puppeteer__evaluate` | Full browser automation using local Chrome/Edge/Brave/Chromium with screenshot capture |
+| **🎭 Puppeteer** (`puppeteer`) | `mcp__puppeteer__puppeteer_navigate`, `mcp__puppeteer__puppeteer_screenshot`, `mcp__puppeteer__puppeteer_click`, `mcp__puppeteer__puppeteer_fill`, `mcp__puppeteer__puppeteer_select`, `mcp__puppeteer__puppeteer_hover`, `mcp__puppeteer__puppeteer_evaluate` (aliases: `puppeteer_*`) | Full browser automation using local Chrome/Edge/Brave or auto-installed Chromium in `~/.coderun/browser/` with screenshot capture |
 | **⚙️ Custom MCP Servers** | Custom tool names dynamically imported | Any stdio-based MCP server configured in Settings |
 
 ---
