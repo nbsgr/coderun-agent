@@ -29,13 +29,14 @@ function sanitizeUrl(url) {
 function highlightJavaScript(code) {
   var escaped = esc(code);
   var tokens = [];
-  var clean = escaped.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, function(match) {
+  function replaceJavaScriptToken(match) {
     var placeholder = '\uE004JS_' + tokens.length + '\uE005';
     var isComment = match.startsWith('//') || match.startsWith('/*');
     var cls = isComment ? 'md-comment' : 'md-str';
     tokens.push('<span class="' + cls + '">' + match + '</span>');
     return placeholder;
-  });
+  }
+  var clean = escaped.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, replaceJavaScriptToken);
 
   clean = clean
     .replace(/\b(function|return|var|let|const|if|else|for|while|switch|case|break|continue|new|this|typeof|instanceof|in|of|async|await|import|export|from|class|extends|super|try|catch|finally|throw|yield|default)\b/g, '<span class="md-kw">$1</span>')
@@ -52,13 +53,14 @@ function highlightJavaScript(code) {
 function highlightPython(code) {
   var escaped = esc(code);
   var tokens = [];
-  var clean = escaped.replace(/(#[^\n]*|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, function(match) {
+  function replacePythonToken(match) {
     var placeholder = '\uE004PY_' + tokens.length + '\uE005';
     var isComment = match.startsWith('#');
     var cls = isComment ? 'md-comment' : 'md-str';
     tokens.push('<span class="' + cls + '">' + match + '</span>');
     return placeholder;
-  });
+  }
+  var clean = escaped.replace(/(#[^\n]*|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, replacePythonToken);
 
   clean = clean
     .replace(/\b(def|class|return|if|elif|else|for|while|try|except|finally|with|as|import|from|raise|assert|lambda|yield|pass|break|continue|global|nonlocal|del|in|is|not|and|or|True|False|None|async|await)\b/g, '<span class="md-kw">$1</span>')
@@ -74,11 +76,12 @@ function highlightPython(code) {
 function highlightJson(code) {
   var escaped = esc(code);
   var tokens = [];
-  var clean = escaped.replace(/("(?:[^"\\]|\\.)*")/g, function(match) {
+  function replaceJsonToken(match) {
     var placeholder = '\uE004JSON_' + tokens.length + '\uE005';
     tokens.push('<span class="md-str">' + match + '</span>');
     return placeholder;
-  });
+  }
+  var clean = escaped.replace(/("(?:[^"\\]|\\.)*")/g, replaceJsonToken);
 
   clean = clean
     .replace(/\b(true|false|null)\b/g, '<span class="md-bool">$1</span>')
@@ -93,13 +96,14 @@ function highlightJson(code) {
 function highlightBash(code) {
   var escaped = esc(code);
   var tokens = [];
-  var clean = escaped.replace(/(#[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, function(match) {
+  function replaceBashToken(match) {
     var placeholder = '\uE004SH_' + tokens.length + '\uE005';
     var isComment = match.startsWith('#');
     var cls = isComment ? 'md-comment' : 'md-str';
     tokens.push('<span class="' + cls + '">' + match + '</span>');
     return placeholder;
-  });
+  }
+  var clean = escaped.replace(/(#[^\n]*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, replaceBashToken);
 
   clean = clean
     .replace(/\b(echo|cd|ls|mkdir|rm|cp|mv|cat|grep|find|chmod|sudo|apt|pip|npm|node|python|python3|curl|wget|git|docker|kubectl)\b/g, '<span class="md-kw">$1</span>');
@@ -226,18 +230,22 @@ function renderInlineStyles(text) {
   s = s.replace(/~~([^~\n]+?)~~/g, '<del>$1</del>');
 
   // Images
-  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, src) {
-    var safeSrc = sanitizeUrl(src);
-    return '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" />';
-  });
+  s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, replaceMarkdownImage);
 
   // Links
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(match, label, href) {
-    var safeHref = sanitizeUrl(href);
-    return '<a href="' + esc(safeHref) + '" target="_blank" rel="noopener noreferrer" class="md-link">' + label + '</a>';
-  });
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, replaceMarkdownLink);
 
   return s;
+}
+
+function replaceMarkdownImage(match, alt, src) {
+  var safeSrc = sanitizeUrl(src);
+  return '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" />';
+}
+
+function replaceMarkdownLink(match, label, href) {
+  var safeHref = sanitizeUrl(href);
+  return '<a href="' + esc(safeHref) + '" target="_blank" rel="noopener noreferrer" class="md-link">' + label + '</a>';
 }
 
 function renderMarkdown(src) {
@@ -246,19 +254,21 @@ function renderMarkdown(src) {
 
   // 1. Extract Fenced Code Blocks into placeholders
   var codeBlocks = [];
-  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(match, lang, code) {
+  function replaceFencedCodeBlock(match, lang, code) {
     var placeholder = '\uE002CODEBLOCK_' + codeBlocks.length + '\uE003';
     codeBlocks.push(buildFencedCodeHtml(lang, code));
     return '\n\n' + placeholder + '\n\n';
-  });
+  }
+  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, replaceFencedCodeBlock);
 
   // 2. Extract Inline Code into placeholders
   var inlineCodes = [];
-  text = text.replace(/`([^`\n]+)`/g, function(match, code) {
+  function replaceInlineCode(match, code) {
     var placeholder = '\uE002INLINECODE_' + inlineCodes.length + '\uE003';
     inlineCodes.push(buildInlineCodeHtml(code));
     return placeholder;
-  });
+  }
+  text = text.replace(/`([^`\n]+)`/g, replaceInlineCode);
 
   // 3. Process block elements
   var lines = text.split('\n');

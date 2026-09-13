@@ -28,6 +28,20 @@ import * as mcpManager from '../src/mcp/mcpManager.js';
 import { buildMessages, optimizeHistoricalToolMessage } from '../src/agents/promptBuilder.js';
 import { buildCompactCheckpoint } from '../src/context/compactionManager.js';
 
+function noopResolve() {}
+
+function resolveAfter80(resolve) {
+  setTimeout(resolve, 80);
+}
+
+function resolveAfter10(resolve) {
+  setTimeout(resolve, 10);
+}
+
+function resolveAfter30(resolve) {
+  setTimeout(resolve, 30);
+}
+
 console.log('================================================================');
 console.log('=== STARTING COMPLETE ADVERSARIAL REGRESSION TEST SUITE ===');
 console.log('================================================================\n');
@@ -95,7 +109,7 @@ var patch1 = diffManager.storePatch({
   original_content: 'INITIAL CONTENT',
   new_content: 'NEW CONTENT 1',
   sessionId: 'session_A',
-  deferred: { resolve: function () {} }
+  deferred: { resolve: noopResolve }
 });
 
 var patch2 = diffManager.storePatch({
@@ -105,7 +119,7 @@ var patch2 = diffManager.storePatch({
   original_content: 'INITIAL CONTENT',
   new_content: 'NEW CONTENT 2',
   sessionId: 'session_B',
-  deferred: { resolve: function () {} }
+  deferred: { resolve: noopResolve }
 });
 
 // Modify file on disk to simulate external edit before patch1 applies
@@ -135,8 +149,8 @@ console.log('✓ Vector 5 Passed: Centralized resolver validates canonical ances
 
 // 6. Rejected Diff Lifecycle & Cross-Session Safety
 console.log('--- TEST 6: Rejected Diff Lifecycle & Cross-Session Safety ---');
-var patchEvent1 = { id: 'diff_sec_1', tool: 'write_file', file_path: 'a.js', original_content: '', new_content: 'hello', sessionId: 'session_A', deferred: { resolve: function () {} } };
-var patchEvent2 = { id: 'diff_sec_2', tool: 'write_file', file_path: 'b.js', original_content: '', new_content: 'world', sessionId: 'session_B', deferred: { resolve: function () {} } };
+var patchEvent1 = { id: 'diff_sec_1', tool: 'write_file', file_path: 'a.js', original_content: '', new_content: 'hello', sessionId: 'session_A', deferred: { resolve: noopResolve } };
+var patchEvent2 = { id: 'diff_sec_2', tool: 'write_file', file_path: 'b.js', original_content: '', new_content: 'world', sessionId: 'session_B', deferred: { resolve: noopResolve } };
 
 diffManager.storePatch(patchEvent1);
 diffManager.storePatch(patchEvent2);
@@ -308,7 +322,7 @@ var diffA = diffManager.storePatch({
   original_content: 'ORIGINAL CONTENT',
   new_content: 'SESSION A CONTENT',
   sessionId: 'session_Alpha',
-  deferred: { resolve: function () {} }
+  deferred: { resolve: noopResolve }
 });
 
 var stolenApply = await diffManager.applyPatch('diff_sess_A_only', testDir, 'session_Beta');
@@ -326,21 +340,23 @@ var parentDir = path.join(testDir, 'hier_parent');
 var childFile = path.join(parentDir, 'child.txt');
 
 async function runChildLock() {
-  await fileLockManager.withFileLock(childFile, async function () {
+  async function runChildLockOperation() {
     lockEvents.push('child_start');
-    await new Promise(function (resolve) { setTimeout(resolve, 80); });
+    await new Promise(resolveAfter80);
     lockEvents.push('child_end');
-  });
+  }
+  await fileLockManager.withFileLock(childFile, runChildLockOperation);
 }
 
 async function runParentLock() {
   // Give child a tiny head start
-  await new Promise(function (resolve) { setTimeout(resolve, 10); });
-  await fileLockManager.withFileLock(parentDir, async function () {
+  await new Promise(resolveAfter10);
+  async function runParentLockOperation() {
     lockEvents.push('parent_start');
-    await new Promise(function (resolve) { setTimeout(resolve, 30); });
+    await new Promise(resolveAfter30);
     lockEvents.push('parent_end');
-  });
+  }
+  await fileLockManager.withFileLock(parentDir, runParentLockOperation);
 }
 
 await Promise.all([runChildLock(), runParentLock()]);
@@ -566,9 +582,15 @@ var diffEvent = {
   sessionId: 'session_diff_test'
 };
 var diffResolved = false;
-var deferredPromise = new Promise(function (resolve) {
-  diffEvent.deferred = { resolve: function (res) { diffResolved = true; resolve(res); } };
-});
+function assignDiffDeferred(resolve) {
+  function resolveDiffApproval(res) {
+    diffResolved = true;
+    resolve(res);
+  }
+  diffEvent.deferred = { resolve: resolveDiffApproval };
+}
+
+var deferredPromise = new Promise(assignDiffDeferred);
 var patch = diffManager.storePatch(diffEvent);
 assert.strictEqual(patch.status, 'pending', 'Patch starts in pending state');
 

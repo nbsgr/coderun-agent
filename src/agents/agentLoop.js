@@ -44,6 +44,34 @@ export async function resolveDiff(id, accepted, sessionId, workspace) {
 
 function noop() {}
 
+function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
+  var currentState = agentState.getState(sessionId);
+  if (agentState.isTerminal(sessionId)) {
+    return {
+      content: fullContent,
+      thinking: fullThinking,
+      done: currentState === 'completed',
+      stopped: false
+    };
+  }
+
+  var fromState = currentState;
+  agentState.transition('stopped', sessionId);
+  executionTrace.recordTransition(sessionId, fromState, 'stopped');
+  events.emit('state_changed', { state: 'stopped', sessionId: sessionId });
+  var stoppedTrace = executionTrace.finishRun(sessionId, 'stopped');
+  if (stoppedTrace) {
+    sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: stoppedTrace });
+  }
+  sendEvent({
+    type: EVENT_TYPES.AGENT_DONE,
+    reason: 'stopped',
+    content: fullContent,
+    thinking: fullThinking
+  });
+  return { content: fullContent, thinking: fullThinking, done: false, stopped: true };
+}
+
 function emitAndForwardEvent(sendEventCallback, event) {
   events.emit('agent:' + (event.type || 'event'), event);
   sendEventCallback(event);
@@ -790,14 +818,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     while (iteration < maxIterations) {
       if (signal && (signal.stopped || signal.aborted)) {
         console.log('[AGENT LOOP] Stop requested at iteration ' + iteration);
-        agentState.transition('stopped', sessionId);
-        sendEvent({
-          type: EVENT_TYPES.AGENT_DONE,
-          reason: 'stopped',
-          content: fullContent,
-          thinking: fullThinking
-        });
-        return { content: fullContent, thinking: fullThinking, done: false, stopped: true };
+        return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
       }
 
       iteration++;
@@ -971,14 +992,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (signal && (signal.stopped || signal.aborted)) {
         console.log('[AGENT LOOP] Stop requested after/during stream');
-        agentState.transition('stopped', sessionId);
-        sendEvent({
-          type: EVENT_TYPES.AGENT_DONE,
-          reason: 'stopped',
-          content: fullContent,
-          thinking: fullThinking
-        });
-        return { content: fullContent, thinking: fullThinking, done: false, stopped: true };
+        return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
       }
 
       // Flush remaining buffer

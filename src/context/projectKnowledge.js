@@ -198,6 +198,10 @@ export function getProjectMetadata() {
 
 var _fallbackCheckpoints = {};
 
+function compareCheckpointCreatedAt(a, b) {
+  return (b.created_at || 0) - (a.created_at || 0);
+}
+
 export function addCheckpoint(cp) {
   if (!cp || !cp.id) return;
   var normPath = String(cp.file_path || '').replace(/\\/g, '/');
@@ -277,7 +281,7 @@ export function getCheckpoints(filePath, sessionId) {
     }
   }
 
-  results.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  results.sort(compareCheckpointCreatedAt);
   return results;
 }
 
@@ -346,7 +350,7 @@ export function getRecentCheckpoints(sessionId, limit) {
     }
   }
 
-  results.sort(function (a, b) { return (b.created_at || 0) - (a.created_at || 0); });
+  results.sort(compareCheckpointCreatedAt);
   return results.slice(0, limit);
 }
 

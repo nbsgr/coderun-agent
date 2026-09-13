@@ -3,7 +3,7 @@
 // terminal streaming, collapsible tool cards, status timeline
 // New prefix: cr- (coderun)
 
-(function() {
+function initializeChatSpace() {
   'use strict';
 
   var I = {
@@ -813,7 +813,7 @@
     if (chatCtx.abortCtrl) { chatCtx.abortCtrl.abort(); chatCtx.abortCtrl = null; }
     if (window.VSCODE_API) {
       try {
-        window.VSCODE_API.postMessage({ type: 'stopChat' });
+        window.VSCODE_API.postMessage({ type: 'stopChat', sessionId: chatCtx.convId, conversationId: chatCtx.convId });
       } catch (e) {
         // Intentionally ignore if postMessage is restricted in the current environment
       }
@@ -908,7 +908,7 @@
     if (chatCtx.abortCtrl) { chatCtx.abortCtrl.abort(); chatCtx.abortCtrl = null; }
     if (window.VSCODE_API) {
       try {
-        window.VSCODE_API.postMessage({ type: 'stopChat' });
+        window.VSCODE_API.postMessage({ type: 'stopChat', sessionId: chatCtx.convId, conversationId: chatCtx.convId });
       } catch (e) {
         // Intentionally ignore if postMessage is restricted in the current environment
       }
@@ -2173,13 +2173,13 @@
 
     targetParent.appendChild(d);
     var actions = d.querySelector('[id="actions-' + id + '"]');
-    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, ev); }
+    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, chatCtx.convId, ev); }
     actions.addEventListener('click', onPermActionClick);
     scrollBottom(chatCtx.msgList);
     return d;
   }
 
-  function handlePermissionActionClick(id, tool, msgList, controlsPanel, e) {
+  function handlePermissionActionClick(id, tool, msgList, controlsPanel, sessionId, e) {
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var act = btn.dataset.action;
@@ -2197,7 +2197,7 @@
         toolCallId: id,
         always: isAlways,
         tool: tool,
-        sessionId: window.activeConversationId || ''
+        sessionId: sessionId || ''
       });
     }
     var chatCtx = { msgList: msgList, controlsPanel: controlsPanel };
@@ -3651,4 +3651,6 @@
       window.selectDashboardConversation(activeId);
     }
   }
-}());
+}
+
+initializeChatSpace();

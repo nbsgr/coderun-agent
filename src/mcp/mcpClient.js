@@ -4,6 +4,8 @@
 import * as child_process from 'child_process';
 import * as readline from 'readline';
 import * as http from 'http';
+
+function noopRequestCallback() {}
 import * as https from 'https';
 import { URL } from 'url';
 
@@ -144,7 +146,7 @@ export function createMcpClient(serverConfig) {
       }) + '\n';
       proc.stdin.write(payload);
     } else if (transport === 'sse' || transport === 'http') {
-      sendHttpRequest(method, params, 10000, function() {}, function() {});
+      sendHttpRequest(method, params, 10000, noopRequestCallback, noopRequestCallback);
     }
   }
 
@@ -498,12 +500,16 @@ export function createMcpClient(serverConfig) {
     };
   }
 
+  function getServerName() {
+    return serverName;
+  }
+
   return {
     start: start,
     listTools: listTools,
     callTool: callTool,
     stop: stop,
     getStatus: getStatus,
-    getServerName: function() { return serverName; }
+    getServerName: getServerName
   };
 }

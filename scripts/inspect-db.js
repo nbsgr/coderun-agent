@@ -67,4 +67,9 @@ async function main() {
   
   process.exit(0);
 }
-main().catch(e => { console.error(e); process.exit(1); });
+function handleMainError(e) {
+  console.error(e);
+  process.exit(1);
+}
+
+main().catch(handleMainError);

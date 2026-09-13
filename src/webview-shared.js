@@ -1,10 +1,10 @@
 // webview-shared.js — Shared utilities for the webview context
-// Follows the same IIFE + window pattern as MarkdownRenderer.js
+// Uses window exports because the webview loads this as a classic script.
 // Dashboard.js and ChatSpace.js reference these instead of duplicating.
 // The canonical implementations live in utils.js (extension host context);
 // this file mirrors the subset needed in the sandboxed webview.
 
-(function () {
+function initializeWebviewShared() {
   'use strict';
 
   /**
@@ -88,4 +88,6 @@
   window.sharedSafeJsonParse = sharedSafeJsonParse;
 
   console.log('[WEBVIEW SHARED] Utilities loaded');
-})();
+}
+
+initializeWebviewShared();

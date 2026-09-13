@@ -32,7 +32,7 @@ export function parseSymbols(content, filePath) {
         continue;
       }
       // 3. Arrow function variables
-      match = line.match(/^\s*(const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(async\s*)?\([^)]*\)\s*=>/);
+      match = line.match(/^\s*(const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(async\s*)?\([^)]*\)\s*=\x3e/);
       if (match) {
         symbols.push({ name: match[2], type: 'function', line: lineNum });
         continue;

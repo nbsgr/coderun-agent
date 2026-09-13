@@ -212,6 +212,17 @@ export function finishRun(sessionId, status, metrics) {
   var trace = getActiveTrace(sessionId);
   if (!trace) return null;
 
+  var terminalStatuses = {
+    completed: true,
+    failed: true,
+    cancelled: true,
+    stopped: true,
+    max_iterations: true
+  };
+  if (trace.completedAt && terminalStatuses[trace.status]) {
+    return trace;
+  }
+
   var now = Date.now();
   trace.status = status || 'completed';
   trace.completedAt = now;
@@ -221,6 +232,7 @@ export function finishRun(sessionId, status, metrics) {
   if (metrics) {
     if (metrics.totalTokens) trace.metrics.totalTokens = metrics.totalTokens;
     if (metrics.filesTouched) trace.metrics.filesTouched = metrics.filesTouched;
+    if (metrics.error) trace.error = metrics.error;
   }
 
   trace.asciiTree = generateAsciiTree(trace);

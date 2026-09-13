@@ -2,7 +2,7 @@
 // Settings (provider, baseUrl, model, apiKey) are read from VS Code user settings.
 // The backend is the single source of truth for provider configuration.
 
-(function() {
+function initializeDashboard() {
   "use strict";
 
   var DEFAULT_BASE_URL = "http://localhost:11434/v1";
@@ -1160,6 +1160,8 @@
             if (lastMsg.error || (typeof lastMsg.content === 'string' && (lastMsg.content.indexOf('Error from provider') !== -1 || lastMsg.content.indexOf('Error: ') === 0 || lastMsg.content.indexOf('Upstream request failed') !== -1))) {
               activeTrace.status = 'failed';
               activeTrace.error = lastMsg.error || lastMsg.content;
+              activeTrace.completedAt = activeTrace.completedAt || Date.now();
+              activeTrace.durationMs = activeTrace.durationMs || activeTrace.completedAt - (activeTrace.startedAt || activeTrace.completedAt);
               if (!activeTrace.finalResponse) activeTrace.finalResponse = {};
               activeTrace.finalResponse.text = lastMsg.error || lastMsg.content;
               activeTrace.finalResponse.error = lastMsg.error || lastMsg.content;
@@ -1245,13 +1247,15 @@
       if (btnElement) {
         var originalText = btnElement.textContent;
         btnElement.textContent = "✓ Copied!";
-        setTimeout(function() {
-          btnElement.textContent = originalText;
-        }, 1500);
+        setTimeout(restoreCopiedButtonText, 1500, btnElement, originalText);
       }
     } catch (_) {
       // Intentionally ignore clipboard write errors
     }
+  }
+
+  function restoreCopiedButtonText(btnElement, originalText) {
+    btnElement.textContent = originalText;
   }
 
   function buildLlmCallCardHtml(llmCall, stepIndex) {
@@ -1454,14 +1458,6 @@
       if (foundIdx >= 0) {
         existing[foundIdx] = trace;
       } else {
-        // Mark any existing running turns as completed before pushing new run
-        for (var k = 0; k < existing.length; k++) {
-          if (existing[k].status === "running") {
-            existing[k].status = existing[k].error ? "failed" : "completed";
-            if (!existing[k].completedAt) existing[k].completedAt = Date.now();
-            if (!existing[k].durationMs) existing[k].durationMs = existing[k].completedAt - (existing[k].startedAt || existing[k].completedAt);
-          }
-        }
         existing.push(trace);
       }
       localStorage.setItem("coderun_traces_" + sessionId, JSON.stringify(existing));
@@ -1536,9 +1532,6 @@
           if (msg.model) currentRun.model = msg.model;
           if (msg.provider) currentRun.provider = msg.provider;
           if (msg.tool_calls && msg.tool_calls.length) {
-            currentRun.status = 'completed';
-            currentRun.completedAt = msg.timestamp || Date.now();
-            currentRun.durationMs = currentRun.completedAt - currentRun.startedAt;
             var stepIndex = currentRun.steps.length + 1;
             var stepTools = [];
             for (var t = 0; t < msg.tool_calls.length; t++) {
@@ -1567,7 +1560,7 @@
                 provider: currentRun.provider,
                 messages: { system: 'System context', user: currentRun.user.query, toolResults: null },
                 thinking: msg.thinking || '',
-                decision: stepTools.map(function(st) { return 'Call ' + st.toolName; }).join(', '),
+                decision: stepTools.map(formatTraceToolDecision).join(', '),
                 tokens: { input: 0, output: 0, total: 0 },
                 durationMs: 0
               },
@@ -2631,10 +2624,7 @@
       if (isHidden) {
         var filterInput = document.getElementById("modelFilterInput");
         if (filterInput) {
-          setTimeout(function() {
-            filterInput.focus();
-            filterInput.select();
-          }, 40);
+          setTimeout(focusModelFilterInput, 40, filterInput);
         }
       }
     }
@@ -3238,6 +3228,15 @@
     if (state.renamingId !== this.dataset.id) selectConversation(this.dataset.id);
   }
 
+  function focusModelFilterInput(filterInput) {
+    filterInput.focus();
+    filterInput.select();
+  }
+
+  function formatTraceToolDecision(stepTool) {
+    return 'Call ' + stepTool.toolName;
+  }
+
   function renderSidebar() {
     var list = document.getElementById("thread-list");
     if (!list) return;
@@ -3405,6 +3404,7 @@
   }
 
   function performDelete(id) {
+    var deletingActiveConversation = state.activeConversationId === id;
     var remaining = [];
     for (var i = 0; i < state.conversations.length; i++) {
       if (state.conversations[i].id !== id) {
@@ -3412,12 +3412,18 @@
       }
     }
     state.conversations = remaining;
-    if (state.activeConversationId === id) {
+    if (deletingActiveConversation) {
+      if (state.isVsCode && window.VSCODE_API) {
+        window.VSCODE_API.postMessage({ type: "stopChat", sessionId: id, conversationId: id });
+      }
+      if (window.activeChatStreamCallback) window.activeChatStreamCallback = null;
       state.activeConversationId = state.conversations[0] ? state.conversations[0].id : null;
     }
     saveConversations();
     renderSidebar();
-    selectConversation(state.activeConversationId);
+    if (deletingActiveConversation) {
+      selectConversation(state.activeConversationId);
+    }
   }
 
   function performClearAll() {
@@ -3923,4 +3929,6 @@
   }
   window.saveDashboardConversations = saveDashboardConversations;
   window.renderDashboardTraces = renderTracesView;
-}());
+}
+
+initializeDashboard();
