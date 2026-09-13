@@ -1443,20 +1443,66 @@ export function migrateLegacyPlan(legacy) {
 export function parseChecklistPlan(planText) {
   if (typeof planText !== 'string') return [];
   var items = [];
-  var lines = planText.split('\n');
+  var rawLines = planText.split('\n');
   var autoId = 0;
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    var match = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
+  var currentItem = null;
+
+  for (var i = 0; i < rawLines.length; i++) {
+    var rawLine = rawLines[i];
+    var trimmed = rawLine.trim();
+    if (!trimmed) continue;
+
+    var match = trimmed.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
     if (match) {
+      if (currentItem) {
+        items.push(currentItem);
+      }
       autoId++;
       var mark = match[1];
-      var id = match[2] || match[3] || String(autoId);
-      var desc = match[4] || line;
+      var rawId = match[2] || match[3] || String(autoId);
+      var id = String(rawId).replace(/[.:)]+$/, '');
+      var desc = match[4] || trimmed;
       var status = (mark === 'x' || mark === 'X' || mark === '✓') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
-      items.push({ id: id, description: desc, status: status, mark: mark });
+      currentItem = { id: id, description: desc, status: status, mark: mark };
+    } else if (currentItem && (rawLine.startsWith('  ') || rawLine.startsWith('\t'))) {
+      currentItem.description += ' ' + trimmed;
     }
   }
+
+  if (currentItem) {
+    items.push(currentItem);
+  }
+
+  // Fallback: If no checkbox items found, look for standard numbered list items
+  if (items.length === 0) {
+    var numAutoId = 0;
+    var numCurrent = null;
+
+    for (var j = 0; j < rawLines.length; j++) {
+      var nLine = rawLines[j];
+      var nTrimmed = nLine.trim();
+      if (!nTrimmed) continue;
+
+      var numMatch = nTrimmed.match(/^(?:#?(\d+)[.):]\s+|\b(\d+)[.)]\s+)(.*)$/);
+      if (numMatch) {
+        if (numCurrent) {
+          items.push(numCurrent);
+        }
+        numAutoId++;
+        var numRawId = numMatch[1] || numMatch[2] || String(numAutoId);
+        var cleanNumId = String(numRawId).replace(/[.:)]+$/, '');
+        var numDesc = numMatch[3] || nTrimmed;
+        numCurrent = { id: cleanNumId, description: numDesc, status: 'pending', mark: ' ' };
+      } else if (numCurrent && (nLine.startsWith('  ') || nLine.startsWith('\t'))) {
+        numCurrent.description += ' ' + nTrimmed;
+      }
+    }
+
+    if (numCurrent) {
+      items.push(numCurrent);
+    }
+  }
+
   return items;
 }
 

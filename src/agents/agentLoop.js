@@ -145,6 +145,62 @@ function checkToolFailureRepetition(sessionCtx, toolName, args, result) {
   return null;
 }
 
+function normalizeToolOutput(result, formattedResult) {
+  if (formattedResult && typeof formattedResult === 'string') {
+    return formattedResult.trim();
+  }
+  if (!result) return '';
+  if (typeof result === 'string') return result.trim();
+  var out = result.message || result.output || result.content || result.error || '';
+  if (typeof out === 'string') return out.trim();
+  return JSON.stringify(out);
+}
+
+function cleanToolArgs(args) {
+  if (!args || typeof args !== 'object') return {};
+  var clean = {};
+  var keys = Object.keys(args);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k.charAt(0) === '_') continue;
+    clean[k] = args[k];
+  }
+  return clean;
+}
+
+function checkLoopHygiene(sessionCtx, toolName, args, result, formattedResult) {
+  if (!sessionCtx || !toolName) return null;
+  sessionCtx.consecutiveToolInvocations = sessionCtx.consecutiveToolInvocations || [];
+
+  var cleanArgsObj = cleanToolArgs(args);
+  var serializedArgs = JSON.stringify(cleanArgsObj);
+  var normalizedOutput = normalizeToolOutput(result, formattedResult);
+  var signature = toolName + '|||' + serializedArgs + '|||' + normalizedOutput;
+
+  sessionCtx.consecutiveToolInvocations.push({
+    signature: signature,
+    toolName: toolName,
+    args: cleanArgsObj,
+    serializedArgs: serializedArgs
+  });
+
+  var list = sessionCtx.consecutiveToolInvocations;
+  if (list.length >= 3) {
+    var count = 0;
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].signature === signature) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    if (count >= 3) {
+      return 'already ' + toolName + ' is called with this args(' + serializedArgs + ') with the same output. Please stop repeating this call, analyze why this action is not advancing the task, and choose an alternative strategy.';
+    }
+  }
+  return null;
+}
+
 function robustParseToolArguments(rawArgs, toolName) {
   if (!rawArgs) return { argsList: [{}] };
   if (typeof rawArgs === 'object') return { argsList: [rawArgs] };
@@ -1314,19 +1370,33 @@ export async function runAgentLoop(userPrompt, config, options) {
         messages.push(toolMsg);
       }
 
-      // Check repetitive failure circuit breaker
+      // Check repetitive failure circuit breaker and loop hygiene
       var repeatWarning = null;
       for (var chkIdx = 0; chkIdx < results.length; chkIdx++) {
         var resObj = results[chkIdx];
         var tcItem = completedToolCalls[chkIdx];
-        var warnMsg = checkToolFailureRepetition(
+        var toolArgs = tcItem && tcItem.function ? tcItem.function.arguments : {};
+
+        var hygieneMsg = checkLoopHygiene(
           sessionCtx,
           resObj.tool_name,
-          tcItem && tcItem.function ? tcItem.function.arguments : {},
+          toolArgs,
+          resObj.result,
+          resObj.formattedResult
+        );
+        if (hygieneMsg) {
+          repeatWarning = hygieneMsg;
+          break;
+        }
+
+        var failWarnMsg = checkToolFailureRepetition(
+          sessionCtx,
+          resObj.tool_name,
+          toolArgs,
           resObj.result
         );
-        if (warnMsg) {
-          repeatWarning = warnMsg;
+        if (failWarnMsg) {
+          repeatWarning = failWarnMsg;
           break;
         }
       }
@@ -1483,3 +1553,6 @@ function processThinkTags(text, inThinkTag, buffer) {
 
   return { content: contentPart, thinking: thinkingPart, inThinkTag: inThinkTag, buffer: buffer };
 }
+
+export { checkLoopHygiene, normalizeToolOutput, cleanToolArgs };
+

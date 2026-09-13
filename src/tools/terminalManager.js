@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import * as pathSecurity from './pathSecurity.js';
 
 var _sessions = {}; // sessionId -> sessionState
 var terminalListeners = [];
@@ -15,6 +16,7 @@ function createSessionState(sessionId) {
   return {
     id: sessionId || 'default',
     terminal: null,
+    currentCwd: null,
     lastSessionOutput: '',
     lastSessionActive: false,
     lastCheckedPosition: 0,
@@ -244,6 +246,9 @@ export function getTerminal(sessionId, workspace) {
   for (var i = 0; i < allTerms.length; i++) {
     if (allTerms[i].name === termName) {
       sess.terminal = allTerms[i];
+      if (!sess.currentCwd && workspace) {
+        sess.currentCwd = pathSecurity.getCanonicalWorkspace(workspace);
+      }
       return sess.terminal;
     }
   }
@@ -252,6 +257,8 @@ export function getTerminal(sessionId, workspace) {
   if (!cwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
     cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
   }
+
+  sess.currentCwd = cwd ? pathSecurity.getCanonicalWorkspace(cwd) : null;
 
   var termOptions = {
     name: termName,
@@ -267,6 +274,7 @@ export function getTerminal(sessionId, workspace) {
   function onTerminalClosed(closedTerm) {
     if (closedTerm === sess.terminal) {
       sess.terminal = null;
+      sess.currentCwd = null;
       sess.lastSessionActive = false;
       sess.activeExecId = null;
     }
@@ -387,19 +395,126 @@ function waitForShellIntegration(terminal, timeoutMs) {
   return new Promise(executor);
 }
 
-export async function executeCommand(command, timeout, background, isInteractive, sessionId, workspace) {
+function isSameDirectoryPath(p1, p2) {
+  if (!p1 || !p2) return false;
+  var n1 = path.resolve(String(p1)).replace(/\\/g, '/');
+  var n2 = path.resolve(String(p2)).replace(/\\/g, '/');
+  if (process.platform === 'win32') {
+    return n1.toLowerCase() === n2.toLowerCase();
+  }
+  return n1 === n2;
+}
+
+function getCdCommand(targetPath, shellName) {
+  var sName = (shellName || '').toLowerCase();
+  var resolved = path.resolve(String(targetPath));
+  if (sName.includes('powershell') || sName.includes('pwsh')) {
+    return "Set-Location -LiteralPath '" + resolved.replace(/'/g, "''") + "'";
+  }
+  if (sName.includes('cmd')) {
+    return 'cd /d "' + resolved + '"';
+  }
+  return 'cd "' + resolved.replace(/"/g, '\\"') + '"';
+}
+
+function formatSandboxReplacement(match, prefix, sub) {
+  var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
+  var fullPath = sub ? path.join(canonicalSandbox, sub.replace(/^[\\/]/, '')) : canonicalSandbox;
+  return prefix + '"' + fullPath + '"';
+}
+
+function expandSandboxPathInCommand(cmd, canonicalSandbox) {
+  if (!cmd || !canonicalSandbox) return cmd;
+  var result = String(cmd);
+  if (result.includes('~/.coderun/sandbox') || result.includes('~\\.coderun\\sandbox')) {
+    result = result.replace(/~[\\/]\.coderun[\\/]sandbox/g, canonicalSandbox);
+  }
+  var regexRelSandbox = /(^|[\s"'=])\.coderun[\\/]sandbox([\\/][^\s"'&;|]+)?/g;
+  result = result.replace(regexRelSandbox, formatSandboxReplacement);
+  return result;
+}
+
+export function getCurrentCwd(sessionId) {
+  var sess = getSession(sessionId);
+  return sess.currentCwd || null;
+}
+
+export function setCurrentCwd(sessionId, newCwd) {
+  var sess = getSession(sessionId);
+  sess.currentCwd = newCwd ? path.resolve(String(newCwd)) : null;
+}
+
+export async function executeCommand(command, timeout, background, isInteractive, sessionId, workspace, requestedCwd) {
   timeout = timeout || 30;
   var sess = getSession(sessionId);
   var terminal = getTerminal(sessionId, workspace);
   terminal.show(true);
 
-  var cwd = workspace || undefined;
-  if (!cwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-    cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+  var canonicalWs = workspace ? pathSecurity.getCanonicalWorkspace(workspace) : '';
+  if (!canonicalWs && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    canonicalWs = pathSecurity.getCanonicalWorkspace(vscode.workspace.workspaceFolders[0].uri.fsPath);
+  }
+  var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
+
+  if (!sess.currentCwd) {
+    sess.currentCwd = canonicalWs || (workspace || undefined);
+  }
+
+  var targetCwd = null;
+  if (requestedCwd) {
+    var check = pathSecurity.resolveSafePath(requestedCwd, canonicalWs);
+    if (check.safe && check.canonicalPath) {
+      targetCwd = check.canonicalPath;
+    }
+  }
+
+  var trimmedCmd = (command || '').trim();
+
+  if (!targetCwd) {
+    var isCdToSandbox = /^\s*(?:cd|Set-Location|chdir)\s+(['"]?)(?:~[\\/]\.coderun[\\/]sandbox|\.coderun[\\/]sandbox|[a-zA-Z]:[\\/][^'"]*?\.coderun[\\/]sandbox)/i.test(trimmedCmd);
+    var hasSandboxRef = /(?:~[\\/]\.coderun[\\/]sandbox|\.coderun[\\/]sandbox|[a-zA-Z]:[\\/][^'"]*?\.coderun[\\/]sandbox)/i.test(trimmedCmd);
+    var isCdToWorkspace = /^\s*(?:cd|Set-Location|chdir)\s+(['"]?)(?:\.\.|[a-zA-Z]:[\\/][^'"]*)/i.test(trimmedCmd) && !hasSandboxRef;
+
+    if (isCdToSandbox || hasSandboxRef) {
+      targetCwd = canonicalSandbox;
+    } else if (isCdToWorkspace) {
+      targetCwd = canonicalWs;
+    } else {
+      targetCwd = canonicalWs;
+    }
   }
 
   var shellName = detectShellName(terminal);
   var platformName = getPlatform();
+
+  // Normalize sandbox paths in command so external executables don't fail on raw ~ or .coderun
+  command = expandSandboxPathInCommand(command, canonicalSandbox);
+
+  var isSameCwd = false;
+  if (targetCwd && sess.currentCwd) {
+    isSameCwd = isSameDirectoryPath(targetCwd, sess.currentCwd);
+  }
+
+  var isCdOnly = /^\s*(?:cd|Set-Location|chdir)\s+/i.test(trimmedCmd);
+
+  if (targetCwd && !isSameCwd) {
+    var cdCmd = getCdCommand(targetCwd, shellName);
+    if (isCdOnly) {
+      command = cdCmd;
+    } else {
+      var lowerSh = shellName.toLowerCase();
+      if (lowerSh.includes('powershell') || lowerSh.includes('pwsh')) {
+        command = cdCmd + '; ' + command;
+      } else {
+        command = cdCmd + ' && ' + command;
+      }
+    }
+    sess.currentCwd = targetCwd;
+  } else if (isCdOnly && targetCwd) {
+    command = getCdCommand(targetCwd, shellName);
+  }
+
+  var cwd = targetCwd || sess.currentCwd || workspace || undefined;
   var startedAt = Date.now();
   var sendEvent = sess.sendEventCallback;
 
@@ -702,6 +817,9 @@ export async function executeCommand(command, timeout, background, isInteractive
 
   // If interactive, send to VS Code terminal directly without child_process duplicate
   if (checkInteractiveCommand(command) || isInteractive) {
+    if (targetCwd && !isSameCwd) {
+      terminal.sendText(getCdCommand(targetCwd, shellName), true);
+    }
     terminal.sendText(command, true);
     var interactiveExecId = 'term_interactive_' + (++executionCounter);
     sess.lastSessionActive = true;
@@ -735,6 +853,11 @@ export async function executeCommand(command, timeout, background, isInteractive
   }
 
   // Non-interactive: Execute strictly via execFile
+  if (targetCwd && !isSameCwd) {
+    try {
+      terminal.sendText(getCdCommand(targetCwd, shellName), true);
+    } catch (_) {}
+  }
   var fallbackExecId = 'term_fallback_' + (++executionCounter);
   sess.activeExecId = fallbackExecId;
   if (sendEvent) {

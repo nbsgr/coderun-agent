@@ -2,9 +2,10 @@
 // Manages MCP server configurations, lifecycles, and tool registration in toolRegistry.
 
 import * as fs from 'fs/promises';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import * as toolRegistry from '../tools/toolRegistry.js';
 import { createMcpClient } from './mcpClient.js';
@@ -267,10 +268,47 @@ export async function registerServerTools(client, serverConfig) {
   return discoveredTools;
 }
 
-function detectSystemBrowser() {
+function findCoderunBrowserExecutable() {
+  var browserDir = path.join(os.homedir(), '.coderun', 'browser');
+  if (!existsSync(browserDir)) return '';
+
+  function searchDir(dir, depth) {
+    if (depth > 5) return '';
+    try {
+      var entries = readdirSync(dir, { withFileTypes: true });
+      for (var i = 0; i < entries.length; i++) {
+        var ent = entries[i];
+        var full = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+          var found = searchDir(full, depth + 1);
+          if (found) return found;
+        } else if (ent.isFile()) {
+          if (process.platform === 'win32' && (ent.name.toLowerCase() === 'chrome.exe' || ent.name.toLowerCase() === 'chromium.exe')) {
+            return full;
+          }
+          if (process.platform !== 'win32' && (ent.name === 'chrome' || ent.name === 'chromium')) {
+            return full;
+          }
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  return searchDir(browserDir, 0);
+}
+
+export function detectSystemBrowser() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH && existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
+
+  // Check user-accessible local browser cache first
+  var localBrowser = findCoderunBrowserExecutable();
+  if (localBrowser) {
+    return localBrowser;
+  }
+
   var candidates = [];
   if (process.platform === 'win32') {
     candidates = [
@@ -309,6 +347,56 @@ function detectSystemBrowser() {
     }
   }
   return '';
+}
+
+var browserInstallPromise = null;
+
+export function ensureLocalBrowserInstalled() {
+  var existing = detectSystemBrowser();
+  if (existing) {
+    return Promise.resolve(existing);
+  }
+
+  if (browserInstallPromise) {
+    return browserInstallPromise;
+  }
+
+  browserInstallPromise = new Promise(function setupBrowser(resolve) {
+    var browserDir = path.join(os.homedir(), '.coderun', 'browser');
+    try {
+      if (!existsSync(browserDir)) {
+        mkdirSync(browserDir, { recursive: true });
+      }
+    } catch (_) {}
+
+    console.log('[MCP MANAGER] No system browser detected. Installing Chromium into ' + browserDir + ' in background...');
+    var npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    var child = spawn(npxCmd, ['@puppeteer/browsers', 'install', 'chrome@stable', '--path', browserDir], {
+      shell: true,
+      stdio: 'ignore'
+    });
+
+    function onChildClose() {
+      var installed = findCoderunBrowserExecutable();
+      if (installed) {
+        console.log('[MCP MANAGER] Successfully installed local Chromium to: ' + installed);
+        resolve(installed);
+      } else {
+        console.warn('[MCP MANAGER] Local Chromium installation completed but executable not found.');
+        resolve('');
+      }
+    }
+
+    function onChildError(err) {
+      console.warn('[MCP MANAGER] Failed to install local Chromium:', err.message);
+      resolve('');
+    }
+
+    child.on('close', onChildClose);
+    child.on('error', onChildError);
+  });
+
+  return browserInstallPromise;
 }
 
 export async function startServer(serverConfig) {

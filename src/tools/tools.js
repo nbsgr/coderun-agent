@@ -557,11 +557,30 @@ async function* run_terminal(args, context) {
     return;
   }
 
+  var requestedCwd = args.cwd || null;
+  if (requestedCwd) {
+    if (requestedCwd === 'sandbox') {
+      requestedCwd = '~/.coderun/sandbox';
+    }
+    var safeCwdCheck = pathSecurity.resolveSafePath(requestedCwd, workspace);
+    if (!safeCwdCheck.safe) {
+      yield {
+        type: 'tool_result',
+        tool: 'run_terminal',
+        success: false,
+        command: command,
+        message: 'Security error: requested working directory is outside workspace and sandbox: ' + requestedCwd
+      };
+      return;
+    }
+    requestedCwd = safeCwdCheck.canonicalPath;
+  }
+
   yield { type: 'action', action: 'run_terminal', message: 'Running command: ' + command };
 
   try {
     dbg('[TOOLS] run_terminal: calling terminalManager.executeCommand');
-    var result = await terminalManager.executeCommand(command, timeout, background, isInteractive, sessionId, workspace);
+    var result = await terminalManager.executeCommand(command, timeout, background, isInteractive, sessionId, workspace, requestedCwd);
     dbg('[TOOLS] run_terminal: executeCommand RETURNED. exitCode:', result.exitCode, 'duration:', result.durationMs, 'success:', result.success);
 
     var toolSuccess = result.exitCode === 0 || (result.exitCode == null && result.success !== false);
@@ -703,6 +722,304 @@ async function* stop_terminal(args, context) {
 // =═══════════════════════════════════════════════════
 // CODE NAVIGATION, DIFF PATCHING, & HTTP TOOLS
 // =═══════════════════════════════════════════════════
+
+async function getVsCodeModule() {
+  try {
+    var mod = await import('vscode');
+    if (mod && (mod.commands || mod.default?.commands)) {
+      return mod.default || mod;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function getLineSnippet(lines, line1Based) {
+  var idx = line1Based - 1;
+  if (idx >= 0 && idx < lines.length) {
+    return lines[idx].trim();
+  }
+  return '';
+}
+
+function formatSymbolKind(kindNumber) {
+  var kinds = [
+    'File', 'Module', 'Namespace', 'Package', 'Class', 'Method', 'Property',
+    'Field', 'Constructor', 'Enum', 'Interface', 'Function', 'Variable',
+    'Constant', 'String', 'Number', 'Boolean', 'Array', 'Object', 'Key',
+    'Null', 'EnumMember', 'Struct', 'Event', 'Operator', 'TypeParameter'
+  ];
+  if (typeof kindNumber === 'number' && kindNumber >= 0 && kindNumber < kinds.length) {
+    return kinds[kindNumber];
+  }
+  return 'Symbol';
+}
+
+function flattenDocumentSymbols(docSymbols, targetFilePath) {
+  var flat = [];
+  function walk(items, parentName) {
+    if (!items || !items.length) return;
+    for (var i = 0; i < items.length; i++) {
+      var s = items[i];
+      var name = s.name || '';
+      var kind = formatSymbolKind(s.kind);
+      var line = s.range ? (s.range.start.line + 1) : 1;
+      var endLine = s.range ? (s.range.end.line + 1) : line;
+      flat.push({
+        name: name,
+        kind: kind,
+        container: parentName || '',
+        line: line,
+        end_line: endLine,
+        file_path: targetFilePath
+      });
+      if (s.children && s.children.length) {
+        walk(s.children, name);
+      }
+    }
+  }
+  walk(docSymbols, '');
+  return flat;
+}
+
+async function* get_definition(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var filePath = args.file_path || '';
+  var lineNum = Number(args.line) || 1;
+  var charNum = Number(args.character) || 1;
+
+  yield {
+    type: 'action',
+    action: 'get_definition',
+    message: 'Finding definition in ' + filePath + ' at line ' + lineNum + ':' + charNum
+  };
+
+  try {
+    var target = _safePath(workspace, filePath);
+    if (!existsSync(target)) {
+      yield { type: 'tool_result', tool: 'get_definition', success: false, message: 'File not found: ' + filePath };
+      return;
+    }
+
+    var vs = await getVsCodeModule();
+    var definitions = [];
+
+    if (vs && vs.Uri && vs.commands && vs.commands.executeCommand) {
+      var uri = vs.Uri.file(target);
+      var position = new vs.Position(Math.max(0, lineNum - 1), Math.max(0, charNum - 1));
+      var locResults = await vs.commands.executeCommand('vscode.executeDefinitionProvider', uri, position);
+
+      if (locResults && locResults.length) {
+        for (var i = 0; i < locResults.length; i++) {
+          var item = locResults[i];
+          var targetUri = item.uri || (item.targetUri ? item.targetUri : null);
+          var range = item.range || (item.targetRange ? item.targetRange : null);
+          if (!targetUri) continue;
+
+          var defFsPath = targetUri.fsPath || targetUri.path || '';
+          var relPath = workspace ? path.relative(workspace, defFsPath) : defFsPath;
+          var defLine = range ? (range.start.line + 1) : 1;
+          var defCol = range ? (range.start.character + 1) : 1;
+
+          var preview = '';
+          try {
+            if (existsSync(defFsPath)) {
+              var defContent = await fs.readFile(defFsPath, 'utf-8');
+              preview = getLineSnippet(defContent.split('\n'), defLine);
+            }
+          } catch (_) {}
+
+          definitions.push({
+            file_path: relPath.replace(/\\/g, '/'),
+            line: defLine,
+            character: defCol,
+            preview: preview
+          });
+        }
+      }
+    }
+
+    // Fallback if running outside VS Code or LSP returned nothing
+    if (definitions.length === 0) {
+      var sourceContent = await fs.readFile(target, 'utf-8');
+      var sourceLines = sourceContent.split('\n');
+      var lineIdx = lineNum - 1;
+      var curLine = (lineIdx >= 0 && lineIdx < sourceLines.length) ? sourceLines[lineIdx] : '';
+      var token = '';
+      if (curLine) {
+        var colIdx = Math.max(0, charNum - 1);
+        var before = curLine.slice(0, colIdx);
+        var after = curLine.slice(colIdx);
+        var mBefore = before.match(/[a-zA-Z0-9_$]+$/);
+        var mAfter = after.match(/^[a-zA-Z0-9_$]+/);
+        token = (mBefore ? mBefore[0] : '') + (mAfter ? mAfter[0] : '');
+      }
+
+      if (token) {
+        var localSymbols = parseSymbols(sourceContent, filePath);
+        for (var si = 0; si < localSymbols.length; si++) {
+          if (localSymbols[si].name === token) {
+            definitions.push({
+              file_path: filePath,
+              line: localSymbols[si].line,
+              character: 1,
+              preview: getLineSnippet(sourceLines, localSymbols[si].line)
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    yield {
+      type: 'tool_result',
+      tool: 'get_definition',
+      success: true,
+      file_path: filePath,
+      line: lineNum,
+      character: charNum,
+      definitions: definitions,
+      found: definitions.length > 0,
+      message: definitions.length > 0
+        ? 'Found ' + definitions.length + ' definition(s).'
+        : 'No definition found at specified position.'
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'get_definition', success: false, message: e.message };
+  }
+}
+
+async function* find_references(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var filePath = args.file_path || '';
+  var lineNum = Number(args.line) || 1;
+  var charNum = Number(args.character) || 1;
+
+  yield {
+    type: 'action',
+    action: 'find_references',
+    message: 'Finding references in ' + filePath + ' at line ' + lineNum + ':' + charNum
+  };
+
+  try {
+    var target = _safePath(workspace, filePath);
+    if (!existsSync(target)) {
+      yield { type: 'tool_result', tool: 'find_references', success: false, message: 'File not found: ' + filePath };
+      return;
+    }
+
+    var vs = await getVsCodeModule();
+    var references = [];
+
+    if (vs && vs.Uri && vs.commands && vs.commands.executeCommand) {
+      var uri = vs.Uri.file(target);
+      var position = new vs.Position(Math.max(0, lineNum - 1), Math.max(0, charNum - 1));
+      var refResults = await vs.commands.executeCommand('vscode.executeReferenceProvider', uri, position);
+
+      if (refResults && refResults.length) {
+        var fileCache = {};
+        for (var i = 0; i < Math.min(refResults.length, 50); i++) {
+          var ref = refResults[i];
+          var refFsPath = ref.uri ? (ref.uri.fsPath || ref.uri.path) : '';
+          if (!refFsPath) continue;
+          var relPath = workspace ? path.relative(workspace, refFsPath) : refFsPath;
+          var rLine = ref.range ? (ref.range.start.line + 1) : 1;
+          var rCol = ref.range ? (ref.range.start.character + 1) : 1;
+
+          var preview = '';
+          try {
+            if (!fileCache[refFsPath] && existsSync(refFsPath)) {
+              fileCache[refFsPath] = (await fs.readFile(refFsPath, 'utf-8')).split('\n');
+            }
+            if (fileCache[refFsPath]) {
+              preview = getLineSnippet(fileCache[refFsPath], rLine);
+            }
+          } catch (_) {}
+
+          references.push({
+            file_path: relPath.replace(/\\/g, '/'),
+            line: rLine,
+            character: rCol,
+            preview: preview
+          });
+        }
+      }
+    }
+
+    yield {
+      type: 'tool_result',
+      tool: 'find_references',
+      success: true,
+      file_path: filePath,
+      line: lineNum,
+      character: charNum,
+      count: references.length,
+      references: references,
+      message: references.length > 0
+        ? 'Found ' + references.length + ' reference(s).'
+        : 'No references found at specified position.'
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'find_references', success: false, message: e.message };
+  }
+}
+
+async function* document_symbols(args, context) {
+  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var filePath = args.file_path || '';
+
+  yield {
+    type: 'action',
+    action: 'document_symbols',
+    message: 'Extracting symbols from: ' + filePath
+  };
+
+  try {
+    var target = _safePath(workspace, filePath);
+    if (!existsSync(target)) {
+      yield { type: 'tool_result', tool: 'document_symbols', success: false, message: 'File not found: ' + filePath };
+      return;
+    }
+
+    var vs = await getVsCodeModule();
+    var symbols = [];
+
+    if (vs && vs.Uri && vs.commands && vs.commands.executeCommand) {
+      var uri = vs.Uri.file(target);
+      var docSymbols = await vs.commands.executeCommand('vscode.executeDocumentSymbolProvider', uri);
+      if (docSymbols && docSymbols.length) {
+        symbols = flattenDocumentSymbols(docSymbols, filePath);
+      }
+    }
+
+    // Headless fallback using regex parser
+    if (symbols.length === 0) {
+      var content = await fs.readFile(target, 'utf-8');
+      var parsed = parseSymbols(content, filePath);
+      for (var i = 0; i < parsed.length; i++) {
+        symbols.push({
+          name: parsed[i].name,
+          kind: parsed[i].type || 'symbol',
+          container: '',
+          line: parsed[i].line,
+          end_line: parsed[i].line,
+          file_path: filePath
+        });
+      }
+    }
+
+    yield {
+      type: 'tool_result',
+      tool: 'document_symbols',
+      success: true,
+      file_path: filePath,
+      count: symbols.length,
+      symbols: symbols,
+      message: 'Found ' + symbols.length + ' symbol(s) in ' + filePath + '.'
+    };
+  } catch (e) {
+    yield { type: 'tool_result', tool: 'document_symbols', success: false, message: e.message };
+  }
+}
 
 async function* list_symbols(args, context) {
   var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
@@ -1051,6 +1368,136 @@ async function* web_request(args, context) {
   }
 }
 
+function extractChecklistItems(text) {
+  var rawLines = String(text || '').split('\n');
+  var items = [];
+  var currentItem = null;
+
+  for (var i = 0; i < rawLines.length; i++) {
+    var rawLine = rawLines[i];
+    var trimmed = rawLine.trim();
+    if (!trimmed) continue;
+
+    var match = trimmed.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
+    if (match) {
+      if (currentItem) {
+        items.push(currentItem);
+      }
+      var mark = match[1];
+      var rawId = match[2] || match[3] || null;
+      var desc = match[4] || '';
+      var status = (mark === 'x' || mark === 'X' || mark === '✓') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
+      currentItem = {
+        mark: mark,
+        explicitId: rawId,
+        description: desc,
+        status: status
+      };
+    } else if (currentItem && (rawLine.startsWith('  ') || rawLine.startsWith('\t'))) {
+      // Indented continuation line of previous task description
+      currentItem.description += ' ' + trimmed;
+    }
+  }
+
+  if (currentItem) {
+    items.push(currentItem);
+  }
+
+  // Fallback: If no checkbox items found, match standard numbered list items
+  if (items.length === 0) {
+    var numAutoId = 0;
+    var numCurrent = null;
+
+    for (var j = 0; j < rawLines.length; j++) {
+      var nLine = rawLines[j];
+      var nTrimmed = nLine.trim();
+      if (!nTrimmed) continue;
+
+      var numMatch = nTrimmed.match(/^(?:#?(\d+)[.):]\s+|\b(\d+)[.)]\s+)(.*)$/);
+      if (numMatch) {
+        if (numCurrent) {
+          items.push(numCurrent);
+        }
+        numAutoId++;
+        var numRawId = numMatch[1] || numMatch[2] || String(numAutoId);
+        var cleanNumId = String(numRawId).replace(/[.:)]+$/, '');
+        var numDesc = numMatch[3] || nTrimmed;
+        numCurrent = {
+          mark: ' ',
+          explicitId: cleanNumId,
+          description: numDesc,
+          status: 'pending'
+        };
+      } else if (numCurrent && (nLine.startsWith('  ') || nLine.startsWith('\t'))) {
+        numCurrent.description += ' ' + nTrimmed;
+      }
+    }
+
+    if (numCurrent) {
+      items.push(numCurrent);
+    }
+  }
+
+  return items;
+}
+
+function getExistingPlanTasks(activePlan) {
+  var list = [];
+  if (!activePlan) return list;
+  if (activePlan.phases && Array.isArray(activePlan.phases)) {
+    for (var p = 0; p < activePlan.phases.length; p++) {
+      var phase = activePlan.phases[p];
+      if (phase.tasks && Array.isArray(phase.tasks)) {
+        for (var t = 0; t < phase.tasks.length; t++) {
+          list.push(phase.tasks[t]);
+        }
+      }
+    }
+  } else if (activePlan.steps && Array.isArray(activePlan.steps)) {
+    for (var s = 0; s < activePlan.steps.length; s++) {
+      list.push(activePlan.steps[s]);
+    }
+  }
+  return list;
+}
+
+function resolveMatchingTaskId(explicitId, desc, existingTasks, usedTaskIds, fallbackOrder) {
+  if (explicitId) {
+    var expStr = String(explicitId).trim();
+    usedTaskIds[expStr] = true;
+    return expStr;
+  }
+
+  var lowerDesc = String(desc || '').toLowerCase().trim();
+  if (lowerDesc && existingTasks && existingTasks.length) {
+    // 1. Exact description match
+    for (var i = 0; i < existingTasks.length; i++) {
+      var exId = String(existingTasks[i].id).trim();
+      if (usedTaskIds[exId]) continue;
+      var exDesc = String(existingTasks[i].description || '').toLowerCase().trim();
+      if (exDesc === lowerDesc) {
+        usedTaskIds[exId] = true;
+        return exId;
+      }
+    }
+
+    // 2. Substring match
+    for (var j = 0; j < existingTasks.length; j++) {
+      var exIdSub = String(existingTasks[j].id).trim();
+      if (usedTaskIds[exIdSub]) continue;
+      var exDescSub = String(existingTasks[j].description || '').toLowerCase().trim();
+      if (exDescSub && (exDescSub.includes(lowerDesc) || lowerDesc.includes(exDescSub))) {
+        usedTaskIds[exIdSub] = true;
+        return exIdSub;
+      }
+    }
+  }
+
+  var fallbackId = String(fallbackOrder);
+  usedTaskIds[fallbackId] = true;
+  return fallbackId;
+}
+
 async function* update_plan(args, context) {
   yield { type: 'action', action: 'update_plan', message: 'Updating execution plan' };
 
@@ -1065,28 +1512,24 @@ async function* update_plan(args, context) {
 
   try {
     var activePlan = runtime.getCurrentPlan(sessionId);
-    var totalTasks = 0;
-    var completedTasks = 0;
-    var lines = planText.split('\n');
-    var taskLineIndex = 0;
+    var existingTasks = getExistingPlanTasks(activePlan);
+    var parsedItems = extractChecklistItems(planText);
+    var usedTaskIds = {};
 
-    for (var l = 0; l < lines.length; l++) {
-      var line = lines[l].trim();
-      var doneMatch = line.match(/^[-*]\s*\[([ \/xX!→>✓])\]\s*(?:#?([0-9a-zA-Z_.-]+)\s*:?|\b(\d+)[.)]\s*)?\s*(.*)$/);
-      if (doneMatch) {
-        taskLineIndex++;
-        totalTasks++;
-        var mark = doneMatch[1];
-        var taskId = doneMatch[2] || doneMatch[3] || String(taskLineIndex);
-        var desc = doneMatch[4] || line;
-        var status = (mark === 'x' || mark === 'X' || mark === '✓') ? 'completed' : (mark === '!' ? 'failed' : ((mark === '→' || mark === '>' || mark === '/') ? 'active' : 'pending'));
-        if (status === 'completed') {
-          completedTasks++;
-        }
-        if (activePlan) {
-          planningManager.updateTaskStatus(activePlan.id, taskId, status, desc, sessionId);
-          goalTracker.updateGoalStatus(taskId, status, sessionId);
-        }
+    var totalTasks = parsedItems.length;
+    var completedTasks = 0;
+
+    for (var itemIdx = 0; itemIdx < parsedItems.length; itemIdx++) {
+      var item = parsedItems[itemIdx];
+      var resolvedId = resolveMatchingTaskId(item.explicitId, item.description, existingTasks, usedTaskIds, itemIdx + 1);
+
+      if (item.status === 'completed') {
+        completedTasks++;
+      }
+
+      if (activePlan) {
+        planningManager.updateTaskStatus(activePlan.id, resolvedId, item.status, item.description, sessionId);
+        goalTracker.updateGoalStatus(resolvedId, item.status, sessionId, item.description);
       }
     }
 
@@ -1320,6 +1763,35 @@ export function registerAllTools() {
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" } },
     required: ['file_path']
   });
+  reg('get_definition', get_definition, {
+    aliases: ['goto_definition', 'go_to_definition'],
+    category: 'search',
+    description: 'Jump directly to the definition of a symbol at the given file position using VS Code language intelligence (LSP).',
+    parameters: {
+      file_path: { type: 'string', description: 'Relative path to the source file' },
+      line: { type: 'integer', description: '1-based line number' },
+      character: { type: 'integer', description: '1-based column/character number' }
+    },
+    required: ['file_path', 'line']
+  });
+  reg('find_references', find_references, {
+    aliases: ['find_usages'],
+    category: 'search',
+    description: 'Find all references, usages, and call-sites of a symbol across the workspace using VS Code language intelligence (LSP).',
+    parameters: {
+      file_path: { type: 'string', description: 'Relative path to the source file' },
+      line: { type: 'integer', description: '1-based line number' },
+      character: { type: 'integer', description: '1-based column/character number' }
+    },
+    required: ['file_path', 'line']
+  });
+  reg('document_symbols', document_symbols, {
+    aliases: ['outline', 'get_symbols'],
+    category: 'search',
+    description: 'Retrieve the hierarchical symbol tree (functions, classes, methods, variables) and line ranges for an entire file.',
+    parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" } },
+    required: ['file_path']
+  });
 
   // ── Terminal ───────────────────────────────────────
   reg('run_terminal', run_terminal, {
@@ -1328,6 +1800,7 @@ export function registerAllTools() {
     description: 'Execute a shell command. Pass empty command to check terminal output.',
     parameters: {
       command: { type: 'string', description: 'The command to execute' },
+      cwd: { type: 'string', description: 'Optional working directory. Defaults to workspace root, or can be set to sandbox ~/.coderun/sandbox' },
       is_interactive: { type: 'boolean', description: 'Set true ONLY if the command is interactive and expects prompt/user input (e.g. Read-Host, npm init, prompts). Set false (default) for self-executing commands (e.g. builds, tests, scripts, git commands) that run to completion.' },
       timeout: { type: 'integer', description: 'Max seconds (default 30)' },
       background: { type: 'boolean', description: 'Run without waiting' }

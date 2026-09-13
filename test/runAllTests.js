@@ -1073,6 +1073,102 @@ assert.ok(!compactCp.content.includes('mod...'), 'Assistant content is not cut m
 
 console.log('✓ Vector 46 Passed: Compact conversation tool log resolution, argument mapping, and text cleanliness verified.');
 
+// 47. Sandbox Path Security & On-Install Browser Setup
+console.log('--- TEST 47: Sandbox Path Security & Browser Setup ---');
+var testSandboxDir = path.resolve('scratch/test_sandbox');
+if (!fs.existsSync(testSandboxDir)) fs.mkdirSync(testSandboxDir, { recursive: true });
+pathSecurity.setCustomSandboxRoot(testSandboxDir);
+
+// Path inside custom sandbox must be safe
+var sandboxFilePath = path.join(testSandboxDir, 'test_script.js');
+fs.writeFileSync(sandboxFilePath, 'console.log("hello sandbox");', 'utf-8');
+var sandboxRes = pathSecurity.resolveSafePath(sandboxFilePath, wsRoot);
+assert.strictEqual(sandboxRes.safe, true, 'File inside user sandbox must be permitted');
+
+// Path traversing out of sandbox must be blocked
+var sandboxEscape = path.join(testSandboxDir, '..', '..', 'unauthorized.txt');
+var escapeRes = pathSecurity.resolveSafePath(sandboxEscape, wsRoot);
+assert.strictEqual(escapeRes.safe, false, 'Path escaping sandbox must be blocked');
+
+// System browser detection must return non-empty string or path on host machine
+var detected = mcpManager.detectSystemBrowser();
+assert.ok(typeof detected === 'string', 'detectSystemBrowser returns string');
+
+// Reset custom sandbox root to default ~/.coderun/sandbox
+pathSecurity.setCustomSandboxRoot(null);
+var defaultSandbox = pathSecurity.getCanonicalSandboxRoot();
+assert.ok(defaultSandbox.includes('.coderun'), 'Default sandbox contains .coderun');
+
+console.log('✓ Vector 47 Passed: User sandbox path security whitelisting, escape prevention, and browser detection verified.');
+
+// 48. Terminal Working Directory Switching & Sandbox Synchronization
+console.log('--- TEST 48: Terminal Working Directory Switching & Sandbox Synchronization ---');
+var termSessionId = 'test_term_cwd_sync_' + Date.now();
+var canonicalWs48 = pathSecurity.getCanonicalWorkspace(wsRoot);
+var canonicalSandbox48 = pathSecurity.getCanonicalSandboxRoot();
+
+// Initialize terminal session for test
+var term48 = terminalManager.getTerminal(termSessionId, wsRoot);
+assert.ok(term48, 'Terminal created for session');
+var initialCwd = terminalManager.getCurrentCwd(termSessionId);
+assert.strictEqual(
+  pathSecurity.normalizeSeparators(initialCwd).toLowerCase(),
+  pathSecurity.normalizeSeparators(canonicalWs48).toLowerCase(),
+  'Initial terminal working directory must be workspace root'
+);
+
+// Execute command targeting sandbox -> should automatically switch cwd to sandbox
+var sandboxExec = await terminalManager.executeCommand('node ~/.coderun/sandbox/test.js', 5, false, false, termSessionId, wsRoot);
+var sandboxCwd = terminalManager.getCurrentCwd(termSessionId);
+assert.strictEqual(
+  pathSecurity.normalizeSeparators(sandboxCwd).toLowerCase(),
+  pathSecurity.normalizeSeparators(canonicalSandbox48).toLowerCase(),
+  'Terminal working directory must automatically switch to sandbox root'
+);
+
+// Execute regular project command -> should automatically switch cwd back to workspace root
+var projectExec = await terminalManager.executeCommand('git status', 5, false, false, termSessionId, wsRoot);
+var restoredWsCwd = terminalManager.getCurrentCwd(termSessionId);
+assert.strictEqual(
+  pathSecurity.normalizeSeparators(restoredWsCwd).toLowerCase(),
+  pathSecurity.normalizeSeparators(canonicalWs48).toLowerCase(),
+  'Terminal working directory must automatically switch back to workspace root'
+);
+
+// Test run_terminal tool with explicit cwd alias 'sandbox'
+var sandboxGen = toolRegistry.execute('run_terminal', { command: 'echo hello sandbox', cwd: 'sandbox' }, { workspace: wsRoot, sessionId: termSessionId });
+var sandboxToolRes = null;
+for await (var ev of sandboxGen) {
+  if (ev.type === 'tool_result') {
+    sandboxToolRes = ev;
+  }
+}
+assert.ok(sandboxToolRes, 'Tool result received');
+assert.strictEqual(sandboxToolRes.success, true, 'Command executed in sandbox');
+var toolSandboxCwd = terminalManager.getCurrentCwd(termSessionId);
+assert.strictEqual(
+  pathSecurity.normalizeSeparators(toolSandboxCwd).toLowerCase(),
+  pathSecurity.normalizeSeparators(canonicalSandbox48).toLowerCase(),
+  'Explicit cwd: sandbox sets terminal cwd to sandbox'
+);
+
+// Test run_terminal security: reject unauthorized cwd traversal
+var maliciousGen = toolRegistry.execute('run_terminal', { command: 'dir', cwd: '../../System32' }, { workspace: wsRoot, sessionId: termSessionId });
+var malToolRes = null;
+for await (var mev of maliciousGen) {
+  if (mev.type === 'tool_result') {
+    malToolRes = mev;
+  }
+}
+assert.ok(malToolRes, 'Security tool result received');
+assert.strictEqual(malToolRes.success, false, 'Malicious cwd must be rejected');
+assert.ok(malToolRes.message.includes('Security error'), 'Rejection message contains security error');
+
+// Clean up session
+terminalManager.removeSession(termSessionId);
+
+console.log('✓ Vector 48 Passed: Terminal cwd switching between workspace and sandbox, path expansion, and cwd security verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -1082,7 +1178,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 46 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 48 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

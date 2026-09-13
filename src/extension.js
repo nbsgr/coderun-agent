@@ -192,8 +192,21 @@ export async function activate(context) {
   } catch (mcpInitErr) {
     console.error('[CODERUN] MCP Manager init failed:', mcpInitErr);
   }
+  // Ensure user-accessible sandbox directory exists (~/.coderun/sandbox/)
+  try {
+    pathSecurity.getCanonicalSandboxRoot();
+  } catch (sbErr) {
+    console.warn('[CODERUN] Could not initialize sandbox directory:', sbErr.message);
+  }
 
-
+  // Check or background-install Chromium browser for Puppeteer MCP
+  try {
+    mcpManager.ensureLocalBrowserInstalled().catch(function onBrowserErr(err) {
+      console.warn('[CODERUN] Browser setup error:', err.message);
+    });
+  } catch (brErr) {
+    console.warn('[CODERUN] Could not trigger browser check:', brErr.message);
+  }
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());

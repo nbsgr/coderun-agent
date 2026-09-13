@@ -20,6 +20,19 @@ function normalizePathSlashes(p) {
   return String(p || '').replace(/\\/g, '/');
 }
 
+function computeRelPath(fullPath, canonicalWs) {
+  var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
+  var normFull = normalizePathSlashes(fullPath);
+  var normSandbox = normalizePathSlashes(canonicalSandbox);
+  var isWindows = process.platform === 'win32';
+
+  if (isWindows ? normFull.toLowerCase().startsWith(normSandbox.toLowerCase()) : normFull.startsWith(normSandbox)) {
+    var rel = path.relative(canonicalSandbox, fullPath);
+    return '.coderun/sandbox/' + normalizePathSlashes(rel);
+  }
+  return normalizePathSlashes(path.relative(canonicalWs, fullPath));
+}
+
 // Create a checkpoint before modifying a file.
 // Captures the file's current content in SQLite.
 export async function createCheckpoint(filePath, workspace, sessionId, label) {
@@ -33,7 +46,7 @@ export async function createCheckpoint(filePath, workspace, sessionId, label) {
 
   var fullPath = safeCheck.canonicalPath;
   var canonicalWs = pathSecurity.getCanonicalWorkspace(workspace);
-  var relFilePath = normalizePathSlashes(path.relative(canonicalWs, fullPath));
+  var relFilePath = computeRelPath(fullPath, canonicalWs);
   var content = '';
   var existed = false;
 
@@ -108,7 +121,7 @@ export async function createFolderCheckpoint(folderPath, workspace, sessionId, l
 
   var fullPath = safeCheck.canonicalPath;
   var canonicalWs = pathSecurity.getCanonicalWorkspace(workspace);
-  var relFolderPath = normalizePathSlashes(path.relative(canonicalWs, fullPath));
+  var relFolderPath = computeRelPath(fullPath, canonicalWs);
 
   var id = 'cp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
@@ -140,7 +153,7 @@ export async function createFolderDeleteCheckpoint(folderPath, workspace, sessio
 
   var fullPath = safeCheck.canonicalPath;
   var canonicalWs = pathSecurity.getCanonicalWorkspace(workspace);
-  var relFolderPath = normalizePathSlashes(path.relative(canonicalWs, fullPath));
+  var relFolderPath = computeRelPath(fullPath, canonicalWs);
 
   var snapshot = {};
   try {
@@ -181,7 +194,7 @@ export async function undoFile(filePath, workspace, sessionId) {
 
   var fullPath = safeCheck.canonicalPath;
   var canonicalWs = pathSecurity.getCanonicalWorkspace(workspace);
-  var relFilePath = normalizePathSlashes(path.relative(canonicalWs, fullPath));
+  var relFilePath = computeRelPath(fullPath, canonicalWs);
 
   var checkpoints = projectKnowledge.getCheckpoints(relFilePath, sessionId);
   if (!checkpoints || !checkpoints.length) {

@@ -4,6 +4,7 @@
 import { SYSTEM_PROMPT } from './constants.js';
 import { loadRules } from '../context/rulesLoader.js';
 import { compactToolResult } from '../context/compactionManager.js';
+import * as pathSecurity from '../tools/pathSecurity.js';
 
 function formatMemoryItem(m) {
   return '- ' + m;
@@ -88,6 +89,13 @@ export async function buildMessages(userPrompt, options) {
   if (workspace) {
     systemContent += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
     systemContent += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
+  }
+  var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
+  if (canonicalSandbox) {
+    systemContent += '\n\n## USER SANDBOX DIRECTORY\nThe dedicated user sandbox directory is: ' + canonicalSandbox;
+    systemContent += '\nYou can safely use this folder for scratch work, experimentation, temporary files, or isolated scripts.';
+    systemContent += '\n- To read, write, edit, or delete sandbox files, use relative alias `~/.coderun/sandbox/<file>` or `.coderun/sandbox/<file>`.';
+    systemContent += '\n- In `run_terminal`, you can set cwd: \'~/.coderun/sandbox\' or run commands referencing sandbox files. The terminal automatically switches to the sandbox when running sandbox commands, and automatically switches back to the workspace root for workspace commands.';
   }
   // Shell/platform awareness for terminal command syntax
   var shellName = options.shellName || '';

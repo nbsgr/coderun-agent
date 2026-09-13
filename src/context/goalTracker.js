@@ -111,21 +111,37 @@ export function syncWithPlan(plan, sessionId) {
   saveGoals(data, sid);
 }
 
-export function updateGoalStatus(goalId, status, sessionId) {
+export function updateGoalStatus(goalId, status, sessionId, description) {
   var sid = sessionId || 'default';
   var data = loadGoals(sid);
   var goal = null;
+  var targetId = String(goalId || '').trim();
+
   for (var i = 0; i < data.subgoals.length; i++) {
-    if (data.subgoals[i].id === goalId) {
+    if (String(data.subgoals[i].id).trim() === targetId) {
       goal = data.subgoals[i];
       break;
     }
   }
+
+  // Fallback by description matching if ID didn't match directly
+  if (!goal && description) {
+    var lowerDesc = String(description).toLowerCase().trim();
+    for (var di = 0; di < data.subgoals.length; di++) {
+      var subText = String(data.subgoals[di].text || '').toLowerCase().trim();
+      if (subText === lowerDesc || subText.includes(lowerDesc) || lowerDesc.includes(subText)) {
+        goal = data.subgoals[di];
+        break;
+      }
+    }
+  }
+
   if (goal) {
     goal.status = status;
+    var effectiveGoalId = goal.id;
     if (status === 'active' || status === 'in_progress') {
-      data.activeTaskId = goalId;
-    } else if (data.activeTaskId === goalId && (status === 'completed' || status === 'failed' || status === 'skipped')) {
+      data.activeTaskId = effectiveGoalId;
+    } else if (data.activeTaskId === effectiveGoalId && (status === 'completed' || status === 'failed' || status === 'skipped')) {
       var next = null;
       for (var k = 0; k < data.subgoals.length; k++) {
         var st = data.subgoals[k].status;

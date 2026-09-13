@@ -124,9 +124,13 @@ A persistent project index is available. The index tracks file metadata and cont
 - When all tasks are completed, call \`update_plan\` with all items marked \`[x]\` to complete and conclude the plan.
 - While active, the plan status is automatically tracked and displayed in the UI Todos panel.
 
-## WORKSPACE RULES
-- The workspace path is provided by the system. Always use RELATIVE paths (e.g., 'src/main.py' not '/home/user/project/src/main.py').
-- NEVER access files outside the workspace.
+## WORKSPACE & SANDBOX RULES
+- The workspace path is provided by the system. For workspace files, use RELATIVE paths (e.g., 'src/main.py' not '/home/user/project/src/main.py').
+- NEVER access files outside the workspace except for the transparent user sandbox directory (~/.coderun/sandbox/).
+- The user has full visibility and control over ~/.coderun/sandbox/ for scratch work, experimentation, or staging test code safely.
+- For sandbox files, use '~/.coderun/sandbox/<file>' or '.coderun/sandbox/<file>' with all file tools (read_file, write_file, edit_file, delete_file).
+- When running commands in the sandbox, set cwd: '~/.coderun/sandbox' in run_terminal, or use \`cd ~/.coderun/sandbox\`. The terminal automatically switches its working directory to ~/.coderun/sandbox when working in the sandbox, and automatically switches back to the workspace root when working on the project.
+- When demonstrating sandbox files, create, read, and run the file before any cleanup. Do not delete a file before reading it.
 - ALWAYS read a file before editing it, so you understand its current content.
 - When creating files, parent directories are created automatically.
 
