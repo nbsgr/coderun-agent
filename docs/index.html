@@ -1710,6 +1710,7 @@
           <li><a href="#context-optimization" class="sidebar-link">Context Optimization</a></li>
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
+          <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
           <li><a href="#test-suite" class="sidebar-link">46 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
@@ -1736,6 +1737,7 @@
       <!-- Architecture -->
       <section id="architecture">
         <h2 class="section-heading">🧠 Architecture & The Agentic Loop</h2>
+        <span id="planning-todos"></span>
         <p>
           CodeRun operates on a rigorous multi-step cognitive pipeline: <strong>Think → Plan → Act → Verify</strong>. Rather than streaming text directly into your editor, CodeRun acts as an autonomous agent reasoning over project context, proposing structured tool actions, enforcing permission safety boundaries, and verifying changes on disk.
         </p>
@@ -2258,6 +2260,7 @@ function sanitizeGeminiSchema(schema) {
           The <strong>Model Context Protocol (MCP)</strong> is an open specification enabling AI models to safely access external data sources and execution runtimes. CodeRun provides a full <strong>stdio</strong> and <strong>SSE/HTTP</strong> client, allowing the agent to dynamically discover tools, read schemas, and invoke functions in real-time.
         </p>
 
+        <span id="builtin-mcp"></span>
         <div class="card-grid">
           <div class="feature-card">
             <div class="card-icon">🌐</div>
@@ -2878,6 +2881,7 @@ function sanitizeGeminiSchema(schema) {
       <!-- Context Optimization -->
       <section id="context-optimization">
         <h2 class="section-heading">⚡ Multi-Turn Context Optimization & Historical Tool Compaction</h2>
+        <span id="diff-concurrency"></span>
         <p>
           In multi-turn coding sessions, repeated tool outputs (such as large file reads or verbose build logs from earlier turns) can quickly saturate the LLM's context window. CodeRun solves this with intelligent two-phase context optimization:
         </p>
@@ -2925,6 +2929,48 @@ function sanitizeGeminiSchema(schema) {
         <p>
           Rules follow a strict precedence hierarchy: <strong>Global Rules → Workspace Rules → Active Chat Instructions</strong>.
         </p>
+      </section>
+
+      <!-- Adversarial Test Suite -->
+      <section id="engineering-contract">
+        <h2 class="section-heading">🧭 Current Engineering Contract</h2>
+        <p>
+          CodeRun keeps its implementation deliberately small and explicit. These conventions apply to source files, scripts, webview code, and tests so changes remain easy to review and safe to run.
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🟨</div>
+            <div class="card-title">Plain JavaScript</div>
+            <div class="card-text">The implementation uses ES JavaScript in <code>.js</code> and <code>.cjs</code> files. There is no TypeScript, JSX, class-based runtime, or build-time type layer.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🧩</div>
+            <div class="card-title">Named Functions</div>
+            <div class="card-text">Traditional named function declarations are preferred. Arrow functions, IIFEs, assigned function expressions, and JSDoc <code>@param</code> tags are excluded from the project style.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🔐</div>
+            <div class="card-title">Session Ownership</div>
+            <div class="card-text">Permissions, terminal sessions, diffs, checkpoints, agent state, and execution traces are keyed by conversation/session ID to prevent cross-chat interference.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🪵</div>
+            <div class="card-title">Authoritative Traces</div>
+            <div class="card-text">Completed and stopped runs are terminal. Late cleanup cannot downgrade them, and incomplete tool history is not treated as proof of successful completion.</div>
+          </div>
+        </div>
+        <div class="callout info">
+          <div class="callout-header">Intentional SQL.js API usage</div>
+          <code>projectKnowledge.js</code> uses prepared-statement <code>.bind(params)</code> calls to bind database parameters. This is an SQL.js API and is distinct from JavaScript function binding.
+        </div>
+        <div class="code-container">
+          <div class="code-header">
+            <span>Validation</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>npm test
+node --check src/agents/agentLoop.js</code></pre>
+        </div>
       </section>
 
       <!-- Adversarial Test Suite -->
@@ -2987,6 +3033,7 @@ function sanitizeGeminiSchema(schema) {
         <li class="toc-item"><a href="#token-tracking" class="toc-link">Live Token Gauge</a></li>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
+        <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
         <li class="toc-item"><a href="#test-suite" class="toc-link">46 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting & FAQ</a></li>
       </ul>

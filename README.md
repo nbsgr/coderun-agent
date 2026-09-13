@@ -19,6 +19,22 @@ Whether you are running completely offline with local models via **Ollama**, lev
 
 ---
 
+## 🧭 Current Engineering Contract
+
+The repository follows a deliberately small JavaScript architecture:
+
+* **Plain ES JavaScript only:** Application, webview, script, and test implementations use `.js` or `.cjs`; there is no TypeScript or JSX build layer.
+* **Traditional functions:** New code uses named `function name() {}` declarations. Arrow functions, IIFEs, variable-assigned function expressions, JavaScript `.bind()`, `class` declarations, and JSDoc `@param` tags are not part of the project style.
+* **Intentional SQL.js exception:** `projectKnowledge.js` calls SQL.js prepared-statement `.bind(params)` to bind query parameters. This is a database API call, not JavaScript function binding.
+* **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
+* **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
+* **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
+* **Focused validation is standard:** Run `npm test` for the 46-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+
+These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
+
+---
+
 ## 🌟 Key Highlights & Features
 
 ### 🤖 Multi-Provider Model Orchestration
