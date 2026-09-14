@@ -561,7 +561,12 @@ async function sendCurrentSettings(webview) {
       showThinking: cfg.showThinking,
       confirmDangerous: cfg.confirmDangerous,
       enableTools: cfg.enableTools !== false,
-      hasApiKey: hasKey
+      hasApiKey: hasKey,
+      subagentProvider: config.getConfig().subagentProvider || '',
+      subagentModel: config.getConfig().subagentModel || '',
+      subagentMaxConcurrent: config.getConfig().subagentMaxConcurrent || 10,
+      subagentMaxIterations: config.getConfig().subagentMaxIterations || 20,
+      subagentMaxDepth: config.getConfig().subagentMaxDepth || 1
     },
     providerConfigs: providerConfigs,
     providerHasKeyMap: hasKeyMap
@@ -1083,9 +1088,28 @@ async function handleFrontendMessage(message, webview) {
           if (message.settings.showThinking !== undefined) settingsToUpdate.showThinking = message.settings.showThinking;
           if (message.settings.confirmDangerous !== undefined) settingsToUpdate.confirmDangerous = message.settings.confirmDangerous;
           if (message.settings.enableTools !== undefined) settingsToUpdate.enableTools = message.settings.enableTools;
+          if (message.settings.subagentProvider !== undefined) settingsToUpdate.subagentProvider = message.settings.subagentProvider;
+          if (message.settings.subagentModel !== undefined) settingsToUpdate.subagentModel = message.settings.subagentModel;
+          if (message.settings.subagentMaxConcurrent !== undefined) settingsToUpdate.subagentMaxConcurrent = message.settings.subagentMaxConcurrent;
+          if (message.settings.subagentMaxIterations !== undefined) settingsToUpdate.subagentMaxIterations = message.settings.subagentMaxIterations;
+          if (message.settings.subagentMaxDepth !== undefined) settingsToUpdate.subagentMaxDepth = message.settings.subagentMaxDepth;
 
           console.log('[CODERUN] Updating VS Code settings:', JSON.stringify(settingsToUpdate));
           await config.updateSettings(settingsToUpdate, vscode.ConfigurationTarget.Global);
+          try {
+            var subagentMgr = await import('./agents/subagentManager.js');
+            subagentMgr.configureLimits({
+              maxConcurrent: settingsToUpdate.subagentMaxConcurrent,
+              maxIterations: settingsToUpdate.subagentMaxIterations,
+              maxDepth: settingsToUpdate.subagentMaxDepth
+            });
+            subagentMgr.configureSubagentDefaults({
+              provider: settingsToUpdate.subagentProvider || '',
+              model: settingsToUpdate.subagentModel || ''
+            });
+          } catch (limErr) {
+            console.error('[CODERUN] Failed to update subagent limits:', limErr);
+          }
           console.log('[CODERUN] Settings saved successfully');
 
           var savedProvider = message.settings.provider || config.getConfig().provider;

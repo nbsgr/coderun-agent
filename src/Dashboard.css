@@ -627,6 +627,21 @@ textarea {
   width: 100%;
 }
 
+.cr-subagent-id-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
 .cr-subagent-markdown-output {
   margin-top: 8px;
   line-height: 1.6;
@@ -3965,4 +3980,301 @@ body.vscode-light .cr-rules-divider {
 
 .cr-btn-modal-primary:hover {
   background: #106ebe;
+}
+
+/* ==========================================
+   SUBAGENT SETTINGS PANEL
+   ========================================== */
+
+.cr-subagent-settings-panel {
+  flex: 1;
+  padding: 20px 20px 60px 20px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  background: #0b0f17 !important;
+}
+
+.cr-subagent-top-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cr-subagent-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.cr-subagent-header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cr-subagent-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #111827;
+  border: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.cr-subagent-header-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f0f6fc;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.cr-subagent-header-sub {
+  font-size: 12px;
+  color: #8b949e;
+  margin: 3px 0 0 0;
+  line-height: 1.3;
+}
+
+.cr-subagent-header-divider {
+  height: 1px;
+  background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  margin-top: 2px;
+}
+
+/* Active Runtime Card */
+.cr-subagent-active-card {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.cr-subagent-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cr-subagent-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #388bfd;
+  box-shadow: 0 0 8px rgba(56, 139, 253, 0.6);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.cr-subagent-card-heading {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.cr-subagent-active-details {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cr-subagent-status-pill {
+  flex: 1;
+  min-width: 140px;
+  background: #0b0f17;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cr-subagent-pill-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.cr-subagent-pill-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.cr-subagent-badge-active {
+  color: #58a6ff !important;
+}
+
+/* Subagent Form & Section Cards */
+.cr-subagent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cr-subagent-section-card {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.cr-subagent-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.cr-subagent-section-icon {
+  font-size: 16px;
+  line-height: 1.2;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.cr-subagent-section-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f0f6fc;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.cr-subagent-section-desc {
+  font-size: 11.5px;
+  color: #8b949e;
+  margin: 2px 0 0 0;
+  line-height: 1.35;
+}
+
+.cr-subagent-form .cr-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cr-subagent-form .cr-input-group label {
+  font-size: 12px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.cr-field-hint {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.cr-subagent-form select,
+.cr-subagent-form input[type="text"],
+.cr-subagent-form input[type="number"] {
+  box-sizing: border-box !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  line-height: 34px !important;
+  padding: 0 12px !important;
+  border: 1px solid #2d3748 !important;
+  border-radius: 6px !important;
+  background-color: #0b0f17 !important;
+  color: #f0f6fc !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  outline: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+  width: 100% !important;
+}
+
+.cr-subagent-form select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: var(--cr-select-arrow) !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 10px !important;
+  padding-right: 32px !important;
+  cursor: pointer !important;
+}
+
+.cr-subagent-form select:focus,
+.cr-subagent-form input[type="text"]:focus,
+.cr-subagent-form input[type="number"]:focus {
+  border-color: #388bfd !important;
+  box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.25) !important;
+}
+
+.cr-subagent-actions {
+  display: flex;
+  padding-top: 4px;
+}
+
+.cr-subagent-save-btn {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 24px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  background: #2563eb !important;
+  border: 1px solid #2563eb !important;
+  color: #ffffff !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3) !important;
+}
+
+.cr-subagent-save-btn:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.45) !important;
+}
+
+.cr-subagent-combobox {
+  max-width: 100% !important;
+  width: 100% !important;
+  position: relative !important;
+}
+
+.cr-subagent-combobox input[type="text"] {
+  cursor: pointer !important;
+}
+
+.cr-subagent-combobox .cr-combobox-list {
+  top: 38px !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  z-index: 1000 !important;
 }

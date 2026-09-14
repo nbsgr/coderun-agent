@@ -261,9 +261,17 @@ function initializeDashboard() {
     if (vscodeSettings.enableTools !== undefined) state.settings.enableTools = vscodeSettings.enableTools;
     if (vscodeSettings.hasApiKey !== undefined) state.hasApiKey = vscodeSettings.hasApiKey;
 
+    // Subagent settings
+    if (vscodeSettings.subagentProvider !== undefined) state.settings.subagentProvider = vscodeSettings.subagentProvider;
+    if (vscodeSettings.subagentModel !== undefined) state.settings.subagentModel = vscodeSettings.subagentModel;
+    if (vscodeSettings.subagentMaxConcurrent !== undefined) state.settings.subagentMaxConcurrent = vscodeSettings.subagentMaxConcurrent;
+    if (vscodeSettings.subagentMaxIterations !== undefined) state.settings.subagentMaxIterations = vscodeSettings.subagentMaxIterations;
+    if (vscodeSettings.subagentMaxDepth !== undefined) state.settings.subagentMaxDepth = vscodeSettings.subagentMaxDepth;
+
     updateSettingsUI();
     updateModelBadge();
     updateModelSelectValue();
+    renderSubagentSettings();
   }
   window.applyVscodeSettings = applyVscodeSettings;
 
@@ -455,6 +463,8 @@ function initializeDashboard() {
     for (var ri = 0; ri < removeBtns.length; ri++) {
       removeBtns[ri].onclick = handleRemoveProviderBtnClick;
     }
+
+    renderSubagentSettings();
   }
 
   /**
@@ -572,6 +582,7 @@ function initializeDashboard() {
             '<button id="rail-mcp" class="cr-rail-btn" title="Model Context Protocol (MCP)">' +
               '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>' +
             '</button>' +
+            '<button id="rail-subagents" class="cr-rail-btn" title="Subagent Settings">🤖</button>' +
           '</nav>' +
           '<main class="cr-viewport">' +
             '<section id="panel-chat" class="cr-panel active">' +
@@ -772,6 +783,90 @@ function initializeDashboard() {
                 '</div>' +
                 '<div id="mcpServerList" class="cr-mcp-list">' +
                   '<div class="cr-mcp-empty">Loading MCP servers...</div>' +
+                '</div>' +
+              '</div>' +
+            '</section>' +
+            '<section id="panel-subagents" class="cr-panel">' +
+              '<div class="cr-settings cr-subagent-settings-panel">' +
+                '<div class="cr-subagent-top-header">' +
+                  '<div class="cr-subagent-header-row">' +
+                    '<div class="cr-subagent-header-title-box">' +
+                      '<div class="cr-subagent-icon-box">🤖</div>' +
+                      '<div>' +
+                        '<h3 class="cr-subagent-header-title">Subagent Settings</h3>' +
+                        '<p class="cr-subagent-header-sub">Configure dedicated provider, model, and execution limits for subagent workers</p>' +
+                      '</div>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="cr-subagent-header-divider"></div>' +
+                '</div>' +
+                '<div class="cr-subagent-active-card">' +
+                  '<div class="cr-subagent-card-title-row">' +
+                    '<span class="cr-subagent-pulse-dot"></span>' +
+                    '<span class="cr-subagent-card-heading">Active Subagent Runtime</span>' +
+                  '</div>' +
+                  '<div class="cr-subagent-active-details">' +
+                    '<div class="cr-subagent-status-pill">' +
+                      '<span class="cr-subagent-pill-label">Provider</span>' +
+                      '<span id="subagentActiveProviderDisplay" class="cr-subagent-pill-value">(Inherited)</span>' +
+                    '</div>' +
+                    '<div class="cr-subagent-status-pill">' +
+                      '<span class="cr-subagent-pill-label">Model</span>' +
+                      '<span id="subagentActiveModelDisplay" class="cr-subagent-pill-value">(Inherited)</span>' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="cr-subagent-form">' +
+                  '<div class="cr-subagent-section-card">' +
+                    '<div class="cr-subagent-section-header">' +
+                      '<span class="cr-subagent-section-icon">⚡</span>' +
+                      '<div>' +
+                        '<h4 class="cr-subagent-section-title">Model &amp; Provider</h4>' +
+                        '<p class="cr-subagent-section-desc">Select an isolated provider and model for subagents, or inherit from the main agent.</p>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="cr-input-group">' +
+                      '<label for="subagentCfgProvider">Subagent Provider</label>' +
+                      '<select id="subagentCfgProvider"><option value="">(Inherit from Main Agent)</option></select>' +
+                      '<span class="cr-field-hint">Choose from saved providers or inherit main agent configuration.</span>' +
+                    '</div>' +
+                    '<div class="cr-input-group">' +
+                      '<label for="subagentModelInput">Subagent Model</label>' +
+                      '<div class="cr-combobox cr-subagent-combobox">' +
+                        '<input type="text" id="subagentModelInput" placeholder="Select subagent model..." readonly autocomplete="off">' +
+                        '<span id="subagentModelDropdownArrow" class="cr-combobox-arrow">▼</span>' +
+                        '<div id="subagentModelDropdownList" class="cr-combobox-list" style="display:none"></div>' +
+                      '</div>' +
+                      '<span class="cr-field-hint">Specify model for subagents, or inherit from main chat.</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="cr-subagent-section-card">' +
+                    '<div class="cr-subagent-section-header">' +
+                      '<span class="cr-subagent-section-icon">⚙️</span>' +
+                      '<div>' +
+                        '<h4 class="cr-subagent-section-title">Execution &amp; Concurrency Limits</h4>' +
+                        '<p class="cr-subagent-section-desc">Govern concurrency thresholds and iteration loops for subagent tasks.</p>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="cr-input-group">' +
+                      '<label for="subagentCfgMaxConcurrent">Max Concurrent Subagents</label>' +
+                      '<input type="number" id="subagentCfgMaxConcurrent" value="10" min="1" max="50">' +
+                      '<span class="cr-field-hint">Simultaneous subagent executions allowed (1 – 50, default: 10).</span>' +
+                    '</div>' +
+                    '<div class="cr-input-group">' +
+                      '<label for="subagentCfgMaxIterations">Subagent Max Iterations</label>' +
+                      '<input type="number" id="subagentCfgMaxIterations" value="20" min="1" max="100">' +
+                      '<span class="cr-field-hint">Maximum reasoning/tool loops per subagent run (1 – 100, default: 20).</span>' +
+                    '</div>' +
+                    '<div class="cr-input-group">' +
+                      '<label for="subagentCfgMaxDepth">Subagent Max Depth</label>' +
+                      '<input type="number" id="subagentCfgMaxDepth" value="1" min="0" max="3">' +
+                      '<span class="cr-field-hint">Delegation nesting depth: 0 = disabled, 1 = parent only, 2+ = nested.</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="cr-subagent-actions">' +
+                    '<button id="saveSubagentSettingsBtn" class="cr-save-btn cr-subagent-save-btn">Save Subagent Settings</button>' +
+                  '</div>' +
                 '</div>' +
               '</div>' +
             '</section>' +
@@ -1024,6 +1119,21 @@ function initializeDashboard() {
 
     var railMcpBtn = document.getElementById("rail-mcp");
     if (railMcpBtn) railMcpBtn.onclick = handleRailMcpClick;
+
+    var railSubagentsBtn = document.getElementById("rail-subagents");
+    if (railSubagentsBtn) railSubagentsBtn.onclick = handleRailSubagentsClick;
+
+    var saveSubagentBtn = document.getElementById("saveSubagentSettingsBtn");
+    if (saveSubagentBtn) saveSubagentBtn.onclick = handleSaveSubagentSettingsClick;
+
+    var subagentProviderSelect = document.getElementById("subagentCfgProvider");
+    if (subagentProviderSelect) subagentProviderSelect.onchange = handleSubagentProviderChange;
+
+    var subagentModelInput = document.getElementById("subagentModelInput");
+    if (subagentModelInput) subagentModelInput.onclick = handleSubagentModelInputClick;
+
+    var subagentModelArrow = document.getElementById("subagentModelDropdownArrow");
+    if (subagentModelArrow) subagentModelArrow.onclick = handleSubagentModelInputClick;
 
     var addMcpBtn = document.getElementById("addMcpServerBtn");
     if (addMcpBtn) addMcpBtn.onclick = openAddMcpModal;
@@ -1449,14 +1559,22 @@ function initializeDashboard() {
   function buildSubagentTraceDropdownCardHtml(trace, isOpen, traceIndex) {
     if (!trace) return '';
     var agentId = trace.agentId || trace.id || ('subagent_' + (traceIndex + 1));
-    var name = trace.name || agentId;
+    var name = trace.name || (trace.user && trace.user.context && trace.user.context.agentName) || agentId;
     var role = formatSubagentRole(trace.role || 'coder');
     var roleLower = role.toLowerCase();
     var status = formatSubagentStatus(trace.status || 'completed');
     var statusLower = status.toLowerCase();
     var task = trace.task || (trace.user ? trace.user.query : '') || 'Autonomous Task';
+    var isRunning = (status === 'RUNNING' || statusLower === 'running');
     var openAttr = isOpen ? ' open' : '';
-    var focusedClass = isOpen ? ' cr-subagent-card--focused' : '';
+    var focusedClass = isRunning ? ' cr-subagent-card--focused' : '';
+
+    var idBadgeHtml = '';
+    if (agentId && name !== agentId) {
+      idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + esc(agentId) + '">#' + esc(agentId) + '</span>';
+    } else if (agentId) {
+      idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + esc(agentId) + '">ID: ' + esc(agentId) + '</span>';
+    }
 
     var steps = (trace && Array.isArray(trace.steps)) ? trace.steps : [];
     var totalTokens = (trace && trace.metrics && trace.metrics.totalTokens) ? trace.metrics.totalTokens : { input: 0, output: 0, total: 0 };
@@ -1553,7 +1671,8 @@ function initializeDashboard() {
             '<div class="cr-subagent-title-stack">' +
               '<div class="cr-subagent-title-row">' +
                 '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + statusLower + '"></span>' +
-                '<span class="cr-subagent-name font-bold">' + esc(name) + '</span>' +
+                '<span class="cr-subagent-name font-bold" title="' + esc(name) + (agentId ? ' (ID: ' + esc(agentId) + ')' : '') + '">' + esc(name) + '</span>' +
+                idBadgeHtml +
                 '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
               '</div>' +
               '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
@@ -1605,10 +1724,16 @@ function initializeDashboard() {
       return;
     }
 
+    traces.sort(function(a, b) {
+      var ta = a.startedAt || 0;
+      var tb = b.startedAt || 0;
+      return ta - tb;
+    });
+
     var cardsHtml = '';
     for (var o = 0; o < traces.length; o++) {
       var tr = traces[o];
-      var isOpen = targetSubagentId ? (tr.agentId === targetSubagentId || tr.id === targetSubagentId) : (o === (traces.length - 1));
+      var isOpen = Boolean(targetSubagentId && (tr.agentId === targetSubagentId || tr.id === targetSubagentId));
       cardsHtml += buildSubagentTraceDropdownCardHtml(tr, isOpen, o);
     }
 
@@ -1701,6 +1826,9 @@ function initializeDashboard() {
           if (list[l].agentId === tr.agentId || list[l].id === tr.agentId || list[l].sessionId === tr.sessionId || (tr.agentId && list[l].agentId && list[l].agentId.indexOf(tr.agentId) !== -1)) {
             found = true;
             list[l].trace = tr;
+            if (!list[l].name && tr.name) {
+              list[l].name = tr.name;
+            }
             if (tr.status && list[l].status !== 'paused') {
               list[l].status = tr.status;
             }
@@ -1838,13 +1966,22 @@ function initializeDashboard() {
   function buildSubagentDropdownCardHtml(subagent, isOpen) {
     if (!subagent) return '';
     var agentId = subagent.agentId || subagent.id || 'subagent';
-    var role = formatSubagentRole(subagent.role);
+    var name = subagent.name || (subagent.identity && subagent.identity.name) || (subagent.trace && subagent.trace.name) || agentId;
+    var role = formatSubagentRole(subagent.role || (subagent.identity && subagent.identity.role) || (subagent.trace && subagent.trace.role));
     var roleLower = role.toLowerCase();
     var status = formatSubagentStatus(subagent.status);
     var statusLower = status.toLowerCase();
-    var task = subagent.task || 'Autonomous Task';
+    var task = subagent.task || (subagent.trace && subagent.trace.user && subagent.trace.user.query) || 'Autonomous Task';
+    var isRunning = (status === 'RUNNING' || statusLower === 'running');
     var openAttr = isOpen ? ' open' : '';
-    var focusedClass = isOpen ? ' cr-subagent-card--focused' : '';
+    var focusedClass = isRunning ? ' cr-subagent-card--focused' : '';
+
+    var idBadgeHtml = '';
+    if (agentId && name !== agentId) {
+      idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + esc(agentId) + '">#' + esc(agentId) + '</span>';
+    } else if (agentId) {
+      idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + esc(agentId) + '">ID: ' + esc(agentId) + '</span>';
+    }
 
     var trace = subagent.trace || null;
     var steps = (trace && Array.isArray(trace.steps)) ? trace.steps : [];
@@ -1977,7 +2114,8 @@ function initializeDashboard() {
             '<div class="cr-subagent-title-stack">' +
               '<div class="cr-subagent-title-row">' +
                 '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + statusLower + '"></span>' +
-                '<span class="cr-subagent-name font-bold">' + esc(agentId) + '</span>' +
+                '<span class="cr-subagent-name font-bold" title="' + esc(name) + (agentId ? ' (ID: ' + esc(agentId) + ')' : '') + '">' + esc(name) + '</span>' +
+                idBadgeHtml +
                 '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
               '</div>' +
               '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
@@ -2162,13 +2300,20 @@ function initializeDashboard() {
       return;
     }
 
-    var activeSubagentId = targetSubagentId || state.activeSubagentId || (subagents[0] && (subagents[0].agentId || subagents[0].id));
-    state.activeSubagentId = activeSubagentId;
+    subagents.sort(function(a, b) {
+      var ta = a.startedAt || 0;
+      var tb = b.startedAt || 0;
+      return ta - tb;
+    });
+
+    if (targetSubagentId) {
+      state.activeSubagentId = targetSubagentId;
+    }
 
     var cardsHtml = '';
     for (var c = 0; c < subagents.length; c++) {
       var sub = subagents[c];
-      var isSubOpen = (subagents.length === 1) || (sub.agentId === activeSubagentId || sub.id === activeSubagentId);
+      var isSubOpen = Boolean(targetSubagentId && (sub.agentId === targetSubagentId || sub.id === targetSubagentId));
       cardsHtml += buildSubagentDropdownCardHtml(sub, isSubOpen);
     }
 
@@ -2754,6 +2899,404 @@ function initializeDashboard() {
     switchPanel("panel-mcp", this);
     if (state.isVsCode && window.VSCODE_API) {
       window.VSCODE_API.postMessage({ type: "loadMcpServers" });
+    }
+  }
+
+  function handleRailSubagentsClick() {
+    switchPanel("panel-subagents", this);
+    renderSubagentSettings();
+  }
+
+  function renderSubagentSettings() {
+    var provSelect = document.getElementById("subagentCfgProvider");
+    var modelInput = document.getElementById("subagentModelInput");
+    var maxConcurrentEl = document.getElementById("subagentCfgMaxConcurrent");
+    var maxIterEl = document.getElementById("subagentCfgMaxIterations");
+    var maxDepthEl = document.getElementById("subagentCfgMaxDepth");
+
+    if (!provSelect) return;
+
+    // Build provider options strictly from savedProviderConfigs (no unconfigured general providers)
+    var configs = state.savedProviderConfigs || {};
+    var keys = Object.keys(configs);
+    var html = '<option value="">(Inherit from Main Agent)</option>';
+
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var cfg = configs[key] || {};
+      var label = key;
+      if (key.startsWith('compatible:')) {
+        var name = key.substring(11);
+        var type = cfg.apiType || 'openai';
+        var typeLabel = type === 'anthropic' ? 'Anthropic' : (type === 'gemini' ? 'Gemini' : 'Compatible');
+        label = name + ' (' + typeLabel + ')';
+      } else {
+        label = key.charAt(0).toUpperCase() + key.slice(1);
+      }
+      html += '<option value="' + esc(key) + '">' + esc(label) + '</option>';
+    }
+    provSelect.innerHTML = html;
+
+    // Set current values from state
+    var currentSubProv = (state.settings && state.settings.subagentProvider) || '';
+    if (currentSubProv && !configs[currentSubProv]) {
+      currentSubProv = '';
+      if (state.settings) state.settings.subagentProvider = '';
+    }
+    provSelect.value = currentSubProv;
+
+    // If subagentProvider is (Inherit from Main Agent), subagentModel must also be (Inherit from Main Agent)
+    var currentSubModel = (state.settings && state.settings.subagentModel) || '';
+    if (!currentSubProv) {
+      currentSubModel = '';
+      if (state.settings) state.settings.subagentModel = '';
+    }
+
+    if (modelInput) {
+      modelInput.value = currentSubModel || '(Inherit from Main Agent)';
+    }
+
+    if (maxConcurrentEl) maxConcurrentEl.value = (state.settings && state.settings.subagentMaxConcurrent) || 10;
+    if (maxIterEl) maxIterEl.value = (state.settings && state.settings.subagentMaxIterations) || 20;
+    if (maxDepthEl) maxDepthEl.value = (state.settings && state.settings.subagentMaxDepth !== undefined) ? state.settings.subagentMaxDepth : 1;
+
+    // Update active banner and render model combobox list
+    updateSubagentActiveBanner();
+    renderSubagentModelOptions();
+  }
+
+  function updateSubagentActiveBanner() {
+    var provDisplay = document.getElementById("subagentActiveProviderDisplay");
+    var modelDisplay = document.getElementById("subagentActiveModelDisplay");
+    if (!provDisplay || !modelDisplay) return;
+
+    var subProv = (state.settings && state.settings.subagentProvider) || '';
+    var subModel = (state.settings && state.settings.subagentModel) || '';
+
+    if (subProv) {
+      var label = subProv;
+      if (subProv.startsWith('compatible:')) {
+        label = subProv.substring(11);
+      } else {
+        label = subProv.charAt(0).toUpperCase() + subProv.slice(1);
+      }
+      provDisplay.textContent = label;
+      provDisplay.classList.add('cr-subagent-badge-active');
+    } else {
+      provDisplay.textContent = '(Inherited)';
+      provDisplay.classList.remove('cr-subagent-badge-active');
+    }
+
+    if (subModel && subProv) {
+      modelDisplay.textContent = subModel;
+      modelDisplay.classList.add('cr-subagent-badge-active');
+    } else {
+      modelDisplay.textContent = '(Inherited)';
+      modelDisplay.classList.remove('cr-subagent-badge-active');
+    }
+  }
+
+  function handleSubagentProviderChange() {
+    var provSelect = document.getElementById("subagentCfgProvider");
+    var modelInput = document.getElementById("subagentModelInput");
+    if (!provSelect) return;
+
+    var selectedProv = provSelect.value;
+    if (!state.settings) state.settings = {};
+    state.settings.subagentProvider = selectedProv;
+
+    if (!selectedProv) {
+      // (Inherit from Main Agent) -> automatically inherit model too
+      state.settings.subagentModel = '';
+      if (modelInput) {
+        modelInput.value = '(Inherit from Main Agent)';
+      }
+    } else {
+      // Saved provider selected -> prefill with saved provider's model if available, or first available model
+      var configs = state.savedProviderConfigs || {};
+      var savedCfg = configs[selectedProv] || {};
+      var provModels = (state.modelsByProvider && state.modelsByProvider[selectedProv]) || [];
+      var newModel = savedCfg.model || (provModels.length ? provModels[0] : '');
+      state.settings.subagentModel = newModel;
+      if (modelInput) {
+        modelInput.value = newModel || '(Inherit from Main Agent)';
+      }
+    }
+
+    updateSubagentActiveBanner();
+    renderSubagentModelOptions();
+  }
+
+  function handleSubagentModelInputClick(e) {
+    if (e) e.stopPropagation();
+    var list = document.getElementById("subagentModelDropdownList");
+    if (list) {
+      var isHidden = list.style.display === "none";
+      list.style.display = isHidden ? "block" : "none";
+      if (isHidden) {
+        var filterInput = document.getElementById("subagentModelFilterInput");
+        if (filterInput) {
+          setTimeout(focusSubagentModelFilterInput, 40, filterInput);
+        }
+      }
+    }
+  }
+
+  function focusSubagentModelFilterInput(filterInput) {
+    if (filterInput) filterInput.focus();
+  }
+
+  function handleSubagentModelFilterInput(e) {
+    if (e) e.stopPropagation();
+    state.subagentModelSearchFilter = (e.target.value || "").trim().toLowerCase();
+    renderSubagentModelOptions();
+    var dropdown = document.getElementById("subagentModelDropdownList");
+    if (dropdown) dropdown.style.display = "block";
+    var input = document.getElementById("subagentModelFilterInput");
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  function handleSubagentModelItemClick() {
+    var model = this.dataset.model || "";
+    var provider = this.dataset.provider || "";
+
+    if (!state.settings) state.settings = {};
+    state.settings.subagentModel = model;
+
+    if (model && provider) {
+      var provSelect = document.getElementById("subagentCfgProvider");
+      if (provSelect && provSelect.value !== provider) {
+        provSelect.value = provider;
+        state.settings.subagentProvider = provider;
+      }
+    } else if (!model) {
+      // (Inherit from Main Agent)
+      state.settings.subagentModel = "";
+      var provSelect2 = document.getElementById("subagentCfgProvider");
+      if (provSelect2) {
+        provSelect2.value = "";
+        state.settings.subagentProvider = "";
+      }
+    }
+
+    var modelInput = document.getElementById("subagentModelInput");
+    if (modelInput) {
+      modelInput.value = model || "(Inherit from Main Agent)";
+    }
+
+    var list = document.getElementById("subagentModelDropdownList");
+    if (list) list.style.display = "none";
+
+    updateSubagentActiveBanner();
+    renderSubagentModelOptions();
+  }
+
+  function handleSubagentGroupHeaderClick() {
+    var items = this.nextElementSibling;
+    if (items) {
+      var isHidden = items.style.display === "none";
+      items.style.display = isHidden ? "block" : "none";
+      var arrow = this.querySelector(".cr-group-arrow");
+      if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
+    }
+  }
+
+  function renderSubagentModelOptions() {
+    var list = document.getElementById("subagentModelDropdownList");
+    if (!list) return;
+    list.innerHTML = "";
+
+    // Sticky search filter input
+    var searchBox = document.createElement("div");
+    searchBox.className = "cr-model-search-box";
+    var searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.id = "subagentModelFilterInput";
+    searchInput.className = "cr-model-search-input";
+    searchInput.placeholder = "🔍 Search models...";
+    searchInput.value = state.subagentModelSearchFilter || "";
+    searchInput.oninput = handleSubagentModelFilterInput;
+    searchInput.onclick = handleSearchInputClick;
+    searchBox.appendChild(searchInput);
+    list.appendChild(searchBox);
+
+    var filterQuery = (state.subagentModelSearchFilter || "").toLowerCase();
+    var currentSubModel = (state.settings && state.settings.subagentModel) || "";
+    var currentSubProv = (state.settings && state.settings.subagentProvider) || "";
+
+    // 1. Top option: (Inherit from Main Agent)
+    if (!filterQuery || "inherit from main agent".indexOf(filterQuery) !== -1) {
+      var inheritItem = document.createElement("div");
+      var isInheritSelected = !currentSubModel || !currentSubProv;
+      inheritItem.className = "cr-combobox-item" + (isInheritSelected ? " active" : "");
+      inheritItem.dataset.model = "";
+      inheritItem.dataset.provider = "";
+      inheritItem.onclick = handleSubagentModelItemClick;
+
+      if (isInheritSelected) {
+        var checkSpan = document.createElement("span");
+        checkSpan.className = "cr-model-check";
+        checkSpan.textContent = "✓";
+        inheritItem.appendChild(checkSpan);
+      } else {
+        var spacerSpan = document.createElement("span");
+        spacerSpan.className = "cr-model-check-spacer";
+        inheritItem.appendChild(spacerSpan);
+      }
+
+      var nameSpan = document.createElement("span");
+      nameSpan.className = "cr-model-name";
+      nameSpan.style.fontStyle = "italic";
+      nameSpan.textContent = "(Inherit from Main Agent)";
+      inheritItem.appendChild(nameSpan);
+      list.appendChild(inheritItem);
+    }
+
+    // Determine which providers to show
+    var providers = [];
+    if (currentSubProv) {
+      providers.push(currentSubProv);
+    } else {
+      var savedConfigs = state.savedProviderConfigs || {};
+      var savedKeys = Object.keys(savedConfigs);
+      var modelProviders = Object.keys(state.modelsByProvider || {});
+      var provSet = {};
+      for (var ski = 0; ski < savedKeys.length; ski++) provSet[savedKeys[ski]] = true;
+      for (var mpi = 0; mpi < modelProviders.length; mpi++) {
+        if (savedConfigs[modelProviders[mpi]] || modelProviders[mpi] === state.provider) {
+          provSet[modelProviders[mpi]] = true;
+        }
+      }
+      providers = Object.keys(provSet);
+    }
+
+    for (var p = 0; p < providers.length; p++) {
+      var providerName = providers[p];
+      var models = (state.modelsByProvider && state.modelsByProvider[providerName]) || [];
+      var provError = (state.providerErrors && state.providerErrors[providerName]) || "";
+
+      if (!models.length && !provError) continue;
+
+      var filtered = [];
+      for (var m = 0; m < models.length; m++) {
+        if (!filterQuery || models[m].toLowerCase().indexOf(filterQuery) !== -1) {
+          filtered.push(models[m]);
+        }
+      }
+      if (!filtered.length && !provError) continue;
+
+      var groupContainer = document.createElement("div");
+      groupContainer.className = "cr-combobox-group";
+
+      var header = document.createElement("div");
+      header.className = "cr-combobox-group-header" + (provError && !models.length ? " has-error" : "");
+      header.dataset.provider = providerName;
+      var badgeText = (provError && !models.length) ? ' <span class="cr-group-error-badge">⚠️ Error</span>' : ' <span class="cr-group-count">(' + filtered.length + ')</span>';
+      header.innerHTML = '<span class="cr-group-arrow">▼</span> ' + getProviderLabel(providerName) + badgeText;
+      header.onclick = handleSubagentGroupHeaderClick;
+      groupContainer.appendChild(header);
+
+      var itemsContainer = document.createElement("div");
+      itemsContainer.className = "cr-combobox-group-items";
+
+      for (var f = 0; f < filtered.length; f++) {
+        var modName = filtered[f];
+        var item = document.createElement("div");
+        var isSelected = currentSubModel === modName && (currentSubProv === providerName || !currentSubProv);
+
+        item.className = "cr-combobox-item" + (isSelected ? " active" : "");
+        item.dataset.model = modName;
+        item.dataset.provider = providerName;
+        item.onclick = handleSubagentModelItemClick;
+
+        if (isSelected) {
+          var chk = document.createElement("span");
+          chk.className = "cr-model-check";
+          chk.textContent = "✓";
+          item.appendChild(chk);
+        } else {
+          var spc = document.createElement("span");
+          spc.className = "cr-model-check-spacer";
+          item.appendChild(spc);
+        }
+
+        var nm = document.createElement("span");
+        nm.className = "cr-model-name";
+        nm.textContent = modName;
+        nm.title = modName;
+        item.appendChild(nm);
+
+        itemsContainer.appendChild(item);
+      }
+
+      groupContainer.appendChild(itemsContainer);
+      list.appendChild(groupContainer);
+    }
+  }
+
+  function handleSaveSubagentSettingsClick() {
+    var provSelect = document.getElementById("subagentCfgProvider");
+    var maxConcurrentEl = document.getElementById("subagentCfgMaxConcurrent");
+    var maxIterEl = document.getElementById("subagentCfgMaxIterations");
+    var maxDepthEl = document.getElementById("subagentCfgMaxDepth");
+
+    var newSubProv = provSelect ? provSelect.value : '';
+    var newSubModel = (state.settings && state.settings.subagentModel) || '';
+    if (!newSubProv) {
+      newSubModel = '';
+    }
+    var newMaxConcurrent = maxConcurrentEl ? (parseInt(maxConcurrentEl.value) || 10) : 10;
+    var newMaxIter = maxIterEl ? (parseInt(maxIterEl.value) || 20) : 20;
+    var newMaxDepth = maxDepthEl ? (parseInt(maxDepthEl.value) || 1) : 1;
+
+    // Clamp values to valid ranges
+    if (newMaxConcurrent < 1) newMaxConcurrent = 1;
+    if (newMaxConcurrent > 50) newMaxConcurrent = 50;
+    if (newMaxIter < 1) newMaxIter = 1;
+    if (newMaxIter > 100) newMaxIter = 100;
+    if (newMaxDepth < 0) newMaxDepth = 0;
+    if (newMaxDepth > 3) newMaxDepth = 3;
+
+    // Update state
+    if (!state.settings) state.settings = {};
+    state.settings.subagentProvider = newSubProv;
+    state.settings.subagentModel = newSubModel;
+    state.settings.subagentMaxConcurrent = newMaxConcurrent;
+    state.settings.subagentMaxIterations = newMaxIter;
+    state.settings.subagentMaxDepth = newMaxDepth;
+
+    // Update banner immediately
+    updateSubagentActiveBanner();
+
+    // Send to VS Code backend
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({
+        type: "saveSettings",
+        settings: {
+          subagentProvider: newSubProv,
+          subagentModel: newSubModel,
+          subagentMaxConcurrent: newMaxConcurrent,
+          subagentMaxIterations: newMaxIter,
+          subagentMaxDepth: newMaxDepth
+        }
+      });
+    }
+
+    // Visual feedback on save button
+    var button = document.getElementById("saveSubagentSettingsBtn");
+    if (button) {
+      button.textContent = "Saved";
+      setTimeout(resetSubagentSaveButton, 1200);
+    }
+  }
+
+  function resetSubagentSaveButton() {
+    var button = document.getElementById("saveSubagentSettingsBtn");
+    if (button) {
+      button.textContent = "Save Subagent Settings";
     }
   }
 
@@ -3761,8 +4304,12 @@ function initializeDashboard() {
 
   function handleDocumentClickCloseDropdown(e) {
     var list = document.getElementById("modelDropdownList");
-    if (list && !e.target.closest(".cr-combobox")) {
+    if (list && !e.target.closest(".cr-model-bar .cr-combobox")) {
       list.style.display = "none";
+    }
+    var subList = document.getElementById("subagentModelDropdownList");
+    if (subList && !e.target.closest(".cr-subagent-combobox")) {
+      subList.style.display = "none";
     }
   }
 

@@ -239,13 +239,22 @@ function formatSubagentMarkdown(text) {
 
 export function buildSubagentDropdownCardHtml(subagent, isOpen) {
   var agentId = subagent.agentId || subagent.id || 'subagent';
+  var name = subagent.name || (subagent.identity && subagent.identity.name) || (subagent.trace && subagent.trace.name) || agentId;
   var role = formatRole(subagent.role);
   var roleLower = role.toLowerCase();
   var status = String(subagent.status || 'running').toLowerCase();
   var statusLabel = formatStatus(status);
   var task = subagent.task || (subagent.trace && subagent.trace.user && subagent.trace.user.query) || 'Assigned task';
+  var isRunning = (status === 'running');
   var openAttr = isOpen ? ' open' : '';
-  var focusedClass = isOpen ? ' cr-subagent-card--focused' : '';
+  var focusedClass = isRunning ? ' cr-subagent-card--focused' : '';
+
+  var idBadgeHtml = '';
+  if (agentId && name !== agentId) {
+    idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + escHtml(agentId) + '">#' + escHtml(agentId) + '</span>';
+  } else if (agentId) {
+    idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + escHtml(agentId) + '">ID: ' + escHtml(agentId) + '</span>';
+  }
 
   // Controls for paused / running states
   var controlsHtml = '';
@@ -369,7 +378,8 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
           '<div class="cr-subagent-title-stack">' +
             '<div class="cr-subagent-title-row">' +
               '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + status + '"></span>' +
-              '<span class="cr-subagent-name">' + escHtml(agentId) + '</span>' +
+              '<span class="cr-subagent-name" title="' + escHtml(name) + (agentId ? ' (ID: ' + escHtml(agentId) + ')' : '') + '">' + escHtml(name) + '</span>' +
+              idBadgeHtml +
               '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + role + '</span>' +
             '</div>' +
             '<div class="cr-subagent-task" title="' + escHtml(task) + '">Task: "' + escHtml(truncateStr(task, 60)) + '"</div>' +
@@ -599,11 +609,16 @@ export function renderSubagentsView(container, targetSubagentId, customSessionId
     return;
   }
 
-  var activeSubagentId = targetSubagentId || (subagents[0] && (subagents[0].agentId || subagents[0].id));
+  subagents.sort(function(a, b) {
+    var ta = a.startedAt || 0;
+    var tb = b.startedAt || 0;
+    return ta - tb;
+  });
+
   var cardsHtml = '';
   for (var c = 0; c < subagents.length; c++) {
     var sub = subagents[c];
-    var isSubOpen = (subagents.length === 1) || (sub.agentId === activeSubagentId || sub.id === activeSubagentId);
+    var isSubOpen = Boolean(targetSubagentId && (sub.agentId === targetSubagentId || sub.id === targetSubagentId));
     cardsHtml += buildSubagentDropdownCardHtml(sub, isSubOpen);
   }
 

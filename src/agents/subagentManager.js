@@ -19,6 +19,7 @@ var _persistedSubagents = {};
 var _storageContext = null;
 var _agentRunner = null;
 var _limits = subagentTypes.getDefaultLimits();
+var _subagentDefaults = { provider: '', model: '' };
 var SUBAGENT_STORAGE_KEY = 'coderun_subagent_registry';
 
 function getPersistedStorage() {
@@ -113,6 +114,18 @@ export function configureLimits(options) {
 
 export function getLimits() {
   return Object.assign({}, _limits);
+}
+
+export function configureSubagentDefaults(options) {
+  if (options && typeof options === 'object') {
+    if (options.provider !== undefined) _subagentDefaults.provider = options.provider || '';
+    if (options.model !== undefined) _subagentDefaults.model = options.model || '';
+  }
+  return Object.assign({}, _subagentDefaults);
+}
+
+export function getSubagentDefaults() {
+  return Object.assign({}, _subagentDefaults);
 }
 
 export function getSubagent(subagentId, parentSessionId) {
@@ -481,6 +494,14 @@ export function spawnSubagent(options, parentContext) {
       };
 
       var childConfig = Object.assign({}, record.config, { maxIterations: limits.maxIterations });
+      // Apply user-configured subagent provider/model overrides
+      var defaults = _subagentDefaults || {};
+      if (defaults.provider) {
+        childConfig.provider = defaults.provider;
+      }
+      if (defaults.model) {
+        childConfig.model = defaults.model;
+      }
       var loopResult = await effectiveRunner(identity.task, childConfig, loopOptions);
       if (record.timeoutTimer) clearTimeout(record.timeoutTimer);
       record.completedAt = Date.now();

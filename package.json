@@ -133,6 +133,16 @@
           "default": true,
           "description": "Confirm dangerous actions (delete, terminal, etc.)"
         },
+        "coderun.subagentProvider": {
+          "type": "string",
+          "default": "",
+          "description": "Provider for Subagents. Leave empty to inherit from the main agent."
+        },
+        "coderun.subagentModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model for Subagents. Leave empty to inherit from the main agent."
+        },
         "coderun.subagentMaxConcurrent": {
           "type": "integer",
           "default": 10,

@@ -20,6 +20,8 @@ export function getConfig() {
     showThinking: cfg.get('showThinking', true),
     autoScroll: cfg.get('autoScroll', true),
     confirmDangerous: cfg.get('confirmDangerous', true),
+    subagentProvider: cfg.get('subagentProvider', ''),
+    subagentModel: cfg.get('subagentModel', ''),
     subagentMaxConcurrent: cfg.get('subagentMaxConcurrent', 10),
     subagentMaxDepth: cfg.get('subagentMaxDepth', 1),
     subagentMaxIterations: cfg.get('subagentMaxIterations', 20),
