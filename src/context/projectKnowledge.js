@@ -208,6 +208,7 @@ export function addCheckpoint(cp) {
   var existedVal = cp.existed !== undefined ? (Number(cp.existed) === 1 || cp.existed === true ? 1 : 0) : 1;
   var isDirVal = cp.is_dir ? 1 : 0;
   var extraDataVal = cp.extra_data || '';
+  var agentIdVal = cp.agent_id || cp.agentId || null;
 
   _fallbackCheckpoints[cp.id] = {
     id: cp.id,
@@ -218,22 +219,57 @@ export function addCheckpoint(cp) {
     label: cp.label || '',
     existed: existedVal,
     is_dir: isDirVal,
-    extra_data: extraDataVal
+    extra_data: extraDataVal,
+    agent_id: agentIdVal,
+    agentId: agentIdVal
   };
 
   if (!_projectDb || !_ready) return;
   try {
     var stmt = _projectDb.prepare(`
-      INSERT OR REPLACE INTO checkpoints (id, file_path, content, created_at, session_id, label, existed, is_dir, extra_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO checkpoints (id, file_path, content, created_at, session_id, label, existed, is_dir, extra_data, agent_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.bind([cp.id, normPath, cp.content || '', cp.created_at || Date.now(), cp.session_id || '', cp.label || '', existedVal, isDirVal, extraDataVal]);
+    stmt.bind([cp.id, normPath, cp.content || '', cp.created_at || Date.now(), cp.session_id || '', cp.label || '', existedVal, isDirVal, extraDataVal, agentIdVal]);
     stmt.step();
     stmt.free();
     saveProjectDb();
   } catch (err) {
     console.error('[PK] Failed to insert checkpoint into SQLite DB:', err.message);
   }
+}
+
+export function getCheckpointsByAgent(agentId, sessionId) {
+  if (!agentId) return [];
+  var results = [];
+  if (_projectDb && _ready) {
+    try {
+      var sql = 'SELECT * FROM checkpoints WHERE agent_id = ?';
+      var params = [agentId];
+      if (sessionId) {
+        sql += ' AND session_id = ?';
+        params.push(sessionId);
+      }
+      sql += ' ORDER BY created_at DESC';
+      var stmt = _projectDb.prepare(sql);
+      stmt.bind(params);
+      while (stmt.step()) {
+        var row = stmt.getAsObject();
+        row.agentId = row.agent_id;
+        results.push(row);
+      }
+      stmt.free();
+      return results;
+    } catch (_) {}
+  }
+  for (var id in _fallbackCheckpoints) {
+    var cp = _fallbackCheckpoints[id];
+    if ((cp.agent_id === agentId || cp.agentId === agentId) && (!sessionId || cp.session_id === sessionId)) {
+      cp.agentId = cp.agentId || cp.agent_id;
+      results.push(cp);
+    }
+  }
+  return results.sort(compareCheckpointCreatedAt);
 }
 
 /**
@@ -771,7 +807,8 @@ async function openProjectDb() {
       label TEXT NOT NULL DEFAULT '',
       existed INTEGER NOT NULL DEFAULT 1,
       is_dir INTEGER NOT NULL DEFAULT 0,
-      extra_data TEXT NOT NULL DEFAULT ''
+      extra_data TEXT NOT NULL DEFAULT '',
+      agent_id TEXT DEFAULT NULL
     )
   `);
 
@@ -791,6 +828,9 @@ async function openProjectDb() {
     }
     if (!colMap['extra_data']) {
       _projectDb.run("ALTER TABLE checkpoints ADD COLUMN extra_data TEXT NOT NULL DEFAULT ''");
+    }
+    if (!colMap['agent_id']) {
+      _projectDb.run("ALTER TABLE checkpoints ADD COLUMN agent_id TEXT DEFAULT NULL");
     }
   } catch (mErr) {
     console.error('[PK] Checkpoints migration error:', mErr.message);

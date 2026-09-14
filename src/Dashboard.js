@@ -593,9 +593,13 @@ function initializeDashboard() {
                   '<div class="cr-view-nav">' +
                     '<button id="viewNavChatsBtn" class="cr-view-nav-btn active">Chats</button>' +
                     '<button id="viewNavTracesBtn" class="cr-view-nav-btn">Traces</button>' +
+                    '<button id="viewNavSubagentsBtn" class="cr-view-nav-btn">Subagents</button>' +
+                    '<button id="viewNavSubagentTracesBtn" class="cr-view-nav-btn">Subagent Traces</button>' +
                   '</div>' +
                   '<div id="chat-area-container"></div>' +
                   '<div id="traces-area-container" style="display:none;"></div>' +
+                  '<div id="subagents-area-container" style="display:none; flex: 1; height: 100%; min-height: 0; width: 100%;"></div>' +
+                  '<div id="subagent-traces-area-container" style="display:none; flex: 1; height: 100%; min-height: 0; width: 100%;"></div>' +
                 '</section>' +
               '</div>' +
             '</section>' +
@@ -1012,6 +1016,12 @@ function initializeDashboard() {
     var tracesBtn = document.getElementById("viewNavTracesBtn");
     if (tracesBtn) tracesBtn.onclick = handleViewNavTracesClick;
 
+    var subagentsBtn = document.getElementById("viewNavSubagentsBtn");
+    if (subagentsBtn) subagentsBtn.onclick = handleViewNavSubagentsClick;
+
+    var subagentTracesBtn = document.getElementById("viewNavSubagentTracesBtn");
+    if (subagentTracesBtn) subagentTracesBtn.onclick = handleViewNavSubagentTracesClick;
+
     var railMcpBtn = document.getElementById("rail-mcp");
     if (railMcpBtn) railMcpBtn.onclick = handleRailMcpClick;
 
@@ -1070,16 +1080,36 @@ function initializeDashboard() {
     switchSubView("traces");
   }
 
-  function switchSubView(viewName) {
+  function handleViewNavSubagentsClick() {
+    switchSubView("subagents");
+  }
+
+  function handleViewNavSubagentTracesClick() {
+    switchSubView("subagentTraces");
+  }
+
+  function switchSubView(viewName, targetSubagentId) {
     var chatsBtn = document.getElementById("viewNavChatsBtn");
     var tracesBtn = document.getElementById("viewNavTracesBtn");
+    var subagentsBtn = document.getElementById("viewNavSubagentsBtn");
+    var subagentTracesBtn = document.getElementById("viewNavSubagentTracesBtn");
     var chatArea = document.getElementById("chat-area-container");
     var tracesArea = document.getElementById("traces-area-container");
+    var subagentsArea = document.getElementById("subagents-area-container");
+    var subagentTracesArea = document.getElementById("subagent-traces-area-container");
+
+    if (chatsBtn) chatsBtn.classList.remove("active");
+    if (tracesBtn) tracesBtn.classList.remove("active");
+    if (subagentsBtn) subagentsBtn.classList.remove("active");
+    if (subagentTracesBtn) subagentTracesBtn.classList.remove("active");
+
+    if (chatArea) chatArea.style.display = "none";
+    if (tracesArea) tracesArea.style.display = "none";
+    if (subagentsArea) subagentsArea.style.display = "none";
+    if (subagentTracesArea) subagentTracesArea.style.display = "none";
 
     if (viewName === "traces") {
-      if (chatsBtn) chatsBtn.classList.remove("active");
       if (tracesBtn) tracesBtn.classList.add("active");
-      if (chatArea) chatArea.style.display = "none";
       if (tracesArea) {
         tracesArea.style.display = "flex";
         renderTracesView(tracesArea);
@@ -1087,12 +1117,221 @@ function initializeDashboard() {
           window.VSCODE_API.postMessage({ type: "getTraces", sessionId: state.activeConversationId });
         }
       }
+    } else if (viewName === "subagents") {
+      if (subagentsBtn) subagentsBtn.classList.add("active");
+      if (subagentsArea) {
+        subagentsArea.style.display = "flex";
+        subagentsArea.style.flex = "1";
+        subagentsArea.style.height = "100%";
+        subagentsArea.style.minHeight = "0";
+        renderSubagentsView(subagentsArea, targetSubagentId);
+        if (state.activeConversationId && state.isVsCode && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: "getSubagents", sessionId: state.activeConversationId });
+        }
+      }
+    } else if (viewName === "subagentTraces") {
+      if (subagentTracesBtn) subagentTracesBtn.classList.add("active");
+      if (subagentTracesArea) {
+        subagentTracesArea.style.display = "flex";
+        subagentTracesArea.style.flex = "1";
+        subagentTracesArea.style.height = "100%";
+        subagentTracesArea.style.minHeight = "0";
+        renderSubagentTracesView(subagentTracesArea, targetSubagentId);
+        if (state.activeConversationId && state.isVsCode && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: "getSubagentTraces", sessionId: state.activeConversationId });
+        }
+      }
     } else {
       if (chatsBtn) chatsBtn.classList.add("active");
-      if (tracesBtn) tracesBtn.classList.remove("active");
       if (chatArea) chatArea.style.display = "flex";
-      if (tracesArea) tracesArea.style.display = "none";
     }
+  }
+  window.switchDashboardSubView = switchSubView;
+
+  function formatStepToolsDecision(stepTools) {
+    if (!stepTools || !stepTools.length) return 'Generate response';
+    var decisions = [];
+    for (var d = 0; d < stepTools.length; d++) {
+      var tool = stepTools[d];
+      var name = (tool && tool.toolName) || 'Tool';
+      var cmd = (tool && tool.command) ? ' (' + tool.command + ')' : '';
+      decisions.push('Call ' + name + cmd);
+    }
+    return decisions.join(', ');
+  }
+
+  function reconstructTracesFromConversation(conv) {
+    if (!conv || !conv.messages || !Array.isArray(conv.messages) || !conv.messages.length) return [];
+    var runs = [];
+    var currentRun = null;
+    var currentStep = null;
+    var convModel = conv.model || (conv.provider ? conv.provider : 'Model');
+    var convProvider = conv.provider || 'ollama';
+
+    for (var i = 0; i < conv.messages.length; i++) {
+      var msg = conv.messages[i];
+      if (msg.role === 'user') {
+        if (currentRun) {
+          runs.push(currentRun);
+        }
+        var nextAssistantMsg = conv.messages[i + 1];
+        var runModel = msg.model || (nextAssistantMsg && nextAssistantMsg.model) || convModel;
+        var runProvider = msg.provider || (nextAssistantMsg && nextAssistantMsg.provider) || convProvider;
+        currentRun = {
+          id: 'run_hist_' + (runs.length + 1),
+          sessionId: conv.id,
+          startedAt: msg.timestamp || Date.now(),
+          completedAt: 0,
+          durationMs: 0,
+          status: 'running',
+          provider: runProvider,
+          model: runModel,
+          user: {
+            query: msg.content || '',
+            images: msg.images || [],
+            context: { workspaceFolder: '' }
+          },
+          steps: [],
+          finalResponse: { text: '', thinking: '', durationMs: 0 },
+          metrics: { totalDurationMs: 0, totalTokens: { input: 0, output: 0, total: 0 }, toolsExecuted: 0, filesTouched: [] }
+        };
+        currentStep = null;
+      } else if (currentRun) {
+        if (msg.role === 'assistant') {
+          if (msg.model) currentRun.model = msg.model;
+          if (msg.provider) currentRun.provider = msg.provider;
+          if (msg.tool_calls && msg.tool_calls.length) {
+            var stepIndex = currentRun.steps.length + 1;
+            var stepTools = [];
+            for (var t = 0; t < msg.tool_calls.length; t++) {
+              var tc = msg.tool_calls[t];
+              var parsedArgs = {};
+              try {
+                parsedArgs = typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : (tc.function.arguments || {});
+              } catch (_) {
+                parsedArgs = tc.function.arguments || {};
+              }
+              stepTools.push({
+                id: tc.id || ('tool_' + t),
+                toolName: tc.function.name,
+                command: (parsedArgs && (parsedArgs.command || parsedArgs.file_path || parsedArgs.folder_path || parsedArgs.pattern)) || '',
+                input: parsedArgs,
+                output: '',
+                success: true,
+                durationMs: 0
+              });
+              currentRun.metrics.toolsExecuted += 1;
+            }
+            currentStep = {
+              stepIndex: stepIndex,
+              llmCall: {
+                model: currentRun.model,
+                provider: currentRun.provider,
+                messages: { system: 'System context', user: currentRun.user.query, toolResults: null },
+                thinking: msg.thinking || '',
+                decision: formatStepToolsDecision(stepTools),
+                tokens: { input: 0, output: 0, total: 0 },
+                durationMs: 0
+              },
+              toolCalls: stepTools
+            };
+            currentRun.steps.push(currentStep);
+          } else {
+            var isErrMsg = !!(msg.error || (typeof msg.content === 'string' && (msg.content.indexOf('Error from provider') !== -1 || msg.content.indexOf('Error: ') === 0 || msg.content.indexOf('Upstream request failed') !== -1 || msg.content.indexOf('Request was aborted') !== -1)));
+            currentRun.completedAt = msg.timestamp || Date.now();
+            currentRun.durationMs = currentRun.completedAt - currentRun.startedAt;
+            if (isErrMsg) {
+              currentRun.status = 'failed';
+              currentRun.error = msg.error || msg.content;
+              currentRun.finalResponse.text = msg.content || msg.error;
+              currentRun.finalResponse.error = msg.error || msg.content;
+            } else {
+              currentRun.status = 'completed';
+              currentRun.finalResponse.text = msg.content || '';
+              currentRun.finalResponse.thinking = msg.thinking || '';
+              if (msg.thinking || msg.content) {
+                currentRun.steps.push({
+                  stepIndex: currentRun.steps.length + 1,
+                  llmCall: {
+                    model: currentRun.model,
+                    provider: currentRun.provider,
+                    messages: { system: 'System context', user: currentRun.user.query, toolResults: null },
+                    thinking: msg.thinking || '',
+                    decision: 'Generate response',
+                    tokens: { input: 0, output: 0, total: 0 },
+                    durationMs: 0
+                  },
+                  toolCalls: []
+                });
+              }
+            }
+          }
+        } else if (msg.role === 'tool' && currentStep) {
+          for (var st = 0; st < currentStep.toolCalls.length; st++) {
+            if (currentStep.toolCalls[st].id === msg.tool_call_id || !currentStep.toolCalls[st].output) {
+              currentStep.toolCalls[st].output = msg.content || 'Completed';
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (currentRun) {
+      runs.push(currentRun);
+    }
+
+    return runs;
+  }
+
+  function reconcileTracesWithConversation(existingTraces, conv) {
+    if (!conv || !conv.messages || !Array.isArray(conv.messages) || !conv.messages.length) return existingTraces || [];
+    var reconstructed = reconstructTracesFromConversation(conv);
+    if (!reconstructed.length) return existingTraces || [];
+
+    if (!existingTraces || !existingTraces.length) {
+      return reconstructed;
+    }
+
+    var reconciled = [];
+    var traceIdx = 0;
+
+    for (var u = 0; u < reconstructed.length; u++) {
+      var rec = reconstructed[u];
+      var matchFound = null;
+
+      for (var t = traceIdx; t < existingTraces.length; t++) {
+        var et = existingTraces[t];
+        var etQuery = (et.user && et.user.query) ? et.user.query.trim() : '';
+        var recQuery = (rec.user && rec.user.query) ? rec.user.query.trim() : '';
+        if (etQuery === recQuery) {
+          matchFound = et;
+          traceIdx = t + 1;
+          break;
+        }
+      }
+
+      if (matchFound) {
+        if ((!matchFound.steps || !matchFound.steps.length) && rec.steps && rec.steps.length) {
+          matchFound.steps = rec.steps;
+        }
+        if (!matchFound.finalResponse || !matchFound.finalResponse.text) {
+          if (rec.finalResponse && rec.finalResponse.text) {
+            matchFound.finalResponse = rec.finalResponse;
+          }
+        }
+        reconciled.push(matchFound);
+      } else {
+        reconciled.push(rec);
+      }
+    }
+
+    while (traceIdx < existingTraces.length) {
+      reconciled.push(existingTraces[traceIdx]);
+      traceIdx++;
+    }
+
+    return reconciled;
   }
 
   function renderTracesView(container) {
@@ -1104,21 +1343,12 @@ function initializeDashboard() {
         traces = JSON.parse(localStorage.getItem("coderun_traces_" + activeId) || "[]");
       }
 
-      var hasValidTraces = false;
-      if (traces && traces.length > 0) {
-        for (var vi = 0; vi < traces.length; vi++) {
-          if (traces[vi] && traces[vi].user && traces[vi].user.query) {
-            hasValidTraces = true;
-            break;
-          }
-        }
-      }
-
-      if (!hasValidTraces && activeId && state.conversations) {
+      if (activeId && state.conversations) {
         for (var c = 0; c < state.conversations.length; c++) {
           if (state.conversations[c].id === activeId) {
-            traces = reconstructTracesFromConversation(state.conversations[c]);
-            if (traces && traces.length) {
+            var reconciled = reconcileTracesWithConversation(traces, state.conversations[c]);
+            if (reconciled && reconciled.length) {
+              traces = reconciled;
               try {
                 localStorage.setItem("coderun_traces_" + activeId, JSON.stringify(traces));
               } catch (_) {
@@ -1129,8 +1359,8 @@ function initializeDashboard() {
           }
         }
       }
-    } catch (_) {
-      traces = [];
+    } catch (err) {
+      console.warn('[DASHBOARD] Trace load/reconcile error:', err);
     }
 
     if (!traces.length) {
@@ -1215,6 +1445,866 @@ function initializeDashboard() {
       if (container) renderTracesView(container);
     }
   }
+
+  function buildSubagentTraceDropdownCardHtml(trace, isOpen, traceIndex) {
+    if (!trace) return '';
+    var agentId = trace.agentId || trace.id || ('subagent_' + (traceIndex + 1));
+    var name = trace.name || agentId;
+    var role = formatSubagentRole(trace.role || 'coder');
+    var roleLower = role.toLowerCase();
+    var status = formatSubagentStatus(trace.status || 'completed');
+    var statusLower = status.toLowerCase();
+    var task = trace.task || (trace.user ? trace.user.query : '') || 'Autonomous Task';
+    var openAttr = isOpen ? ' open' : '';
+    var focusedClass = isOpen ? ' cr-subagent-card--focused' : '';
+
+    var steps = (trace && Array.isArray(trace.steps)) ? trace.steps : [];
+    var totalTokens = (trace && trace.metrics && trace.metrics.totalTokens) ? trace.metrics.totalTokens : { input: 0, output: 0, total: 0 };
+    var inTokens = (totalTokens.input || totalTokens.prompt_tokens) || 0;
+    var outTokens = (totalTokens.output || totalTokens.completion_tokens) || 0;
+    var totalTokensCount = (totalTokens.total || (inTokens + outTokens)) || 0;
+    if (!totalTokensCount && steps.length) {
+      for (var si = 0; si < steps.length; si++) {
+        var sLlm = steps[si].llmCall && steps[si].llmCall.tokens;
+        if (sLlm && typeof sLlm === 'object') {
+          inTokens += (sLlm.input || 0);
+          outTokens += (sLlm.output || 0);
+        }
+      }
+      totalTokensCount = inTokens + outTokens;
+    }
+    var durationSec = trace.durationMs ? (trace.durationMs / 1000).toFixed(1) : 0;
+
+    var rawTraceJson = '';
+    try { rawTraceJson = JSON.stringify(trace, null, 2); } catch (_) {}
+
+    var timelineHtml = '';
+
+    // 1. Assigned Goal (Trace node)
+    timelineHtml += 
+      '<div class="cr-trace-node">' +
+        '<div class="cr-trace-node-header"><span class="cr-trace-dot">●</span> Assigned Goal</div>' +
+        '<div class="cr-trace-user-box">' +
+          '<p class="cr-trace-user-prompt">' + esc(task) + '</p>' +
+          (trace.user && trace.user.context && trace.user.context.workspaceFolder ? '<div class="cr-trace-context-tag">📂 ' + esc(trace.user.context.workspaceFolder) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+
+    // 2. Steps Flow: LLM Call cards + Tool Call cards with connectors
+    if (steps.length > 0) {
+      for (var s = 0; s < steps.length; s++) {
+        var step = steps[s];
+        timelineHtml += '<div class="cr-trace-connector">▼</div>';
+        timelineHtml += buildLlmCallCardHtml(step.llmCall, step.stepIndex || (s + 1));
+
+        var toolList = step.toolCalls || step.tools || [];
+        if (toolList && toolList.length > 0) {
+          for (var t = 0; t < toolList.length; t++) {
+            timelineHtml += '<div class="cr-trace-connector">▼</div>';
+            timelineHtml += buildToolCallCardHtml(toolList[t]);
+          }
+        }
+      }
+    }
+
+    // 3. Error or Final Response node
+    if (trace.error || trace.status === 'failed') {
+      var errDisplay = trace.error || (trace.finalResponse && (trace.finalResponse.error || trace.finalResponse.text)) || 'Subagent execution failed.';
+      timelineHtml += '<div class="cr-trace-connector">▼</div>';
+      timelineHtml += 
+        '<div class="cr-trace-node cr-trace-node-error">' +
+          '<div class="cr-trace-node-header"><span class="cr-trace-error-icon">❌</span> Error Response</div>' +
+          '<div class="cr-trace-error-box">' +
+            '<div class="cr-trace-error-banner">' +
+              '<span class="cr-trace-error-symbol">⚠️</span> ' + esc(typeof errDisplay === 'string' ? errDisplay : (errDisplay.message || JSON.stringify(errDisplay))) +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    } else if (trace.finalResponse && (trace.finalResponse.content || trace.finalResponse.text || trace.status === 'completed')) {
+      var finalRespText = trace.finalResponse.content || trace.finalResponse.text || '(Subagent completed task successfully)';
+      var finalHtml = (typeof window.renderMarkdown === 'function') 
+        ? window.renderMarkdown(finalRespText) 
+        : '<p class="cr-trace-final-text">' + esc(finalRespText) + '</p>';
+      timelineHtml += '<div class="cr-trace-connector">▼</div>';
+      timelineHtml += 
+        '<div class="cr-trace-node">' +
+          '<div class="cr-trace-node-header"><span class="cr-trace-bot-icon">🤖</span> Final Response</div>' +
+          '<div class="cr-trace-final-box md-content cr-content-block">' +
+            finalHtml +
+          '</div>' +
+        '</div>';
+    }
+
+    var tokenGaugeHtml = (
+      '<div class="cr-subagent-tokens-row cr-subagent-token-row" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">' +
+        '<span class="cr-subagent-tokens-badge cr-subagent-token-item">' +
+          '📊 Tokens: <strong>' + totalTokensCount.toLocaleString() + '</strong> (In: ' + inTokens.toLocaleString() + ' • Out: ' + outTokens.toLocaleString() + ')' +
+          (durationSec ? ' • ⏱ ' + durationSec + 's' : '') +
+        '</span>' +
+        '<button type="button" class="cr-trace-copy-full-btn" data-full-copy="' + esc(rawTraceJson) + '">📋 Copy Trace</button>' +
+      '</div>'
+    );
+
+    return (
+      '<details class="cr-subagent-card cr-subagent-card--' + statusLower + focusedClass + '" id="subagent_trace_card_' + esc(agentId) + '" data-subagent-id="' + esc(agentId) + '"' + openAttr + '>' +
+        '<summary class="cr-subagent-head cr-subagent-card-header">' +
+          '<div class="cr-subagent-head-left cr-subagent-card-header-left">' +
+            '<span class="cr-subagent-bot-icon">🤖</span>' +
+            '<div class="cr-subagent-title-stack">' +
+              '<div class="cr-subagent-title-row">' +
+                '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + statusLower + '"></span>' +
+                '<span class="cr-subagent-name font-bold">' + esc(name) + '</span>' +
+                '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
+              '</div>' +
+              '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="cr-subagent-head-right cr-subagent-card-header-right">' +
+            '<span class="cr-subagent-status cr-subagent-status--' + statusLower + '">● ' + esc(status) + '</span>' +
+            '<span class="cr-subagent-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg></span>' +
+          '</div>' +
+        '</summary>' +
+        '<div class="cr-subagent-body cr-subagent-card-body">' +
+          '<div class="cr-subagent-timeline-track cr-subagent-timeline-container cr-trace-timeline" style="padding:16px 12px;">' +
+            timelineHtml +
+            tokenGaugeHtml +
+          '</div>' +
+        '</div>' +
+      '</details>'
+    );
+  }
+
+  function renderSubagentTracesView(container, targetSubagentId) {
+    if (!container) return;
+    var activeId = state.activeConversationId;
+    var traces = [];
+    try {
+      if (activeId) {
+        traces = JSON.parse(localStorage.getItem("coderun_subagent_traces_" + activeId) || "[]");
+      }
+    } catch (_) {
+      traces = [];
+    }
+
+    if (!traces.length && activeId) {
+      var activeSubs = getSubagentsForCurrentSession(activeId);
+      for (var as = 0; as < activeSubs.length; as++) {
+        if (activeSubs[as] && activeSubs[as].trace) {
+          traces.push(activeSubs[as].trace);
+        }
+      }
+    }
+
+    if (!traces.length) {
+      container.innerHTML = 
+        '<div class="cr-traces-empty">' +
+          '<div class="cr-traces-empty-icon">🪵</div>' +
+          '<div class="cr-traces-empty-title">No Subagent Traces Recorded Yet</div>' +
+          '<div class="cr-traces-empty-desc">Execution traces, LLM decisions, tool calls, and results for subagents in this chat will appear here in real time.</div>' +
+        '</div>';
+      return;
+    }
+
+    var cardsHtml = '';
+    for (var o = 0; o < traces.length; o++) {
+      var tr = traces[o];
+      var isOpen = targetSubagentId ? (tr.agentId === targetSubagentId || tr.id === targetSubagentId) : (o === (traces.length - 1));
+      cardsHtml += buildSubagentTraceDropdownCardHtml(tr, isOpen, o);
+    }
+
+    var toolbarHtml = (
+      '<div class="cr-subagents-toolbar">' +
+        '<div class="cr-subagents-toolbar-left">' +
+          '<span class="cr-subagents-title">Subagent Traces</span>' +
+          '<span class="cr-subagents-count-badge">' + traces.length + '</span>' +
+        '</div>' +
+        '<div class="cr-subagents-toolbar-right">' +
+          '<span class="cr-subagents-toolbar-desc">click on the drop to check the complete excution of subagents</span>' +
+        '</div>' +
+      '</div>'
+    );
+
+    container.innerHTML = (
+      '<div class="cr-subagents-panel">' +
+        toolbarHtml +
+        '<div class="cr-subagents-list" id="crSubagentTracesList">' +
+          cardsHtml +
+        '</div>' +
+      '</div>'
+    );
+
+    var copyButtons = container.querySelectorAll(".cr-trace-copy-full-btn");
+    for (var j = 0; j < copyButtons.length; j++) {
+      copyButtons[j].onclick = handleCopyFullTraceClick;
+    }
+
+    var cardCopyBtns = container.querySelectorAll(".cr-trace-copy-btn");
+    for (var k = 0; k < cardCopyBtns.length; k++) {
+      cardCopyBtns[k].onclick = handleCopyTraceCardClick;
+    }
+  }
+
+  function truncateStr(str, maxLen) {
+    if (!str) return '';
+    str = String(str).replace(/[\r\n]+/g, ' ').trim();
+    if (str.length <= maxLen) return str;
+    return str.substring(0, maxLen - 3) + '...';
+  }
+
+  function formatSubagentRole(role) {
+    var r = String(role || 'coder').toLowerCase();
+    if (r === 'architect') return 'ARCHITECT';
+    if (r === 'reviewer') return 'REVIEWER';
+    if (r === 'debugger') return 'DEBUGGER';
+    if (r === 'researcher') return 'RESEARCHER';
+    return 'CODER';
+  }
+
+  function formatSubagentStatus(status) {
+    var s = String(status || 'pending').toLowerCase();
+    if (s === 'running') return 'RUNNING';
+    if (s === 'pausing') return 'PAUSING';
+    if (s === 'paused') return 'PAUSED';
+    if (s === 'completed') return 'COMPLETED';
+    if (s === 'failed') return 'FAILED';
+    if (s === 'stopped' || s === 'cancelled') return 'STOPPED';
+    return 'PENDING';
+  }
+
+  function getSubagentsForCurrentSession(sessionId) {
+    if (!sessionId) return [];
+    var list = [];
+    try {
+      var raw = localStorage.getItem('coderun_subagents_' + sessionId);
+      if (raw) {
+        list = JSON.parse(raw);
+      }
+    } catch (_) {
+      list = [];
+    }
+    if (!Array.isArray(list)) list = [];
+
+    var subTraces = [];
+    try {
+      var rawTraces = localStorage.getItem('coderun_subagent_traces_' + sessionId);
+      if (rawTraces) {
+        subTraces = JSON.parse(rawTraces);
+      }
+    } catch (_) {
+      subTraces = [];
+    }
+    if (Array.isArray(subTraces)) {
+      for (var t = 0; t < subTraces.length; t++) {
+        var tr = subTraces[t];
+        var found = false;
+        for (var l = 0; l < list.length; l++) {
+          if (list[l].agentId === tr.agentId || list[l].id === tr.agentId || list[l].sessionId === tr.sessionId || (tr.agentId && list[l].agentId && list[l].agentId.indexOf(tr.agentId) !== -1)) {
+            found = true;
+            list[l].trace = tr;
+            if (tr.status && list[l].status !== 'paused') {
+              list[l].status = tr.status;
+            }
+            break;
+          }
+        }
+        if (!found && tr.agentId) {
+          list.push({
+            agentId: tr.agentId,
+            id: tr.id || tr.agentId,
+            name: tr.name || tr.agentId,
+            role: tr.role || 'coder',
+            status: tr.status || 'completed',
+            task: tr.task || (tr.user && tr.user.query) || '',
+            sessionId: tr.sessionId || '',
+            startedAt: tr.startedAt,
+            completedAt: tr.completedAt,
+            trace: tr
+          });
+        }
+      }
+    }
+
+    return list;
+  }
+
+  function buildSubagentToolCardHtml(tc) {
+    if (!tc) return '';
+    var toolName = tc.toolName || tc.name || 'Tool';
+    var status = tc.success === false ? 'error' : 'success';
+    var statusLabel = status === 'success' ? 'Completed' : 'Failed';
+
+    var inputStr = '';
+    try {
+      inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input || {}, null, 2);
+    } catch (_) {
+      inputStr = String(tc.input || '');
+    }
+
+    var outputStr = '';
+    try {
+      outputStr = typeof tc.output === 'string' ? tc.output : JSON.stringify(tc.output || '', null, 2);
+    } catch (_) {
+      outputStr = String(tc.output || '');
+    }
+
+    return (
+      '<details class="cr-tool-card cr-tool-card--' + status + '">' +
+        '<summary class="cr-tool-card-head">' +
+          '<span class="cr-tool-card-icon cr-tool-card-icon--' + status + '">' + (status === 'success' ? '🔧' : '⚠️') + '</span>' +
+          '<span class="cr-tool-card-title-group">' +
+            '<span class="cr-tool-card-title">' + esc(toolName) + '</span>' +
+            (tc.durationMs ? '<span class="cr-tool-card-subtitle">' + tc.durationMs + 'ms</span>' : '') +
+          '</span>' +
+          '<span class="cr-tool-card-status cr-tool-card-status--' + status + '">' + esc(statusLabel) + '</span>' +
+          '<span class="cr-tool-card-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg></span>' +
+        '</summary>' +
+        '<div class="cr-tool-card-body" style="display:block;">' +
+          (inputStr && inputStr !== '{}' ?
+            '<div class="cr-tool-card-input-block">' +
+              '<div class="cr-tool-card-block-label">Tool Input</div>' +
+              '<pre class="cr-tool-card-args-pre"><code>' + esc(inputStr) + '</code></pre>' +
+            '</div>' : '') +
+          '<div class="cr-tool-card-result cr-tool-card-output-block" style="display:block;">' +
+            '<div class="cr-tool-card-block-label">Tool Output</div>' +
+            '<pre class="cr-tool-card-result-pre">' + esc(outputStr || '(No output recorded)') + '</pre>' +
+          '</div>' +
+        '</div>' +
+      '</details>'
+    );
+  }
+
+  function formatCodeBlock(match, lang, code) {
+    var l = (lang || 'text').trim();
+    var c = code.trim();
+    if ((l.toLowerCase() === 'json' || !l) && (c.startsWith('{') || c.startsWith('['))) {
+      try {
+        c = JSON.stringify(JSON.parse(c), null, 2);
+        if (!l) l = 'json';
+      } catch (_) {}
+    }
+    return (
+      '<div class="md-code-block">' +
+        '<div class="md-code-header">' +
+          '<span class="md-code-lang">' + esc(l) + '</span>' +
+        '</div>' +
+        '<pre><code class="language-' + esc(l) + '">' + esc(c) + '</code></pre>' +
+      '</div>'
+    );
+  }
+
+  function formatSubagentMarkdown(text) {
+    if (!text) return '';
+    var str = String(text);
+    var trimmed = str.trim();
+
+    var codeBlockMatch = trimmed.match(/^```([a-zA-Z0-9_-]*)\s*([\s\S]*?)```$/);
+    if (codeBlockMatch) {
+      var detectedLang = codeBlockMatch[1] || 'json';
+      var innerCode = codeBlockMatch[2].trim();
+      try {
+        var parsed = JSON.parse(innerCode);
+        str = '```' + detectedLang + '\n' + JSON.stringify(parsed, null, 2) + '\n```';
+      } catch (_) {
+        str = '```' + detectedLang + '\n' + innerCode + '\n```';
+      }
+    } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        var rawParsed = JSON.parse(trimmed);
+        str = '```json\n' + JSON.stringify(rawParsed, null, 2) + '\n```';
+      } catch (_) {}
+    }
+
+    if (typeof window !== 'undefined' && typeof window.renderMarkdown === 'function') {
+      try {
+        var res = window.renderMarkdown(str);
+        if (res) return res;
+      } catch (_) {}
+    }
+    if (typeof renderMarkdown === 'function') {
+      try {
+        var res2 = renderMarkdown(str);
+        if (res2) return res2;
+      } catch (_) {}
+    }
+
+    var cbRegex = /```([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)```/g;
+    if (cbRegex.test(str)) {
+      return str.replace(/```([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)```/g, formatCodeBlock);
+    }
+
+    return '<p>' + esc(str) + '</p>';
+  }
+
+  function buildSubagentDropdownCardHtml(subagent, isOpen) {
+    if (!subagent) return '';
+    var agentId = subagent.agentId || subagent.id || 'subagent';
+    var role = formatSubagentRole(subagent.role);
+    var roleLower = role.toLowerCase();
+    var status = formatSubagentStatus(subagent.status);
+    var statusLower = status.toLowerCase();
+    var task = subagent.task || 'Autonomous Task';
+    var openAttr = isOpen ? ' open' : '';
+    var focusedClass = isOpen ? ' cr-subagent-card--focused' : '';
+
+    var trace = subagent.trace || null;
+    var steps = (trace && Array.isArray(trace.steps)) ? trace.steps : [];
+    var totalTokens = (trace && trace.metrics && trace.metrics.totalTokens) ? trace.metrics.totalTokens : { input: 0, output: 0, total: 0 };
+    var durationSec = (trace && trace.durationMs) ? (trace.durationMs / 1000).toFixed(1) : 0;
+
+    var actionsHtml = '';
+    if (status === 'RUNNING') {
+      actionsHtml = (
+        '<button type="button" class="cr-subagent-action-btn cr-subagent-btn cr-subagent-pause-btn" data-agent-id="' + esc(agentId) + '" title="Pause subagent">⏸ Pause</button>' +
+        '<button type="button" class="cr-subagent-action-btn cr-subagent-btn cr-subagent-stop-btn cr-subagent-btn--danger" data-agent-id="' + esc(agentId) + '" title="Stop subagent">⏹ Stop</button>'
+      );
+    } else if (status === 'PAUSED') {
+      actionsHtml = (
+        '<button type="button" class="cr-subagent-action-btn cr-subagent-btn cr-subagent-resume-btn cr-subagent-btn--primary" data-agent-id="' + esc(agentId) + '" title="Resume subagent">▶ Resume</button>' +
+        '<button type="button" class="cr-subagent-action-btn cr-subagent-btn cr-subagent-stop-btn cr-subagent-btn--danger" data-agent-id="' + esc(agentId) + '" title="Stop subagent">⏹ Stop</button>'
+      );
+    }
+
+    // Error handling
+    var err = subagent.error || (trace && (trace.error || (trace.status === 'failed' && trace.finalResponse && trace.finalResponse.text))) || (subagent.result && (subagent.result.failure && subagent.result.failure.message)) || null;
+    if (!err && (status === 'FAILED' || (trace && trace.status === 'failed'))) {
+      err = (trace && trace.finalResponse && trace.finalResponse.text) ? trace.finalResponse.text : 'Connection or execution error.';
+    }
+
+    var errorBannerHtml = '';
+    if (err) {
+      errorBannerHtml = (
+        '<div class="cr-subagent-error-banner" style="background:#2d1515;border:1px solid #7f1d1d;border-radius:8px;padding:12px 14px;margin:8px 0;">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#f87171;margin-bottom:6px;">' +
+            '<span>⚠️</span>' +
+            '<span>Error Response</span>' +
+          '</div>' +
+          '<div style="font-size:12px;color:#fca5a5;line-height:1.4;font-family:monospace;">' + esc(typeof err === 'string' ? err : (err.message || JSON.stringify(err))) + '</div>' +
+        '</div>'
+      );
+    }
+
+    // Thinking and tools
+    var innerItemsHtml = '';
+    if (steps.length > 0) {
+      for (var s = 0; s < steps.length; s++) {
+        var step = steps[s];
+
+        if (step.llmCall && step.llmCall.thinking) {
+          innerItemsHtml += (
+            '<details class="cr-think-block cr-subagent-think-block cr-thinking-block cr-subagent-thinking" open>' +
+              '<summary class="cr-think-summary cr-thinking-header">' +
+                '<span class="cr-think-icon cr-thinking-icon">🕒</span>' +
+                '<span class="cr-think-label cr-thinking-label">Thought process</span>' +
+                '<span class="cr-think-chevron cr-thinking-chevron"></span>' +
+              '</summary>' +
+              '<div class="cr-thinking-body"><pre class="cr-think-pre"><code>' + esc(step.llmCall.thinking) + '</code></pre></div>' +
+            '</details>'
+          );
+        }
+
+        var toolList = step.toolCalls || step.tools || [];
+        if (toolList && toolList.length > 0) {
+          innerItemsHtml += '<div class="cr-subagent-tools-section">';
+          for (var t = 0; t < toolList.length; t++) {
+            innerItemsHtml += buildSubagentToolCardHtml(toolList[t]);
+          }
+          innerItemsHtml += '</div>';
+        }
+      }
+      if (err) {
+        innerItemsHtml += errorBannerHtml;
+      }
+    } else if (err) {
+      innerItemsHtml = errorBannerHtml;
+    } else if (status === 'STOPPED') {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="color:#94a3b8;padding:8px 0;">' +
+          '<span style="font-size:14px;margin-right:6px;">⏹</span>' +
+          '<span>Subagent execution was stopped.</span>' +
+        '</div>'
+      );
+    } else if (status === 'FAILED') {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="color:#f87171;padding:8px 0;">' +
+          '<span style="font-size:14px;margin-right:6px;">❌</span>' +
+          '<span>Subagent execution failed.</span>' +
+        '</div>'
+      );
+    } else if (status === 'COMPLETED' || (subagent.result && subagent.result.success !== false)) {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="color:#4ade80;padding:8px 0;">' +
+          '<span style="font-size:14px;margin-right:6px;">✓</span>' +
+          '<span>Subagent completed task successfully.</span>' +
+        '</div>'
+      );
+    } else {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="padding:8px 0;">' +
+          '<span class="cr-subagent-empty-dot"></span>' +
+          '<span>Initializing subagent agentLoop and workspace context...</span>' +
+        '</div>'
+      );
+    }
+
+    // Final response
+    var finalResponseHtml = '';
+    var finalResponseText = (trace && trace.finalResponse && (trace.finalResponse.content || trace.finalResponse.text)) || (subagent.result && (subagent.result.content || subagent.result.summary || subagent.result.output)) || '';
+    if (finalResponseText) {
+      var renderedMarkdown = formatSubagentMarkdown(finalResponseText);
+      finalResponseHtml = (
+        '<div class="cr-subagent-task-block" style="margin-top:6px;">' +
+          '<div class="cr-subagent-block-label">Subagent Final Response</div>' +
+          '<div class="cr-subagent-markdown-output md-content cr-content-block">' + renderedMarkdown + '</div>' +
+        '</div>'
+      );
+    }
+
+    var tokenGaugeHtml = (
+      '<div class="cr-subagent-tokens-row cr-subagent-token-row">' +
+        '<span class="cr-subagent-tokens-badge cr-subagent-token-item">' +
+          '📊 Tokens: <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output) || 0).toLocaleString() + '</strong> (In: ' + (totalTokens.input || 0).toLocaleString() + ' • Out: ' + (totalTokens.output || 0).toLocaleString() + ')' +
+          (durationSec ? ' • ⏱ ' + durationSec + 's' : '') +
+        '</span>' +
+        '<button type="button" class="cr-subagent-view-trace-link" data-subagent-id="' + esc(agentId) + '">View Subagent Traces ↗</button>' +
+      '</div>'
+    );
+
+    return (
+      '<details class="cr-subagent-card cr-subagent-card--' + statusLower + focusedClass + '" id="subagent_card_' + esc(agentId) + '" data-subagent-id="' + esc(agentId) + '"' + openAttr + '>' +
+        '<summary class="cr-subagent-head cr-subagent-card-header">' +
+          '<div class="cr-subagent-head-left cr-subagent-card-header-left">' +
+            '<span class="cr-subagent-bot-icon">🤖</span>' +
+            '<div class="cr-subagent-title-stack">' +
+              '<div class="cr-subagent-title-row">' +
+                '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + statusLower + '"></span>' +
+                '<span class="cr-subagent-name font-bold">' + esc(agentId) + '</span>' +
+                '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
+              '</div>' +
+              '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="cr-subagent-head-right cr-subagent-card-header-right">' +
+            '<span class="cr-subagent-status cr-subagent-status--' + statusLower + '">● ' + esc(status) + '</span>' +
+            actionsHtml +
+            '<span class="cr-subagent-chevron"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg></span>' +
+          '</div>' +
+        '</summary>' +
+        '<div class="cr-subagent-body cr-subagent-card-body">' +
+          '<div class="cr-subagent-timeline-track cr-subagent-timeline-container">' +
+            '<div class="cr-subagent-task-block">' +
+              '<div class="cr-subagent-block-label">Assigned Goal</div>' +
+              '<div class="cr-subagent-task-text">' + esc(task) + '</div>' +
+            '</div>' +
+            innerItemsHtml +
+            finalResponseHtml +
+            tokenGaugeHtml +
+          '</div>' +
+        '</div>' +
+      '</details>'
+    );
+  }
+
+  function buildSubagentExecutionChatHtml(subagent) {
+    if (!subagent) return '';
+    var agentId = subagent.agentId || subagent.id || 'subagent';
+    var role = formatSubagentRole(subagent.role);
+    var status = formatSubagentStatus(subagent.status);
+    var task = subagent.task || 'Autonomous Task';
+    var trace = subagent.trace || null;
+    var steps = (trace && Array.isArray(trace.steps)) ? trace.steps : [];
+    var botAvatarSrc = window.CODERUN_BOT_AVATAR || 'bot-avatar.jpg';
+
+    var innerItemsHtml = '';
+    var totalTokens = (trace && trace.metrics && trace.metrics.totalTokens) ? trace.metrics.totalTokens : { input: 0, output: 0, total: 0 };
+    var finalResponseText = '';
+
+    if (trace && trace.finalResponse && (trace.finalResponse.content || trace.finalResponse.text)) {
+      finalResponseText = trace.finalResponse.content || trace.finalResponse.text;
+    } else if (subagent.result && subagent.result.content) {
+      finalResponseText = subagent.result.content;
+    }
+
+    var err = subagent.error || (trace && (trace.error || (trace.status === 'failed' && trace.finalResponse && trace.finalResponse.text))) || (subagent.result && subagent.result.failure && subagent.result.failure.message) || null;
+    if (!err && (status === 'FAILED' || (trace && trace.status === 'failed'))) {
+      err = (trace && trace.finalResponse && trace.finalResponse.text) ? trace.finalResponse.text : 'Connection or execution error.';
+    }
+
+    var errorBannerHtml = '';
+    if (err) {
+      errorBannerHtml = (
+        '<div class="cr-subagent-error-banner" style="background:#2d1515;border:1px solid #7f1d1d;border-radius:8px;padding:12px 14px;margin:8px 0;">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#f87171;margin-bottom:6px;">' +
+            '<span>⚠️</span>' +
+            '<span>Error Response</span>' +
+          '</div>' +
+          '<div style="font-size:12px;color:#fca5a5;line-height:1.4;">' + esc(typeof err === 'string' ? err : (err.message || JSON.stringify(err))) + '</div>' +
+        '</div>'
+      );
+    }
+
+    if (steps.length > 0) {
+      for (var s = 0; s < steps.length; s++) {
+        var step = steps[s];
+
+        if (step.llmCall && step.llmCall.thinking) {
+          innerItemsHtml += (
+            '<details class="cr-thinking-block cr-subagent-thinking" open>' +
+              '<summary class="cr-thinking-header">' +
+                '<span class="cr-thinking-icon">🕒</span>' +
+                '<span class="cr-thinking-label">Thought process</span>' +
+                '<span class="cr-think-chevron cr-thinking-chevron"></span>' +
+              '</summary>' +
+              '<div class="cr-thinking-body">' + esc(step.llmCall.thinking) + '</div>' +
+            '</details>'
+          );
+        }
+
+        var toolList = step.toolCalls || step.tools || [];
+        if (toolList && toolList.length > 0) {
+          for (var t = 0; t < toolList.length; t++) {
+            var tc = toolList[t];
+            innerItemsHtml += buildSubagentToolCardHtml(tc);
+          }
+        }
+      }
+      if (err) {
+        innerItemsHtml += errorBannerHtml;
+      }
+    } else if (err) {
+      innerItemsHtml = errorBannerHtml;
+    } else if (status === 'STOPPED') {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="color:#94a3b8;">' +
+          '<span style="font-size:14px;margin-right:6px;">⏹</span>' +
+          '<span>Subagent execution was stopped.</span>' +
+        '</div>'
+      );
+    } else if (status === 'FAILED') {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty" style="color:#f87171;">' +
+          '<span style="font-size:14px;margin-right:6px;">❌</span>' +
+          '<span>Subagent execution failed.</span>' +
+        '</div>'
+      );
+    } else {
+      innerItemsHtml = (
+        '<div class="cr-subagent-timeline-empty">' +
+          '<span class="cr-subagent-empty-dot"></span>' +
+          '<span>Initializing subagent agentLoop and workspace context...</span>' +
+        '</div>'
+      );
+    }
+
+    var finalResponseHtml = '';
+    if (finalResponseText) {
+      var renderedContent = formatSubagentMarkdown(finalResponseText);
+      finalResponseHtml = '<div class="cr-subagent-markdown-output md-content cr-content-block">' + renderedContent + '</div>';
+    }
+
+    var tokenGaugeHtml = '';
+    if (totalTokens && (totalTokens.total > 0 || totalTokens.input > 0)) {
+      tokenGaugeHtml = (
+        '<div class="cr-subagent-token-row">' +
+          '<span class="cr-subagent-token-item">📊 Tokens: <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output)) + '</strong></span>' +
+          '<span class="cr-subagent-token-sub">(In: ' + (totalTokens.input || 0) + ' • Out: ' + (totalTokens.output || 0) + ')</span>' +
+        '</div>'
+      );
+    }
+
+    return (
+      '<div class="cr-subagent-chat-stream">' +
+        '<div class="cr-row cr-row--user">' +
+          '<div class="cr-user-bubble">' + esc(task) + '</div>' +
+        '</div>' +
+        '<div class="cr-row cr-row--bot">' +
+          '<div class="cr-bot-avatar">' +
+            '<img class="cr-bot-avatar-img" src="' + botAvatarSrc + '" alt="Bot" onerror="this.outerHTML=\'<svg class=\\\'cr-icon\\\' viewBox=\\\'0 0 24 24\\\' fill=\\\'currentColor\\\'><path d=\\\'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z\\\'/></svg>\'"/>' +
+          '</div>' +
+          '<div class="cr-bot-body">' +
+            innerItemsHtml +
+            finalResponseHtml +
+            tokenGaugeHtml +
+            '<div class="cr-subagent-card-footer" style="margin-top:14px;padding-top:10px;border-top:1px solid #1e293b;">' +
+              '<button type="button" class="cr-subagent-view-trace-link" data-subagent-id="' + esc(agentId) + '">View Subagent Traces ↗</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderSubagentsView(container, targetSubagentId) {
+    if (!container) return;
+    var activeId = state.activeConversationId;
+    var subagents = getSubagentsForCurrentSession(activeId);
+
+    if (!subagents || subagents.length === 0) {
+      var botAvatarSrc = window.CODERUN_BOT_AVATAR || 'bot-avatar.jpg';
+      var botAvatarHtml = '<img class="cr-bot-avatar-img cr-subagent-empty-avatar" src="' + botAvatarSrc + '" alt="Bot" onerror="this.outerHTML=\'<svg class=\\\'cr-icon\\\' viewBox=\\\'0 0 24 24\\\' fill=\\\'currentColor\\\' style=\\\'width:36px;height:36px;color:#58a6ff;\\\'><path d=\\\'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z\\\'/></svg>\'"/>';
+      container.innerHTML = (
+        '<div class="cr-subagents-panel">' +
+          '<div class="cr-subagents-toolbar">' +
+            '<div class="cr-subagents-toolbar-left">' +
+              '<span class="cr-subagents-title">Subagents</span>' +
+              '<span class="cr-subagents-count-badge">0</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="cr-subagents-empty">' +
+            '<div class="cr-subagents-empty-icon">' +
+              '<div class="cr-subagent-empty-avatar-wrap">' +
+                botAvatarHtml +
+              '</div>' +
+            '</div>' +
+            '<div class="cr-subagents-empty-title" data-empty="No subagents created">No subagents are created in this chat</div>' +
+          '</div>' +
+        '</div>'
+      );
+      return;
+    }
+
+    var activeSubagentId = targetSubagentId || state.activeSubagentId || (subagents[0] && (subagents[0].agentId || subagents[0].id));
+    state.activeSubagentId = activeSubagentId;
+
+    var cardsHtml = '';
+    for (var c = 0; c < subagents.length; c++) {
+      var sub = subagents[c];
+      var isSubOpen = (subagents.length === 1) || (sub.agentId === activeSubagentId || sub.id === activeSubagentId);
+      cardsHtml += buildSubagentDropdownCardHtml(sub, isSubOpen);
+    }
+
+    var html = (
+      '<div class="cr-subagents-panel">' +
+        '<div class="cr-subagents-toolbar">' +
+          '<div class="cr-subagents-toolbar-left">' +
+            '<span class="cr-subagents-title">Subagents</span>' +
+            '<span class="cr-subagents-count-badge">' + subagents.length + '</span>' +
+          '</div>' +
+          '<div class="cr-subagents-toolbar-right">' +
+            '<span class="cr-subagents-toolbar-desc">click on the drop to check the complete excution of subagents</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cr-subagents-list" id="crSubagentsList">' +
+          cardsHtml +
+        '</div>' +
+      '</div>'
+    );
+
+    container.innerHTML = html;
+
+    var resumeBtns = container.querySelectorAll('.cr-subagent-resume-btn');
+    for (var r = 0; r < resumeBtns.length; r++) {
+      resumeBtns[r].onclick = handleSubagentResumeClick;
+    }
+
+    var pauseBtns = container.querySelectorAll('.cr-subagent-pause-btn');
+    for (var p = 0; p < pauseBtns.length; p++) {
+      pauseBtns[p].onclick = handleSubagentPauseClick;
+    }
+
+    var stopBtns = container.querySelectorAll('.cr-subagent-stop-btn');
+    for (var st = 0; st < stopBtns.length; st++) {
+      stopBtns[st].onclick = handleSubagentStopClick;
+    }
+
+    var traceLinks = container.querySelectorAll('.cr-subagent-view-trace-link');
+    for (var t = 0; t < traceLinks.length; t++) {
+      traceLinks[t].onclick = handleSubagentViewTraceClick;
+    }
+  }
+
+  function handleSubagentDropdownSelectChange() {
+    var selId = this.value;
+    state.activeSubagentId = selId;
+    var container = document.getElementById("subagents-area-container");
+    if (container) renderSubagentsView(container, selId);
+  }
+
+  function handleSubagentResumeClick(event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    var agentId = this.getAttribute('data-agent-id');
+    if (agentId && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: 'resumeSubagent', agentId: agentId, sessionId: state.activeConversationId });
+    }
+  }
+
+  function handleSubagentPauseClick(event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    var agentId = this.getAttribute('data-agent-id');
+    if (agentId && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: 'pauseSubagent', agentId: agentId, sessionId: state.activeConversationId });
+    }
+  }
+
+  function handleSubagentStopClick(event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    var agentId = this.getAttribute('data-agent-id');
+    if (agentId && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: 'stopSubagent', agentId: agentId, sessionId: state.activeConversationId, reason: 'Stopped by user from Subagents panel' });
+    }
+  }
+
+  function handleSubagentViewTraceClick(event) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    var agentId = this.getAttribute('data-subagent-id');
+    switchSubView('subagentTraces', agentId);
+  }
+
+  function handleSubagentEvent(event) {
+    if (!event) return;
+    var sId = event.sessionId || event.parentSessionId || state.activeConversationId;
+    if (!sId) return;
+    var subagents = getSubagentsForCurrentSession(sId);
+    var agentId = event.agentId || event.subagent_id || (event.data && event.data.agentId);
+    if (!agentId) return;
+    var effStatus = event.status || (event.result && event.result.status) || (event.data && event.data.status) || (event.type === 'subagent_completed' ? 'completed' : event.type === 'subagent_failed' ? 'failed' : 'running');
+
+    var found = false;
+    for (var i = 0; i < subagents.length; i++) {
+      if (subagents[i].agentId === agentId || subagents[i].id === agentId) {
+        found = true;
+        if (effStatus) subagents[i].status = effStatus;
+        if (event.name) subagents[i].name = event.name;
+        if (event.role) subagents[i].role = event.role;
+        if (event.task) subagents[i].task = event.task;
+        if (event.result) subagents[i].result = event.result;
+        if (event.data) {
+          for (var k in event.data) {
+            subagents[i][k] = event.data[k];
+          }
+        }
+        break;
+      }
+    }
+
+    if (!found) {
+      subagents.push({
+        agentId: agentId,
+        id: event.id || agentId,
+        name: event.name || (event.result && event.result.name) || agentId,
+        role: event.role || (event.data && event.data.role) || 'coder',
+        status: effStatus,
+        task: event.task || (event.data && event.data.task) || '',
+        result: event.result || null,
+        startedAt: Date.now()
+      });
+    }
+
+    try {
+      localStorage.setItem('coderun_subagents_' + sId, JSON.stringify(subagents));
+    } catch (_) {}
+
+    var subContainer = document.getElementById('subagents-area-container');
+    if (subContainer && subContainer.style.display !== 'none' && state.activeConversationId === sId) {
+      renderSubagentsView(subContainer);
+    }
+    var subTracesContainer = document.getElementById('subagent-traces-area-container');
+    if (subTracesContainer && subTracesContainer.style.display !== 'none' && state.activeConversationId === sId) {
+      renderSubagentTracesView(subTracesContainer);
+    }
+  }
+
+  window.renderSubagentsView = renderSubagentsView;
+  window.handleSubagentEvent = handleSubagentEvent;
 
   function handleCopyTraceCardClick(e) {
     if (e) e.stopPropagation();
@@ -1322,6 +2412,17 @@ function initializeDashboard() {
     var successMark = toolCall.success ? '✓' : '✗';
     var statusClass = toolCall.success ? 'success' : 'failed';
 
+    var outputStr = '';
+    if (typeof toolCall.output === 'string') {
+      outputStr = toolCall.output;
+    } else if (toolCall.output !== null && toolCall.output !== undefined) {
+      try {
+        outputStr = JSON.stringify(toolCall.output, null, 2);
+      } catch (_) {
+        outputStr = String(toolCall.output);
+      }
+    }
+
     return (
       '<div class="cr-trace-tool-card" data-copy="' + esc(rawJson) + '">' +
         '<div class="cr-trace-card-topbar">' +
@@ -1333,7 +2434,7 @@ function initializeDashboard() {
         '<div class="cr-trace-field">' +
           '<div class="cr-trace-field-label">Output:</div>' +
           '<div class="cr-trace-output-box ' + statusClass + '">' +
-            '<span class="cr-trace-status-mark">' + successMark + '</span> ' + esc(toolCall.output || 'No output') +
+            '<span class="cr-trace-status-mark">' + successMark + '</span> ' + esc(outputStr || 'No output') +
           '</div>' +
         '</div>' +
         (durationText ? '<div class="cr-trace-field"><span class="cr-trace-field-label">Duration:</span> ' + esc(durationText) + '</div>' : '') +
@@ -1486,6 +2587,25 @@ function initializeDashboard() {
         allTraces.push(summaryRecord);
       }
       localStorage.setItem("coderun_all_traces", JSON.stringify(allTraces));
+    } catch (_) {
+      // Intentionally ignore storage write errors
+    }
+  }
+
+  function saveSubagentTraceToLocalStorage(parentSessionId, trace) {
+    if (!parentSessionId || !trace) return;
+    try {
+      var traces = JSON.parse(localStorage.getItem('coderun_subagent_traces_' + parentSessionId) || '[]');
+      var foundIndex = -1;
+      for (var i = 0; i < traces.length; i++) {
+        if (traces[i].id === trace.id) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex >= 0) traces[foundIndex] = trace;
+      else traces.push(trace);
+      localStorage.setItem('coderun_subagent_traces_' + parentSessionId, JSON.stringify(traces));
     } catch (_) {
       // Intentionally ignore storage write errors
     }
@@ -3323,11 +4443,16 @@ function initializeDashboard() {
       } else {
         var preview = getConversationPreview(conversation);
         var timeStr = getConversationTime(conversation);
+        var subList = getSubagentsForCurrentSession(conversation.id);
+        var subCountBadge = (subList && subList.length > 0)
+          ? '<span class="cr-thread-subagent-badge" title="' + subList.length + ' subagent(s)">👥 ' + subList.length + '</span>'
+          : '';
         item.innerHTML =
           '<span class="cr-thread-icon">💬</span>' +
           '<div class="cr-thread-content">' +
             '<div class="cr-thread-top-row">' +
               '<span class="cr-thread-title">' + esc(conversation.title || "New chat") + '</span>' +
+              subCountBadge +
               (timeStr ? '<span class="cr-thread-time">' + esc(timeStr) + '</span>' : '') +
             '</div>' +
             '<span class="cr-thread-preview">' + esc(preview) + '</span>' +
@@ -3419,6 +4544,16 @@ function initializeDashboard() {
     var tracesArea = document.getElementById("traces-area-container");
     if (tracesArea && tracesArea.style.display !== "none") {
       renderTracesView(tracesArea);
+    }
+
+    var subagentsArea = document.getElementById("subagents-area-container");
+    if (subagentsArea && subagentsArea.style.display !== "none") {
+      renderSubagentsView(subagentsArea);
+    }
+
+    var subagentTracesArea = document.getElementById("subagent-traces-area-container");
+    if (subagentTracesArea && subagentTracesArea.style.display !== "none") {
+      renderSubagentTracesView(subagentTracesArea);
     }
   }
 
@@ -3855,7 +4990,12 @@ function initializeDashboard() {
       var evTrace = message.event.trace;
       var evSessionId = message.event.sessionId || (evTrace && evTrace.sessionId);
       if (evTrace && evSessionId) {
-        saveTraceToLocalStorage(evSessionId, evTrace);
+        var parentSessionId = evTrace.parentSessionId || '';
+        if (evTrace.agentType === 'subagent' && parentSessionId) {
+          saveSubagentTraceToLocalStorage(parentSessionId, evTrace);
+        } else {
+          saveTraceToLocalStorage(evSessionId, evTrace);
+        }
         var tracesContainer = document.getElementById("traces-area-container");
         if (tracesContainer && tracesContainer.style.display !== "none" && state.activeConversationId === evSessionId) {
           var allSessionTraces = JSON.parse(localStorage.getItem("coderun_traces_" + evSessionId) || "[]");
@@ -3863,6 +5003,12 @@ function initializeDashboard() {
             state.activeTraceRunIndex = allSessionTraces.length - 1;
           }
           renderTracesView(tracesContainer);
+        }
+        if (evTrace.agentType === 'subagent' && parentSessionId && state.activeConversationId === parentSessionId) {
+          var subagentsContainer = document.getElementById('subagents-area-container');
+          var subagentTracesContainer = document.getElementById('subagent-traces-area-container');
+          if (subagentsContainer && subagentsContainer.style.display !== 'none') renderSubagentsView(subagentsContainer);
+          if (subagentTracesContainer && subagentTracesContainer.style.display !== 'none') renderSubagentTracesView(subagentTracesContainer);
         }
       }
     }
@@ -3897,7 +5043,31 @@ function initializeDashboard() {
     if (message.type === "loadedTraces") {
       if (message.sessionId && message.traces && Array.isArray(message.traces)) {
         try {
-          localStorage.setItem("coderun_traces_" + message.sessionId, JSON.stringify(message.traces));
+          var incomingTraces = message.traces;
+          var curSavedTraces = JSON.parse(localStorage.getItem("coderun_traces_" + message.sessionId) || "[]");
+          var effectiveTraces = incomingTraces;
+          if (incomingTraces.length === 0 && curSavedTraces.length > 0) {
+            effectiveTraces = curSavedTraces;
+          } else if (incomingTraces.length > 0 && curSavedTraces.length > 0) {
+            var merged = curSavedTraces.slice();
+            for (var mti = 0; mti < incomingTraces.length; mti++) {
+              var inT = incomingTraces[mti];
+              var inIdx = -1;
+              for (var cti = 0; cti < merged.length; cti++) {
+                if (merged[cti].id === inT.id) {
+                  inIdx = cti;
+                  break;
+                }
+              }
+              if (inIdx >= 0) {
+                merged[inIdx] = inT;
+              } else {
+                merged.push(inT);
+              }
+            }
+            effectiveTraces = merged;
+          }
+          localStorage.setItem("coderun_traces_" + message.sessionId, JSON.stringify(effectiveTraces));
           var tContainer = document.getElementById("traces-area-container");
           if (tContainer && tContainer.style.display !== "none" && state.activeConversationId === message.sessionId) {
             renderTracesView(tContainer);
@@ -3906,6 +5076,75 @@ function initializeDashboard() {
           // Intentionally ignore storage write errors
         }
       }
+    }
+    if (message.type === "loadedSubagents") {
+      if (message.sessionId && message.subagents && Array.isArray(message.subagents)) {
+        try {
+          var incSubs = message.subagents;
+          var curSubs = JSON.parse(localStorage.getItem("coderun_subagents_" + message.sessionId) || "[]");
+          var mergedSubs = curSubs.slice();
+          for (var is = 0; is < incSubs.length; is++) {
+            var incSub = incSubs[is];
+            var fIdx = -1;
+            for (var cs = 0; cs < mergedSubs.length; cs++) {
+              if (mergedSubs[cs].agentId === incSub.agentId || mergedSubs[cs].id === incSub.id || mergedSubs[cs].sessionId === incSub.sessionId) {
+                fIdx = cs;
+                break;
+              }
+            }
+            if (fIdx >= 0) {
+              mergedSubs[fIdx] = Object.assign({}, mergedSubs[fIdx], incSub);
+            } else {
+              mergedSubs.push(incSub);
+            }
+          }
+          localStorage.setItem("coderun_subagents_" + message.sessionId, JSON.stringify(mergedSubs));
+          var subContainer = document.getElementById("subagents-area-container");
+          if (subContainer && subContainer.style.display !== "none" && state.activeConversationId === message.sessionId) {
+            renderSubagentsView(subContainer);
+          }
+        } catch (_) {
+          // Intentionally ignore storage write errors
+        }
+      }
+    }
+    if (message.type === "loadedSubagentTraces") {
+      if (message.sessionId && message.traces && Array.isArray(message.traces)) {
+        try {
+          var incTraces = message.traces;
+          var curSubTraces = JSON.parse(localStorage.getItem("coderun_subagent_traces_" + message.sessionId) || "[]");
+          var mergedSubTraces = curSubTraces.slice();
+          for (var st = 0; st < incTraces.length; st++) {
+            var incT = incTraces[st];
+            var sFound = -1;
+            for (var cut = 0; cut < mergedSubTraces.length; cut++) {
+              if (mergedSubTraces[cut].id === incT.id) {
+                sFound = cut;
+                break;
+              }
+            }
+            if (sFound >= 0) {
+              mergedSubTraces[sFound] = incT;
+            } else {
+              mergedSubTraces.push(incT);
+            }
+          }
+          localStorage.setItem("coderun_subagent_traces_" + message.sessionId, JSON.stringify(mergedSubTraces));
+          var subTracesContainer = document.getElementById("subagent-traces-area-container");
+          if (subTracesContainer && subTracesContainer.style.display !== "none" && state.activeConversationId === message.sessionId) {
+            renderSubagentTracesView(subTracesContainer);
+          }
+          var subagentsArea = document.getElementById("subagents-area-container");
+          if (subagentsArea && subagentsArea.style.display !== "none" && state.activeConversationId === message.sessionId) {
+            renderSubagentsView(subagentsArea);
+          }
+        } catch (_) {
+          // Intentionally ignore storage write errors
+        }
+      }
+    }
+    if (message.type === "subagentEvent") {
+      handleSubagentEvent(message);
     }
     if (message.type === "rulesLoaded") {
       var globalEl = document.getElementById("rulesGlobalTextarea");

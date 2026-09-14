@@ -35,8 +35,42 @@ function computeRelPath(fullPath, canonicalWs) {
 
 // Create a checkpoint before modifying a file.
 // Captures the file's current content in SQLite.
-export async function createCheckpoint(filePath, workspace, sessionId, label) {
-  if (!filePath || !workspace) return null;
+export async function createCheckpoint(arg1, arg2, sessionId, labelOrAgentId, maybeAgentId) {
+  if (!arg1 || !arg2) return null;
+
+  var filePath, workspace, label, agentId;
+
+  // Detect whether arg1 is workspace folder and arg2 is relative file
+  var stat1IsWs = false;
+  try {
+    if (existsSync(arg1)) {
+      var stat1 = await fs.stat(arg1);
+      if (stat1.isDirectory() && !path.isAbsolute(arg2)) {
+        stat1IsWs = true;
+      }
+    }
+  } catch (_) {}
+
+  if (stat1IsWs) {
+    workspace = arg1;
+    filePath = path.join(arg1, arg2);
+  } else {
+    filePath = arg1;
+    workspace = arg2;
+  }
+
+  if (maybeAgentId) {
+    label = labelOrAgentId;
+    agentId = maybeAgentId;
+  } else if (labelOrAgentId) {
+    if (String(labelOrAgentId).startsWith('subagent_') || String(labelOrAgentId).startsWith('agent_')) {
+      agentId = labelOrAgentId;
+      label = null;
+    } else {
+      label = labelOrAgentId;
+      agentId = null;
+    }
+  }
 
   var safeCheck = pathSecurity.resolveSafePath(filePath, workspace);
   if (!safeCheck.safe) {
@@ -70,13 +104,20 @@ export async function createCheckpoint(filePath, workspace, sessionId, label) {
     created_at: Date.now(),
     session_id: sessionId || 'session_unknown',
     label: label || 'Edit: ' + relFilePath,
-    existed: existed
+    existed: existed,
+    agent_id: agentId || null
   });
 
   // Trim old checkpoints for this session
   trimCheckpoints(sessionId);
 
-  return id;
+  var resObj = new String(id);
+  resObj.id = id;
+  resObj.agentId = agentId || null;
+  resObj.file_path = relFilePath;
+  resObj.filePath = relFilePath;
+  resObj.sessionId = sessionId;
+  return resObj;
 }
 
 export function deleteCheckpoint(id) {
@@ -110,7 +151,7 @@ async function snapshotDirectoryTree(dirPath, rootDir) {
 }
 
 // Create a checkpoint before creating a folder.
-export async function createFolderCheckpoint(folderPath, workspace, sessionId, label, existed) {
+export async function createFolderCheckpoint(folderPath, workspace, sessionId, label, existed, agentId) {
   if (!folderPath || !workspace) return null;
 
   var safeCheck = pathSecurity.resolveSafePath(folderPath, workspace);
@@ -134,7 +175,8 @@ export async function createFolderCheckpoint(folderPath, workspace, sessionId, l
     label: label || 'Created: ' + relFolderPath,
     existed: existed ? 1 : 0,
     is_dir: 1,
-    extra_data: ''
+    extra_data: '',
+    agent_id: agentId || null
   });
 
   trimCheckpoints(sessionId);
@@ -142,7 +184,7 @@ export async function createFolderCheckpoint(folderPath, workspace, sessionId, l
 }
 
 // Create a checkpoint before deleting a folder, capturing all contained files.
-export async function createFolderDeleteCheckpoint(folderPath, workspace, sessionId, label) {
+export async function createFolderDeleteCheckpoint(folderPath, workspace, sessionId, label, agentId) {
   if (!folderPath || !workspace) return null;
 
   var safeCheck = pathSecurity.resolveSafePath(folderPath, workspace);
@@ -173,7 +215,8 @@ export async function createFolderDeleteCheckpoint(folderPath, workspace, sessio
     label: label || 'Deleted: ' + relFolderPath,
     existed: 1,
     is_dir: 1,
-    extra_data: JSON.stringify(snapshot)
+    extra_data: JSON.stringify(snapshot),
+    agent_id: agentId || null
   });
 
   trimCheckpoints(sessionId);
@@ -382,4 +425,28 @@ function trimCheckpoints(sessionId) {
       projectKnowledge.deleteCheckpoint(all[i].id);
     }
   }
+}
+
+export function getCheckpointsByAgent(agentId, sessionId) {
+  return projectKnowledge.getCheckpointsByAgent(agentId, sessionId);
+}
+
+export async function undoAgentChanges(agentId, workspace, sessionId) {
+  var checkpoints = getCheckpointsByAgent(agentId, sessionId);
+  var restored = [];
+  for (var i = 0; i < checkpoints.length; i++) {
+    var cp = checkpoints[i];
+    var res = await undoCheckpointById(cp.id, workspace, sessionId);
+    if (res && res.success) {
+      restored.push(cp.file_path);
+    }
+  }
+  return {
+    success: true,
+    agent_id: agentId,
+    agentId: agentId,
+    restoredCount: restored.length,
+    restored_count: restored.length,
+    restored_files: restored
+  };
 }

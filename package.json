@@ -133,6 +133,30 @@
           "default": true,
           "description": "Confirm dangerous actions (delete, terminal, etc.)"
         },
+        "coderun.subagentMaxConcurrent": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Maximum number of concurrently running Subagents per chat"
+        },
+        "coderun.subagentMaxDepth": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0,
+          "description": "Maximum Subagent delegation depth"
+        },
+        "coderun.subagentMaxIterations": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "description": "Maximum iterations allowed for each Subagent"
+        },
+        "coderun.subagentTimeoutMs": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "Optional Subagent execution timeout in milliseconds; zero disables the timeout"
+        },
         "coderun.organization": {
           "type": [
             "string",

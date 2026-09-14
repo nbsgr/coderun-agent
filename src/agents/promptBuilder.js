@@ -357,5 +357,41 @@ export async function buildSystemPromptOnly(workspace, skills, memory, mcpContex
   return { role: 'system', content: content };
 }
 
+export async function buildSubagentMessages(task, subContext, workspace, agentIdentity) {
+  var ident = agentIdentity || {};
+  var content = SYSTEM_PROMPT;
+
+  if (workspace) {
+    content += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
+    content += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
+  }
+
+  var sandboxDir = (typeof pathSecurity.getCanonicalSandboxRoot === 'function') ? pathSecurity.getCanonicalSandboxRoot() : '';
+  if (sandboxDir) {
+    content += '\n\n## USER SANDBOX DIRECTORY\nThe dedicated user sandbox directory is: ' + sandboxDir;
+  }
+
+  var rulesContent = await loadRules(workspace);
+  if (rulesContent) {
+    content += '\n\n## USER RULES\nThe following rules MUST be followed without exception:\n\n' + rulesContent;
+  }
+
+  content += '\n\n## SUBAGENT EXECUTION IDENTITY\n' +
+    'You are a specialized subagent running as: ' + (ident.name || ident.role || 'Subagent') + ' (ID: ' + (ident.id || '') + ').\n' +
+    'You were created and delegated this objective by the main agent.\n' +
+    'Focus strictly and thoroughly on your assigned task. Once your objective is achieved, provide a comprehensive final response summarizing your findings and any modifications made.\n' +
+    'Do not attempt to spawn subagents — you have direct access to reading, writing, editing, searching, and terminal tools to complete your work.';
+
+  var userContent = '## ASSIGNED TASK\n' + (task || '');
+  if (subContext) {
+    userContent += '\n\n## ADDITIONAL CONTEXT FROM MAIN AGENT\n' + subContext;
+  }
+
+  return [
+    { role: 'system', content: content },
+    { role: 'user', content: userContent }
+  ];
+}
+
 export { optimizeHistoricalToolMessage };
 

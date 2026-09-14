@@ -20,13 +20,14 @@ import * as diffManager from './tools/diffManager.js';
 import * as questionManager from './tools/questionManager.js';
 import * as pathSecurity from './tools/pathSecurity.js';
 import * as workspaceIntelligence from './context/workspaceIntelligence.js';
-import { PROVIDER_DEFAULTS } from './agents/constants.js';
+import { PROVIDER_DEFAULTS, EVENT_TYPES } from './agents/constants.js';
 import * as runtime from './agents/runtime.js';
 import * as events from './agents/events.js';
 import { buildCompactCheckpoint } from './context/compactionManager.js';
 import * as executionTrace from './execution/executionTrace.js';
 import * as rulesLoader from './context/rulesLoader.js';
 import * as mcpManager from './mcp/mcpManager.js';
+import * as subagentManager from './agents/subagentManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -97,9 +98,22 @@ function sendAgentEventToWebview(webview, event) {
   webview.postMessage({ type: 'agentEvent', event: event });
 }
 
-function handleAskPermission(webview, toolName, args, id, sessionId) {
+function handleAskPermission(webview, toolName, args, id, sessionId, parentSessionId) {
   var sid = sessionId || 'default';
+  var parentSid = parentSessionId || null;
+  var subagentRec = null;
+  try {
+    subagentRec = subagentManager.getSubagent(sid);
+    if (subagentRec && subagentRec.parentSessionId) {
+      parentSid = subagentRec.parentSessionId;
+    }
+  } catch (_) {}
+
   var chatDecision = permissions.getAlwaysDecision(toolName, sid);
+  if (!chatDecision && parentSid) {
+    chatDecision = permissions.getAlwaysDecision(toolName, parentSid);
+  }
+
   if (chatDecision) {
     webview.postMessage({
       type: 'agentEvent',
@@ -109,8 +123,12 @@ function handleAskPermission(webview, toolName, args, id, sessionId) {
         arguments: args,
         id: id,
         sessionId: sid,
+        parentSessionId: parentSid,
         autoResolved: true,
-        decision: chatDecision
+        decision: chatDecision,
+        subagentName: subagentRec && subagentRec.identity ? subagentRec.identity.name : null,
+        subagentRole: subagentRec && subagentRec.identity ? subagentRec.identity.role : null,
+        agentType: subagentRec ? 'subagent' : 'main'
       }
     });
     return Promise.resolve(chatDecision === 'allow');
@@ -122,10 +140,14 @@ function handleAskPermission(webview, toolName, args, id, sessionId) {
       tool: toolName,
       arguments: args,
       id: id,
-      sessionId: sid
+      sessionId: sid,
+      parentSessionId: parentSid,
+      subagentName: subagentRec && subagentRec.identity ? subagentRec.identity.name : null,
+      subagentRole: subagentRec && subagentRec.identity ? subagentRec.identity.role : null,
+      agentType: subagentRec ? 'subagent' : 'main'
     }
   });
-  return permissions.requestPermission(toolName, args, id, null, sid);
+  return permissions.requestPermission(toolName, args, id, null, sid, parentSid);
 }
 
 function handleAgentEvent(webview, event) {
@@ -139,6 +161,11 @@ function handleAgentEvent(webview, event) {
     }
   }
   webview.postMessage({ type: 'agentEvent', event: eventForWebview });
+  if (event && event.type === 'trace_updated' && event.sessionId && extensionContext && extensionContext.globalStorageUri) {
+    executionTrace.saveTraceToDisk(extensionContext.globalStorageUri.fsPath, event.sessionId).catch(function onTraceSaveError(err) {
+      console.warn('[CODERUN] Failed to persist live trace:', err.message);
+    });
+  }
   if (event.type === 'request_diff' && event.id) {
     diffManager.storePatch(event);
   }
@@ -170,9 +197,21 @@ function handleOpenTextDocumentReject(err) {
 export async function activate(context) {
   console.log('[CODERUN] Extension Activated');
   extensionContext = context;
+  if (context && context.globalStorageUri) {
+    executionTrace.setDefaultStoragePath(context.globalStorageUri.fsPath);
+  }
 
   // Register all tools
   registerAllTools();
+  subagentManager.setAgentRunner(agentLoop.runAgentLoop);
+  subagentManager.initializePersistence(context);
+  var subagentConfig = config.getConfig();
+  subagentManager.configureLimits({
+    maxDepth: subagentConfig.subagentMaxDepth,
+    maxConcurrent: subagentConfig.subagentMaxConcurrent,
+    maxIterations: subagentConfig.subagentMaxIterations,
+    timeoutMs: subagentConfig.subagentTimeoutMs
+  });
 
   // Give the permission system access to extensionContext for "always" persistence
   permissions.setExtensionContext(context);
@@ -209,6 +248,38 @@ export async function activate(context) {
 
   // Warm up workspace intelligence cache (non-blocking)
   workspaceIntelligence.scan(getWorkspaceFolder());
+
+  // Forward subagent lifecycle events to active webview
+  function forwardSubagentEvent(subagentType, data) {
+    if (currentWebview) {
+      currentWebview.postMessage({
+        type: 'subagentEvent',
+        subagentType: subagentType,
+        data: data,
+        agentId: data && data.agentId,
+        sessionId: data && data.parentSessionId,
+        status: data && data.status,
+        role: data && data.role,
+        task: data && data.task
+      });
+    }
+  }
+
+  function onSubagentSpawned(d) { forwardSubagentEvent('spawned', d); }
+  function onSubagentStatus(d) { forwardSubagentEvent('status', d); }
+  function onSubagentCompleted(d) { forwardSubagentEvent('completed', d); }
+  function onSubagentFailed(d) { forwardSubagentEvent('failed', d); }
+  function onSubagentPaused(d) { forwardSubagentEvent('paused', d); }
+  function onSubagentResumed(d) { forwardSubagentEvent('resumed', d); }
+  function onSubagentStopped(d) { forwardSubagentEvent('stopped', d); }
+
+  events.on(EVENT_TYPES.SUBAGENT_SPAWNED, onSubagentSpawned);
+  events.on(EVENT_TYPES.SUBAGENT_STATUS, onSubagentStatus);
+  events.on(EVENT_TYPES.SUBAGENT_COMPLETED, onSubagentCompleted);
+  events.on(EVENT_TYPES.SUBAGENT_FAILED, onSubagentFailed);
+  events.on(EVENT_TYPES.SUBAGENT_PAUSED, onSubagentPaused);
+  events.on(EVENT_TYPES.SUBAGENT_RESUMED, onSubagentResumed);
+  events.on(EVENT_TYPES.SUBAGENT_STOPPED, onSubagentStopped);
 
   // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -344,10 +415,12 @@ function getWebviewHtml(webview, extensionUri) {
   var cb = Date.now();
   var dashboardCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.css'))).toString() + '?cb=' + cb;
   var chatSpaceCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.css'))).toString() + '?cb=' + cb;
+  var subagentPanelCss = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'SubagentPanel.css'))).toString() + '?cb=' + cb;
   var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'MarkdownRenderer.js'))).toString() + '?cb=' + cb;
   var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'webview-shared.js'))).toString() + '?cb=' + cb;
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'Dashboard.js'))).toString() + '?cb=' + cb;
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js'))).toString() + '?cb=' + cb;
+  var subagentPanelJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'SubagentPanel.js'))).toString() + '?cb=' + cb;
   var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'bot-avatar.jpg'))).toString();
   var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'user-avatar.svg'))).toString();
 
@@ -381,6 +454,7 @@ function getWebviewHtml(webview, extensionUri) {
   </style>
   <link rel="stylesheet" href="${dashboardCss}">
   <link rel="stylesheet" href="${chatSpaceCss}">
+  <link rel="stylesheet" href="${subagentPanelCss}">
 </head>
 <body>
   <div id="app"></div>
@@ -596,8 +670,8 @@ async function handleFrontendMessage(message, webview) {
           handleAgentEvent(webview, ev);
         }
 
-        function onAskPermission(tool, args, tcId, sendEv, sId) {
-          return handleAskPermission(webview, tool, args, tcId, sId || convSessionId);
+        function onAskPermission(tool, args, tcId, sendEv, sId, pId) {
+          return handleAskPermission(webview, tool, args, tcId, sId || convSessionId, pId || convSessionId);
         }
 
         await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, onAgentEvent, onAskPermission, { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: !!message.isContinuation });
@@ -644,6 +718,7 @@ async function handleFrontendMessage(message, webview) {
         diffManager.cancelSession(stopSessionId);
         questionManager.cancelSessionQuestions(stopSessionId);
         terminalManager.stopTerminal(stopSessionId);
+        subagentManager.stopSubagents(stopSessionId, 'Parent agent stopped');
       } else {
         for (var sidKey in abortControllers) {
           if (abortControllers[sidKey]) {
@@ -655,6 +730,7 @@ async function handleFrontendMessage(message, webview) {
         diffManager.cancelAll();
         questionManager.cancelAllQuestions();
         terminalManager.dispose();
+        subagentManager.stopAllSubagents('Parent agent stopped');
       }
       break;
     }
@@ -667,10 +743,17 @@ async function handleFrontendMessage(message, webview) {
 
     case 'permissionResponse': {
       var respSessionId = message.sessionId || message.conversationId || 'default';
+      var parentSid = null;
+      try {
+        var subagentRec = subagentManager.getSubagent(respSessionId);
+        if (subagentRec && subagentRec.parentSessionId) {
+          parentSid = subagentRec.parentSessionId;
+        }
+      } catch (_) {}
       permissions.resolvePermission(
         message.toolCallId,
         !!message.approved,
-        { always: !!message.always, tool: message.tool, toolName: message.tool, sessionId: respSessionId },
+        { always: !!message.always, tool: message.tool, toolName: message.tool, sessionId: respSessionId, parentSessionId: parentSid },
         respSessionId
       );
       break;
@@ -788,17 +871,161 @@ async function handleFrontendMessage(message, webview) {
     }
 
     case 'getTraces': {
-      if (message.sessionId && extensionContext) {
+      if (message.sessionId) {
         try {
-          var storagePath = extensionContext.globalStorageUri.fsPath;
-          var traces = await executionTrace.loadTracesFromDisk(storagePath, message.sessionId);
+          var inMemTraces = executionTrace.getTraces(message.sessionId) || [];
+          var activeTr = executionTrace.getActiveTrace(message.sessionId);
+          var mergedTraces = [];
+          var seenIds = {};
+
+          for (var mi = 0; mi < inMemTraces.length; mi++) {
+            if (inMemTraces[mi] && inMemTraces[mi].id) {
+              seenIds[inMemTraces[mi].id] = true;
+              mergedTraces.push(inMemTraces[mi]);
+            }
+          }
+          if (activeTr && activeTr.id && !seenIds[activeTr.id]) {
+            seenIds[activeTr.id] = true;
+            mergedTraces.push(activeTr);
+          }
+
+          if (extensionContext && extensionContext.globalStorageUri) {
+            var storagePath = extensionContext.globalStorageUri.fsPath;
+            var diskTraces = await executionTrace.loadTracesFromDisk(storagePath, message.sessionId);
+            for (var di = 0; di < diskTraces.length; di++) {
+              var dt = diskTraces[di];
+              if (dt && dt.id) {
+                if (!seenIds[dt.id]) {
+                  seenIds[dt.id] = true;
+                  mergedTraces.push(dt);
+                } else {
+                  for (var mti = 0; mti < mergedTraces.length; mti++) {
+                    if (mergedTraces[mti].id === dt.id && (!mergedTraces[mti].steps || !mergedTraces[mti].steps.length)) {
+                      mergedTraces[mti] = dt;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           webview.postMessage({
             type: 'loadedTraces',
             sessionId: message.sessionId,
-            traces: traces
+            traces: mergedTraces
           });
         } catch (e) {
-          console.error('[CODERUN] Failed to load traces from disk:', e);
+          console.error('[CODERUN] Failed to load traces:', e);
+        }
+      }
+      break;
+    }
+
+    case 'getSubagents': {
+      if (message.sessionId) {
+        try {
+          var subs = subagentManager.listSubagents(message.sessionId);
+          var subTracesList = executionTrace.getSubagentTraces(message.sessionId);
+          if (extensionContext && extensionContext.globalStorageUri) {
+            var diskSubTraces = await executionTrace.loadSubagentTracesFromDisk(extensionContext.globalStorageUri.fsPath, message.sessionId);
+            for (var dti = 0; dti < diskSubTraces.length; dti++) {
+              var diskTrace = diskSubTraces[dti];
+              var alreadyLoaded = false;
+              for (var sti = 0; sti < subTracesList.length; sti++) {
+                if (subTracesList[sti].id === diskTrace.id) {
+                  subTracesList[sti] = diskTrace;
+                  alreadyLoaded = true;
+                  break;
+                }
+              }
+              if (!alreadyLoaded) subTracesList.push(diskTrace);
+            }
+          }
+
+          for (var sIdx = 0; sIdx < subs.length; sIdx++) {
+            var subItem = subs[sIdx];
+            if (!subItem.trace || !subItem.trace.steps || !subItem.trace.steps.length) {
+              for (var trIdx = 0; trIdx < subTracesList.length; trIdx++) {
+                var candidateTr = subTracesList[trIdx];
+                if (candidateTr.agentId === subItem.agentId || candidateTr.agentId === subItem.id || candidateTr.sessionId === subItem.sessionId) {
+                  subItem.trace = candidateTr;
+                  break;
+                }
+              }
+            }
+          }
+
+          webview.postMessage({
+            type: 'loadedSubagents',
+            sessionId: message.sessionId,
+            subagents: subs
+          });
+        } catch (e) {
+          console.error('[CODERUN] Failed to list subagents:', e);
+        }
+      }
+      break;
+    }
+
+    case 'getSubagentTraces': {
+      if (message.sessionId) {
+        try {
+          var subTraces = executionTrace.getSubagentTraces(message.sessionId);
+          if (extensionContext && extensionContext.globalStorageUri) {
+            var diskSubTraces = await executionTrace.loadSubagentTracesFromDisk(extensionContext.globalStorageUri.fsPath, message.sessionId);
+            for (var dti = 0; dti < diskSubTraces.length; dti++) {
+              var diskTrace = diskSubTraces[dti];
+              var alreadyLoaded = false;
+              for (var sti = 0; sti < subTraces.length; sti++) {
+                if (subTraces[sti].id === diskTrace.id) {
+                  subTraces[sti] = diskTrace;
+                  alreadyLoaded = true;
+                  break;
+                }
+              }
+              if (!alreadyLoaded) subTraces.push(diskTrace);
+            }
+          }
+          webview.postMessage({
+            type: 'loadedSubagentTraces',
+            sessionId: message.sessionId,
+            traces: subTraces
+          });
+        } catch (e) {
+          console.error('[CODERUN] Failed to get subagent traces:', e);
+        }
+      }
+      break;
+    }
+
+    case 'pauseSubagent': {
+      if (message.agentId) {
+        try {
+          await subagentManager.pauseSubagent(message.agentId, message.sessionId || message.conversationId);
+        } catch (e) {
+          console.error('[CODERUN] Failed to pause subagent:', e);
+        }
+      }
+      break;
+    }
+
+    case 'resumeSubagent': {
+      if (message.agentId) {
+        try {
+          await subagentManager.resumeSubagent(message.agentId, message.sessionId || message.conversationId);
+        } catch (e) {
+          console.error('[CODERUN] Failed to resume subagent:', e);
+        }
+      }
+      break;
+    }
+
+    case 'stopSubagent': {
+      if (message.agentId) {
+        try {
+          await subagentManager.stopSubagent(message.agentId, message.sessionId || message.conversationId, message.reason);
+        } catch (e) {
+          console.error('[CODERUN] Failed to stop subagent:', e);
         }
       }
       break;

@@ -25,6 +25,12 @@ function createInitialSessionState(sessionId) {
     observations: [],
     decisions: [],
     memory: {},
+    agentId: '',
+    parentAgentId: null,
+    parentSessionId: null,
+    depth: 0,
+    role: 'root',
+    agentType: 'root',
     metadata: {
       startedAt: 0,
       iteration: 0,
@@ -32,6 +38,18 @@ function createInitialSessionState(sessionId) {
       iterationLabel: ''
     }
   };
+}
+
+export function initAgentIdentity(identity, sessionId) {
+  var session = getSessionRuntime(sessionId);
+  if (!identity) return session;
+  session.agentId = identity.agentId || session.agentId;
+  session.parentAgentId = identity.parentAgentId !== undefined ? identity.parentAgentId : session.parentAgentId;
+  session.parentSessionId = identity.parentSessionId !== undefined ? identity.parentSessionId : session.parentSessionId;
+  session.depth = identity.depth !== undefined ? identity.depth : session.depth;
+  session.role = identity.role || session.role;
+  session.agentType = identity.agentType || session.agentType;
+  return session;
 }
 
 export function getSessionRuntime(sessionId) {

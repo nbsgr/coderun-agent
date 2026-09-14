@@ -206,7 +206,15 @@ function initializeChatSpace() {
       'update_plan': 'Update Plan',
       'get_current_datetime': 'Get Datetime',
       'sandbox': 'User Sandbox',
-      'ask_question': 'ask_question'
+      'ask_question': 'ask_question',
+      'spawn_subagent': 'Spawn Subagent',
+      'subagent_response': 'Subagent Response',
+      'subagent_status': 'Subagent Status',
+      'subagents_list': 'Subagents List',
+      'stop_subagent': 'Stop Subagent',
+      'wait_for_subagent': 'Wait For Subagent',
+      'pause_subagent': 'Pause Subagent',
+      'resume_subagent': 'Resume Subagent'
     };
     if (map[name]) return map[name];
     if (!name) return 'Tool';
@@ -229,6 +237,14 @@ function initializeChatSpace() {
 
   function getToolSubtitle(toolName, args) {
     if (!args) return '';
+    if (toolName === 'spawn_subagent' || toolName === 'subagent_response') {
+      var rolePrefix = args.role ? '[' + String(args.role).toUpperCase() + '] ' : '';
+      var subTitleName = args.name || args.agentId || args.id || '';
+      return rolePrefix + (subTitleName ? subTitleName + ' — ' : '') + (args.task ? truncate(args.task, 40) : '');
+    }
+    if (toolName === 'wait_for_subagent') {
+      return args.name ? (args.name + ' (' + (args.agentId || '') + ')') : (args.agentId || '');
+    }
     if (toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file' || toolName === 'delete_file') {
       return args.path || args.file_path || args.target_file || '';
     }
@@ -282,7 +298,12 @@ function initializeChatSpace() {
       'update_plan': '📋',
       'get_current_datetime': '🕒',
       'sandbox': '📦',
-      'ask_question': I.wrench
+      'ask_question': I.wrench,
+      'spawn_subagent': '🤖',
+      'subagent_response': '🤖',
+      'wait_for_subagent': '⏳',
+      'subagent_status': '📊',
+      'subagents_list': '👥'
     };
     if (iconMap[name]) return iconMap[name];
     if (name && (name.includes('puppeteer') || name.includes('browser'))) {
@@ -554,62 +575,181 @@ function initializeChatSpace() {
     renderTodos(chatCtx, plan);
   }
 
+  function updateRunningSubagentsPanel(chatCtx) {
+    if (!chatCtx) return;
+    var panel = chatCtx.runningSubagentsPanel;
+    if (!panel) return;
+    var subMap = chatCtx.runningSubagents || {};
+    var subKeys = Object.keys(subMap);
+    if (!subKeys.length) {
+      panel.style.display = 'none';
+      panel.innerHTML = '';
+      return;
+    }
+
+    panel.style.display = 'block';
+    var html = '<div class="cr-running-subagents-header">' +
+      '<span class="cr-running-subagents-dot"></span>' +
+      '<span>Running Subagents (' + subKeys.length + ')</span>' +
+      '</div>' +
+      '<div class="cr-running-subagents-list">';
+
+    for (var i = 0; i < subKeys.length; i++) {
+      var k = subKeys[i];
+      var s = subMap[k];
+      var roleName = String(s.role || 'coder').toLowerCase();
+      var roleCls = 'role-' + roleName;
+      var roleBadge = '[' + roleName.toUpperCase() + ']';
+      var sName = s.name || s.id || 'Subagent';
+      var sTool = s.currentTool ? '(' + s.currentTool + ')' : '(running)';
+      var sId = s.id || k;
+
+      html += '<div class="cr-running-subagent-chip" data-subagent-id="' + esc(sId) + '">' +
+        '<div class="cr-running-subagent-left">' +
+          '<span class="cr-running-subagent-badge ' + esc(roleCls) + '">' + esc(roleBadge) + '</span>' +
+          '<span class="cr-running-subagent-name" title="' + esc(s.task || sName) + '">' + esc(sName) + '</span>' +
+          '<span class="cr-running-subagent-tool">' + esc(sTool) + '</span>' +
+        '</div>' +
+        '<button type="button" class="cr-running-subagent-link" data-subagent-id="' + esc(sId) + '" title="View subagent in Subagents tab">Execution ↗</button>' +
+        '</div>';
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+
+    var links = panel.querySelectorAll('.cr-running-subagent-link');
+    for (var li = 0; li < links.length; li++) {
+      function onRunningSubLinkClick(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var aId = ev.currentTarget.getAttribute('data-subagent-id');
+        if (window.switchDashboardSubView) {
+          window.switchDashboardSubView('subagents', aId);
+        }
+      }
+      links[li].onclick = onRunningSubLinkClick;
+    }
+  }
+
+  function resolvePermissionItem(chatCtx, id, act) {
+    if (!chatCtx) return;
+    var item = null;
+    var qIndex = -1;
+    if (chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      for (var qi = 0; qi < chatCtx.permissionQueue.length; qi++) {
+        if (chatCtx.permissionQueue[qi].id === id) {
+          item = chatCtx.permissionQueue[qi];
+          qIndex = qi;
+          break;
+        }
+      }
+    }
+    if (!item && chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      item = chatCtx.permissionQueue[0];
+      qIndex = 0;
+    }
+    if (qIndex !== -1) {
+      chatCtx.permissionQueue.splice(qIndex, 1);
+    }
+    var isAllow = act === 'allow' || act === 'always-allow';
+    var isAlways = act === 'always-allow' || act === 'always-deny';
+    var label = isAlways
+      ? (isAllow ? '✓ Always Allowed' : '✗ Always Denied')
+      : (isAllow ? '✓ Allowed' : '✗ Denied');
+
+    var actionsEl = chatCtx.msgList ? chatCtx.msgList.querySelector('#actions-' + id) : null;
+    if (actionsEl) {
+      actionsEl.innerHTML = '<span class="cr-permission-status ' + (isAllow ? 'allowed' : 'denied') + '">' + label + '</span>';
+    }
+
+    if (window.VSCODE_API && item) {
+      window.VSCODE_API.postMessage({
+        type: 'permissionResponse',
+        approved: isAllow,
+        toolCallId: item.id || id,
+        always: isAlways,
+        tool: item.tool,
+        sessionId: item.ownerSessionId || chatCtx.convId
+      });
+    }
+
+    updateAgentControlsPanel(chatCtx);
+  }
+
   function updateAgentControlsPanel(chatCtx) {
     var controlsPanel = chatCtx.controlsPanel;
     var msgList = chatCtx.msgList;
     if (!controlsPanel) return;
-    var pendingButtons = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
-    var pendingDiffs = msgList.querySelectorAll('.cr-diff-card[data-diff-status="pending"] .cr-diff-accept');
-    var totalPending = pendingButtons.length + pendingDiffs.length;
+
+    if (!chatCtx.permissionQueue) chatCtx.permissionQueue = [];
+
+    if (msgList) {
+      var domAllowBtns = msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+      for (var dbi = 0; dbi < domAllowBtns.length; dbi++) {
+        var dBtnId = domAllowBtns[dbi].getAttribute('data-id');
+        if (dBtnId) {
+          var foundInQ = false;
+          for (var fqi = 0; fqi < chatCtx.permissionQueue.length; fqi++) {
+            if (chatCtx.permissionQueue[fqi].id === dBtnId) {
+              foundInQ = true;
+              break;
+            }
+          }
+          if (!foundInQ) {
+            var permParent = domAllowBtns[dbi].closest('.cr-permission-actions, .cr-permission-section, .cr-permission-card, .cr-tool-card');
+            var pToolName = (permParent && (permParent.dataset.toolName || permParent.dataset.tool)) || '';
+            chatCtx.permissionQueue.push({
+              id: dBtnId,
+              tool: pToolName,
+              ownerSessionId: chatCtx.convId,
+              isSubagentTool: false
+            });
+          }
+        }
+      }
+    }
+
+    var pendingDiffs = msgList ? msgList.querySelectorAll('.cr-diff-card[data-diff-status="pending"] .cr-diff-accept') : [];
+    var pendingPermCount = chatCtx.permissionQueue.length;
+    var totalPending = pendingPermCount + pendingDiffs.length;
 
     if (totalPending > 0) {
       controlsPanel.style.display = 'block';
+      var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
       var html = '<div class="cr-controls-inner">';
 
-      var pendingToolNames = [];
-      for (var pi = 0; pi < pendingButtons.length; pi++) {
-        var permEl = pendingButtons[pi].closest('.cr-permission-actions, .cr-permission-section, .cr-permission-card, .cr-tool-card');
-        var tName = (permEl && (permEl.dataset.toolDisplayName || permEl.dataset.toolName || permEl.dataset.tool)) || '';
-        if (tName && permEl.dataset.toolName && tName === permEl.dataset.toolName) {
-          tName = formatToolName(tName);
-        }
-        if (tName && pendingToolNames.indexOf(tName) === -1) {
-          pendingToolNames.push(tName);
-        }
-      }
-
-      var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
-
-      if (pendingButtons.length > 0 && pendingDiffs.length > 0) {
-        var toolsText = pendingToolNames.length ? ' (' + pendingToolNames.join(', ') + ')' : '';
-        html +=
-          '<div class="cr-controls-left">' +
-            '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
-            '<span class="cr-controls-label">' + pendingButtons.length + ' permission(s)' + esc(toolsText) + ' + ' + pendingDiffs.length + ' file change(s)</span>' +
-          '</div>' +
-          '<div class="cr-controls-buttons">' +
-            '<button class="cr-btn cr-btn-continue-all" title="Allow all pending permissions">Allow All</button>' +
-            '<button class="cr-btn cr-btn-quit-all" title="Deny all pending permissions">Deny All</button>' +
-            '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
-            '<button class="cr-btn cr-btn-reject-all-diffs" title="Reject all pending file changes">Reject All</button>' +
-          '</div>';
-      } else if (pendingButtons.length > 0) {
-        var toolBadge = '';
-        if (pendingToolNames.length === 1) {
-          toolBadge = 'Confirmation required: <span class="cr-controls-tool-badge">' + esc(pendingToolNames[0]) + '</span>';
-        } else if (pendingToolNames.length > 1) {
-          toolBadge = pendingButtons.length + ' confirmations: <span class="cr-controls-tool-badge">' + esc(pendingToolNames.join(', ')) + '</span>';
+      if (pendingPermCount > 0) {
+        var activePerm = chatCtx.permissionQueue[0];
+        var badgeText = '';
+        if (activePerm.isSubagentTool || activePerm.subagentName) {
+          var subRole = activePerm.subagentRole ? String(activePerm.subagentRole).toUpperCase() : 'SUBAGENT';
+          var subName = activePerm.subagentName || 'Subagent';
+          badgeText = '[' + subRole + ': ' + subName + '] ' + formatToolName(activePerm.tool);
         } else {
-          toolBadge = pendingButtons.length + ' confirmation(s) required';
+          badgeText = formatToolName(activePerm.tool);
         }
+
+        var queueText = '';
+        if (pendingPermCount > 1) {
+          queueText = ' (1 of ' + pendingPermCount + ')';
+        }
+
         html +=
           '<div class="cr-controls-left">' +
             '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
-            '<span class="cr-controls-label">' + toolBadge + '</span>' +
+            '<span class="cr-controls-label">' +
+              'Confirmation required: <span class="cr-controls-tool-badge">' + esc(badgeText) + '</span>' +
+              (queueText ? '<span class="cr-controls-queue-count" style="margin-left:4px;color:#94a3b8;font-size:11px;">' + esc(queueText) + '</span>' : '') +
+            '</span>' +
           '</div>' +
           '<div class="cr-controls-buttons">' +
-            '<button class="cr-btn cr-btn-continue-all" title="Allow pending action">Allow</button>' +
-            '<button class="cr-btn cr-btn-quit-all" title="Deny pending action">Deny</button>' +
+            '<div class="cr-controls-btn-row">' +
+              '<button class="cr-btn cr-btn-allow cr-btn-continue-all" data-action="allow" data-id="' + esc(activePerm.id) + '" title="Allow this call">Allow</button>' +
+              '<button class="cr-btn cr-btn-deny cr-btn-quit-all" data-action="deny" data-id="' + esc(activePerm.id) + '" title="Deny this call">Deny</button>' +
+            '</div>' +
+            '<div class="cr-controls-btn-row">' +
+              '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + esc(activePerm.id) + '" title="Always allow this tool">Always Allow</button>' +
+              '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + esc(activePerm.id) + '" title="Always deny this tool">Always Deny</button>' +
+            '</div>' +
           '</div>';
       } else {
         html +=
@@ -626,46 +766,60 @@ function initializeChatSpace() {
       html += '</div>';
       controlsPanel.innerHTML = html;
 
-      var allowAllBtn = controlsPanel.querySelector('.cr-btn-continue-all');
-      if (allowAllBtn) {
-    function onAllowAllClick() { handleAllowAllClick(chatCtx); }
-    allowAllBtn.onclick = onAllowAllClick;
-      }
-
-      var denyAllBtn = controlsPanel.querySelector('.cr-btn-quit-all');
-      if (denyAllBtn) {
-    function onDenyAllClick() { handleDenyAllClick(chatCtx); }
-    denyAllBtn.onclick = onDenyAllClick;
+      var buttons = controlsPanel.querySelectorAll('.cr-controls-buttons button[data-action]');
+      for (var bi = 0; bi < buttons.length; bi++) {
+        function onControlBtnClick(ev) {
+          var targetBtn = ev.currentTarget;
+          var act = targetBtn.getAttribute('data-action');
+          var targetId = targetBtn.getAttribute('data-id');
+          resolvePermissionItem(chatCtx, targetId, act);
+        }
+        buttons[bi].onclick = onControlBtnClick;
       }
 
       var acceptAllDiffsBtn = controlsPanel.querySelector('.cr-btn-accept-all-diffs');
       if (acceptAllDiffsBtn) {
-    function onAcceptAllDiffsClick() { handleAcceptAllDiffsClick(chatCtx); }
-    acceptAllDiffsBtn.onclick = onAcceptAllDiffsClick;
+        function onAcceptAllDiffsClick() { handleAcceptAllDiffsClick(chatCtx); }
+        acceptAllDiffsBtn.onclick = onAcceptAllDiffsClick;
       }
 
       var rejectAllDiffsBtn = controlsPanel.querySelector('.cr-btn-reject-all-diffs');
       if (rejectAllDiffsBtn) {
-    function onRejectAllDiffsClick() { handleRejectAllDiffsClick(chatCtx); }
-    rejectAllDiffsBtn.onclick = onRejectAllDiffsClick;
+        function onRejectAllDiffsClick() { handleRejectAllDiffsClick(chatCtx); }
+        rejectAllDiffsBtn.onclick = onRejectAllDiffsClick;
       }
     } else {
       controlsPanel.style.display = 'none';
+      controlsPanel.innerHTML = '';
     }
   }
 
   function handleAllowAllClick(chatCtx) {
-    var allowBtns = chatCtx.msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
-    for (var i = 0; i < allowBtns.length; i++) {
-      allowBtns[i].click();
+    if (chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      while (chatCtx.permissionQueue.length > 0) {
+        var item = chatCtx.permissionQueue[0];
+        resolvePermissionItem(chatCtx, item.id, 'allow');
+      }
+    } else if (chatCtx.msgList) {
+      var allowBtns = chatCtx.msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+      for (var i = 0; i < allowBtns.length; i++) {
+        allowBtns[i].click();
+      }
     }
     updateAgentControlsPanel(chatCtx);
   }
 
   function handleDenyAllClick(chatCtx) {
-    var denyBtns = chatCtx.msgList.querySelectorAll('.cr-permission-actions button[data-action="deny"]');
-    for (var i = 0; i < denyBtns.length; i++) {
-      denyBtns[i].click();
+    if (chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      while (chatCtx.permissionQueue.length > 0) {
+        var item = chatCtx.permissionQueue[0];
+        resolvePermissionItem(chatCtx, item.id, 'deny');
+      }
+    } else if (chatCtx.msgList) {
+      var denyBtns = chatCtx.msgList.querySelectorAll('.cr-permission-actions button[data-action="deny"]');
+      for (var i = 0; i < denyBtns.length; i++) {
+        denyBtns[i].click();
+      }
     }
     updateAgentControlsPanel(chatCtx);
   }
@@ -1217,6 +1371,16 @@ function initializeChatSpace() {
   }
 
   function handleActiveChatStream(chatCtx, ev) {
+    if (!ev) return;
+    var isSubagentLifecycle = ev.type === 'subagent_completed' || ev.type === 'subagent_failed' || ev.type === 'subagent_spawned' || ev.type === 'requestPermission' || ev.type === 'subagent_status';
+    if (isSubagentLifecycle) {
+      var matchesSession = (!ev.sessionId || ev.sessionId === chatCtx.convId) || (!ev.parentSessionId || ev.parentSessionId === chatCtx.convId);
+      if (!matchesSession) return;
+    } else {
+      if (ev.agentType === 'subagent' || ev.parentSessionId || (ev.sessionId && ev.sessionId !== chatCtx.convId)) {
+        return;
+      }
+    }
     var S = chatCtx.S;
     var msgList = chatCtx.msgList;
     if (ev && ev.message && ev.message.content) {
@@ -1734,15 +1898,24 @@ function initializeChatSpace() {
             var autoLine = mk('div', 'cr-permission-auto');
             var decisionLabel = ev.decision === 'allow' ? '✓ Auto-allowed' : '✗ Auto-denied';
             var decisionCls = ev.decision === 'allow' ? 'allowed' : 'denied';
+            var autoToolDisplayName = formatToolName(ev.tool);
+            if (ev.subagentName) {
+              autoToolDisplayName = '[' + (ev.subagentRole ? String(ev.subagentRole).toUpperCase() : 'SUBAGENT') + ': ' + ev.subagentName + '] ' + autoToolDisplayName;
+            }
             autoLine.innerHTML =
               '<span class="cr-permission-auto-icon">' + I.tool + '</span>' +
               '<span class="cr-permission-auto-text">' +
-                esc(formatToolName(ev.tool)) + ' — <span class="cr-permission-status ' + decisionCls + '">' + decisionLabel + '</span>' +
+                esc(autoToolDisplayName) + ' — <span class="cr-permission-status ' + decisionCls + '">' + decisionLabel + '</span>' +
                 ' <span class="cr-permission-auto-hint">(Always ' + (ev.decision === 'allow' ? 'Allow' : 'Deny') + ')</span>' +
               '</span>';
             S.botBody.appendChild(autoLine);
           } else {
-            appendPermissionRequestBlock(chatCtx, S.botBody, ev.tool, ev.arguments, ev.id);
+            var permArgs = ev.arguments || {};
+            if (ev.subagentName) {
+              permArgs._subagentName = ev.subagentName;
+              permArgs._subagentRole = ev.subagentRole || 'subagent';
+            }
+            appendPermissionRequestBlock(chatCtx, S.botBody, ev.tool, permArgs, ev.id, ev.sessionId || chatCtx.convId);
             updateAgentControlsPanel(chatCtx);
           }
           closeCurrentContentBlock(S);
@@ -1809,7 +1982,18 @@ function initializeChatSpace() {
         }
         case 'tool_result': {
           removeTyping(S.botBody);
-          var resTool = ev.tool;
+          var resTool = ev.tool || ev.tool_name || '';
+          if (!resTool) {
+            if (ev.toolCallId && S.toolCards[ev.toolCallId] && S.toolCards[ev.toolCallId].dataset && S.toolCards[ev.toolCallId].dataset.toolName) {
+              resTool = S.toolCards[ev.toolCallId].dataset.toolName;
+            } else {
+              var lastP = getLastPendingCard(S);
+              if (lastP && lastP.dataset && lastP.dataset.toolName) {
+                resTool = lastP.dataset.toolName;
+              }
+            }
+          }
+          if (!resTool) break;
           var resSuccess = ev.success !== false;
           var resStatus = resSuccess ? 'success' : 'error';
           
@@ -1847,6 +2031,18 @@ function initializeChatSpace() {
               cardToUpdate = S.toolCards[idxKey];
             }
           }
+          if (!cardToUpdate && S.botBody) {
+            var domCards = S.botBody.querySelectorAll('.cr-tool-card');
+            for (var dci = domCards.length - 1; dci >= 0; dci--) {
+              var cand = domCards[dci];
+              if (cand && cand.dataset && cand.dataset.toolName === resTool &&
+                  cand.dataset.status !== 'success' && cand.dataset.status !== 'error') {
+                cardToUpdate = cand;
+                if (ev.toolCallId) S.toolCards[ev.toolCallId] = cardToUpdate;
+                break;
+              }
+            }
+          }
           
           var updated = false;
           if (cardToUpdate) {
@@ -1870,35 +2066,306 @@ function initializeChatSpace() {
             for (var di = domCards.length - 1; di >= 0; di--) {
               var dc = domCards[di];
               if (dc && dc.dataset && dc.dataset.toolName === resTool) {
-                updateToolCard(chatCtx, dc, resStatus, ev);
-                dc.dataset.status = resStatus;
-                updated = true;
-                if (ev.checkpoint_id) {
-                  var targetPath2 = ev.file_path || ev.folder_path || '';
-                  var actionLabel2 = '';
-                  if (resTool === 'create_folder') actionLabel2 = 'Created: ' + targetPath2;
-                  else if (resTool === 'delete_folder') actionLabel2 = 'Deleted: ' + targetPath2;
-                  else if (resTool === 'delete_file') actionLabel2 = 'Deleted: ' + targetPath2;
-                  else if (resTool === 'write_file') actionLabel2 = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPath2) : ('Write: ' + targetPath2);
-                  else if (resTool === 'edit_file') actionLabel2 = 'Edit: ' + targetPath2;
-                  else if (resTool === 'patch_file') actionLabel2 = 'Patches: ' + targetPath2;
-                  else actionLabel2 = 'Edit: ' + targetPath2;
-                  appendCheckpointUndoForCard(dc, ev.checkpoint_id, targetPath2, actionLabel2);
+                var matchTarget = true;
+                if (resTool === 'subagent_response' || resTool === 'spawn_subagent' || resTool === 'wait_for_subagent') {
+                  var rawSub = (ev.args && (ev.args.id || ev.args.agentId || ev.args.subagent_id)) || (ev.result && (ev.result.id || ev.result.agentId || ev.result.subagent_id)) || '';
+                  if (rawSub && dc.dataset.subagentId && dc.dataset.subagentId !== rawSub) {
+                    matchTarget = false;
+                  }
                 }
-                break;
+                if (matchTarget) {
+                  updateToolCard(chatCtx, dc, resStatus, ev);
+                  dc.dataset.status = resStatus;
+                  updated = true;
+                  if (ev.checkpoint_id) {
+                    var targetPath2 = ev.file_path || ev.folder_path || '';
+                    var actionLabel2 = '';
+                    if (resTool === 'create_folder') actionLabel2 = 'Created: ' + targetPath2;
+                    else if (resTool === 'delete_folder') actionLabel2 = 'Deleted: ' + targetPath2;
+                    else if (resTool === 'delete_file') actionLabel2 = 'Deleted: ' + targetPath2;
+                    else if (resTool === 'write_file') actionLabel2 = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPath2) : ('Write: ' + targetPath2);
+                    else if (resTool === 'edit_file') actionLabel2 = 'Edit: ' + targetPath2;
+                    else if (resTool === 'patch_file') actionLabel2 = 'Patches: ' + targetPath2;
+                    else actionLabel2 = 'Edit: ' + targetPath2;
+                    appendCheckpointUndoForCard(dc, ev.checkpoint_id, targetPath2, actionLabel2);
+                  }
+                  break;
+                }
               }
             }
           }
           if (!updated) {
             closeCurrentContentBlock(S);
-            var fallbackKey = 'tr_' + Date.now();
-            appendToolCard(S, chatCtx.msgList, S.botBody, fallbackKey, resTool, {}, resStatus, ev);
+            var fallbackKey = (resTool === 'subagent_response') ? ('subagent_response_' + ((ev.args && (ev.args.id || ev.args.agentId)) || Date.now())) : ('tr_' + Date.now());
+            var addedCard = appendToolCard(S, chatCtx.msgList, S.botBody, fallbackKey, resTool, ev.args || {}, resStatus, ev);
+            if (addedCard && (ev.args || ev.result)) {
+              var sId = (ev.args && (ev.args.id || ev.args.agentId || ev.args.subagent_id)) || (ev.result && (ev.result.id || ev.result.agentId || ev.result.subagent_id)) || '';
+              if (sId) addedCard.dataset.subagentId = sId;
+            }
           }
           closeCurrentContentBlock(S);
           break;
         }
+        case 'subagent_completed':
+        case 'subagent_failed':
+        case 'subagent_stopped': {
+          var targetId = ev.subagent_id || ev.agentId || ev.id || '';
+          var subStatus = ev.type === 'subagent_completed' ? 'success' : 'error';
+          var subRes = ev.result || {};
+          var subRole = ev.role || subRes.role || 'coder';
+          var subName = ev.name || subRes.name || targetId;
+          var subOutput = (subRes && (subRes.summary || subRes.output || subRes.content)) || (ev.error && (ev.error.message || String(ev.error))) || '';
+          if (!subOutput && subRes && subRes.finalResponse) {
+            subOutput = typeof subRes.finalResponse === 'string' ? subRes.finalResponse : (subRes.finalResponse.text || '');
+          }
+
+          var candidateIds = [];
+          if (ev.subagent_id) candidateIds.push(ev.subagent_id);
+          if (ev.agentId) candidateIds.push(ev.agentId);
+          if (ev.id) candidateIds.push(ev.id);
+          if (subRes.subagent_id) candidateIds.push(subRes.subagent_id);
+          if (subRes.agentId) candidateIds.push(subRes.agentId);
+          if (subRes.id) candidateIds.push(subRes.id);
+          if (targetId && candidateIds.indexOf(targetId) === -1) candidateIds.push(targetId);
+
+          if (chatCtx.runningSubagents) {
+            for (var rk in chatCtx.runningSubagents) {
+              if (Object.prototype.hasOwnProperty.call(chatCtx.runningSubagents, rk)) {
+                if (candidateIds.indexOf(rk) !== -1) {
+                  delete chatCtx.runningSubagents[rk];
+                }
+              }
+            }
+            updateRunningSubagentsPanel(chatCtx);
+          }
+
+          if (ev.type === 'subagent_stopped') {
+            break;
+          }
+
+          var allCards = chatCtx.msgList ? chatCtx.msgList.querySelectorAll('.cr-tool-card') : [];
+
+          var subExec = (ev.execution) || (ev.subagent && ev.subagent.execution) || (subRes && subRes.execution) || (ev.args && ev.args.execution) || (subRes && subRes.args && subRes.args.execution) || '';
+          if (!subExec) {
+            for (var scI = allCards.length - 1; scI >= 0; scI--) {
+              var scCard = allCards[scI];
+              if (scCard.dataset.toolName === 'spawn_subagent') {
+                var scSubId = scCard.dataset.subagentId;
+                if (!scSubId || candidateIds.indexOf(scSubId) !== -1) {
+                  if (scCard.dataset.execution === 'wait') {
+                    subExec = 'wait';
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          if (subExec === 'wait') {
+            for (var cIdx2 = allCards.length - 1; cIdx2 >= 0; cIdx2--) {
+              var cEl2 = allCards[cIdx2];
+              if (cEl2.dataset.toolName === 'spawn_subagent') {
+                var cSubId2 = cEl2.dataset.subagentId;
+                for (var cdI2 = 0; cdI2 < candidateIds.length; cdI2++) {
+                  if (!cSubId2 || cSubId2 === candidateIds[cdI2] || candidateIds[cdI2].indexOf(cSubId2) !== -1) {
+                    updateToolCard(chatCtx, cEl2, subStatus, {
+                      agentId: targetId,
+                      subagent_id: targetId,
+                      name: subName,
+                      role: subRole,
+                      status: ev.type === 'subagent_completed' ? 'completed' : 'failed',
+                      output: subOutput,
+                      summary: subOutput,
+                      result: subRes,
+                      error: ev.error
+                    });
+                    break;
+                  }
+                }
+              }
+            }
+            break;
+          }
+
+          var responseCardExists = false;
+
+          for (var cIdx = allCards.length - 1; cIdx >= 0; cIdx--) {
+            var cEl = allCards[cIdx];
+            var cSubId = cEl.dataset.subagentId;
+            var cToolName = cEl.dataset.toolName;
+            if (cToolName === 'subagent_response' && cSubId) {
+              for (var cdI = 0; cdI < candidateIds.length; cdI++) {
+                var cId = candidateIds[cdI];
+                if (cSubId === cId || cId.indexOf(cSubId) !== -1 || cSubId.indexOf(cId) !== -1) {
+                  responseCardExists = true;
+                  updateToolCard(chatCtx, cEl, subStatus, {
+                    agentId: targetId,
+                    subagent_id: targetId,
+                    name: subName,
+                    role: subRole,
+                    status: ev.type === 'subagent_completed' ? 'completed' : 'failed',
+                    output: subOutput,
+                    summary: subOutput,
+                    result: subRes,
+                    error: ev.error
+                  });
+                  break;
+                }
+              }
+              if (responseCardExists) break;
+            }
+          }
+
+          if (!responseCardExists) {
+            closeCurrentContentBlock(S);
+            var subCardKey = 'subagent_response_' + targetId;
+            var subArgs = (ev.args) || (subRes && subRes.args) || {
+              id: targetId,
+              name: subName,
+              role: subRole,
+              task: ev.task || (subRes && subRes.task) || '',
+              execution: 'sync'
+            };
+            if (!subArgs.id) subArgs.id = targetId;
+            if (!subArgs.name) subArgs.name = subName;
+            if (!subArgs.role) subArgs.role = subRole;
+            if (!subArgs.task && (ev.task || (subRes && subRes.task))) subArgs.task = ev.task || (subRes && subRes.task);
+            if (!subArgs.execution) subArgs.execution = 'sync';
+
+            var targetBody = (S && S.botBody) ? S.botBody : null;
+            if (!targetBody && chatCtx.msgList) {
+              var botWrappers = chatCtx.msgList.querySelectorAll('.cr-bot-body');
+              if (botWrappers.length > 0) {
+                targetBody = botWrappers[botWrappers.length - 1];
+              } else {
+                targetBody = chatCtx.msgList;
+              }
+            }
+            if (targetBody) {
+              var addedCard = appendToolCard(S, chatCtx.msgList, targetBody, subCardKey, 'subagent_response', subArgs, subStatus, {
+                agentId: targetId,
+                subagent_id: targetId,
+                name: subName,
+                role: subRole,
+                status: ev.type === 'subagent_completed' ? 'completed' : 'failed',
+                output: subOutput,
+                summary: subOutput,
+                result: subRes,
+                error: ev.error
+              });
+              if (addedCard) {
+                addedCard.dataset.subagentId = targetId;
+              }
+            }
+          }
+
+          if (chatCtx.conversation && Array.isArray(chatCtx.conversation.messages)) {
+            var msgExists = false;
+            for (var mIdx = chatCtx.conversation.messages.length - 1; mIdx >= 0; mIdx--) {
+              var msg = chatCtx.conversation.messages[mIdx];
+              if (msg && msg.role === 'tool' && msg.tool_name === 'subagent_response') {
+                var msgSubId = (msg.result && (msg.result.agentId || msg.result.subagent_id || msg.result.id)) || (msg.args && (msg.args.id || msg.args.agentId)) || '';
+                if (msgSubId) {
+                  for (var mci = 0; mci < candidateIds.length; mci++) {
+                    if (msgSubId === candidateIds[mci] || candidateIds[mci].indexOf(msgSubId) !== -1 || msgSubId.indexOf(candidateIds[mci]) !== -1) {
+                      msgExists = true;
+                      msg.content = subOutput || msg.content;
+                      if (msg.result) {
+                        msg.result.status = ev.type === 'subagent_completed' ? 'completed' : 'failed';
+                        msg.result.output = subOutput;
+                        msg.result.summary = subOutput;
+                        msg.result.success = ev.type === 'subagent_completed';
+                      }
+                      break;
+                    }
+                  }
+                }
+                if (msgExists) break;
+              }
+            }
+            if (!msgExists) {
+              var subArgsMsg = (ev.args) || (subRes && subRes.args) || {
+                id: targetId,
+                name: subName,
+                role: subRole,
+                task: ev.task || (subRes && subRes.task) || '',
+                execution: 'sync'
+              };
+              if (!subArgsMsg.id) subArgsMsg.id = targetId;
+              if (!subArgsMsg.name) subArgsMsg.name = subName;
+              if (!subArgsMsg.role) subArgsMsg.role = subRole;
+              if (!subArgsMsg.task && (ev.task || (subRes && subRes.task))) subArgsMsg.task = ev.task || (subRes && subRes.task);
+              if (!subArgsMsg.execution) subArgsMsg.execution = 'sync';
+
+              chatCtx.conversation.messages.push({
+                role: 'tool',
+                tool_name: 'subagent_response',
+                tool_call_id: 'call_sub_' + targetId,
+                content: subOutput,
+                args: subArgsMsg,
+                result: {
+                  agentId: targetId,
+                  subagent_id: targetId,
+                  name: subName,
+                  role: subRole,
+                  status: ev.type === 'subagent_completed' ? 'completed' : 'failed',
+                  output: subOutput,
+                  summary: subOutput,
+                  result: subRes,
+                  error: ev.error
+                }
+              });
+            }
+            if (window.saveConversationMessageBatch) {
+              window.saveConversationMessageBatch(chatCtx.convId, chatCtx.conversation.messages, chatCtx.conversation.plan);
+            }
+          }
+          break;
+        }
+        case 'subagent_spawned': {
+          var spSub = ev.subagent || {};
+          var spId = ev.subagent_id || ev.agentId || spSub.id || spSub.agentId || '';
+          if (spId) {
+            if (!chatCtx.runningSubagents) chatCtx.runningSubagents = {};
+            chatCtx.runningSubagents[spId] = {
+              id: spId,
+              name: spSub.name || ev.name || spId,
+              role: spSub.role || ev.role || 'coder',
+              task: spSub.task || ev.task || '',
+              status: 'running',
+              currentTool: ''
+            };
+            updateRunningSubagentsPanel(chatCtx);
+          }
+          break;
+        }
+        case 'subagent_status': {
+          var stSubId = ev.subagent_id || ev.agentId || '';
+          var stTool = ev.currentTool || '';
+          if (stSubId) {
+            if (!chatCtx.runningSubagents) chatCtx.runningSubagents = {};
+            if (!chatCtx.runningSubagents[stSubId]) {
+              chatCtx.runningSubagents[stSubId] = {
+                id: stSubId,
+                name: ev.name || stSubId,
+                role: ev.role || 'coder',
+                task: ev.task || '',
+                status: 'running',
+                currentTool: stTool
+              };
+            } else {
+              chatCtx.runningSubagents[stSubId].currentTool = stTool;
+            }
+            updateRunningSubagentsPanel(chatCtx);
+          }
+          break;
+        }
         case 'agent_status': {
           removeTyping(S.botBody);
+          var rawStatus = ev.status || '';
+          if (rawStatus === 'waiting' || (typeof rawStatus === 'string' && rawStatus.toLowerCase().indexOf('waiting') !== -1)) {
+            break;
+          }
           var statusMsg = ev.status === 'executing_tools' ? 'Executing ' + ev.count + ' tool call(s)...' : ev.status || '';
           if (statusMsg) appendStatusLine(S, S.botBody, statusMsg);
           break;
@@ -1961,7 +2428,11 @@ function initializeChatSpace() {
         }
         case 'status': {
           removeTyping(S.botBody);
-          appendStatusLine(S, S.botBody, ev.message);
+          var rawMsg = ev.message || '';
+          if (rawMsg && typeof rawMsg === 'string' && rawMsg.toLowerCase().indexOf('waiting') !== -1) {
+            break;
+          }
+          if (rawMsg) appendStatusLine(S, S.botBody, rawMsg);
           break;
         }
         case 'usage': {
@@ -2668,9 +3139,39 @@ function initializeChatSpace() {
     return d;
   }
 
-  function appendPermissionRequestBlock(chatCtx, body, tool, args, id) {
-    if (!body) return null;
+  function appendPermissionRequestBlock(chatCtx, body, tool, args, id, ownerSessionId) {
+    if (!chatCtx) return null;
     var sanitizedArgs = sanitizeToolArgs(args);
+    var isSubagentTool = !!(args && (args._subagentName || args._subagentRole || args.agentType === 'subagent')) ||
+      (ownerSessionId && ownerSessionId !== chatCtx.convId);
+
+    if (!chatCtx.permissionQueue) chatCtx.permissionQueue = [];
+    var alreadyInQueue = false;
+    for (var qi = 0; qi < chatCtx.permissionQueue.length; qi++) {
+      if (chatCtx.permissionQueue[qi].id === id) {
+        alreadyInQueue = true;
+        break;
+      }
+    }
+    if (!alreadyInQueue) {
+      chatCtx.permissionQueue.push({
+        id: id,
+        tool: tool,
+        args: sanitizedArgs,
+        ownerSessionId: ownerSessionId || chatCtx.convId,
+        isSubagentTool: isSubagentTool,
+        subagentName: (args && args._subagentName) || null,
+        subagentRole: (args && args._subagentRole) || null
+      });
+    }
+
+    // UNIVERSAL RULE: If tool call is from ANY subagent, NEVER render in main chat!
+    if (isSubagentTool) {
+      updateAgentControlsPanel(chatCtx);
+      return null;
+    }
+
+    if (!body) return null;
     var argsStr = '';
     try {
       argsStr = JSON.stringify(sanitizedArgs, null, 2);
@@ -2680,6 +3181,9 @@ function initializeChatSpace() {
     }
 
     var displayName = formatToolName(tool);
+    if (args && args._subagentName) {
+      displayName = '[' + (args._subagentRole ? String(args._subagentRole).toUpperCase() : 'SUBAGENT') + ': ' + args._subagentName + '] ' + displayName;
+    }
     var subtitle = getToolSubtitle(tool, sanitizedArgs);
     var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
 
@@ -2690,6 +3194,7 @@ function initializeChatSpace() {
       if (tool === 'run_terminal') {
         pendingCard = appendTerminalCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'pending', null);
         pendingCard.dataset.toolCallId = id;
+        pendingCard.dataset.permissionId = id;
         pendingCard.dataset.terminalId = '';
         chatCtx.S.toolCards[cardKey] = pendingCard;
         chatCtx.S.toolCards[id] = pendingCard;
@@ -2697,6 +3202,7 @@ function initializeChatSpace() {
       } else {
         pendingCard = appendToolCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'running', null);
         pendingCard.dataset.toolCallId = id;
+        pendingCard.dataset.permissionId = id;
         chatCtx.S.toolCards[cardKey] = pendingCard;
         chatCtx.S.toolCards[id] = pendingCard;
         chatCtx.S.toolCards[tool + '_idx_' + chatCtx.S._toolIdCounter] = pendingCard;
@@ -2704,7 +3210,10 @@ function initializeChatSpace() {
       }
     } else {
       if (id) {
-        pendingCard.dataset.toolCallId = id;
+        if (!pendingCard.dataset.toolCallId) {
+          pendingCard.dataset.toolCallId = id;
+        }
+        pendingCard.dataset.permissionId = id;
         chatCtx.S.toolCards[id] = pendingCard;
       }
     }
@@ -2779,9 +3288,10 @@ function initializeChatSpace() {
       actions.dataset.tool = tool;
       actions.dataset.toolDisplayName = displayName;
     }
-    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, chatCtx.convId, ev); }
+    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, ownerSessionId || chatCtx.convId, ev); }
     actions.addEventListener('click', onPermActionClick);
     scrollBottom(chatCtx.msgList);
+    updateAgentControlsPanel(chatCtx);
     return d;
   }
 
@@ -2789,26 +3299,8 @@ function initializeChatSpace() {
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var act = btn.dataset.action;
-    var isAllow = act === 'allow' || act === 'always-allow';
-    var isAlways = act === 'always-allow' || act === 'always-deny';
-    var label = isAlways
-      ? (isAllow ? '✓ Always Allowed' : '✗ Always Denied')
-      : (isAllow ? '✓ Allowed' : '✗ Denied');
-    var actions = e.currentTarget;
-    actions.innerHTML = '<span class="cr-permission-status ' + (isAllow ? 'allowed' : 'denied') + '">' + label + '</span>';
-    if (window.VSCODE_API) {
-      window.VSCODE_API.postMessage({
-        type: 'permissionResponse',
-        approved: isAllow,
-        toolCallId: id,
-        always: isAlways,
-        tool: tool,
-        sessionId: sessionId || ''
-      });
-    }
-    var chatCtx = { msgList: msgList, controlsPanel: controlsPanel };
-    function onUpdateControls() { updateAgentControlsPanel(chatCtx); }
-    setTimeout(onUpdateControls, 50);
+    var chatCtx = { msgList: msgList, controlsPanel: controlsPanel, convId: sessionId };
+    resolvePermissionItem(chatCtx, id, act);
   }
 
   function appendToolResultBlock(body, tool, ev) {
@@ -3266,11 +3758,11 @@ function initializeChatSpace() {
       '<span class="cr-diff-status" style="display:none"></span>';
     card.appendChild(actions);
 
-    function onDiffAccept() { handleDiffAcceptClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList); }
+    function onDiffAccept() { handleDiffAcceptClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList, ev.sessionId || chatCtx.convId); }
     actions.querySelector('.cr-diff-accept').onclick = onDiffAccept;
-    function onDiffReject() { handleDiffRejectClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList); }
+    function onDiffReject() { handleDiffRejectClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList, ev.sessionId || chatCtx.convId); }
     actions.querySelector('.cr-diff-reject').onclick = onDiffReject;
-    function onDiffFull() { handleDiffFullClick(diffId); }
+    function onDiffFull() { handleDiffFullClick(diffId, ev.sessionId || chatCtx.convId); }
     actions.querySelector('.cr-diff-full-btn').onclick = onDiffFull;
 
     var targetParent = body;
@@ -3294,25 +3786,25 @@ function initializeChatSpace() {
     updateAgentControlsPanel(chatCtx);
   }
 
-  function handleDiffAcceptClick(diffId, card, controlsPanel, msgList) {
+  function handleDiffAcceptClick(diffId, card, controlsPanel, msgList, sessionId) {
     if (!window.VSCODE_API) return;
-    window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: diffId });
+    window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: diffId, sessionId: sessionId });
     setDiffCardStatus(card, 'approved');
     var chatCtx = { controlsPanel: controlsPanel, msgList: msgList };
     updateAgentControlsPanel(chatCtx);
   }
 
-  function handleDiffRejectClick(diffId, card, controlsPanel, msgList) {
+  function handleDiffRejectClick(diffId, card, controlsPanel, msgList, sessionId) {
     if (!window.VSCODE_API) return;
-    window.VSCODE_API.postMessage({ type: 'rejectDiff', diffId: diffId });
+    window.VSCODE_API.postMessage({ type: 'rejectDiff', diffId: diffId, sessionId: sessionId });
     setDiffCardStatus(card, 'rejected');
     var chatCtx = { controlsPanel: controlsPanel, msgList: msgList };
     updateAgentControlsPanel(chatCtx);
   }
 
-  function handleDiffFullClick(diffId) {
+  function handleDiffFullClick(diffId, sessionId) {
     if (!window.VSCODE_API) return;
-    window.VSCODE_API.postMessage({ type: 'openDiffEditor', diffId: diffId });
+    window.VSCODE_API.postMessage({ type: 'openDiffEditor', diffId: diffId, sessionId: sessionId });
   }
 
   function appendContinueButton(chatCtx, parent) {
@@ -3391,8 +3883,9 @@ function initializeChatSpace() {
       if (card && card.dataset && card.dataset.toolName === toolName &&
           card.dataset.status !== 'success' && card.dataset.status !== 'error') {
         var cid = card.dataset.toolCallId;
-        var isTemp = cid && (cid.indexOf('tool_') === 0 || cid.indexOf('term_') === 0);
-        if (!cid || isTemp || (toolId && cid === toolId)) {
+        var pid = card.dataset.permissionId;
+        var isTemp = cid && (cid.indexOf('tool_') === 0 || cid.indexOf('term_') === 0 || cid.indexOf('perm_') === 0);
+        if (!cid || isTemp || (toolId && (cid === toolId || pid === toolId))) {
           return card;
         }
       }
@@ -3585,6 +4078,73 @@ function initializeChatSpace() {
         return typeof planVal === 'string' ? planVal : JSON.stringify(planVal, null, 2);
       }
     }
+    if (toolName === 'spawn_subagent') {
+      var agentId = result.agentId || result.id || (result.args && (result.args.id || result.args.agentId || result.args.subagent_id)) || '';
+      var agentName = result.name || (result.args && result.args.name) || agentId;
+      var status = result.status || 'completed';
+      var role = result.role || (result.args && result.args.role) || 'coder';
+      var subSummary = (result && (result.summary || result.output || result.content)) || (result && result.result && (result.result.summary || result.result.output || result.result.content)) || '';
+      var execMode = (result && result.execution) || (result && result.args && result.args.execution) || '';
+      if (execMode !== 'wait' || (subSummary && typeof subSummary === 'string' && subSummary.indexOf('is running on the assigned task') !== -1)) {
+        return '✓ Subagent [' + String(role).toUpperCase() + '] ' + agentName + ' is running on the assigned task and will return the response.';
+      }
+      if (status !== 'running' && status !== 'starting' && subSummary) {
+        var header = '✓ Subagent [' + String(role).toUpperCase() + '] ' + agentName + ' finished (' + status + ').';
+        var cleanOutput = typeof subSummary === 'string' ? subSummary : JSON.stringify(subSummary, null, 2);
+        return header + '\n\n' + cleanOutput;
+      }
+      return '✓ Subagent [' + String(role).toUpperCase() + '] ' + agentName + ' is running on the assigned task and will return the response.';
+    }
+    if (toolName === 'wait_for_subagent') {
+      var subRes = (result && result.result) || result || {};
+      var subAgentId = (result && (result.agentId || result.subagent_id)) || subRes.subagent_id || subRes.agentId || 'subagent';
+      var subName = (result && result.name) || subRes.name || subAgentId;
+      var subStatus = subRes.status || (result && result.status) || 'completed';
+      var subSummary = (result && (result.summary || result.output || result.content)) || subRes.summary || subRes.output || subRes.content || '';
+      var subRole = subRes.role || (result && result.role) || 'coder';
+      var header = '✓ Subagent [' + String(subRole).toUpperCase() + '] ' + subName + ' finished (' + subStatus + ').';
+      if (!subSummary) return header;
+      var cleanOutput = typeof subSummary === 'string' ? subSummary : JSON.stringify(subSummary, null, 2);
+      return header + '\n\n' + cleanOutput;
+    }
+    if (toolName === 'subagent_response') {
+      var srRes = (result && result.result) || result || {};
+      var srAgentId = (result && (result.subagent_id || result.agentId || result.id)) || srRes.subagent_id || srRes.agentId || srRes.id || 'subagent';
+      var srName = (result && result.name) || srRes.name || srAgentId;
+      var srStatus = srRes.status || (result && result.status) || 'completed';
+      var srSummary = (result && (result.output || result.summary || result.content)) || srRes.output || srRes.summary || srRes.content || '';
+      var srRole = srRes.role || (result && result.role) || 'coder';
+      var srHeader = '✓ Subagent [' + String(srRole).toUpperCase() + '] ' + srName + ' finished (' + srStatus + ').';
+      if (!srSummary) return srHeader;
+      var srClean = typeof srSummary === 'string' ? srSummary : JSON.stringify(srSummary, null, 2);
+      if (srClean.indexOf('finished (' + srStatus + ')') !== -1) {
+        return srClean;
+      }
+      return srHeader + '\n\n' + srClean;
+    }
+    if (toolName === 'subagent_status') {
+      var stRes = (result && result.result) || result || {};
+      var stAgentId = (result && (result.agentId || result.subagent_id)) || stRes.subagent_id || stRes.agentId || 'subagent';
+      var stStatus = stRes.status || (result && result.status) || 'running';
+      var stTask = stRes.task || (result && result.task) || '';
+      var stOutput = (result && (result.output || result.summary)) || (stRes && (stRes.output || stRes.summary)) || (result && result.latest_result && (result.latest_result.output || result.latest_result.summary)) || '';
+      var baseText = 'Subagent ' + stAgentId + ' status: ' + stStatus + (stTask ? '\nTask: ' + stTask : '');
+      if (stOutput) {
+        var cleanStOut = typeof stOutput === 'string' ? stOutput : JSON.stringify(stOutput, null, 2);
+        return baseText + '\n\n' + cleanStOut;
+      }
+      return baseText;
+    }
+    if (toolName === 'subagents_list') {
+      var subList = result.subagents || result.agents || [];
+      if (!subList.length) return 'No active subagents.';
+      var lines = ['Active Subagents (' + subList.length + '):'];
+      for (var si = 0; si < subList.length; si++) {
+        var s = subList[si];
+        lines.push('- [' + String(s.role || 'coder').toUpperCase() + '] ' + s.agentId + ' (' + s.status + '): ' + (s.task || ''));
+      }
+      return lines.join('\n');
+    }
     if (toolName === 'run_terminal') {
       var parts = [];
       parts.push('Shell: ' + (result.shell || 'unknown'));
@@ -3646,19 +4206,24 @@ function initializeChatSpace() {
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = toolName;
     card.dataset.status = status;
+    var rawSubId = (args && (args.agentId || args.subagent_id || args.id)) || (result && (result.agentId || result.subagent_id || result.id)) || '';
+    if (rawSubId) card.dataset.subagentId = rawSubId;
+    if (args && args.execution) card.dataset.execution = args.execution;
 
     var displayName = formatToolName(toolName);
     card.dataset.toolDisplayName = displayName;
     var subtitle = getToolSubtitle(toolName, args);
     var iconHtml = getToolIcon(toolName);
 
-    var statusLabel = (status === 'running' || status === 'pending') ? 'Pending' : status === 'success' ? 'Completed' : 'Failed';
-    var statusClass = 'cr-tool-card-status--' + status;
-    var iconClass = 'cr-tool-card-icon--' + status;
+    var isComplete = status === 'success' || status === 'completed';
+    var isFailed = status === 'error' || status === 'failed';
+    var statusLabel = isComplete ? 'Completed' : isFailed ? 'Failed' : 'Pending';
+    var statusClass = 'cr-tool-card-status--' + (isComplete ? 'completed' : isFailed ? 'failed' : 'pending');
+    var iconClass = 'cr-tool-card-icon--' + (isComplete ? 'completed' : isFailed ? 'failed' : 'pending');
 
     var head = mk('summary', 'cr-tool-card-head');
     head.innerHTML =
-      '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
+      '<span class="cr-tool-card-icon ' + iconClass + '">' + (isComplete || isFailed ? iconHtml : I.spin) + '</span>' +
       '<span class="cr-tool-card-title-group">' +
         '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
         (subtitle ? '<span class="cr-tool-card-subtitle">' + esc(subtitle) + '</span>' : '') +
@@ -3710,11 +4275,31 @@ function initializeChatSpace() {
           '<div class="cr-tool-card-block-label">Tool Output</div>' +
           '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
       }
+      if (toolName === 'spawn_subagent' || toolName === 'wait_for_subagent' || toolName === 'subagent_response') {
+        var subagentId = (result && (result.agentId || result.subagent_id || result.id)) || (args && (args.agentId || args.subagent_id || args.id)) || '';
+        resultContainer.style.display = 'block';
+        var execLinkHtml = '<div class="cr-subagent-execution-line" style="margin-top:8px;">' +
+          '<button type="button" class="cr-subagent-execution-link" data-subagent-id="' + esc(subagentId) + '" title="View subagent in Subagents tab">Execution ↗</button>' +
+          '</div>';
+        resultContainer.innerHTML += execLinkHtml;
+      }
     }
     cardBody.appendChild(resultContainer);
 
     card.appendChild(cardBody);
     body.appendChild(card);
+
+    card.onclick = function onToolCardElementClick(evt) {
+      var execLink = evt.target && evt.target.closest ? evt.target.closest('.cr-subagent-execution-link') : null;
+      if (execLink) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        var aId = execLink.getAttribute('data-subagent-id');
+        if (window.switchDashboardSubView) {
+          window.switchDashboardSubView('subagents', aId);
+        }
+      }
+    };
 
     S.toolCards[cardKey] = card;
 
@@ -3734,22 +4319,25 @@ function initializeChatSpace() {
   function updateToolCard(chatCtx, card, status, result) {
     if (!card) return;
     var oldStatus = card.dataset.status;
-    card.className = 'cr-tool-card cr-tool-card--' + status;
-    card.dataset.status = status;
+    var isComplete = status === 'success' || status === 'completed';
+    var isFailed = status === 'error' || status === 'failed';
+    var normStatus = isComplete ? 'completed' : isFailed ? 'failed' : 'pending';
+    card.className = 'cr-tool-card cr-tool-card--' + normStatus;
+    card.dataset.status = normStatus;
     var toolName = card.dataset.toolName;
     card.open = false;
 
     var iconEl = card.querySelector('.cr-tool-card-icon');
     if (iconEl) {
-      iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + status;
+      iconEl.className = 'cr-tool-card-icon cr-tool-card-icon--' + normStatus;
       var iconHtml = getToolIcon(toolName);
-      iconEl.innerHTML = status === 'success' ? iconHtml : status === 'error' ? iconHtml : I.spin;
+      iconEl.innerHTML = isComplete ? iconHtml : isFailed ? iconHtml : I.spin;
     }
 
     var statusEl = card.querySelector('.cr-tool-card-status');
     if (statusEl) {
-      statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + status;
-      statusEl.textContent = status === 'success' ? 'Completed' : status === 'error' ? 'Failed' : 'Pending';
+      statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + normStatus;
+      statusEl.textContent = isComplete ? 'Completed' : isFailed ? 'Failed' : 'Pending';
     }
 
     if (result) {
@@ -3765,7 +4353,13 @@ function initializeChatSpace() {
         }
         resultContainer.style.display = 'block';
         if (status === 'error') {
-          var errorMsg = (result && (result.message || result.error || result.content)) || (resText || 'Error');
+          var rawErr = (result && (result.message || result.error || result.content)) || (resText || 'Error');
+          var errorMsg = '';
+          if (rawErr && typeof rawErr === 'object') {
+            errorMsg = rawErr.message || rawErr.error || JSON.stringify(rawErr);
+          } else {
+            errorMsg = String(rawErr || 'Error');
+          }
           resultContainer.innerHTML =
             '<div class="cr-tool-card-block-label">Tool Output</div>' +
             '<div class="cr-tool-card-error-msg">' + I.err + ' ' + esc(errorMsg) + '</div>';
@@ -3776,6 +4370,29 @@ function initializeChatSpace() {
           resultContainer.innerHTML =
             '<div class="cr-tool-card-block-label">Tool Output</div>' +
             '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        }
+
+        if (toolName === 'spawn_subagent' || toolName === 'wait_for_subagent' || toolName === 'subagent_response') {
+          var subId = (result && (result.agentId || result.subagent_id || result.id)) || (card.dataset.subagentId) || '';
+          if (subId && !resultContainer.querySelector('.cr-subagent-execution-link')) {
+            var execLine = '<div class="cr-subagent-execution-line" style="margin-top:8px;">' +
+              '<button type="button" class="cr-subagent-execution-link" data-subagent-id="' + esc(subId) + '" title="View subagent in Subagents tab">Execution ↗</button>' +
+              '</div>';
+            resultContainer.innerHTML += execLine;
+          }
+          if (!card.onclick) {
+            card.onclick = function onToolCardElementClick(evt) {
+              var execLink = evt.target && evt.target.closest ? evt.target.closest('.cr-subagent-execution-link') : null;
+              if (execLink) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                var aId = execLink.getAttribute('data-subagent-id');
+                if (window.switchDashboardSubView) {
+                  window.switchDashboardSubView('subagents', aId);
+                }
+              }
+            };
+          }
         }
 
         if (toolName === 'write_file' || toolName === 'edit_file') {
@@ -3997,6 +4614,7 @@ function initializeChatSpace() {
         '<div class="cr-msg-list"></div>' +
         '<div class="cr-composer">' +
           '<div class="cr-todos-panel" style="display:none"></div>' +
+          '<div class="cr-running-subagents-panel" style="display:none"></div>' +
           '<div class="cr-agent-controls-panel" style="display:none"></div>' +
           '<div class="cr-question-banner" style="display:none"></div>' +
           '<div class="cr-img-preview" style="display:none">' +
@@ -4106,6 +4724,7 @@ function initializeChatSpace() {
       var charCount  = container.querySelector('.cr-char-count');
       var stopBtn    = container.querySelector('.cr-stop-btn');
       var todosPanel = container.querySelector('.cr-todos-panel');
+      var runningSubagentsPanel = container.querySelector('.cr-running-subagents-panel');
       var controlsPanel = container.querySelector('.cr-agent-controls-panel');
       var questionBanner = container.querySelector('.cr-question-banner');
 
@@ -4164,11 +4783,14 @@ function initializeChatSpace() {
         charCount: charCount,
         stopBtn: stopBtn,
         todosPanel: todosPanel,
+        runningSubagentsPanel: runningSubagentsPanel,
         controlsPanel: controlsPanel,
         questionBanner: questionBanner,
         pendingImage: null,
         abortCtrl: null,
-        S: S
+        S: S,
+        runningSubagents: {},
+        permissionQueue: []
       };
 
       if (conversation.usage) {

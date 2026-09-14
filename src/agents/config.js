@@ -20,6 +20,10 @@ export function getConfig() {
     showThinking: cfg.get('showThinking', true),
     autoScroll: cfg.get('autoScroll', true),
     confirmDangerous: cfg.get('confirmDangerous', true),
+    subagentMaxConcurrent: cfg.get('subagentMaxConcurrent', 10),
+    subagentMaxDepth: cfg.get('subagentMaxDepth', 1),
+    subagentMaxIterations: cfg.get('subagentMaxIterations', 20),
+    subagentTimeoutMs: cfg.get('subagentTimeoutMs', 0),
     organization: cfg.get('organization', null),
     project: cfg.get('project', null),
     enableTools: cfg.get('enableTools', true)

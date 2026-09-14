@@ -21,6 +21,7 @@ import * as pathSecurity from './pathSecurity.js';
 import * as fileLockManager from './fileLockManager.js';
 import * as checkpointManager from './checkpointManager.js';
 import * as questionManager from './questionManager.js';
+import * as subagentTools from './subagentTools.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
@@ -147,7 +148,7 @@ async function* write_file(args, context) {
       var cpLabel = (existed ? 'Edited: ' : 'Created: ') + filePath;
       var cpId = null;
       try {
-        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, cpLabel);
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, cpLabel, context && context.agentId);
       } catch (cpErr) {
         return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
       }
@@ -241,7 +242,11 @@ async function* edit_file(args, context) {
       new_content: newContent,
       is_new_file: false,
       deferred: deferred,
-      sessionId: sessionId
+      sessionId: sessionId,
+      agentId: context && context.agentId,
+      parentAgentId: context && context.parentAgentId,
+      parentSessionId: context && context.parentSessionId,
+      rootSessionId: context && context.rootSessionId
     };
 
     var diffResult = await deferred.promise;
@@ -273,7 +278,7 @@ async function* edit_file(args, context) {
 
       var cpId = null;
       try {
-        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Edited: ' + filePath);
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Edited: ' + filePath, context && context.agentId);
       } catch (cpErr) {
         return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
       }
@@ -348,7 +353,7 @@ async function* delete_file(args, context) {
       }
       var cpId = null;
       try {
-        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Deleted: ' + filePath);
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Deleted: ' + filePath, context && context.agentId);
       } catch (cpErr) {
         return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
       }
@@ -1230,7 +1235,11 @@ async function* patch_file(args, context) {
       new_content: newContent,
       is_new_file: false,
       deferred: deferred,
-      sessionId: sessionId
+      sessionId: sessionId,
+      agentId: context && context.agentId,
+      parentAgentId: context && context.parentAgentId,
+      parentSessionId: context && context.parentSessionId,
+      rootSessionId: context && context.rootSessionId
     };
 
     var diffResult = await deferred.promise;
@@ -1262,7 +1271,7 @@ async function* patch_file(args, context) {
 
       var cpId = null;
       try {
-        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Patches: ' + filePath);
+        cpId = await checkpointManager.createCheckpoint(filePath, workspace, sessionId, 'Patches: ' + filePath, context && context.agentId);
       } catch (cpErr) {
         return { success: false, message: 'Checkpoint creation error: ' + cpErr.message };
       }
@@ -1394,12 +1403,13 @@ async function* web_request(args, context) {
     abortCtrl.abort();
   }, 15000); // 15s bounded timeout
 
-  var sessionSignal = (context && context.signal) || null;
+  var sessionController = (context && context.signal) || null;
+  var sessionSignal = sessionController && sessionController.signal ? sessionController.signal : sessionController;
   function handleSessionAbort() {
     abortCtrl.abort();
   }
   if (sessionSignal) {
-    if (sessionSignal.aborted || sessionSignal.stopped) {
+    if (sessionSignal.aborted || (sessionController && sessionController.stopped)) {
       abortCtrl.abort();
     } else if (sessionSignal.addEventListener) {
       sessionSignal.addEventListener('abort', handleSessionAbort);
@@ -1852,7 +1862,8 @@ function reg(name, handler, opts) {
       needsPermission: opts.needsPermission || opts.dangerous || false,
       hidden: opts.hidden || false,
       category: opts.category || 'utility',
-      timeout: opts.timeout || 30000
+      timeout: opts.timeout || 30000,
+      rootOnly: opts.rootOnly || false
     }
   });
 }
@@ -2080,6 +2091,93 @@ export function registerAllTools() {
       }
     },
     required: ['question']
+  });
+
+  // ── Subagents (Root Only) ───────────────────────────
+  reg('spawn_subagent', subagentTools.spawn_subagent, {
+    category: 'subagent',
+    rootOnly: true,
+    dangerous: true,
+    description: 'Create and start a subagent — another AI agent running the same execution loop independently. Use "sync" (or "parallel"/"async") to launch in background and return immediately with confirmation, or "wait" to block until completion.',
+    parameters: {
+      id: { type: 'string', description: 'Unique machine identifier for this subagent within current run' },
+      name: { type: 'string', description: 'Human-readable role name (e.g. Authentication Researcher)' },
+      task: { type: 'string', description: 'The objective to delegate' },
+      role: { type: 'string', description: 'Role specialization for the subagent (e.g. coder, architect, reviewer, debugger, researcher)' },
+      context: { type: 'string', description: 'Additional instructions or context for the subagent' },
+      execution: { type: 'string', enum: ['sync', 'wait', 'parallel', 'async'], description: 'sync = run in background, returns immediately confirming subagent started; wait = block until completion and return final response; parallel or async = run in background parallel to main agent' }
+    },
+    required: ['id', 'name', 'task']
+  });
+
+  reg('subagent_response', subagentTools.subagent_response, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'Received subagent execution response and results.',
+    parameters: {
+      id: { type: 'string', description: 'The subagent ID' },
+      name: { type: 'string', description: 'The subagent name' },
+      task: { type: 'string', description: 'The delegated subagent task' },
+      role: { type: 'string', description: 'Subagent role' },
+      execution: { type: 'string', description: 'Execution mode' }
+    }
+  });
+
+  reg('subagent_status', subagentTools.subagent_status, {
+    category: 'subagent',
+    rootOnly: true,
+    description: "Inspect a child subagent's current state, progress, activity, files read/modified, and partial results.",
+    parameters: {
+      subagent_id: { type: 'string', description: 'The subagent id' }
+    },
+    required: ['subagent_id']
+  });
+
+  reg('subagents_list', subagentTools.subagents_list, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'List all child subagents created in this session with their current lifecycle and granular state.',
+    parameters: {}
+  });
+
+  reg('stop_subagent', subagentTools.stop_subagent, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'Permanently stop a running or paused child subagent. Partial results are preserved.',
+    parameters: {
+      subagent_id: { type: 'string', description: 'The subagent id to stop' }
+    },
+    required: ['subagent_id']
+  });
+
+  reg('wait_for_subagent', subagentTools.wait_for_subagent, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'Block until an async child subagent reaches a terminal state and return its full result.',
+    parameters: {
+      subagent_id: { type: 'string', description: 'The subagent id to await' }
+    },
+    required: ['subagent_id']
+  });
+
+  reg('pause_subagent', subagentTools.pause_subagent, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'Temporarily suspend a running child subagent at the next iteration boundary. Can be resumed later.',
+    parameters: {
+      subagent_id: { type: 'string', description: 'The subagent id to pause' }
+    },
+    required: ['subagent_id']
+  });
+
+  reg('resume_subagent', subagentTools.resume_subagent, {
+    category: 'subagent',
+    rootOnly: true,
+    description: 'Continue a paused child subagent from where it was suspended.',
+    parameters: {
+      subagent_id: { type: 'string', description: 'The subagent id to resume' }
+    },
+    required: ['subagent_id']
   });
 
   console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');

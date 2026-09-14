@@ -2,8 +2,16 @@
   {
     "id": "trace_sec_2",
     "sessionId": "session_sec_2",
-    "startedAt": 1789317735504,
-    "completedAt": 1789317735505,
+    "agentId": "root",
+    "name": "",
+    "task": "Connecting to database",
+    "parentAgentId": null,
+    "parentSessionId": null,
+    "depth": 0,
+    "role": "coder",
+    "agentType": "root",
+    "startedAt": 1789396786301,
+    "completedAt": 1789396786302,
     "durationMs": 1,
     "status": "completed",
     "provider": "ollama",
@@ -14,7 +22,7 @@
       "context": {
         "workspaceFolder": "",
         "openFiles": [],
-        "systemPromptTokens": "[REDACTED]"
+        "systemPromptTokens": 0
       }
     },
     "steps": [
@@ -30,7 +38,11 @@
           },
           "thinking": "Using connection string postgres://[REDACTED]@db.example.com:5432/mydb and AWS key [REDACTED_AWS_KEY] with JWT [REDACTED_JWT]",
           "decision": "Connecting to DB",
-          "tokens": "[REDACTED]",
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "total": 0
+          },
           "durationMs": 0
         },
         "toolCalls": []
@@ -43,7 +55,11 @@
     },
     "metrics": {
       "totalDurationMs": 1,
-      "totalTokens": "[REDACTED]",
+      "totalTokens": {
+        "input": 0,
+        "output": 0,
+        "total": 0
+      },
       "toolsExecuted": 0,
       "filesTouched": []
     },

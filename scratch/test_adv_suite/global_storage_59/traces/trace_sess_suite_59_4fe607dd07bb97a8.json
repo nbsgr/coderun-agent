@@ -1,0 +1,85 @@
+[
+  {
+    "id": "run_1789396789865_hzv6r0",
+    "sessionId": "sess_suite_59",
+    "agentId": "root",
+    "name": "Root Architect",
+    "task": "Build feature architecture",
+    "parentAgentId": null,
+    "parentSessionId": null,
+    "depth": 0,
+    "role": "architect",
+    "agentType": "root",
+    "startedAt": 1789396789865,
+    "completedAt": 1789396789865,
+    "durationMs": 0,
+    "status": "completed",
+    "provider": "ollama",
+    "model": "qwen2.5-coder",
+    "user": {
+      "query": "Build feature architecture",
+      "images": [],
+      "context": {
+        "workspaceFolder": "",
+        "openFiles": [],
+        "systemPromptTokens": 0
+      }
+    },
+    "steps": [
+      {
+        "stepIndex": 1,
+        "llmCall": {
+          "model": "qwen2.5-coder",
+          "provider": "ollama",
+          "messages": {
+            "system": "",
+            "user": "Build feature architecture",
+            "toolResults": null
+          },
+          "thinking": "Planning module architecture and dependencies",
+          "decision": "Call list_directory",
+          "tokens": {
+            "input": 60,
+            "output": 30,
+            "total": 90
+          },
+          "durationMs": 0
+        },
+        "toolCalls": [
+          {
+            "id": "tool_1789396789865",
+            "toolName": "list_directory",
+            "command": "",
+            "input": {
+              "path": "src/"
+            },
+            "output": "agentLoop.js\nsubagentManager.js\nexecutionTrace.js",
+            "success": true,
+            "durationMs": 18,
+            "timestamp": 1789396789865
+          }
+        ]
+      }
+    ],
+    "finalResponse": {
+      "text": "Architecture plan finalized successfully.",
+      "thinking": "",
+      "durationMs": 0
+    },
+    "metrics": {
+      "totalDurationMs": 0,
+      "totalTokens": {
+        "input": 60,
+        "output": 30,
+        "total": 90
+      },
+      "toolsExecuted": 1,
+      "filesTouched": []
+    },
+    "transitions": [],
+    "events": [],
+    "observations": [],
+    "decisions": [],
+    "asciiTree": "Agent Run [qwen2.5-coder | COMPLETED | 0.0s]\n│\n├── User Input\n│   └── \"Build feature architecture\"\n│\n├── LLM Call #1\n│   ├── Model: qwen2.5-coder\n│   ├── Reasoning: \"Planning module architecture and dependencies\"\n│   └── Decision: Call list_directory\n│\n├── Tool Call\n│   └── list_directory(path: \"src/\")\n│\n├── Tool Result\n│   └── [✓ 18ms]: agentLoop.js subagentManager.js executionTrace.js\n│\n└── Final Response\n    └── \"Architecture plan finalized successfully.\""
+  }
+]

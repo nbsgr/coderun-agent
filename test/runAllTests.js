@@ -28,6 +28,12 @@ import { createMcpClient } from '../src/mcp/mcpClient.js';
 import * as mcpManager from '../src/mcp/mcpManager.js';
 import { buildMessages, optimizeHistoricalToolMessage } from '../src/agents/promptBuilder.js';
 import { buildCompactCheckpoint } from '../src/context/compactionManager.js';
+import * as subagentTypes from '../src/agents/subagentTypes.js';
+import * as subagentLifecycle from '../src/agents/subagentLifecycle.js';
+import * as subagentManager from '../src/agents/subagentManager.js';
+import * as subagentTools from '../src/tools/subagentTools.js';
+import * as subagentPanel from '../src/SubagentPanel.js';
+import '../src/MarkdownRenderer.js';
 
 function noopResolve() {}
 
@@ -1370,6 +1376,714 @@ assert.strictEqual(toolResultEv.value.message, 'User answered: Tailwind', 'Tool 
 
 console.log('✓ Vector 50 Passed: Interactive user question lifecycle, session isolation, and tool execution verified.');
 
+// --- TEST 51: Subagent Identity & Recursion Blocking ---
+console.log('--- TEST 51: Subagent Identity & Recursion Blocking ---');
+var rootIdent = subagentTypes.createRootIdentity('sess_root_51');
+assert.strictEqual(rootIdent.agentType, 'root');
+assert.strictEqual(rootIdent.depth, 0);
+
+var subIdent = subagentTypes.createSubagentIdentity({
+  parentAgentId: 'root',
+  parentSessionId: 'sess_root_51',
+  role: 'coder',
+  depth: 0
+});
+assert.strictEqual(subIdent.agentType, 'subagent');
+assert.strictEqual(subIdent.depth, 1);
+assert.strictEqual(subIdent.role, 'coder');
+assert.strictEqual(subIdent.parentSessionId, 'sess_root_51');
+
+// Attempting depth >= MAX_SUBAGENT_DEPTH throws
+var recursionBlocked = false;
+try {
+  subagentTypes.createSubagentIdentity({
+    parentAgentId: subIdent.agentId,
+    parentSessionId: 'sess_root_51',
+    role: 'researcher',
+    depth: 1
+  });
+} catch (recErr) {
+  recursionBlocked = true;
+  assert.ok(recErr.message.includes('recursion limit'), 'Error states recursion limit reached');
+}
+assert.strictEqual(recursionBlocked, true, 'Subagent cannot spawn child subagents beyond depth 1');
+
+// Tool filtering: getDefinitions({ agentType: 'subagent' }) excludes rootOnly tools
+var subagentDefs = toolRegistry.getDefinitions({ agentType: 'subagent' });
+for (var dIdx = 0; dIdx < subagentDefs.length; dIdx++) {
+  var fnName = subagentDefs[dIdx].function.name;
+  assert.notStrictEqual(fnName, 'spawn_subagent', 'spawn_subagent excluded from subagents');
+  assert.notStrictEqual(fnName, 'stop_subagent', 'stop_subagent excluded from subagents');
+  assert.notStrictEqual(fnName, 'subagents_list', 'subagents_list excluded from subagents');
+}
+
+// Direct tool execution attempt by a subagent is rejected
+var blockedGen = toolRegistry.execute('spawn_subagent', { role: 'coder', task: 'Nested task' }, {
+  agentType: 'subagent',
+  sessionId: 'sess_sub_51'
+});
+var blockedRes = await blockedGen.next();
+assert.strictEqual(blockedRes.value.success, false, 'Executing rootOnly tool as subagent is rejected');
+assert.ok(blockedRes.value.message.includes('cannot spawn or control other subagents') || blockedRes.value.message.includes('not available'), 'Error explains rootOnly block');
+console.log('✓ Vector 51 Passed: Subagent identity hierarchy, depth limits, and tool filtering enforced.');
+
+// --- TEST 52: Subagent Lifecycle & State Machine Transitions ---
+console.log('--- TEST 52: Subagent Lifecycle & State Machine Transitions ---');
+agentState.reset('test_sess_52');
+agentState.transition('thinking', 'test_sess_52');
+agentState.transition('paused', 'test_sess_52');
+assert.strictEqual(agentState.getState('test_sess_52'), 'paused', 'Agent state is paused');
+assert.strictEqual(agentState.LABELS.paused, 'Paused', 'paused has user-friendly label');
+agentState.transition('thinking', 'test_sess_52');
+assert.strictEqual(agentState.getState('test_sess_52'), 'thinking', 'Resumed to thinking');
+
+assert.strictEqual(subagentLifecycle.canPause('running'), true);
+assert.strictEqual(subagentLifecycle.canPause('thinking'), true);
+assert.strictEqual(subagentLifecycle.canPause('paused'), false);
+assert.strictEqual(subagentLifecycle.canPause('completed'), false);
+
+assert.strictEqual(subagentLifecycle.canResume('paused'), true);
+assert.strictEqual(subagentLifecycle.canResume('running'), false);
+assert.strictEqual(subagentLifecycle.canResume('completed'), false);
+
+assert.strictEqual(subagentLifecycle.canStop('running'), true);
+assert.strictEqual(subagentLifecycle.canStop('paused'), true);
+assert.strictEqual(subagentLifecycle.canStop('completed'), false);
+console.log('✓ Vector 52 Passed: Subagent state machine transitions and lifecycle predicates verified.');
+
+// --- TEST 53: Subagent Manager Lifecycle & Operations ---
+console.log('--- TEST 53: Subagent Manager Lifecycle & Operations ---');
+var spawnedSub = subagentManager.spawnSubagent({
+  parentSessionId: 'sess_test_53',
+  role: 'architect',
+  task: 'Design multi-tenant database schema',
+  config: { model: 'llama3:8b', provider: 'ollama' }
+});
+assert.ok(spawnedSub, 'spawnSubagent returns instance');
+assert.ok(spawnedSub.agentId.startsWith('subagent_'), 'agentId has subagent prefix');
+assert.strictEqual(spawnedSub.role, 'architect');
+assert.strictEqual(spawnedSub.status, 'running');
+
+var subList53 = subagentManager.listSubagents('sess_test_53');
+assert.strictEqual(subList53.length, 1);
+assert.strictEqual(subList53[0].agentId, spawnedSub.agentId);
+
+// Pause subagent
+var pauseRes = await subagentManager.pauseSubagent(spawnedSub.agentId);
+assert.strictEqual(pauseRes.success, true);
+assert.strictEqual(subagentManager.getSubagent(spawnedSub.agentId).status, 'paused');
+
+// Resume subagent
+var resumeRes = await subagentManager.resumeSubagent(spawnedSub.agentId);
+assert.strictEqual(resumeRes.success, true);
+assert.strictEqual(subagentManager.getSubagent(spawnedSub.agentId).status, 'running');
+
+// Stop subagent
+var stopRes = await subagentManager.stopSubagent(spawnedSub.agentId, 'Completed early');
+assert.strictEqual(stopRes.success, true);
+assert.strictEqual(subagentManager.getSubagent(spawnedSub.agentId).status, 'stopped');
+
+// Cleanup
+subagentManager.disposeSubagents('sess_test_53');
+assert.strictEqual(subagentManager.listSubagents('sess_test_53').length, 0);
+console.log('✓ Vector 53 Passed: Subagent manager spawning, pausing, resuming, stopping, and cleanup verified.');
+
+// --- TEST 54: Checkpoint & Diff Attribution by Agent ID ---
+console.log('--- TEST 54: Checkpoint & Diff Attribution by Agent ID ---');
+var testWs54 = path.resolve('scratch/test_adv_suite');
+var testFile54 = path.join(testWs54, 'agent_file_54.js');
+fs.writeFileSync(testFile54, 'const a = 1;\n', 'utf-8');
+
+var subagentId54 = 'subagent_tester_54';
+var cp54 = await checkpointManager.createCheckpoint(testWs54, 'agent_file_54.js', 'sess_test_54', subagentId54);
+assert.strictEqual(cp54.agentId, subagentId54);
+
+var agentCps = await checkpointManager.getCheckpointsByAgent(subagentId54, 'sess_test_54');
+assert.ok(agentCps.length >= 1);
+assert.strictEqual(agentCps[0].agentId, subagentId54);
+
+// Diff Manager agentId attribution
+var patch54 = diffManager.storePatch({
+  id: 'diff_agent_test_54',
+  file_path: 'agent_file_54.js',
+  original_content: 'const a = 1;\n',
+  new_content: 'const a = 2;\n',
+  sessionId: 'sess_test_54',
+  agentId: subagentId54
+});
+assert.strictEqual(patch54.agentId, subagentId54);
+
+// Undo agent changes
+fs.writeFileSync(testFile54, 'const a = 999;\n', 'utf-8');
+var undoResult = await checkpointManager.undoAgentChanges(subagentId54, testWs54, 'sess_test_54');
+assert.strictEqual(undoResult.success, true);
+assert.strictEqual(undoResult.restoredCount, 1);
+assert.strictEqual(fs.readFileSync(testFile54, 'utf-8'), 'const a = 1;\n');
+
+diffManager.rejectPatch('diff_agent_test_54', 'sess_test_54');
+console.log('✓ Vector 54 Passed: Checkpoint and diff attribution per agentId, and targeted rollback verified.');
+
+// --- TEST 55: Execution Trace Subagent Isolation & Hierarchical Query ---
+console.log('--- TEST 55: Execution Trace Subagent Isolation & Hierarchical Query ---');
+var subagentRun = executionTrace.startRun(
+  'sess_sub_55',
+  'run_sub_55',
+  'Refactor authentication handlers',
+  {
+    workspaceFolder: testWs54,
+    agentId: 'subagent_auth_55',
+    parentAgentId: 'root',
+    parentSessionId: 'sess_main_55',
+    depth: 1,
+    role: 'coder',
+    agentType: 'subagent'
+  },
+  'llama3:8b',
+  'ollama',
+  false
+);
+
+assert.strictEqual(subagentRun.agentId, 'subagent_auth_55');
+assert.strictEqual(subagentRun.parentSessionId, 'sess_main_55');
+assert.strictEqual(subagentRun.depth, 1);
+assert.strictEqual(subagentRun.role, 'coder');
+assert.strictEqual(subagentRun.agentType, 'subagent');
+
+executionTrace.recordLLMCall('sess_sub_55', 1, {
+  thinking: 'I need to check jwt validation',
+  decision: 'call read_file',
+  tokens: { input: 150, output: 45, total: 195 },
+  durationMs: 400
+});
+
+executionTrace.finishRun('sess_sub_55', 'completed', {
+  totalTokens: { input: 150, output: 45, total: 195 }
+});
+
+var subTraces55 = executionTrace.getSubagentTraces('sess_main_55');
+assert.ok(subTraces55.length >= 1, 'Found subagent trace for main session');
+var foundTrace = subTraces55[0];
+assert.strictEqual(foundTrace.agentId, 'subagent_auth_55');
+assert.strictEqual(foundTrace.parentSessionId, 'sess_main_55');
+assert.strictEqual(foundTrace.steps.length, 1);
+assert.strictEqual(foundTrace.steps[0].llmCall.thinking, 'I need to check jwt validation');
+console.log('✓ Vector 55 Passed: Execution trace subagent identity isolation and parent-session trace querying verified.');
+
+// --- TEST 56: Subagent Tools Suite Execution ---
+console.log('--- TEST 56: Subagent Tools Suite Execution ---');
+var subToolCtx = { workspace: testWs54, sessionId: 'sess_suite_56', agentType: 'root' };
+
+// 1. spawn_subagent tool
+var spawnGen = subagentTools.spawn_subagent({
+  role: 'reviewer',
+  task: 'Review PR security'
+}, subToolCtx);
+var spEv1 = await spawnGen.next();
+assert.strictEqual(spEv1.value.type, 'action');
+var spEv2 = await spawnGen.next();
+assert.strictEqual(spEv2.value.type, 'tool_result');
+assert.strictEqual(spEv2.value.success, true);
+assert.ok(spEv2.value.agentId);
+assert.strictEqual(spEv2.value.role, 'reviewer');
+var spawnedAgentId56 = spEv2.value.agentId;
+
+// 2. subagent_status tool
+var statGen = subagentTools.subagent_status({ agentId: spawnedAgentId56 }, subToolCtx);
+await statGen.next();
+var statRes = await statGen.next();
+assert.strictEqual(statRes.value.success, true);
+assert.strictEqual(statRes.value.agentId, spawnedAgentId56);
+assert.strictEqual(statRes.value.role, 'reviewer');
+
+// 3. subagents_list tool
+var listGen = subagentTools.subagents_list({}, subToolCtx);
+await listGen.next();
+var listRes = await listGen.next();
+assert.strictEqual(listRes.value.success, true);
+assert.ok(listRes.value.count >= 1);
+
+// 4. pause_subagent tool
+var pauseGen = subagentTools.pause_subagent({ agentId: spawnedAgentId56 }, subToolCtx);
+await pauseGen.next();
+var pauseRes56 = await pauseGen.next();
+assert.strictEqual(pauseRes56.value.success, true);
+assert.strictEqual(pauseRes56.value.status, 'paused');
+
+// 5. resume_subagent tool
+var resumeGen = subagentTools.resume_subagent({ agentId: spawnedAgentId56 }, subToolCtx);
+await resumeGen.next();
+var resumeRes56 = await resumeGen.next();
+assert.strictEqual(resumeRes56.value.success, true);
+assert.strictEqual(resumeRes56.value.status, 'running');
+
+// 6. stop_subagent tool
+var stopGen = subagentTools.stop_subagent({ agentId: spawnedAgentId56, reason: 'Test complete' }, subToolCtx);
+await stopGen.next();
+var stopRes56 = await stopGen.next();
+assert.strictEqual(stopRes56.value.success, true);
+assert.strictEqual(stopRes56.value.status, 'stopped');
+
+subagentManager.disposeSubagents('sess_suite_56');
+console.log('✓ Vector 56 Passed: Complete subagent tools suite execution (spawn, status, list, pause, resume, stop) verified.');
+
+// --- TEST 57: Subagent UI Panel Rendering & Link Contract ---
+console.log('--- TEST 57: Subagent UI Panel Rendering & Link Contract ---');
+var mockContainer = { innerHTML: '' };
+subagentPanel.renderSubagentsView(mockContainer);
+assert.ok(mockContainer.innerHTML.includes('cr-subagents-panel'), 'Panel renders container');
+assert.ok(mockContainer.innerHTML.includes('cr-bot-avatar-img'), 'Empty state renders bot avatar image');
+assert.ok(mockContainer.innerHTML.includes('No subagents created') || mockContainer.innerHTML.includes('NO SUBAGENTS CREATED'), 'Empty state renders No subagents created text');
+
+var mockCardSub = {
+  agentId: 'sub_test_card',
+  role: 'coder',
+  task: 'Test dropdown card UI',
+  status: 'running',
+  trace: {
+    steps: [
+      {
+        llmCall: { thinking: 'Thinking inside dropdown' },
+        toolCalls: [{ toolName: 'read_file', input: { path: 'a.js' }, output: 'ok', success: true }]
+      }
+    ],
+    totalTokens: { input: 100, output: 50, total: 150 }
+  }
+};
+var cardHtml = subagentPanel.buildSubagentDropdownCardHtml(mockCardSub, true);
+assert.ok(cardHtml.includes('cr-subagent-card'), 'Dropdown card renders details container');
+assert.ok(cardHtml.includes('cr-subagent-head'), 'Dropdown card renders summary head');
+assert.ok(cardHtml.includes('Thought process'), 'Dropdown card renders thought process');
+assert.ok(cardHtml.includes('read_file'), 'Dropdown card renders tool card');
+assert.ok(cardHtml.includes('View Subagent Traces ↗'), 'Dropdown card renders view trace link');
+
+var mockErrorSub = {
+  agentId: 'sub_error_card',
+  role: 'debugger',
+  task: 'Investigate error',
+  status: 'failed',
+  error: 'Connection error: Ollama offline'
+};
+var errorCardHtml = subagentPanel.buildSubagentDropdownCardHtml(mockErrorSub, true);
+assert.ok(errorCardHtml.includes('Error Response'), 'Dropdown card renders error banner');
+assert.ok(errorCardHtml.includes('Ollama offline'), 'Dropdown card renders error message');
+
+console.log('✓ Vector 57 Passed: Subagent UI panel components, dropdown contracts, and link binding verified.');
+
+// --- TEST 58: Subagent Wait/Async Mode, Lifecycle Status Contract, Startup Reconciliation & Chat Stream UI ---
+console.log('--- TEST 58: Subagent Wait/Async Mode, Lifecycle Status Contract, Startup Reconciliation & Chat Stream UI ---');
+
+function mockTest58PromiseResolver(resolve) {
+  resolve({
+    success: true,
+    content: 'Mock subagent task executed successfully.'
+  });
+}
+
+function mockTest58Runner(opts) {
+  return new Promise(mockTest58PromiseResolver);
+}
+
+subagentManager.setAgentRunner(mockTest58Runner);
+
+// 1. spawn_subagent in wait mode
+var waitGen58 = subagentTools.spawn_subagent({
+  name: 'auth-reviewer',
+  role: 'reviewer',
+  task: 'Review auth implementation',
+  execution: 'wait'
+}, {
+  sessionId: 'sess_suite_58',
+  workspaceFolder: testDir,
+  agentId: 'root'
+});
+await waitGen58.next();
+var waitRes58 = await waitGen58.next();
+assert.strictEqual(waitRes58.value.success, true);
+assert.strictEqual(waitRes58.value.execution, 'wait');
+assert.strictEqual(waitRes58.value.status, 'completed');
+assert.ok(waitRes58.value.result);
+assert.strictEqual(waitRes58.value.result.summary, 'Mock subagent task executed successfully.');
+
+// 2. spawn_subagent in async mode
+var asyncGen58 = subagentTools.spawn_subagent({
+  name: 'perf-analyzer',
+  role: 'debugger',
+  task: 'Analyze query bottleneck',
+  execution: 'async'
+}, {
+  sessionId: 'sess_suite_58',
+  workspaceFolder: testDir,
+  agentId: 'root'
+});
+await asyncGen58.next();
+var asyncRes58 = await asyncGen58.next();
+assert.strictEqual(asyncRes58.value.success, true);
+assert.strictEqual(asyncRes58.value.execution, 'async');
+assert.ok(asyncRes58.value.agentId);
+
+// 3. subagent_status comprehensive contract
+var statusGen58 = subagentTools.subagent_status({ agentId: asyncRes58.value.agentId }, { sessionId: 'sess_suite_58' });
+await statusGen58.next();
+var statusRes58 = await statusGen58.next();
+assert.strictEqual(statusRes58.value.success, true);
+assert.strictEqual(typeof statusRes58.value.can_resume, 'boolean');
+assert.strictEqual(typeof statusRes58.value.can_stop, 'boolean');
+assert.ok(Array.isArray(statusRes58.value.tools_used));
+assert.strictEqual(typeof statusRes58.value.elapsed_time_ms, 'number');
+
+// 4. reconcileOnStartup transitions dead running subagents to interrupted
+var spawnedRec58 = subagentManager.getSubagent(asyncRes58.value.agentId, 'sess_suite_58');
+spawnedRec58.status = 'running';
+var reconciledList58 = subagentManager.reconcileOnStartup('sess_suite_58');
+var recAfter58 = subagentManager.getSubagent(asyncRes58.value.agentId, 'sess_suite_58');
+assert.strictEqual(recAfter58.status, 'interrupted');
+
+// 5. buildSubagentExecutionChatHtml stream rendering
+var mockSubagentWithTrace58 = {
+  agentId: 'subagent_mock_ui',
+  role: 'coder',
+  task: 'Implement JWT refresh',
+  status: 'completed',
+  trace: {
+    steps: [
+      {
+        llmCall: {
+          thinking: 'Analyzing token expiration logic',
+          decision: 'read_file'
+        },
+        toolCalls: [
+          {
+            toolName: 'read_file',
+            input: { path: 'auth.js' },
+            output: 'const token = ...',
+            success: true,
+            durationMs: 42
+          }
+        ]
+      }
+    ],
+    totalTokens: { input: 100, output: 50, total: 150 },
+    finalResponse: { content: 'Token refresh implemented.' }
+  }
+};
+var chatHtml58 = subagentPanel.buildSubagentExecutionChatHtml(mockSubagentWithTrace58);
+assert.ok(chatHtml58.includes('cr-subagent-user-bubble'), 'Chat stream renders user task bubble');
+assert.ok(chatHtml58.includes('Implement JWT refresh'), 'Chat stream renders task text');
+assert.ok(chatHtml58.includes('cr-subagent-think-block'), 'Chat stream renders thinking block');
+assert.ok(chatHtml58.includes('Analyzing token expiration logic'), 'Chat stream renders thinking content');
+assert.ok(chatHtml58.includes('cr-tool-card'), 'Chat stream renders tool cards');
+assert.ok(chatHtml58.includes('read_file'), 'Chat stream renders tool name');
+assert.ok(chatHtml58.includes('Token refresh implemented.'), 'Chat stream renders markdown output');
+
+subagentManager.disposeSubagents('sess_suite_58');
+subagentManager.setAgentRunner(null);
+console.log('✓ Vector 58 Passed: Subagent wait/async execution, lifecycle status contracts, startup reconciliation, and execution chat HTML rendering verified.');
+
+// --- TEST 59: Multi-Location Execution Trace Persistence, Subagent Trace Integration & Dropdown Rendering ---
+console.log('--- TEST 59: Multi-Location Execution Trace Persistence, Subagent Trace Integration & Dropdown Rendering ---');
+var testStorageDir59 = path.join(testDir, 'global_storage_59');
+if (fs.existsSync(testStorageDir59)) {
+  fs.rmSync(testStorageDir59, { recursive: true, force: true });
+}
+executionTrace.setDefaultStoragePath(testStorageDir59);
+
+// 1. Main agent execution trace lifecycle & multi-location disk save
+var mainTrace59 = executionTrace.startRun('sess_suite_59', null, 'Build feature architecture', {}, 'qwen2.5-coder', 'ollama', false, { agentId: 'root', role: 'architect', name: 'Root Architect' });
+assert.strictEqual(mainTrace59.status, 'running');
+assert.strictEqual(mainTrace59.sessionId, 'sess_suite_59');
+
+executionTrace.recordLLMCall('sess_suite_59', 1, {
+  thinking: 'Planning module architecture and dependencies',
+  decision: 'Call list_directory',
+  tokens: { input: 60, output: 30 }
+});
+
+executionTrace.recordToolCall('sess_suite_59', 1, {
+  toolName: 'list_directory',
+  input: { path: 'src/' },
+  output: 'agentLoop.js\nsubagentManager.js\nexecutionTrace.js',
+  success: true,
+  durationMs: 18
+});
+
+executionTrace.recordFinalResponse('sess_suite_59', {
+  text: 'Architecture plan finalized successfully.'
+});
+
+var finishedMain59 = executionTrace.finishRun('sess_suite_59', 'completed');
+assert.strictEqual(finishedMain59.status, 'completed');
+assert.strictEqual(finishedMain59.finalResponse.text, 'Architecture plan finalized successfully.');
+
+var savedPath59 = await executionTrace.saveTraceToDisk(testStorageDir59, 'sess_suite_59');
+assert.ok(savedPath59 && fs.existsSync(savedPath59), 'Trace must be saved to disk');
+
+var loadedTraces59 = await executionTrace.loadTracesFromDisk(testStorageDir59, 'sess_suite_59');
+assert.strictEqual(loadedTraces59.length, 1);
+assert.strictEqual(loadedTraces59[0].steps.length, 1);
+assert.strictEqual(loadedTraces59[0].steps[0].llmCall.thinking, 'Planning module architecture and dependencies');
+assert.strictEqual(loadedTraces59[0].steps[0].toolCalls[0].toolName, 'list_directory');
+assert.strictEqual(loadedTraces59[0].steps[0].toolCalls[0].input.path, 'src/');
+
+// 2. Subagent execution trace with hierarchical parentSessionId linkage
+var subIdentity59 = {
+  agentId: 'subagent_tester_59',
+  parentSessionId: 'sess_suite_59',
+  parentAgentId: 'root',
+  agentType: 'subagent',
+  role: 'debugger',
+  name: 'Security Tester'
+};
+
+var subRun59 = executionTrace.startRun('sub_sess_59', null, 'Fuzz test inputs and report vulnerabilities', {}, 'qwen2.5-coder', 'ollama', false, subIdentity59);
+assert.strictEqual(subRun59.parentSessionId, 'sess_suite_59');
+assert.strictEqual(subRun59.agentType, 'subagent');
+
+executionTrace.recordLLMCall('sub_sess_59', 1, {
+  thinking: 'Generating adversarial payloads for boundary inspection',
+  decision: 'Call run_command',
+  tokens: { input: 120, output: 45 }
+});
+
+executionTrace.recordToolCall('sub_sess_59', 1, {
+  toolName: 'run_command',
+  command: 'npm test -- --grep "security"',
+  input: { command: 'npm test -- --grep "security"' },
+  output: '0 vulnerabilities found',
+  success: true,
+  durationMs: 95
+});
+
+executionTrace.recordFinalResponse('sub_sess_59', {
+  text: 'All boundary assertions passed with zero vulnerabilities.'
+});
+
+var finishedSub59 = executionTrace.finishRun('sub_sess_59', 'completed');
+assert.strictEqual(finishedSub59.status, 'completed');
+
+var savedSubPath59 = await executionTrace.saveTraceToDisk(testStorageDir59, 'sub_sess_59');
+assert.ok(savedSubPath59 && fs.existsSync(savedSubPath59), 'Subagent trace must be persisted to disk');
+
+// 3. Hierarchical subagent trace lookup by parentSessionId
+var inMemSubTraces59 = executionTrace.getSubagentTraces('sess_suite_59');
+assert.strictEqual(inMemSubTraces59.length, 1);
+assert.strictEqual(inMemSubTraces59[0].agentId, 'subagent_tester_59');
+
+var diskSubTraces59 = await executionTrace.loadSubagentTracesFromDisk(testStorageDir59, 'sess_suite_59');
+assert.strictEqual(diskSubTraces59.length, 1);
+assert.strictEqual(diskSubTraces59[0].agentId, 'subagent_tester_59');
+assert.strictEqual(diskSubTraces59[0].steps[0].llmCall.thinking, 'Generating adversarial payloads for boundary inspection');
+assert.strictEqual(diskSubTraces59[0].steps[0].toolCalls[0].toolName, 'run_command');
+assert.strictEqual(diskSubTraces59[0].steps[0].toolCalls[0].input.command, 'npm test -- --grep "security"');
+
+// 4. Dropdown HTML rendering with thinking, tool input arguments, and tool outputs
+var subagentRecord59 = {
+  agentId: 'subagent_tester_59',
+  role: 'debugger',
+  task: 'Fuzz test inputs and report vulnerabilities',
+  status: 'completed',
+  trace: diskSubTraces59[0]
+};
+
+var dropdownHtml59 = subagentPanel.buildSubagentDropdownCardHtml(subagentRecord59, true);
+assert.ok(dropdownHtml59.includes('cr-subagent-card'), 'Renders dropdown card container');
+assert.ok(dropdownHtml59.includes('subagent_tester_59'), 'Renders subagent ID');
+assert.ok(dropdownHtml59.includes('Generating adversarial payloads for boundary inspection'), 'Renders thinking content');
+assert.ok(dropdownHtml59.includes('npm test -- --grep') && dropdownHtml59.includes('security'), 'Renders tool input arguments');
+assert.ok(dropdownHtml59.includes('0 vulnerabilities found'), 'Renders tool output text');
+assert.ok(dropdownHtml59.includes('Tokens:'), 'Renders token count badge');
+
+console.log('✓ Vector 59 Passed: Multi-location execution trace persistence, subagent trace integration & dropdown rendering verified.');
+
+// --- TEST 60: Subagents UI Scrollability, Exact Toolbar Text, Header Constraints & SVG Chevron Movement Contract ---
+console.log('--- TEST 60: Subagents UI Scrollability, Exact Toolbar Text, Header Constraints & SVG Chevron Movement Contract ---');
+
+var testSub60 = {
+  agentId: 'subagent_coder_1789373651958_3g58',
+  role: 'coder',
+  task: 'Comprehensive UI scroll and chevron rotation verification',
+  status: 'completed',
+  thinking: 'Evaluating scroll boundaries and chevron animations',
+  toolCalls: [
+    { toolName: 'run_command', input: { command: 'npm test' }, output: 'All passed', success: true }
+  ],
+  trace: {
+    steps: [
+      {
+        llmCall: { thinking: 'Evaluating scroll boundaries and chevron animations' },
+        toolCalls: [{ toolName: 'run_command', input: { command: 'npm test' }, output: 'All passed', success: true }]
+      }
+    ],
+    metrics: { totalTokens: { input: 200, output: 80, total: 280 } },
+    durationMs: 1200
+  }
+};
+
+// 1. Exact toolbar description text
+var mockContainer60 = { innerHTML: '' };
+subagentPanel.saveSubagentsToLocalStorage('sess_suite_60', [testSub60]);
+subagentPanel.renderSubagentsView(mockContainer60, null, 'sess_suite_60');
+assert.ok(
+  mockContainer60.innerHTML.includes('click on the drop to check the complete excution of subagents'),
+  'Toolbar contains exact description text: "click on the drop to check the complete excution of subagents"'
+);
+
+// 2. SVG right-pointing chevron in dropdown and tool card
+var cardHtml60 = subagentPanel.buildSubagentDropdownCardHtml(testSub60, true);
+assert.ok(
+  cardHtml60.includes('cr-subagent-chevron') && cardHtml60.includes('<polyline points="9 18 15 12 9 6"'),
+  'Subagent card header renders SVG chevron'
+);
+assert.ok(
+  cardHtml60.includes('cr-tool-card-chevron') && cardHtml60.includes('<polyline points="9 18 15 12 9 6"'),
+  'Tool card header renders SVG chevron'
+);
+assert.ok(
+  !cardHtml60.includes('cr-think-chevron">▼<'),
+  'Thinking chevron does not render colliding text glyph'
+);
+
+// 3. Formatted final response markdown & code block
+var testSub60Markdown = {
+  agentId: 'subagent_coder_json_test',
+  role: 'coder',
+  task: 'List files',
+  status: 'completed',
+  result: {
+    content: '```json [ {"name": "demo", "type": "directory"}, {"name": "demo.txt", "type": "file"} ] ```'
+  }
+};
+var markdownCardHtml60 = subagentPanel.buildSubagentDropdownCardHtml(testSub60Markdown, true);
+assert.ok(
+  markdownCardHtml60.includes('md-code-block') && markdownCardHtml60.includes('language-json'),
+  'Subagent final response renders formatted markdown code block for JSON'
+);
+
+// 4. CSS scrollability and rotation contract verification
+var subagentPanelCssContent = fs.readFileSync(path.resolve('src/SubagentPanel.css'), 'utf8');
+var dashboardCssContent = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf8');
+
+assert.ok(
+  subagentPanelCssContent.includes('overflow-y: auto !important') && dashboardCssContent.includes('overflow-y: auto !important'),
+  'CSS provides overflow-y: auto !important for scrollability'
+);
+assert.ok(
+  subagentPanelCssContent.includes('.cr-subagent-card[open] > .cr-subagent-head .cr-subagent-chevron') &&
+  subagentPanelCssContent.includes('rotate(90deg)'),
+  'Subagent card chevron rotates 90 degrees when opened'
+);
+assert.ok(
+  subagentPanelCssContent.includes('.cr-tool-card[open] .cr-tool-card-chevron') &&
+  subagentPanelCssContent.includes('rotate(90deg)'),
+  'Tool card chevron rotates 90 degrees when opened'
+);
+assert.ok(
+  subagentPanelCssContent.includes('max-width: 220px') && subagentPanelCssContent.includes('text-overflow: ellipsis'),
+  'Subagent card name truncates with ellipsis to prevent badge overlap'
+);
+assert.ok(
+  subagentPanelCssContent.includes('margin-left: auto') && subagentPanelCssContent.includes('flex-shrink: 0'),
+  'Subagent header right status area is anchored to the right without collision'
+);
+
+console.log('✓ Vector 60 Passed: Subagents UI scrollability, exact toolbar text, header constraints & SVG chevron movement contract verified.');
+
+// ─────────────────────────────────────────────────────────────
+// TEST 61: Subagent Parallel Non-Blocking Execution & Chat Tool Dropdown Live Updates
+// ─────────────────────────────────────────────────────────────
+console.log('\n--- TEST 61: Subagent Parallel Non-Blocking Execution & Chat Tool Dropdown Live Updates ---');
+
+function mockTestRunner61(task, config, options) {
+  return Promise.resolve({
+    content: 'All items listed successfully in directory:\n- demo.txt\n- demo_write.txt',
+    summary: 'All items listed successfully in directory:\n- demo.txt\n- demo_write.txt',
+    done: true
+  });
+}
+
+subagentManager.setAgentRunner(mockTestRunner61);
+
+var testParentSession61 = 'test_parent_sess_61_' + Date.now();
+var mockContext61 = {
+  workspace: testWs54 || '.',
+  sessionId: testParentSession61,
+  rootSessionId: testParentSession61,
+  config: {},
+  sendEvent: function(ev) {},
+  askPermission: function() { return Promise.resolve(true); }
+};
+
+// 1. spawn_subagent in parallel mode must return immediately without waiting
+var parallelGen61 = subagentTools.spawn_subagent({
+  id: 'test_sub_parallel_61',
+  name: 'ParallelLister',
+  task: 'list files in parallel',
+  role: 'coder',
+  execution: 'parallel'
+}, mockContext61);
+
+var actionEv61 = (await parallelGen61.next()).value;
+assert.strictEqual(actionEv61.type, 'action');
+assert.strictEqual(actionEv61.execution, 'parallel');
+
+var toolResultEv61 = (await parallelGen61.next()).value;
+assert.strictEqual(toolResultEv61.type, 'tool_result');
+assert.strictEqual(toolResultEv61.success, true);
+assert.ok(toolResultEv61.status === 'completed' || toolResultEv61.status === 'running');
+assert.strictEqual(toolResultEv61.execution, 'parallel');
+assert.ok(toolResultEv61.output.indexOf('running on the assigned task') !== -1, 'Parallel spawn output confirms running status');
+
+// 2. waitForSubagent returns clean final response
+var waitRes61 = await subagentManager.waitForSubagent('test_sub_parallel_61', testParentSession61);
+assert.strictEqual(waitRes61.status, 'completed');
+assert.ok(waitRes61.output.indexOf('All items listed successfully') !== -1, 'Subagent produced final response output');
+
+// 3. wait_for_subagent tool
+var waitGen61 = subagentTools.wait_for_subagent({
+  agentId: 'test_sub_parallel_61'
+}, mockContext61);
+
+var waitAction61 = (await waitGen61.next()).value;
+assert.strictEqual(waitAction61.type, 'action');
+assert.strictEqual(waitAction61.action, 'wait_for_subagent');
+
+var waitToolRes61 = (await waitGen61.next()).value;
+assert.strictEqual(waitToolRes61.type, 'tool_result');
+assert.strictEqual(waitToolRes61.success, true);
+assert.strictEqual(waitToolRes61.status, 'completed');
+assert.ok(waitToolRes61.output.indexOf('All items listed successfully') !== -1, 'wait_for_subagent tool returned final response');
+
+// 4. spawn_subagent in wait mode blocks until completion
+var waitSpawnGen61 = subagentTools.spawn_subagent({
+  id: 'test_sub_wait_61',
+  name: 'WaitLister',
+  task: 'list files with blocking wait',
+  role: 'coder',
+  execution: 'wait'
+}, mockContext61);
+
+var waitSpawnAction61 = (await waitSpawnGen61.next()).value;
+assert.strictEqual(waitSpawnAction61.execution, 'wait');
+
+var waitSpawnRes61 = (await waitSpawnGen61.next()).value;
+assert.strictEqual(waitSpawnRes61.type, 'tool_result');
+assert.strictEqual(waitSpawnRes61.success, true);
+assert.strictEqual(waitSpawnRes61.status, 'completed');
+assert.ok(waitSpawnRes61.output.indexOf('All items listed successfully') !== -1, 'wait mode returned final output');
+
+// 5. ChatSpace.js event handling and routing verification
+var chatSpaceSource = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceSource.indexOf("case 'subagent_completed':") !== -1, 'ChatSpace handles subagent_completed');
+assert.ok(chatSpaceSource.indexOf("case 'subagent_failed':") !== -1, 'ChatSpace handles subagent_failed');
+assert.ok(chatSpaceSource.indexOf("isSubagentLifecycle") !== -1, 'ChatSpace routes lifecycle events for parent session');
+
+// 6. tools.js enum verification
+var toolsDef61 = toolRegistry.getDefinition('spawn_subagent');
+var execEnum61 = toolsDef61.function.parameters.properties.execution.enum;
+assert.ok(execEnum61.indexOf('parallel') !== -1, 'tools.js enum includes parallel');
+assert.ok(execEnum61.indexOf('wait') !== -1, 'tools.js enum includes wait');
+
+console.log('✓ Vector 61 Passed: Subagent parallel non-blocking execution, live completion dropdown updates & execution routing verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -1382,8 +2096,9 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 50 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 61 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);
+
 

@@ -153,7 +153,16 @@ function highlightCode(code, lang) {
 
 function buildFencedCodeHtml(language, rawCode) {
   var lang = (language || '').trim();
-  var raw = rawCode.replace(/\n$/, '');
+  var raw = rawCode.replace(/\n$/, '').trim();
+  if ((lang.toLowerCase() === 'json' || !lang) && (raw.startsWith('{') || raw.startsWith('['))) {
+    try {
+      var parsed = JSON.parse(raw);
+      raw = JSON.stringify(parsed, null, 2);
+      if (!lang) {
+        lang = 'json';
+      }
+    } catch (_) {}
+  }
   var highlighted = highlightCode(raw, lang);
   var encoded = encodeURIComponent(raw);
   return '<div class="md-code-block">' +
@@ -259,7 +268,7 @@ function renderMarkdown(src) {
     codeBlocks.push(buildFencedCodeHtml(lang, code));
     return '\n\n' + placeholder + '\n\n';
   }
-  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, replaceFencedCodeBlock);
+  text = text.replace(/```([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)```/g, replaceFencedCodeBlock);
 
   // 2. Extract Inline Code into placeholders
   var inlineCodes = [];
@@ -453,8 +462,14 @@ function renderMarkdown(src) {
 
 if (typeof window !== 'undefined') {
   window.renderMarkdown = renderMarkdown;
+  window.MarkdownRenderer = {
+    render: renderMarkdown
+  };
 }
 
 if (typeof globalThis !== 'undefined') {
   globalThis.renderMarkdown = renderMarkdown;
+  globalThis.MarkdownRenderer = {
+    render: renderMarkdown
+  };
 }

@@ -31,6 +31,7 @@ import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import * as memoryManager from '../context/memoryManager.js';
 import * as diffManager from '../tools/diffManager.js';
 import * as mcpManager from '../mcp/mcpManager.js';
+import * as subagentManager from './subagentManager.js';
 
 var DEBUG = false;
 function dbg() {
@@ -44,6 +45,18 @@ export async function resolveDiff(id, accepted, sessionId, workspace) {
 }
 
 function noop() {}
+
+function getEffectiveSessionUsage(sessionUsage, activeTrace) {
+  var inT = (sessionUsage && sessionUsage.prompt_tokens) || 0;
+  var outT = (sessionUsage && sessionUsage.completion_tokens) || 0;
+  var totT = (sessionUsage && sessionUsage.total_tokens) || (inT + outT);
+  if (totT === 0 && activeTrace && activeTrace.metrics && activeTrace.metrics.totalTokens) {
+    inT = activeTrace.metrics.totalTokens.input || 0;
+    outT = activeTrace.metrics.totalTokens.output || 0;
+    totT = activeTrace.metrics.totalTokens.total || (inT + outT);
+  }
+  return { prompt_tokens: inT, completion_tokens: outT, total_tokens: totT, input: inT, output: outT, total: totT };
+}
 
 function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
   var currentState = agentState.getState(sessionId);
@@ -99,6 +112,176 @@ function forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx, co
   }
 }
 
+function advancePlanChecklist(rawPlanStr, markAllComplete) {
+  if (typeof rawPlanStr !== 'string' || !rawPlanStr.trim()) return null;
+  var lines = rawPlanStr.split('\n');
+  var updated = false;
+  var foundIncomplete = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var m = line.match(/^([-*]\s*\[)([ \/xX!→>✓])(\]\s*(?:#?[0-9a-zA-Z_.-]+\s*:?|\b\d+[.)]\s*)?\s*.*)$/);
+    if (m) {
+      var prefix = m[1];
+      var mark = m[2];
+      var rest = m[3];
+      var isDone = (mark === 'x' || mark === 'X' || mark === '✓');
+
+      if (markAllComplete) {
+        if (!isDone) {
+          lines[i] = prefix + 'x' + rest;
+          updated = true;
+        }
+      } else {
+        if (!isDone) {
+          if (!foundIncomplete) {
+            lines[i] = prefix + 'x' + rest;
+            updated = true;
+            foundIncomplete = true;
+          } else {
+            if (mark === ' ') {
+              lines[i] = prefix + '/' + rest;
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return updated ? lines.join('\n') : null;
+}
+
+function syncPlanStringWithRuntime(newPlanStr, sessionId, markAllComplete) {
+  try {
+    var activePlan = runtime.getCurrentPlan(sessionId);
+    if (activePlan) {
+      activePlan.rawPlan = newPlanStr;
+      var hasIncomplete = /[-*]\s*\[[ \/]\]/.test(newPlanStr);
+      if (markAllComplete || !hasIncomplete) {
+        activePlan.status = 'completed';
+        try {
+          planningManager.updatePlanStatus(activePlan.id, 'completed');
+        } catch (_) {}
+      }
+      runtime.updatePlan(activePlan);
+    }
+  } catch (_) {}
+}
+
+function autoUpdatePlanOnToolSuccess(sessionCtx, sessionId, results, sendEvent) {
+  if (!sessionCtx || !results || !results.length || typeof sendEvent !== 'function') return;
+
+  var hadExplicitPlanTool = false;
+  var hadRelevantSuccess = false;
+  for (var i = 0; i < results.length; i++) {
+    var tName = results[i].tool_name;
+    if (tName === 'create_plan' || tName === 'update_plan') {
+      hadExplicitPlanTool = true;
+      break;
+    }
+    var res = results[i].result;
+    if (res && res.success !== false) {
+      if (tName === 'spawn_subagent' || tName === 'wait_for_subagent' || (tName === 'subagent_status' && res.progress === 'completed')) {
+        hadRelevantSuccess = true;
+      }
+    }
+  }
+
+  if (hadExplicitPlanTool || !hadRelevantSuccess) return;
+
+  var planSource = sessionCtx.plan;
+  if (!planSource) {
+    var rtPlan = runtime.getCurrentPlan(sessionId);
+    if (rtPlan && rtPlan.rawPlan) {
+      planSource = rtPlan.rawPlan;
+    }
+  }
+
+  var rawStr = '';
+  if (typeof planSource === 'string') {
+    rawStr = planSource;
+  } else if (planSource && typeof planSource.rawPlan === 'string') {
+    rawStr = planSource.rawPlan;
+  }
+
+  if (!rawStr) return;
+
+  var updatedStr = advancePlanChecklist(rawStr, false);
+  if (updatedStr) {
+    if (typeof sessionCtx.plan === 'string') {
+      sessionCtx.plan = updatedStr;
+    } else if (sessionCtx.plan && typeof sessionCtx.plan === 'object') {
+      sessionCtx.plan.rawPlan = updatedStr;
+    } else {
+      sessionCtx.plan = updatedStr;
+    }
+    syncPlanStringWithRuntime(updatedStr, sessionId, false);
+    sendEvent({ type: 'plan_updated', plan: updatedStr });
+  }
+}
+
+function autoCompletePlanOnDone(sessionCtx, sessionId, sendEvent) {
+  if (!sessionCtx || typeof sendEvent !== 'function') return;
+
+  var planSource = sessionCtx.plan;
+  if (!planSource) {
+    var rtPlan = runtime.getCurrentPlan(sessionId);
+    if (rtPlan && rtPlan.rawPlan) {
+      planSource = rtPlan.rawPlan;
+    }
+  }
+
+  var rawStr = '';
+  if (typeof planSource === 'string') {
+    rawStr = planSource;
+  } else if (planSource && typeof planSource.rawPlan === 'string') {
+    rawStr = planSource.rawPlan;
+  }
+
+  if (!rawStr) return;
+
+  var updatedStr = advancePlanChecklist(rawStr, true);
+  if (updatedStr) {
+    if (typeof sessionCtx.plan === 'string') {
+      sessionCtx.plan = updatedStr;
+    } else if (sessionCtx.plan && typeof sessionCtx.plan === 'object') {
+      sessionCtx.plan.rawPlan = updatedStr;
+      sessionCtx.plan.status = 'completed';
+    } else {
+      sessionCtx.plan = updatedStr;
+    }
+    syncPlanStringWithRuntime(updatedStr, sessionId, true);
+    sendEvent({ type: 'plan_updated', plan: updatedStr });
+  }
+}
+
+function getDelegationReason(toolCalls) {
+  if (!toolCalls || !toolCalls.length) return '';
+  for (var i = 0; i < toolCalls.length; i++) {
+    var fn = toolCalls[i].function;
+    if (fn && (fn.name === 'spawn_subagent' || fn.name === 'wait_for_subagent')) {
+      var sArgs = fn.arguments || {};
+      if (typeof sArgs === 'string') {
+        try { sArgs = JSON.parse(sArgs); } catch (_) {}
+      }
+      var sName = (sArgs && (sArgs.name || sArgs.id)) || 'subagent';
+      var sTask = (sArgs && sArgs.task) || '';
+      var sExec = String((sArgs && sArgs.execution) || 'sync').toLowerCase();
+      if (fn.name === 'spawn_subagent') {
+        if (sExec === 'wait') {
+          return "I am delegating this task to the specialized '" + sName + "' subagent (" + (sTask || 'to execute the delegated objective') + ") and waiting for it to complete.";
+        }
+        return "I am launching the '" + sName + "' subagent in the background to handle: " + (sTask || 'the delegated objective') + ".";
+      }
+      if (fn.name === 'wait_for_subagent') {
+        return "Waiting for subagent '" + sName + "' to complete its execution and return results.";
+      }
+    }
+  }
+  return '';
+}
+
 function formatReviewIssueItem(iss) {
   return '- ' + iss;
 }
@@ -118,6 +301,11 @@ function isReadOnlyTool(toolName) {
     read_rules: true
   };
   return !!readTools[toolName];
+}
+
+function isMutationTool(toolName) {
+  return toolName === 'write_file' || toolName === 'edit_file' || toolName === 'patch_file' ||
+    toolName === 'delete_file' || toolName === 'create_folder' || toolName === 'delete_folder';
 }
 
 function checkToolFailureRepetition(sessionCtx, toolName, args, result) {
@@ -167,6 +355,26 @@ function cleanToolArgs(args) {
     clean[k] = args[k];
   }
   return clean;
+}
+
+function buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission) {
+  var identity = sessionCtx && sessionCtx.agentIdentity ? sessionCtx.agentIdentity : {};
+  return {
+    workspace: workspace,
+    sessionId: sessionId,
+    signal: signal,
+    config: sessionCtx ? sessionCtx.config : null,
+    sendEvent: sendEvent,
+    askPermission: askPermission,
+    agentId: identity.agentId || 'root',
+    agentName: identity.name || 'Main Agent',
+    parentAgentId: identity.parentAgentId || null,
+    parentSessionId: identity.parentSessionId || null,
+    rootSessionId: (identity.rootSessionId || (sessionCtx && sessionCtx.rootSessionId)) || sessionId,
+    agentType: identity.agentType || 'root',
+    agentRunner: sessionCtx ? sessionCtx.agentRunner : null,
+    images: sessionCtx ? sessionCtx.images : []
+  };
 }
 
 function checkLoopHygiene(sessionCtx, toolName, args, result, formattedResult) {
@@ -373,7 +581,8 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
   var _createdDiffIds = [];
   try {
     dbg('[AGENT LOOP] Calling toolRegistry.execute for', toolName);
-    var generator = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId, signal: signal });
+    var toolContext = buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission);
+    var generator = toolRegistry.execute(toolName, args, toolContext);
     dbg('[AGENT LOOP] toolRegistry.execute returned generator');
     var eventCount = 0;
     for await (var event of generator) {
@@ -383,6 +592,15 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
       event.toolCallId = tcId;
       if (!event.sessionId) {
         event.sessionId = sessionId;
+      }
+      if (!event.tool) {
+        event.tool = toolName;
+      }
+      if (!event.tool_name) {
+        event.tool_name = toolName;
+      }
+      if (!event.args && args) {
+        event.args = args;
       }
 
       // Capture deferred resolve for diff review requests in diffManager
@@ -415,6 +633,9 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
           id: event.checkpoint_id,
           filePath: targetPath,
           toolCallId: tcId,
+          agentId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.agentId) || 'root',
+          parentAgentId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.parentAgentId) || null,
+          parentSessionId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.parentSessionId) || null,
           isDir: event.is_directory || toolName === 'create_folder' || toolName === 'delete_folder',
           label: actionLabel
         };
@@ -430,7 +651,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     }
   } catch (err) {
     console.log('[AGENT LOOP] Generator threw for', toolName, ':', err.message);
-    sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: err.message, toolCallId: tcId });
+    sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, tool_name: toolName, args: args, success: false, message: err.message, toolCallId: tcId });
     lastResult = { success: false, message: err.message };
   } finally {
     dbg('[AGENT LOOP] Generator finally block for', toolName, 'eventCount:', eventCount, 'lastResult:', lastResult ? (lastResult.success !== false ? 'success' : 'fail') : 'null');
@@ -573,7 +794,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
             } else if (signal && (signal.stopped || signal.aborted)) {
               lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry cancelled by user.' };
             } else {
-              var retryGen = toolRegistry.execute(toolName, args, { workspace: workspace, sessionId: sessionId, signal: signal });
+              var retryGen = toolRegistry.execute(toolName, args, buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission));
               for await (var retryEvent of retryGen) {
                 if (signal && (signal.stopped || signal.aborted)) {
                   break;
@@ -651,7 +872,7 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
               lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery cancelled by user.';
             } else {
               try {
-                var recGen = toolRegistry.execute(recTool, recArgs, { workspace: workspace, sessionId: sessionId, signal: signal });
+                var recGen = toolRegistry.execute(recTool, recArgs, buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission));
                 var recRes = null;
                 for await (var recEv of recGen) {
                   if (signal && (signal.stopped || signal.aborted)) {
@@ -713,6 +934,15 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
     // Intentionally ignored to allow safe execution fallback
   }
 
+  if (lastResult && lastResult.success === false && isMutationTool(toolName)) {
+    if (!sessionCtx.failedMutations) sessionCtx.failedMutations = [];
+    sessionCtx.failedMutations.push({
+      tool: toolName,
+      filePath: args.file_path || args.folder_path || '',
+      message: lastResult.message || lastResult.error || 'Mutation failed'
+    });
+  }
+
   return {
     tool_name: toolName,
     tool_call_id: tcId,
@@ -745,6 +975,22 @@ export async function runAgentLoop(userPrompt, config, options) {
     }
   }
 
+  var agentIdentity = options.agentIdentity || {
+    agentId: 'agent_root_' + sessionId,
+    id: 'root',
+    name: 'Main Agent',
+    role: 'Root Agent',
+    task: effectivePrompt,
+    context: '',
+    execution: 'root',
+    parentAgentId: null,
+    parentSessionId: null,
+    rootSessionId: sessionId,
+    sessionId: sessionId,
+    depth: 0,
+    agentType: 'root'
+  };
+
   // Initialize Runtime execution context
   if (isContinuation) {
     if (!runtime.getGoal(sessionId)) {
@@ -753,6 +999,7 @@ export async function runAgentLoop(userPrompt, config, options) {
   } else {
     runtime.initSession(userPrompt, sessionId);
   }
+  runtime.initAgentIdentity(agentIdentity, sessionId);
 
   // Wrap sendEvent to also emit through the events.js bus.
   var _sendEventCallback = options.sendEvent || noop;
@@ -761,11 +1008,17 @@ export async function runAgentLoop(userPrompt, config, options) {
       if (!evt.sessionId) {
         evt.sessionId = sessionId;
       }
+      if (!evt.agentId) evt.agentId = agentIdentity.agentId;
+      if (!evt.agentType) evt.agentType = agentIdentity.agentType;
+      if (evt.parentAgentId === undefined) evt.parentAgentId = agentIdentity.parentAgentId || null;
+      if (evt.parentSessionId === undefined) evt.parentSessionId = agentIdentity.parentSessionId || null;
+      if (!evt.rootSessionId) evt.rootSessionId = agentIdentity.rootSessionId || sessionId;
     }
     emitAndForwardEvent(_sendEventCallback, evt);
   }
   var askPermission = options.askPermission || requestPermission;
   var signal = options.signal || null;
+  var pauseSignal = options.pauseSignal || null;
   var maxIterations = config.maxIterations || MAX_ITERATIONS;
 
   var provider = createProvider(config);
@@ -811,9 +1064,15 @@ export async function runAgentLoop(userPrompt, config, options) {
     var runContext = {
       images: options.images || [],
       workspaceFolder: workspace || '',
-      openFiles: (knowledge && knowledge.openFiles) || []
+      openFiles: (knowledge && knowledge.openFiles) || [],
+      agentId: agentIdentity ? agentIdentity.agentId : 'root',
+      parentAgentId: agentIdentity ? agentIdentity.parentAgentId : null,
+      parentSessionId: agentIdentity ? agentIdentity.parentSessionId : null,
+      depth: agentIdentity ? agentIdentity.depth : 0,
+      role: agentIdentity ? agentIdentity.role : 'coder',
+      agentType: agentIdentity ? agentIdentity.agentType : 'root'
     };
-    activeTrace = executionTrace.startRun(sessionId, null, userPrompt || effectivePrompt, runContext, config.model, config.provider, isContinuation);
+    activeTrace = executionTrace.startRun(sessionId, null, userPrompt || effectivePrompt, runContext, config.model, config.provider, isContinuation, agentIdentity);
     sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: activeTrace });
     if (!isContinuation) {
       goalTracker.initGoals(userPrompt, sessionId);
@@ -866,7 +1125,15 @@ export async function runAgentLoop(userPrompt, config, options) {
   });
 
   var initialLength = messages.length;
-  var sessionCtx = { plan: currentPlan, config: config };
+  var sessionCtx = {
+    plan: currentPlan,
+    config: config,
+    agentIdentity: agentIdentity,
+    agentRunner: options.agentRunner || null,
+    images: options.images || [],
+    failedMutations: [],
+    rootSessionId: options.rootSessionId || (agentIdentity && agentIdentity.rootSessionId) || (agentIdentity && agentIdentity.parentSessionId) || sessionId
+  };
   function sendHistoryUpdate() {
     forwardHistoryUpdate(messages, initialLength, sendEvent, sessionCtx, config);
   }
@@ -876,12 +1143,31 @@ export async function runAgentLoop(userPrompt, config, options) {
   var fullThinking = '';
   var fullContent = '';
   var sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  var pendingSyncSubagents = [];
 
   try {
     while (iteration < maxIterations) {
       if (signal && (signal.stopped || signal.aborted)) {
         console.log('[AGENT LOOP] Stop requested at iteration ' + iteration);
         return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
+      }
+
+      if (pauseSignal && pauseSignal.paused) {
+        console.log('[AGENT LOOP] Subagent paused at iteration ' + iteration);
+        var fromPausedState = agentState.getState(sessionId);
+        agentState.transition('paused', sessionId);
+        executionTrace.recordTransition(sessionId, fromPausedState, 'paused');
+        events.emit('state_changed', { state: 'paused', sessionId: sessionId });
+        sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'paused', sessionId: sessionId, iteration: iteration });
+        await pauseSignal.resumePromise;
+        if (signal && (signal.stopped || signal.aborted)) {
+          return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
+        }
+        var fromResumeState = agentState.getState(sessionId);
+        agentState.transition('thinking', sessionId);
+        executionTrace.recordTransition(sessionId, fromResumeState, 'thinking');
+        events.emit('state_changed', { state: 'thinking', sessionId: sessionId });
+        sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'thinking', sessionId: sessionId, iteration: iteration });
       }
 
       iteration++;
@@ -940,7 +1226,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Stream from provider
       try {
         var chatSignal = (signal && signal.signal) ? signal.signal : signal;
-        var activeToolDefinitions = (config && config.enableTools === false) ? [] : getDefinitions();
+        var activeToolDefinitions = (config && config.enableTools === false) ? [] : getDefinitions({ agentType: (agentIdentity ? agentIdentity.agentType : 'root') });
         var stream = provider.chat(config, messages, activeToolDefinitions, { signal: chatSignal });
         for await (var chunk of stream) {
           if (signal && (signal.stopped || signal.aborted)) {
@@ -1141,6 +1427,91 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       if (completedToolCalls.length === 0) {
+        if (pendingSyncSubagents.length > 0) {
+          console.log('[AGENT LOOP] Awaiting ' + pendingSyncSubagents.length + ' pending sync subagent(s) before concluding...');
+          sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'waiting_for_subagent' });
+          while (pendingSyncSubagents.length > 0) {
+            var waitSub = pendingSyncSubagents.shift();
+            try {
+              var waitSubRes = await subagentManager.waitForSubagent(waitSub.id, sessionId);
+              if (waitSubRes) {
+                var wsOutput = (waitSubRes.summary || waitSubRes.output || waitSubRes.content) || '';
+                if (!wsOutput && waitSubRes.finalResponse) {
+                  wsOutput = typeof waitSubRes.finalResponse === 'string' ? waitSubRes.finalResponse : (waitSubRes.finalResponse.text || '');
+                }
+                var wsName = waitSubRes.name || waitSub.name || waitSub.id;
+                var wsRole = waitSubRes.role || waitSub.role || 'coder';
+                var wsStatus = waitSubRes.status || (waitSubRes.success !== false ? 'completed' : 'failed');
+                var wsCallId = 'call_resp_' + waitSub.id;
+                var wsRespArgs = {
+                  id: waitSub.id,
+                  name: wsName,
+                  role: wsRole,
+                  task: waitSub.task || waitSubRes.task || '',
+                  execution: 'sync'
+                };
+                var wsFormatted = '✓ Subagent [' + String(wsRole).toUpperCase() + '] ' + wsName + ' finished (' + wsStatus + ').\n\n' + wsOutput;
+
+                sendEvent({
+                  type: 'tool_call',
+                  tool: 'subagent_response',
+                  id: wsCallId,
+                  args: wsRespArgs
+                });
+
+                sendEvent({
+                  type: 'tool_result',
+                  tool: 'subagent_response',
+                  tool_name: 'subagent_response',
+                  tool_call_id: wsCallId,
+                  args: wsRespArgs,
+                  status: wsStatus === 'completed' ? 'success' : 'error',
+                  output: wsOutput,
+                  summary: wsOutput,
+                  formattedResult: wsFormatted,
+                  result: {
+                    agentId: waitSub.id,
+                    subagent_id: waitSub.id,
+                    name: wsName,
+                    role: wsRole,
+                    status: wsStatus,
+                    output: wsOutput,
+                    summary: wsOutput,
+                    result: waitSubRes,
+                    args: wsRespArgs
+                  }
+                });
+
+                messages.push({
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [{
+                    id: wsCallId,
+                    type: 'function',
+                    function: {
+                      name: 'subagent_response',
+                      arguments: JSON.stringify(wsRespArgs)
+                    }
+                  }]
+                });
+
+                messages.push({
+                  role: 'tool',
+                  tool_name: 'subagent_response',
+                  tool_call_id: wsCallId,
+                  content: wsFormatted
+                });
+              }
+            } catch (wErr) {
+              console.warn('[AGENT LOOP] Error waiting for subagent:', wErr.message);
+            }
+          }
+          sendHistoryUpdate();
+          iterationContent = '';
+          fullContent = '';
+          continue;
+        }
+
         // If the last message was a tool message, let's force the LLM to write a final concluding message!
         if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim())) {
           console.log('[AGENT LOOP] Forcing a concluding response from LLM...');
@@ -1252,13 +1623,20 @@ export async function runAgentLoop(userPrompt, config, options) {
             thinking: fullThinking,
             durationMs: 0
           });
+          var effUsage = getEffectiveSessionUsage(sessionUsage, activeTrace);
           var finishedTrace = executionTrace.finishRun(sessionId, 'completed', {
-            totalTokens: sessionUsage
+            totalTokens: effUsage
           });
           executionTrace.saveTraceToDisk(null, sessionId);
           if (finishedTrace) {
             sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: finishedTrace });
           }
+        } catch (_) {
+          // Intentionally ignored to allow safe execution fallback
+        }
+
+        try {
+          autoCompletePlanOnDone(sessionCtx, sessionId, sendEvent);
         } catch (_) {
           // Intentionally ignored to allow safe execution fallback
         }
@@ -1271,7 +1649,7 @@ export async function runAgentLoop(userPrompt, config, options) {
           thinking: fullThinking,
           report: executionReportText
         });
-        return { content: fullContent, thinking: fullThinking, done: true, report: executionReportText };
+        return { content: fullContent, thinking: fullThinking, done: true, report: executionReportText, toolFailures: sessionCtx.failedMutations };
       }
 
       try {
@@ -1342,6 +1720,12 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       currentPlan = sessionCtx.plan;
+      try {
+        autoUpdatePlanOnToolSuccess(sessionCtx, sessionId, results, sendEvent);
+      } catch (_) {
+        // Intentionally ignored to allow safe execution fallback
+      }
+      currentPlan = sessionCtx.plan;
 
       var assistantToolCalls = [];
       for (var atIndex = 0; atIndex < completedToolCalls.length; atIndex++) {
@@ -1356,6 +1740,125 @@ export async function runAgentLoop(userPrompt, config, options) {
             arguments: argsString
           }
         });
+      }
+
+      // Track any subagents spawned in sync/parallel mode
+      for (var cti = 0; cti < completedToolCalls.length; cti++) {
+        var cCall = completedToolCalls[cti];
+        var cName = (cCall.function && cCall.function.name) || '';
+        if (cName === 'spawn_subagent') {
+          var cArgs = (cCall.function && cCall.function.arguments) || {};
+          if (typeof cArgs === 'string') {
+            try { cArgs = JSON.parse(cArgs); } catch (_) { cArgs = {}; }
+          }
+          var cExec = (cArgs.execution || 'sync').toLowerCase();
+          if (cExec === 'sync' || cExec === 'parallel' || cExec === 'async') {
+            var cSubId = cArgs.id || cArgs.agentId || cArgs.subagent_id;
+            if (cSubId) {
+              var alreadyTracked = false;
+              for (var psiCheck = 0; psiCheck < pendingSyncSubagents.length; psiCheck++) {
+                if (pendingSyncSubagents[psiCheck].id === cSubId) {
+                  alreadyTracked = true;
+                  break;
+                }
+              }
+              if (!alreadyTracked) {
+                pendingSyncSubagents.push({
+                  id: cSubId,
+                  name: cArgs.name || cSubId,
+                  role: cArgs.role || 'coder',
+                  task: cArgs.task || '',
+                  execution: cExec
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Check if any pending sync subagents have already finished in the background
+      for (var psi = pendingSyncSubagents.length - 1; psi >= 0; psi--) {
+        var pSub = pendingSyncSubagents[psi];
+        var subRec = subagentManager.getSubagent(pSub.id, sessionId);
+        if (subRec && (subRec.status === 'completed' || subRec.status === 'failed' || subRec.status === 'stopped' || subRec.result)) {
+          var subRes = subRec.result || subRec;
+          var sOutput = (subRes.summary || subRes.output || subRes.content) || '';
+          if (!sOutput && subRes.finalResponse) {
+            sOutput = typeof subRes.finalResponse === 'string' ? subRes.finalResponse : (subRes.finalResponse.text || '');
+          }
+          var sName = subRes.name || pSub.name || pSub.id;
+          var sRole = subRes.role || pSub.role || 'coder';
+          var sStatus = subRes.status || (subRes.success !== false ? 'completed' : 'failed');
+          var sCallId = 'call_resp_' + pSub.id;
+
+          var respArgs = {
+            id: pSub.id,
+            name: sName,
+            role: sRole,
+            task: pSub.task || subRes.task || '',
+            execution: 'sync'
+          };
+
+          var formattedSubResult = '✓ Subagent [' + String(sRole).toUpperCase() + '] ' + sName + ' finished (' + sStatus + ').\n\n' + sOutput;
+
+          assistantToolCalls.push({
+            id: sCallId,
+            type: 'function',
+            function: {
+              name: 'subagent_response',
+              arguments: JSON.stringify(respArgs)
+            }
+          });
+
+          var subRespObj = {
+            agentId: pSub.id,
+            subagent_id: pSub.id,
+            name: sName,
+            role: sRole,
+            status: sStatus,
+            output: sOutput,
+            summary: sOutput,
+            result: subRes,
+            args: respArgs
+          };
+
+          toolResults.push({
+            tool_name: 'subagent_response',
+            tool_call_id: sCallId,
+            formattedResult: formattedSubResult,
+            result: subRespObj
+          });
+
+          sendEvent({
+            type: 'tool_call',
+            tool: 'subagent_response',
+            id: sCallId,
+            args: respArgs
+          });
+
+          sendEvent({
+            type: 'tool_result',
+            tool: 'subagent_response',
+            tool_name: 'subagent_response',
+            tool_call_id: sCallId,
+            args: respArgs,
+            status: sStatus === 'completed' ? 'success' : 'error',
+            output: sOutput,
+            summary: sOutput,
+            formattedResult: formattedSubResult,
+            result: subRespObj
+          });
+
+          pendingSyncSubagents.splice(psi, 1);
+        }
+      }
+
+      if (!iterationContent) {
+        var autoReason = getDelegationReason(completedToolCalls);
+        if (autoReason) {
+          iterationContent = autoReason;
+          sendEvent({ message: { role: 'assistant', content: autoReason } });
+        }
       }
 
       var assistantMsg = { role: 'assistant', content: iterationContent || '' };
@@ -1433,9 +1936,10 @@ export async function runAgentLoop(userPrompt, config, options) {
         error: errText,
         durationMs: 0
       });
+      var effFailedUsage = getEffectiveSessionUsage(sessionUsage, activeTrace);
       var failedTrace = executionTrace.finishRun(sessionId, 'failed', {
         error: errText,
-        totalTokens: sessionUsage
+        totalTokens: effFailedUsage
       });
       executionTrace.saveTraceToDisk(null, sessionId);
       if (failedTrace) {
@@ -1462,8 +1966,9 @@ export async function runAgentLoop(userPrompt, config, options) {
       thinking: fullThinking,
       durationMs: 0
     });
+    var effMaxUsage = getEffectiveSessionUsage(sessionUsage, activeTrace);
     var maxTrace = executionTrace.finishRun(sessionId, 'max_iterations', {
-      totalTokens: sessionUsage
+      totalTokens: effMaxUsage
     });
     executionTrace.saveTraceToDisk(null, sessionId);
     if (maxTrace) {
@@ -1479,7 +1984,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     content: fullContent + '\n\nMaximum agent iterations reached (' + maxIterations + '). The task may not be complete. Do you want me to continue?',
     thinking: fullThinking
   });
-  return { content: fullContent, thinking: fullThinking, done: false, maxReached: true };
+  return { content: fullContent, thinking: fullThinking, done: false, maxReached: true, toolFailures: sessionCtx.failedMutations };
 }
 
 function processThinkTags(text, inThinkTag, buffer) {

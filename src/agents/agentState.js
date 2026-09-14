@@ -13,7 +13,7 @@ export function StateError(from, to) {
 StateError.prototype = Object.create(Error.prototype);
 StateError.prototype.constructor = StateError;
 
-var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'completed', 'failed', 'cancelled', 'stopped', 'max_iterations'];
+var ACTIVE_STATES = ['thinking', 'verifying', 'workspace_analysis', 'planning', 'searching', 'reading', 'writing', 'editing', 'executing', 'testing', 'reviewing', 'waiting', 'paused', 'completed', 'failed', 'cancelled', 'stopped', 'max_iterations'];
 var RESUME_STATES = ['idle', 'thinking'];
 var TRANSITIONS = {
   idle:               new Set(ACTIVE_STATES),
@@ -29,6 +29,7 @@ var TRANSITIONS = {
   testing:            new Set(ACTIVE_STATES),
   reviewing:          new Set(ACTIVE_STATES),
   waiting:            new Set(ACTIVE_STATES),
+  paused:             new Set(['idle', 'thinking', 'stopped', 'cancelled']),
   completed:          new Set(RESUME_STATES), // terminal, resumes on continuation/new prompt
   failed:             new Set(RESUME_STATES), // terminal, resumes on retry
   cancelled:          new Set(RESUME_STATES), // terminal, resumes on retry
@@ -50,6 +51,7 @@ export var LABELS = {
   testing:            'Running Tests',
   reviewing:          'Reviewing & Reflecting',
   waiting:            'Waiting for Approval',
+  paused:             'Paused',
   completed:          'Completed',
   failed:             'Failed',
   cancelled:          'Cancelled',

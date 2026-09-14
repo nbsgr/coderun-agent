@@ -62,6 +62,7 @@ export function storePatch(event) {
     createdAt: Date.now(),
     deferred: event.deferred || null,
     sessionId: event.sessionId || 'default',
+    agentId: event.agentId || null,
     timer: timer
   };
 

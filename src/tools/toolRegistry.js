@@ -65,6 +65,7 @@ export function register(descriptor) {
   if (descriptor.metadata.hidden === undefined) descriptor.metadata.hidden = descriptor.hidden || false;
   if (!descriptor.metadata.category) descriptor.metadata.category = descriptor.category || 'utility';
   if (!descriptor.metadata.timeout) descriptor.metadata.timeout = 30000;
+  if (descriptor.metadata.rootOnly === undefined) descriptor.metadata.rootOnly = descriptor.rootOnly || false;
 
   _tools[name] = descriptor;
   _aliasMap[name] = name;
@@ -165,6 +166,12 @@ export function execute(name, args, context) {
   if (tool.hidden || (tool.metadata && (tool.metadata.hidden || tool.metadata.internalOnly))) {
     if (!context.allowInternal) {
       return validationErrorGenerator(canonicalName, ['Tool ' + canonicalName + ' is internal and cannot be invoked as an agent tool call.']);
+    }
+  }
+
+  if (tool.metadata && tool.metadata.rootOnly) {
+    if (context.agentType === 'subagent') {
+      return validationErrorGenerator(canonicalName, ['Subagents cannot spawn or control other subagents.']);
     }
   }
 
@@ -308,8 +315,20 @@ export function needsPermission(name) {
 // LLM SCHEMAS
 // ═══════════════════════════════════════════════════════════
 
-export function getDefinitions() {
+export function getDefinitions(filterOptions) {
   if (_dirty) rebuildDefinitions();
+  if (filterOptions && filterOptions.agentType === 'subagent') {
+    var subDefs = [];
+    for (var i = 0; i < _definitions.length; i++) {
+      var dName = _definitions[i] && _definitions[i].function ? _definitions[i].function.name : '';
+      var toolObj = get(dName);
+      if (toolObj && toolObj.metadata && toolObj.metadata.rootOnly) {
+        continue;
+      }
+      subDefs.push(_definitions[i]);
+    }
+    return subDefs;
+  }
   return _definitions;
 }
 

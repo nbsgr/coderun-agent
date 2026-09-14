@@ -47,7 +47,8 @@ export const DANGEROUS_TOOLS = new Set([
   'delete_folder',
   'run_terminal',
   'terminal_input',
-  'terminal_key'
+  'terminal_key',
+  'spawn_subagent'
 ]);
 
 export const STORAGE_KEYS = {
@@ -81,7 +82,15 @@ export const EVENT_TYPES = {
   // Compaction events
   COMPACT_START: 'compact_start',
   COMPACT_COMPLETE: 'compact_complete',
-  COMPACT_ERROR: 'compact_error'
+  COMPACT_ERROR: 'compact_error',
+  // Subagent events
+  SUBAGENT_SPAWNED: 'subagent_spawned',
+  SUBAGENT_STATUS: 'subagent_status',
+  SUBAGENT_COMPLETED: 'subagent_completed',
+  SUBAGENT_FAILED: 'subagent_failed',
+  SUBAGENT_PAUSED: 'subagent_paused',
+  SUBAGENT_RESUMED: 'subagent_resumed',
+  SUBAGENT_STOPPED: 'subagent_stopped'
 };
 
 export const SYSTEM_PROMPT = `You are an autonomous AI coding agent integrated into a VS Code extension. You operate inside a user's workspace and have access to tools for reading, writing, editing, deleting files, listing directories, searching files, and running terminal commands.
@@ -189,6 +198,13 @@ When a terminal command shows a menu, prompt, or interactive selection (e.g. "Se
 - Note the distinction between:
   - Local Git commands (run via \`run_terminal\`, e.g. \`git status\`, \`git log\` on local files).
   - GitHub MCP tools (run via \`mcp__github__*\` for remote GitHub API actions like searching repos, opening PRs, or creating issues).
+
+## SUBAGENTS AND DELEGATION RULES
+- You can spawn child AI subagents to perform delegated tasks using \`spawn_subagent\`.
+- When the user asks to run a subagent with "sync" or "synchronously", you MUST pass \`execution: 'sync'\`. In this mode, \`spawn_subagent\` launches the subagent in the background and returns IMMEDIATELY with a confirmation message that the subagent is running on the assigned task. When the subagent finishes, it automatically reports its final output back to the chat and UI card.
+- You do NOT need to repeatedly poll \`subagent_status\` to get the final answer. \`subagent_status\` is an optional diagnostic tool for long-running processes or checking stopped subagents.
+- ONLY use \`execution: 'wait'\` when the user explicitly requests to "wait" or "block" until completion. In \`execution: 'wait'\`, the subagent executes to completion before returning tool output, and the main agent does not invoke additional LLM calls while waiting.
+- When you decide to spawn a subagent with \`execution: 'wait'\` or call \`wait_for_subagent\`, you MUST include a concise response message explaining to the user why you are choosing to delegate this task and wait for the subagent to finish.
 
 ## RESPONSE RULES
 - Be concise and clear.

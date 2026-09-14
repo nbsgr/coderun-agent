@@ -10,12 +10,43 @@ import * as crypto from 'crypto';
 
 var _activeTracesBySession = {};
 var _completedTracesBySession = {};
+var _defaultStoragePath = null;
 
-function createNewRun(sessionId, runId, userQuery, contextData, model, provider) {
+export function setDefaultStoragePath(storagePath) {
+  _defaultStoragePath = storagePath || null;
+}
+
+export function getDefaultStoragePath() {
+  return _defaultStoragePath;
+}
+
+function createNewRun(sessionId, runId, userQuery, contextData, model, provider, agentIdentity) {
   var now = Date.now();
+  var aId = (agentIdentity && agentIdentity.agentId) || (contextData && contextData.agentId) || 'root';
+  var aName = (agentIdentity && agentIdentity.name) || (contextData && contextData.name) || '';
+  var aTask = (agentIdentity && agentIdentity.task) || (contextData && contextData.task) || userQuery || '';
+  var pAgentId = (agentIdentity && agentIdentity.parentAgentId) || (contextData && contextData.parentAgentId) || null;
+  var pSessionId = (agentIdentity && agentIdentity.parentSessionId) || (contextData && contextData.parentSessionId) || null;
+  var depth = 0;
+  if (agentIdentity && agentIdentity.depth !== undefined) {
+    depth = agentIdentity.depth;
+  } else if (contextData && contextData.depth !== undefined) {
+    depth = contextData.depth;
+  }
+  var role = (agentIdentity && agentIdentity.role) || (contextData && contextData.role) || 'coder';
+  var aType = (agentIdentity && agentIdentity.agentType) || (contextData && contextData.agentType) || 'root';
+
   return {
     id: runId || 'run_' + now + '_' + Math.random().toString(36).substring(2, 8),
     sessionId: sessionId || 'session_' + now,
+    agentId: aId,
+    name: aName,
+    task: aTask,
+    parentAgentId: pAgentId,
+    parentSessionId: pSessionId,
+    depth: depth,
+    role: role,
+    agentType: aType,
     startedAt: now,
     completedAt: 0,
     durationMs: 0,
@@ -50,7 +81,7 @@ function createNewRun(sessionId, runId, userQuery, contextData, model, provider)
   };
 }
 
-export function startRun(sessionId, runId, userQuery, contextData, model, provider, isContinuation) {
+export function startRun(sessionId, runId, userQuery, contextData, model, provider, isContinuation, agentIdentity) {
   if (!sessionId) sessionId = 'session_' + Date.now();
 
   if (!_completedTracesBySession[sessionId]) {
@@ -86,7 +117,8 @@ export function startRun(sessionId, runId, userQuery, contextData, model, provid
     }
   }
 
-  var run = createNewRun(sessionId, runId, userQuery, contextData, model, provider);
+  var identity = agentIdentity || (contextData && contextData.agentIdentity) || contextData;
+  var run = createNewRun(sessionId, runId, userQuery, contextData, model, provider, identity);
   _activeTracesBySession[sessionId] = run;
   return run;
 }
@@ -230,7 +262,14 @@ export function finishRun(sessionId, status, metrics) {
   trace.metrics.totalDurationMs = trace.durationMs;
 
   if (metrics) {
-    if (metrics.totalTokens) trace.metrics.totalTokens = metrics.totalTokens;
+    if (metrics.totalTokens) {
+      var inT = metrics.totalTokens.input !== undefined ? metrics.totalTokens.input : (metrics.totalTokens.prompt_tokens || 0);
+      var outT = metrics.totalTokens.output !== undefined ? metrics.totalTokens.output : (metrics.totalTokens.completion_tokens || 0);
+      var totT = metrics.totalTokens.total !== undefined ? metrics.totalTokens.total : (inT + outT);
+      if (totT > 0 || inT > 0 || outT > 0 || !trace.metrics.totalTokens || trace.metrics.totalTokens.total === 0) {
+        trace.metrics.totalTokens = { input: inT, output: outT, total: totT };
+      }
+    }
     if (metrics.filesTouched) trace.metrics.filesTouched = metrics.filesTouched;
     if (metrics.error) trace.error = metrics.error;
   }
@@ -270,6 +309,85 @@ export function getActiveTrace(sessionId) {
 export function getTraces(sessionId) {
   if (!sessionId) return [];
   return _completedTracesBySession[sessionId] || [];
+}
+
+export function getSubagentTraces(parentSessionId) {
+  if (!parentSessionId) return [];
+  var result = [];
+  var seenIds = {};
+  var keys = Object.keys(_completedTracesBySession);
+  for (var k = 0; k < keys.length; k++) {
+    var sId = keys[k];
+    var sessionTraces = _completedTracesBySession[sId] || [];
+    for (var i = 0; i < sessionTraces.length; i++) {
+      var t = sessionTraces[i];
+      var matches = t.parentSessionId === parentSessionId;
+      if (matches && !seenIds[t.id]) {
+        seenIds[t.id] = true;
+        result.push(t);
+      }
+    }
+  }
+  var activeKeys = Object.keys(_activeTracesBySession);
+  for (var a = 0; a < activeKeys.length; a++) {
+    var act = _activeTracesBySession[activeKeys[a]];
+    if (act) {
+      var actMatches = act.parentSessionId === parentSessionId;
+      if (actMatches && !seenIds[act.id]) {
+        seenIds[act.id] = true;
+        result.push(act);
+      }
+    }
+  }
+  return result;
+}
+
+export async function loadSubagentTracesFromDisk(globalStoragePath, parentSessionId) {
+  if (!parentSessionId) return [];
+  var searchDirs = [];
+  if (globalStoragePath) {
+    searchDirs.push(path.join(globalStoragePath, 'traces'));
+  }
+  if (_defaultStoragePath && _defaultStoragePath !== globalStoragePath) {
+    searchDirs.push(path.join(_defaultStoragePath, 'traces'));
+  }
+  searchDirs.push(path.join(os.homedir(), '.coderun', 'traces'));
+
+  var result = [];
+  var seenIds = {};
+
+  for (var d = 0; d < searchDirs.length; d++) {
+    var targetDir = searchDirs[d];
+    try {
+      if (!existsSync(targetDir)) continue;
+      var filenames = await fs.readdir(targetDir);
+      for (var i = 0; i < filenames.length; i++) {
+        if (!filenames[i].startsWith('trace_') || !filenames[i].endsWith('.json')) continue;
+        try {
+          var content = await fs.readFile(path.join(targetDir, filenames[i]), 'utf-8');
+          var parsed = JSON.parse(content);
+          if (!Array.isArray(parsed)) continue;
+          for (var t = 0; t < parsed.length; t++) {
+            var item = parsed[t];
+            if (item && item.parentSessionId === parentSessionId) {
+              if (item.id && !seenIds[item.id]) {
+                seenIds[item.id] = true;
+                result.push(item);
+              }
+            }
+          }
+        } catch (_) {
+          // Ignore an individual malformed trace file.
+        }
+      }
+      if (result.length > 0) {
+        break;
+      }
+    } catch (_) {
+      // Ignore unreadable directory
+    }
+  }
+  return result;
 }
 
 export function generateAsciiTree(trace) {
@@ -339,7 +457,8 @@ function redactSensitiveData(obj) {
     var out = {};
     for (var k in obj) {
       var lk = k.toLowerCase();
-      if (lk.includes('password') || lk.includes('token') || lk.includes('apikey') || lk.includes('secret') || lk === 'authorization' || lk.includes('cookie') || lk.includes('database_url')) {
+      var isTokenCount = (lk === 'tokens' || lk === 'totaltokens' || lk === 'prompttokens' || lk === 'completiontokens' || lk === 'systemprompttokens' || lk === 'inputtokens' || lk === 'outputtokens' || lk === 'prompt_tokens' || lk === 'completion_tokens' || lk === 'total_tokens');
+      if (!isTokenCount && (lk === 'token' || lk === 'access_token' || lk === 'refresh_token' || lk === 'auth_token' || lk === 'api_token' || lk.includes('password') || lk.includes('apikey') || lk.includes('secret') || lk === 'authorization' || lk.includes('cookie') || lk.includes('database_url'))) {
         out[k] = '[REDACTED]';
       } else {
         out[k] = redactSensitiveData(obj[k]);
@@ -375,45 +494,93 @@ export async function saveTraceToDisk(globalStoragePath, sessionId) {
   }
   if (!traces.length) return '';
 
-  var targetDir = globalStoragePath;
-  if (!targetDir) {
-    var homeDir = os.homedir();
-    targetDir = path.join(homeDir, '.coderun', 'traces');
-  } else {
-    targetDir = path.join(targetDir, 'traces');
+  var targetDirs = [];
+  if (globalStoragePath) {
+    targetDirs.push(path.join(globalStoragePath, 'traces'));
+  }
+  if (_defaultStoragePath && _defaultStoragePath !== globalStoragePath) {
+    targetDirs.push(path.join(_defaultStoragePath, 'traces'));
+  }
+  var fallbackHome = path.join(os.homedir(), '.coderun', 'traces');
+  if (targetDirs.indexOf(fallbackHome) === -1) {
+    targetDirs.push(fallbackHome);
   }
 
-  try {
-    if (!existsSync(targetDir)) {
-      await fs.mkdir(targetDir, { recursive: true });
+  var primaryPath = '';
+  var filename = getSafeTraceFilename(sessionId);
+
+  for (var i = 0; i < targetDirs.length; i++) {
+    var targetDir = targetDirs[i];
+    try {
+      if (!existsSync(targetDir)) {
+        await fs.mkdir(targetDir, { recursive: true });
+      }
+      var filePath = path.join(targetDir, filename);
+      var effectiveTraces = traces.slice();
+      if (existsSync(filePath)) {
+        try {
+          var diskContent = await fs.readFile(filePath, 'utf-8');
+          var diskParsed = JSON.parse(diskContent);
+          if (Array.isArray(diskParsed) && diskParsed.length > 0) {
+            var merged = diskParsed.slice();
+            for (var ti = 0; ti < traces.length; ti++) {
+              var currT = traces[ti];
+              var foundIdx = -1;
+              for (var mi = 0; mi < merged.length; mi++) {
+                if (merged[mi].id === currT.id) {
+                  foundIdx = mi;
+                  break;
+                }
+              }
+              if (foundIdx >= 0) {
+                merged[foundIdx] = currT;
+              } else {
+                merged.push(currT);
+              }
+            }
+            effectiveTraces = merged;
+          }
+        } catch (_) {}
+      }
+      var sanitized = redactSensitiveData(effectiveTraces);
+      var jsonStr = JSON.stringify(sanitized, null, 2);
+      await fs.writeFile(filePath, jsonStr, 'utf-8');
+      if (!primaryPath) primaryPath = filePath;
+    } catch (err) {
+      console.warn('[EXECUTION TRACE] Failed to save trace to disk at ' + targetDir + ':', err.message);
     }
-    var filename = getSafeTraceFilename(sessionId);
-    var filePath = path.join(targetDir, filename);
-    var sanitized = redactSensitiveData(traces);
-    await fs.writeFile(filePath, JSON.stringify(sanitized, null, 2), 'utf-8');
-    return filePath;
-  } catch (err) {
-    console.warn('[EXECUTION TRACE] Failed to save trace to disk:', err.message);
-    return '';
   }
+
+  return primaryPath;
 }
 
 export async function loadTracesFromDisk(globalStoragePath, sessionId) {
   if (!sessionId) return [];
-  var targetDir = globalStoragePath ? path.join(globalStoragePath, 'traces') : path.join(os.homedir(), '.coderun', 'traces');
+  var searchDirs = [];
+  if (globalStoragePath) {
+    searchDirs.push(path.join(globalStoragePath, 'traces'));
+  }
+  if (_defaultStoragePath && _defaultStoragePath !== globalStoragePath) {
+    searchDirs.push(path.join(_defaultStoragePath, 'traces'));
+  }
+  searchDirs.push(path.join(os.homedir(), '.coderun', 'traces'));
+
   var filename = getSafeTraceFilename(sessionId);
-  var filePath = path.join(targetDir, filename);
-  try {
-    if (existsSync(filePath)) {
-      var content = await fs.readFile(filePath, 'utf-8');
-      var parsed = JSON.parse(content);
-      if (Array.isArray(parsed)) {
-        _completedTracesBySession[sessionId] = parsed;
-        return parsed;
+
+  for (var i = 0; i < searchDirs.length; i++) {
+    var filePath = path.join(searchDirs[i], filename);
+    try {
+      if (existsSync(filePath)) {
+        var content = await fs.readFile(filePath, 'utf-8');
+        var parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          _completedTracesBySession[sessionId] = parsed;
+          return parsed;
+        }
       }
+    } catch (err) {
+      console.warn('[EXECUTION TRACE] Failed to read trace from disk at ' + filePath + ':', err.message);
     }
-  } catch (err) {
-    console.warn('[EXECUTION TRACE] Failed to read trace from disk:', err.message);
   }
   return [];
 }

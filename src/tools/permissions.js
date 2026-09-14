@@ -66,8 +66,11 @@ export function resetChatDecisions(sessionId) {
 }
 
 // Request user permission with a 5-minute timeout.
-export function requestPermission(toolName, args, id, sendEvent, sessionId) {
+export function requestPermission(toolName, args, id, sendEvent, sessionId, parentSessionId) {
   var chatDecision = getAlwaysDecision(toolName, sessionId);
+  if (!chatDecision && parentSessionId) {
+    chatDecision = getAlwaysDecision(toolName, parentSessionId);
+  }
   if (chatDecision === 'allow') return Promise.resolve(true);
   if (chatDecision === 'deny') return Promise.resolve(false);
 
@@ -84,6 +87,7 @@ export function requestPermission(toolName, args, id, sendEvent, sessionId) {
       resolve: resolve,
       timer: timer,
       sessionId: sessionId || 'default',
+      parentSessionId: parentSessionId || null,
       toolName: toolName
     };
   }
@@ -99,24 +103,30 @@ export function resolvePermission(id, approved, options, sessionId) {
   var sid = (sessionId && sessionId !== 'default') ? sessionId : (options.sessionId && options.sessionId !== 'default') ? options.sessionId : (entry && entry.sessionId) || 'default';
 
   if (entry) {
-    if (sessionId && sessionId !== 'default' && entry.sessionId && entry.sessionId !== 'default' && entry.sessionId !== sessionId) {
+    var isMatchingSession = !sessionId || sessionId === 'default' || !entry.sessionId || entry.sessionId === 'default' || entry.sessionId === sessionId || (options.sessionId && options.sessionId === entry.sessionId) || (entry.parentSessionId && entry.parentSessionId === sessionId) || (options.parentSessionId && entry.parentSessionId === options.parentSessionId);
+    if (!isMatchingSession) {
       console.warn('[PERMISSIONS] Cross-session resolve attempt rejected. Request session:', entry.sessionId, 'Caller session:', sessionId);
-      return false;
-    }
-    if (options.sessionId && options.sessionId !== 'default' && entry.sessionId && entry.sessionId !== 'default' && entry.sessionId !== options.sessionId) {
-      console.warn('[PERMISSIONS] Cross-session resolve attempt rejected. Request session:', entry.sessionId, 'Options session:', options.sessionId);
       return false;
     }
     clearTimeout(entry.timer);
     delete pendingPermissions[id];
     if (options.always && toolName) {
       setAlwaysDecision(toolName, approved ? 'allow' : 'deny', sid);
+      if (entry.sessionId && entry.sessionId !== sid) {
+        setAlwaysDecision(toolName, approved ? 'allow' : 'deny', entry.sessionId);
+      }
+      if (entry.parentSessionId) {
+        setAlwaysDecision(toolName, approved ? 'allow' : 'deny', entry.parentSessionId);
+      }
     }
     entry.resolve(approved);
     return true;
   }
   if (options.always && toolName) {
     setAlwaysDecision(toolName, approved ? 'allow' : 'deny', sid);
+    if (options.parentSessionId) {
+      setAlwaysDecision(toolName, approved ? 'allow' : 'deny', options.parentSessionId);
+    }
     return true;
   }
   return false;
