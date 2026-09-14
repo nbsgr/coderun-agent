@@ -602,8 +602,8 @@ function initializeDashboard() {
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
                   '</div>' +
                   '<div class="cr-view-nav">' +
-                    '<button id="viewNavChatsBtn" class="cr-view-nav-btn active">Chats</button>' +
-                    '<button id="viewNavTracesBtn" class="cr-view-nav-btn">Traces</button>' +
+                    '<button id="viewNavChatsBtn" class="cr-view-nav-btn active">Agent Chats</button>' +
+                    '<button id="viewNavTracesBtn" class="cr-view-nav-btn">Agent Traces</button>' +
                     '<button id="viewNavSubagentsBtn" class="cr-view-nav-btn">Subagents</button>' +
                     '<button id="viewNavSubagentTracesBtn" class="cr-view-nav-btn">Subagent Traces</button>' +
                   '</div>' +

@@ -489,13 +489,17 @@ textarea {
   border-bottom: 1px solid #1a2332;
   flex-shrink: 0;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .cr-view-nav-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 12px;
+  padding: 5px 6px;
   font-size: 11px;
   font-weight: 500;
   border-radius: 6px;
@@ -505,6 +509,10 @@ textarea {
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   user-select: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  text-align: center;
 }
 
 .cr-view-nav-btn:hover {
