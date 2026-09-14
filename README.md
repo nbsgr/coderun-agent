@@ -142,6 +142,19 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Zero-Config Browser Automation:** Embedded system browser discovery automatically locates installed Google Chrome, Microsoft Edge, Brave, or Chromium binaries across Windows, macOS, and Linux — no manual browser installation needed.
 *   **Custom MCP Server Management:** Register arbitrary custom MCP servers directly from the Settings view with per-tool permissions and toggle controls.
 
+### 🤖 Autonomous Subagent Workers & Multi-Agent Delegation
+*   **Hierarchical Task Delegation:** Spawn child AI agents with `spawn_subagent` to tackle independent subtasks (architecture planning, code generation, test verification, security review) concurrently or synchronously.
+*   **Dual Execution Modes:**
+    *   `sync` / `parallel` / `async`: Launches subagents in the background non-blocking, immediately returning confirmation while the child agent works in parallel with the main agent.
+    *   `wait`: Synchronously blocks until the subagent completes its full loop and delivers verified final results back to the parent session.
+*   **Full Subagent Lifecycle Management:** Complete toolset to control running subagents: `subagent_status` (inspect progress, active steps, read/written files), `subagents_list` (session-wide subagent registry), `stop_subagent` (graceful termination), and `wait_for_subagent` (join async subagents).
+*   **Dedicated Subagent Settings Panel (`🤖`):** Access dedicated Subagent Settings via the robot emoji (`🤖`) on the navigation rail to configure provider, model, and execution limits independently of the main chat agent.
+*   **Saved Providers Selection:** Subagent provider dropdown lists only saved, verified provider configurations (e.g. Ollama, OpenAI-compatible endpoints) rather than unconfigured generic endpoints, with `(Inherit from Main Agent)` as the default.
+*   **Model Combobox with Instant Search:** Full-featured searchable model combobox matching the main chatspace with sticky search bar (`🔍 Search models...`), collapsible provider groups, and active checkmark badges (`✓`).
+*   **Automatic Model Inheritance:** Selecting `(Inherit from Main Agent)` automatically syncs the subagent model to inherit the main agent's active model in real time.
+*   **Configurable Execution Limits:** Fine-tune concurrency and iteration limits: Max Concurrent Subagents (1–50, default: 10), Subagent Max Iterations (1–100, default: 20), and Subagent Max Depth (0–3, default: 1) to prevent runaway nesting.
+*   **Distinct Checkpoint & Trace Attribution:** Checkpoints, file modifications, and execution traces are attributed to unique subagent IDs (`agentId`), enabling isolated rollbacks and dedicated Subagent Traces inspection.
+
 ---
 
 ## 🏛️ Architecture and Features
@@ -162,14 +175,15 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Dynamic Card Error Containment** | Dynamic card sizing & auto-wrapping CSS (`overflow-wrap: anywhere`) | ✅ **Auto-wrapping & no boundary overflow** on long uninterrupted URLs and JSON payloads |
 | **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
 | **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **50 Test Groups** covering concurrency, permissions, SSRF, locks, recovery & tools |
+| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background & Synchronous delegation** with independent loops, limits & dedicated 🤖 settings |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **61 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents & tools |
 
 
 ---
 
-## 🧰 Complete Tool Matrix (25 Tools)
+## 🧰 Complete Tool Matrix (31 Core Tools)
 
-CodeRun exposes a curated set of **25 active tools** organized across 7 core categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **31 active core tools** organized across 8 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -194,6 +208,12 @@ CodeRun exposes a curated set of **25 active tools** organized across 7 core cat
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
+| **🤖 Subagents** | `spawn_subagent` | Launch an autonomous child agent in `sync` (background) or `wait` mode | ⚠️ Yes |
+| | `subagent_status` | Inspect a child subagent's state, progress, and files read/modified | No |
+| | `subagents_list` | List all active and completed child subagents in the session | No |
+| | `stop_subagent` | Terminate a running or paused child subagent cleanly | ⚠️ Yes |
+| | `wait_for_subagent` | Await an async background subagent until terminal completion | No |
+| | `subagent_response` | Received subagent execution response and results | No |
 | **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
 | | `get_current_datetime` | Retrieve current date and time in ISO format | No |
 | **📦 Utilities & Sandbox** | `sandbox` | Inspect, list, or clean the transparent user sandbox directory (`~/.coderun/sandbox/`) | No |
@@ -302,6 +322,8 @@ src/
 │   ├── agent.js                  ← Public agent wrapper API
 │   ├── agentLoop.js              ← Core agentic loop (Think → Plan → Act → Verify)
 │   ├── agentState.js             ← Formal finite state machine for the agent loop
+│   ├── subagentManager.js        ← Autonomous subagent lifecycle manager (spawn, pause, resume, stop, limits, defaults)
+│   ├── subagentTypes.js          ← Subagent constants, role normalization, state machines, and limit validators
 │   ├── promptBuilder.js          ← Assembles system prompt with workspace, planning, and memory contexts
 │   ├── runtime.js                ← Execution session runtime, goals, and plan counts
 │   ├── events.js                 ← Internal pub/sub event bus
@@ -350,10 +372,11 @@ src/
 │   └── providerCompatible.js     ← Custom OpenAI/Anthropic/Gemini compatible endpoints
 │
 └── tools/                        ← Active tool implementations and security
-    ├── tools.js                  ← 25 active async generators across 7 core categories
+    ├── tools.js                  ← 31 active async generators across 8 core categories
     ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
     ├── toolExecutor.js           ← Tool call argument parsing, execution reporting, and result formatting
     ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
+    ├── subagentTools.js          ← Subagent tool suite (spawn_subagent, status, list, stop, wait)
     ├── questionManager.js        ← Interactive user question lifecycle, option selection & write-in resolution
     ├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
     │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),

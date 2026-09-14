@@ -1705,10 +1705,20 @@
       </div>
 
       <div class="sidebar-group">
+        <div class="sidebar-group-title">Subagents &amp; Multi-Agent</div>
+        <ul class="sidebar-menu">
+          <li><a href="#subagents-overview" class="sidebar-link">Autonomous Subagent Engine</a></li>
+          <li><a href="#subagent-settings" class="sidebar-link">Dedicated Subagent Settings</a></li>
+          <li><a href="#subagent-tools" class="sidebar-link">Subagent Tools Suite</a></li>
+          <li><a href="#subagent-traces" class="sidebar-link">Hierarchical Traces &amp; Isolation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
         <div class="sidebar-group-title">Tools & Execution</div>
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 25-Tool Matrix</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 31-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
           <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
@@ -1725,7 +1735,7 @@
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">50 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">61 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2819,11 +2829,198 @@ function sanitizeGeminiSchema(schema) {
         </div>
       </section>
 
-      <!-- 25 Tools Matrix -->
-      <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 25-Tool Matrix</h2>
+      <!-- Subagents Overview -->
+      <section id="subagents-overview">
+        <h2 class="section-heading">🤖 Autonomous Subagent Workers &amp; Multi-Agent Delegation</h2>
         <p>
-          CodeRun comes equipped with 25 built-in core tools across 7 operational categories:
+          CodeRun features an autonomous multi-agent orchestration architecture. Main agents can decompose complex objectives and spawn dedicated child AI agents (subagents) running their own independent execution loops:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">Dual Execution Modes</div>
+            <div class="card-text">Launch subagents in <code>sync</code> (or <code>parallel</code>/<code>async</code>) mode to run non-blocking in the background while the main agent continues other tasks, or in <code>wait</code> mode to synchronously block until verified completion.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Specialized Agent Roles</div>
+            <div class="card-text">Assign child agents specialized roles (<code>coder</code>, <code>architect</code>, <code>reviewer</code>, <code>debugger</code>, <code>researcher</code>) with tailored role prompts and capability constraints.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Strict Recursion Guard</div>
+            <div class="card-text">Enforces configurable delegation depth (<code>subagentMaxDepth</code>) to prevent runaway nesting loops. Child subagents cannot recursively spawn further subagents beyond the configured threshold.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Subagent Settings -->
+      <section id="subagent-settings">
+        <h2 class="section-heading">⚙️ Dedicated Subagent Settings Panel (🤖)</h2>
+        <p>
+          Configure independent provider credentials, model selections, and execution boundaries for subagents directly from the dedicated <strong>Subagent Settings</strong> panel:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">🤖 Navigation Rail Access</div>
+            <div class="card-text">Click the robot emoji (<code>🤖</code>) on the primary navigation rail to instantly open the Subagent Settings view alongside Chat, Settings, Rules, and MCP.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Saved Providers Dropdown</div>
+            <div class="card-text">Lists only saved, verified endpoints from your saved provider configurations (e.g. Ollama, custom OpenAI-compatible APIs) rather than unconfigured generic endpoints, with <code>(Inherit from Main Agent)</code> as the default.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Searchable Model Combobox</div>
+            <div class="card-text">Select subagent models using a custom combobox matching the main chatspace, complete with a sticky search filter (<code>🔍 Search models...</code>), collapsible provider groups, and active checkmarks (<code>✓</code>).</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Automatic Model Inheritance</div>
+            <div class="card-text">Setting the subagent provider to <code>(Inherit from Main Agent)</code> automatically syncs the subagent model to inherit the main agent's active model in real time.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Active Runtime Status Card</div>
+            <div class="card-text">A prominent status card with a live pulse indicator displays the currently active or inherited Provider and Model at the top of the panel.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Configurable Concurrency Limits</div>
+            <div class="card-text">Fine-tune execution thresholds: Max Concurrent Subagents (1–50, default: 10), Subagent Max Iterations (1–100, default: 20), and Max Depth (0–3, default: 1).</div>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top: 20px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Setting Key</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>coderun.subagentProvider</code></td>
+                <td>string</td>
+                <td><code>""</code></td>
+                <td>Dedicated provider for subagents. Leave empty to inherit from main agent.</td>
+              </tr>
+              <tr>
+                <td><code>coderun.subagentModel</code></td>
+                <td>string</td>
+                <td><code>""</code></td>
+                <td>Dedicated model for subagents. Leave empty to inherit from main agent.</td>
+              </tr>
+              <tr>
+                <td><code>coderun.subagentMaxConcurrent</code></td>
+                <td>integer</td>
+                <td><code>10</code></td>
+                <td>Maximum number of concurrently running subagents per chat session (1–50).</td>
+              </tr>
+              <tr>
+                <td><code>coderun.subagentMaxIterations</code></td>
+                <td>integer</td>
+                <td><code>20</code></td>
+                <td>Maximum reasoning/tool loops permitted for each subagent run (1–100).</td>
+              </tr>
+              <tr>
+                <td><code>coderun.subagentMaxDepth</code></td>
+                <td>integer</td>
+                <td><code>1</code></td>
+                <td>Maximum subagent delegation depth (0 = disabled, 1 = parent-only, 2+ = nested).</td>
+              </tr>
+              <tr>
+                <td><code>coderun.subagentTimeoutMs</code></td>
+                <td>integer</td>
+                <td><code>0</code></td>
+                <td>Optional subagent execution timeout in milliseconds; zero disables the timeout.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Subagent Tools -->
+      <section id="subagent-tools">
+        <h2 class="section-heading">🛠️ Subagent Tools Suite</h2>
+        <p>
+          The agent orchestration engine exposes 6 dedicated subagent tools:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Execution Mode</th>
+                <th>Description</th>
+                <th>Permission</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>spawn_subagent</code></td>
+                <td><code>sync</code> / <code>wait</code> / <code>parallel</code></td>
+                <td>Creates and starts an autonomous child agent with a specific role, task, and optional context.</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td><code>subagent_status</code></td>
+                <td>Inspect</td>
+                <td>Inspects a child subagent's current state, step progress, files read/modified, and partial outputs.</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><code>subagents_list</code></td>
+                <td>Query</td>
+                <td>Lists all child subagents created within the current session and their granular lifecycle status.</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><code>stop_subagent</code></td>
+                <td>Control</td>
+                <td>Permanently halts a running or paused child subagent while preserving completed partial results.</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td><code>wait_for_subagent</code></td>
+                <td>Synchronize</td>
+                <td>Blocks until an asynchronous background subagent reaches a terminal state and returns its result.</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><code>subagent_response</code></td>
+                <td>Lifecycle</td>
+                <td>Captures the structured completion response, outputs, and status delivered by the subagent.</td>
+                <td>Safe</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Subagent Traces -->
+      <section id="subagent-traces">
+        <h2 class="section-heading">🪵 Hierarchical Execution Traces &amp; Isolation</h2>
+        <p>
+          Subagent runs maintain strict execution and diagnostic isolation:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">Dedicated Subagent Traces View</div>
+            <div class="card-text">Switch to the Subagent Traces view to inspect step-by-step reasoning, prompts, tool calls, and duration timings for every child agent run.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Checkpoint Attribution by Agent ID</div>
+            <div class="card-text">All file snapshots and SQLite checkpoints are attributed to specific <code>agentId</code>s, enabling clean rollbacks of changes made by specific subagents.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Diff Approval Isolation</div>
+            <div class="card-text">Staged diffs created by subagents carry explicit agent ownership metadata, allowing developers to review and approve changes per worker.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 31 Tools Matrix -->
+      <section id="tools-matrix">
+        <h2 class="section-heading">🧰 The Complete 31-Tool Matrix</h2>
+        <p>
+          CodeRun comes equipped with 31 built-in core tools across 8 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -2961,6 +3158,42 @@ function sanitizeGeminiSchema(schema) {
                 <td></td>
                 <td><code>update_plan</code></td>
                 <td>Updates task states: <code>[ ]</code> pending, <code>[/]</code> in-progress, <code>[x]</code> done</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🤖 Subagents</strong></td>
+                <td><code>spawn_subagent</code></td>
+                <td>Create and start autonomous child agents in <code>sync</code> (background) or <code>wait</code> mode</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>subagent_status</code></td>
+                <td>Inspect child subagent state, progress, and files read/written</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>subagents_list</code></td>
+                <td>List all active and completed child subagents in current session</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>stop_subagent</code></td>
+                <td>Terminate a running or paused child subagent cleanly</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>wait_for_subagent</code></td>
+                <td>Block until an async background subagent finishes execution</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>subagent_response</code></td>
+                <td>Receive structured execution results from completed subagent</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -3186,9 +3419,9 @@ node --check src/agents/agentLoop.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 50 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 61 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against a 50-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 61-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3198,7 +3431,7 @@ node --check src/agents/agentLoop.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation (Vector 46), and interactive user question lifecycle &amp; cross-session isolation (Vector 50).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), and parallel non-blocking execution with live dropdown updates (Vector 61).
         </p>
       </section>
 
@@ -3241,7 +3474,11 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
         <li class="toc-item"><a href="#browser-automation" class="toc-link">Browser Automation</a></li>
         <li class="toc-item"><a href="#user-sandbox" class="toc-link">User Sandbox</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">25-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#subagents-overview" class="toc-link">Subagent Engine</a></li>
+        <li class="toc-item"><a href="#subagent-settings" class="toc-link">Subagent Settings</a></li>
+        <li class="toc-item"><a href="#subagent-tools" class="toc-link">Subagent Tools</a></li>
+        <li class="toc-item"><a href="#subagent-traces" class="toc-link">Subagent Traces</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">31-Tool Matrix</a></li>
         <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
@@ -3250,7 +3487,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">50 Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">61 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting &amp; FAQ</a></li>
       </ul>
     </aside>
