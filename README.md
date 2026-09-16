@@ -29,7 +29,7 @@ The repository follows a deliberately small JavaScript architecture:
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 50-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 72-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -145,8 +145,11 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 ### 🤖 Autonomous Subagent Workers & Multi-Agent Delegation
 *   **Hierarchical Task Delegation:** Spawn child AI agents with `spawn_subagent` to tackle independent subtasks (architecture planning, code generation, test verification, security review) concurrently or synchronously.
 *   **Dual Execution Modes:**
-    *   `sync` / `parallel` / `async`: Launches subagents in the background non-blocking, immediately returning confirmation while the child agent works in parallel with the main agent.
+    *   `sync` / `parallel` / `async`: Launches subagents in the background non-blocking, immediately returning confirmation while the child agent works in parallel with the main agent. The main agent can concurrently run terminal commands or perform inspections while the subagent runs.
     *   `wait`: Synchronously blocks until the subagent completes its full loop and delivers verified final results back to the parent session.
+*   **Tool Isolation & Anti-Recursion Safety:** Subagents are provisioned with full workspace manipulation tools (`create_folder`, `write_file`, `edit_file`, `read_file`, `run_terminal`, etc.) while subagent delegation tools are filtered out, strictly preventing runaway recursive spawning loops.
+*   **Per-Action Checkpointing & Instant Undo Rollback (`↩ Undo`):** File creation, writing, and editing operations by subagents generate automatic snapshot checkpoints with single dedicated `↩ Undo` buttons under approved diff cards.
+*   **Bi-Directional Undo Reflection Across All Views:** Undoing a checkpoint (from the main chat diff card or the Subagents tab) immediately transitions the card status to `✓ RESTORED` / `✓ Restored` across open views, subagent execution chat, traces, and backend storage.
 *   **Full Subagent Lifecycle Management:** Complete toolset to control running subagents: `subagent_status` (inspect progress, active steps, read/written files), `subagents_list` (session-wide subagent registry), `stop_subagent` (graceful termination), and `wait_for_subagent` (join async subagents).
 *   **Dedicated Subagent Settings Panel (`🤖`):** Access dedicated Subagent Settings via the robot emoji (`🤖`) on the navigation rail to configure provider, model, and execution limits independently of the main chat agent.
 *   **Saved Providers Selection:** Subagent provider dropdown lists only saved, verified provider configurations (e.g. Ollama, OpenAI-compatible endpoints) rather than unconfigured generic endpoints, with `(Inherit from Main Agent)` as the default.
@@ -175,8 +178,8 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Dynamic Card Error Containment** | Dynamic card sizing & auto-wrapping CSS (`overflow-wrap: anywhere`) | ✅ **Auto-wrapping & no boundary overflow** on long uninterrupted URLs and JSON payloads |
 | **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
 | **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
-| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background & Synchronous delegation** with independent loops, limits & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **61 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents & tools |
+| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background & Synchronous delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **72 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints & tools |
 
 
 ---
@@ -282,7 +285,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **50 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **72 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -295,6 +298,18 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Historical tool result optimization, failure retention, mutation diff preservation, and active iteration raw output fidelity.
 * Deterministic conversation compaction checkpoint resolution, tool argument mapping, complete response retention, and clean text boundaries.
 * Interactive user questions (`ask_question`) lifecycle, option selection, write-in support, and session-isolated resolution.
+* Subagent identity hierarchy, tool filtering, and recursive spawn prevention.
+* Subagent state machine lifecycle transitions (running, paused, resumed, stopped, completed, failed).
+* Checkpoint and diff attribution per agent ID, and targeted rollbacks.
+* Unified subagent execution, permission prompting, and live diff lifecycle.
+* Subagent diff permission prompts in ChatSpace & bi-directional approval synchronization.
+* Subagent diff status persistence across storage and multi-view approval synchronization.
+* Subagent checkpointing, diff undo actions (`↩ Undo`), and cross-session rollbacks.
+* Bi-directional undone checkpoint status reflection (`✓ Restored`) across Agent Chat, Subagents view, and Subagent Traces.
+* Fuzzy line matching for `edit_file` and `patch_file` resilient to indentation and line-ending variations.
+* Compiler and LSP diagnostics integration.
+* Background dev server port sniffing and daemon process lifecycle management.
+* High-speed SQLite codebase search abstraction.
 
 Run all tests anytime:
 ```bash

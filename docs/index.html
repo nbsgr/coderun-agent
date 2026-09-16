@@ -1735,7 +1735,7 @@
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">61 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">72 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -1879,7 +1879,7 @@
               <tr>
                 <td><strong>Adversarial Regression Test Suite</strong></td>
                 <td>Standalone test harness (<code>test/runAllTests.js</code>) with zero external test dependencies</td>
-                <td><span class="pill-badge green">✅ 50 Test Groups</span> Comprehensive regression suite for reliability</td>
+                <td><span class="pill-badge green">✅ 72 Test Groups</span> Comprehensive regression suite for reliability</td>
               </tr>
             </tbody>
           </table>
@@ -2848,6 +2848,18 @@ function sanitizeGeminiSchema(schema) {
             <div class="card-title">Strict Recursion Guard</div>
             <div class="card-text">Enforces configurable delegation depth (<code>subagentMaxDepth</code>) to prevent runaway nesting loops. Child subagents cannot recursively spawn further subagents beyond the configured threshold.</div>
           </div>
+          <div class="feature-card">
+            <div class="card-title">Per-Action Checkpointing &amp; Instant Rollback</div>
+            <div class="card-text">Every file operation performed by a subagent automatically generates an atomic checkpoint. Developers can click <code>↩ Undo</code> on any diff card to roll back modifications instantly without disturbing other session changes.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Bi-Directional Undo Reflection</div>
+            <div class="card-text">Rolling back a subagent checkpoint updates the backend status, the active diff cards, the Subagent Traces view, and the dedicated Subagent Chat stream in real time, displaying <code>✓ RESTORED</code> badges and disabling further undo actions.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Concurrent Parent &amp; Subagent Execution</div>
+            <div class="card-text">When launching subagents in <code>sync</code> mode, the main agent can execute commands, inspect system state, or monitor background work before calling <code>wait_for_subagent</code> to synchronize final outcomes.</div>
+          </div>
         </div>
       </section>
 
@@ -3012,6 +3024,10 @@ function sanitizeGeminiSchema(schema) {
           <div class="feature-card">
             <div class="card-title">Diff Approval Isolation</div>
             <div class="card-text">Staged diffs created by subagents carry explicit agent ownership metadata, allowing developers to review and approve changes per worker.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">Synchronized Checkpoint Restoration</div>
+            <div class="card-text">When a checkpoint created by a subagent is undone, the Subagent Traces tool cards and diff entries dynamically update to display <code>✓ Restored</code>, maintaining full audit fidelity.</div>
           </div>
         </div>
       </section>
@@ -3419,9 +3435,9 @@ node --check src/agents/agentLoop.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 61 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 72 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against an exhaustive 61-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 72-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3431,7 +3447,7 @@ node --check src/agents/agentLoop.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), and parallel non-blocking execution with live dropdown updates (Vector 61).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), and subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72).
         </p>
       </section>
 
@@ -3487,7 +3503,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">61 Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">72 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting &amp; FAQ</a></li>
       </ul>
     </aside>
