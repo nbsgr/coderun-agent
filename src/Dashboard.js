@@ -1896,6 +1896,12 @@ function initializeDashboard() {
             '<div class="cr-tool-card-block-label">Tool Output</div>' +
             '<pre class="cr-tool-card-result-pre">' + esc(outputStr || '(No output recorded)') + '</pre>' +
           '</div>' +
+          (tc.checkpointId ?
+            '<div class="cr-tool-undo-bar" data-cp-id="' + esc(tc.checkpointId) + '" data-file-path="' + esc(tc.filePath || '') + '" style="margin-top:4px;display:flex;align-items:center;">' +
+              (tc.undone || tc.restored ?
+                '<span class="cr-action-done" style="font-size:11px;padding:2px 6px;color:#3fb950;display:inline-flex;align-items:center;">✓ Restored</span>' :
+                '<button type="button" class="cr-action-btn cr-action-undo" data-cp-id="' + esc(tc.checkpointId) + '" data-file-path="' + esc(tc.filePath || '') + '">↩ Undo</button>') +
+            '</div>' : '') +
         '</div>' +
       '</details>'
     );
@@ -1961,6 +1967,106 @@ function initializeDashboard() {
     }
 
     return '<p>' + esc(str) + '</p>';
+  }
+
+  function buildSubagentDiffCardHtml(diff) {
+    if (!diff) return '';
+    var diffId = diff.id || 'diff_' + Date.now();
+    var filePath = diff.file_path || 'unknown';
+    var isNew = diff.is_new_file || false;
+    var originalText = diff.original_content || '';
+    var modifiedText = diff.new_content || '';
+    var status = diff.status || 'pending';
+
+    var origLines = originalText.split('\n');
+    var modLines = modifiedText.split('\n');
+    var maxLen = Math.max(origLines.length, modLines.length);
+    var additions = 0;
+    var deletions = 0;
+    var linesHtml = '';
+
+    for (var i = 0; i < maxLen; i++) {
+      var o = origLines[i] || '';
+      var m = modLines[i] || '';
+      if (o === m) {
+        linesHtml += '<div class="cr-diff-line cr-diff-line-context">' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-code">' + esc(o) + '</span>' +
+        '</div>';
+      } else if (!o && m) {
+        additions++;
+        linesHtml += '<div class="cr-diff-line cr-diff-line-add">' +
+          '<span class="cr-diff-ln"></span>' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-code">' + esc(m) + '</span>' +
+        '</div>';
+      } else if (o && !m) {
+        deletions++;
+        linesHtml += '<div class="cr-diff-line cr-diff-line-del">' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-ln"></span>' +
+          '<span class="cr-diff-code">' + esc(o) + '</span>' +
+        '</div>';
+      } else {
+        deletions++;
+        additions++;
+        linesHtml += '<div class="cr-diff-line cr-diff-line-del">' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-ln"></span>' +
+          '<span class="cr-diff-code">' + esc(o) + '</span>' +
+        '</div>' +
+        '<div class="cr-diff-line cr-diff-line-add">' +
+          '<span class="cr-diff-ln"></span>' +
+          '<span class="cr-diff-ln">' + (i + 1) + '</span>' +
+          '<span class="cr-diff-code">' + esc(m) + '</span>' +
+        '</div>';
+      }
+    }
+
+    var actionsHtml = '';
+    if (status === 'pending') {
+      actionsHtml = '<div class="cr-diff-actions">' +
+        '<button type="button" class="cr-btn cr-btn-allow cr-diff-accept" data-diff-id="' + esc(diffId) + '">Accept</button>' +
+        '<button type="button" class="cr-btn cr-btn-deny cr-diff-reject" data-diff-id="' + esc(diffId) + '">Reject</button>' +
+        '<button type="button" class="cr-diff-full-btn" data-diff-id="' + esc(diffId) + '" title="Open in VS Code diff editor">Open Full Diff</button>' +
+        '<span class="cr-diff-status" style="display:none"></span>' +
+      '</div>';
+    } else {
+      var isApproved = (status === 'approved' || status === 'accepted' || status === 'applied');
+      var isUndone = !!(diff.undone || diff.restored || status === 'restored');
+      var statusText = isUndone ? '✓ RESTORED' : (isApproved ? '✓ APPROVED' : (status === 'rejected' ? '✗ REJECTED' : esc(status.toUpperCase())));
+      var statusCls = isUndone ? 'allowed cr-diff-status--restored' : (isApproved ? 'allowed cr-diff-status--approved' : (status === 'rejected' ? 'denied cr-diff-status--rejected' : ('cr-diff-status--' + esc(status))));
+      var undoBtnHtml = '';
+      if (isUndone) {
+        undoBtnHtml = '<span class="cr-action-done" style="margin-left:8px;font-size:11px;padding:2px 6px;color:#3fb950;display:inline-flex;align-items:center;">✓ Restored</span>';
+      } else if (isApproved || diff.checkpointId) {
+        var cpId = diff.checkpointId || '';
+        undoBtnHtml = '<button type="button" class="cr-action-btn cr-action-undo" data-cp-id="' + esc(cpId) + '" data-file-path="' + esc(filePath) + '" style="margin-left:8px;font-size:11px;padding:2px 6px;">↩ Undo</button>';
+      }
+      actionsHtml = '<div class="cr-diff-actions" style="display:flex;align-items:center;">' +
+        '<span class="cr-diff-status cr-permission-status ' + statusCls + '">' + statusText + '</span>' +
+        undoBtnHtml +
+      '</div>';
+    }
+
+    var fileSvg = '<svg class="cr-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
+    return '<div class="cr-diff-card" data-diff-id="' + esc(diffId) + '" data-diff-status="' + esc(status) + '" data-file-path="' + esc(filePath) + '" style="margin:8px 0;">' +
+      '<div class="cr-diff-head">' +
+        fileSvg +
+        '<span class="cr-diff-title">' + esc(filePath) + '</span>' +
+        '<span class="cr-diff-stats">' +
+          '<span class="cr-diff-stat-add">+' + additions + '</span>' +
+          '<span class="cr-diff-stat-del">-' + deletions + '</span>' +
+        '</span>' +
+      '</div>' +
+      '<details class="cr-diff-details" open>' +
+        '<summary class="cr-diff-summary">' + (isNew ? 'New File' : 'View Changes') + '</summary>' +
+        '<div class="cr-diff-body">' + linesHtml + '</div>' +
+      '</details>' +
+      actionsHtml +
+    '</div>';
   }
 
   function buildSubagentDropdownCardHtml(subagent, isOpen) {
@@ -2081,6 +2187,16 @@ function initializeDashboard() {
           '<span>Initializing subagent agentLoop and workspace context...</span>' +
         '</div>'
       );
+    }
+
+    var diffList = (subagent && subagent.diffs) || (trace && trace.diffs) || [];
+    if (diffList && diffList.length > 0) {
+      innerItemsHtml += '<div class="cr-subagent-diffs-section">';
+      innerItemsHtml += '<div class="cr-subagent-block-label" style="font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground,#888);margin:8px 0 4px;">File Changes &amp; Diffs (' + diffList.length + ')</div>';
+      for (var df = 0; df < diffList.length; df++) {
+        innerItemsHtml += buildSubagentDiffCardHtml(diffList[df]);
+      }
+      innerItemsHtml += '</div>';
     }
 
     // Final response
@@ -2205,6 +2321,15 @@ function initializeDashboard() {
           }
         }
       }
+      var diffList = (subagent && subagent.diffs) || (trace && trace.diffs) || [];
+      if (diffList && diffList.length > 0) {
+        innerItemsHtml += '<div class="cr-subagent-diffs-section">';
+        innerItemsHtml += '<div class="cr-subagent-block-label" style="font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground,#888);margin:8px 0 4px;">File Changes &amp; Diffs (' + diffList.length + ')</div>';
+        for (var df = 0; df < diffList.length; df++) {
+          innerItemsHtml += buildSubagentDiffCardHtml(diffList[df]);
+        }
+        innerItemsHtml += '</div>';
+      }
       if (err) {
         innerItemsHtml += errorBannerHtml;
       }
@@ -2306,6 +2431,8 @@ function initializeDashboard() {
       return ta - tb;
     });
 
+    var existingOpen = container.querySelector ? container.querySelector('.cr-subagent-card[open]') : null;
+    var openId = targetSubagentId || (existingOpen ? (existingOpen.getAttribute('data-subagent-id') || existingOpen.getAttribute('data-agent-id')) : state.activeSubagentId);
     if (targetSubagentId) {
       state.activeSubagentId = targetSubagentId;
     }
@@ -2313,7 +2440,7 @@ function initializeDashboard() {
     var cardsHtml = '';
     for (var c = 0; c < subagents.length; c++) {
       var sub = subagents[c];
-      var isSubOpen = Boolean(targetSubagentId && (sub.agentId === targetSubagentId || sub.id === targetSubagentId));
+      var isSubOpen = Boolean(openId && (sub.agentId === openId || sub.id === openId));
       cardsHtml += buildSubagentDropdownCardHtml(sub, isSubOpen);
     }
 
@@ -2354,6 +2481,98 @@ function initializeDashboard() {
     var traceLinks = container.querySelectorAll('.cr-subagent-view-trace-link');
     for (var t = 0; t < traceLinks.length; t++) {
       traceLinks[t].onclick = handleSubagentViewTraceClick;
+    }
+
+    var diffAcceptBtns = container.querySelectorAll('.cr-diff-accept');
+    for (var da = 0; da < diffAcceptBtns.length; da++) {
+      function onSubDiffAcceptClick(ev) {
+        var btn = ev.currentTarget;
+        var dId = btn.getAttribute('data-diff-id');
+        if (dId && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: 'acceptDiff', diffId: dId, sessionId: activeId });
+        }
+        if (typeof window.updateSubagentDiffStatus === 'function') {
+          window.updateSubagentDiffStatus(activeId, dId, 'approved');
+        }
+        var c = btn.closest('.cr-diff-card');
+        if (c && typeof window.setDiffCardStatus === 'function') {
+          window.setDiffCardStatus(c, 'approved');
+        }
+        try {
+          var allCards = document.querySelectorAll('.cr-diff-card[data-diff-id="' + dId + '"]');
+          for (var ac = 0; ac < allCards.length; ac++) {
+            if (typeof window.setDiffCardStatus === 'function') {
+              window.setDiffCardStatus(allCards[ac], 'approved');
+            }
+          }
+          if (typeof window.refreshActiveAgentControls === 'function') {
+            window.refreshActiveAgentControls();
+          }
+        } catch (_) {}
+      }
+      diffAcceptBtns[da].onclick = onSubDiffAcceptClick;
+    }
+
+    var diffRejectBtns = container.querySelectorAll('.cr-diff-reject');
+    for (var dr = 0; dr < diffRejectBtns.length; dr++) {
+      function onSubDiffRejectClick(ev) {
+        var btn = ev.currentTarget;
+        var dId = btn.getAttribute('data-diff-id');
+        if (dId && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: 'rejectDiff', diffId: dId, sessionId: activeId });
+        }
+        if (typeof window.updateSubagentDiffStatus === 'function') {
+          window.updateSubagentDiffStatus(activeId, dId, 'rejected');
+        }
+        var c = btn.closest('.cr-diff-card');
+        if (c && typeof window.setDiffCardStatus === 'function') {
+          window.setDiffCardStatus(c, 'rejected');
+        }
+        try {
+          var allCards = document.querySelectorAll('.cr-diff-card[data-diff-id="' + dId + '"]');
+          for (var ac = 0; ac < allCards.length; ac++) {
+            if (typeof window.setDiffCardStatus === 'function') {
+              window.setDiffCardStatus(allCards[ac], 'rejected');
+            }
+          }
+          if (typeof window.refreshActiveAgentControls === 'function') {
+            window.refreshActiveAgentControls();
+          }
+        } catch (_) {}
+      }
+      diffRejectBtns[dr].onclick = onSubDiffRejectClick;
+    }
+
+    var diffFullBtns = container.querySelectorAll('.cr-diff-full-btn');
+    for (var df = 0; df < diffFullBtns.length; df++) {
+      function onSubDiffFullClick(ev) {
+        var btn = ev.currentTarget;
+        var dId = btn.getAttribute('data-diff-id');
+        if (dId && window.VSCODE_API) {
+          window.VSCODE_API.postMessage({ type: 'openDiffEditor', diffId: dId, sessionId: activeId });
+        }
+      }
+      diffFullBtns[df].onclick = onSubDiffFullClick;
+    }
+
+    var undoBtns = container.querySelectorAll('.cr-action-undo');
+    for (var u = 0; u < undoBtns.length; u++) {
+      function onSubUndoClick(ev) {
+        var btn = ev.currentTarget;
+        var cpId = btn.getAttribute('data-cp-id');
+        var fPath = btn.getAttribute('data-file-path');
+        btn.disabled = true;
+        btn.innerHTML = '↩ Undoing...';
+        if (window.VSCODE_API) {
+          window.VSCODE_API.postMessage({
+            type: 'undoCheckpoint',
+            filePath: fPath,
+            checkpointId: cpId,
+            sessionId: activeId
+          });
+        }
+      }
+      undoBtns[u].onclick = onSubUndoClick;
     }
   }
 
@@ -2449,6 +2668,7 @@ function initializeDashboard() {
   }
 
   window.renderSubagentsView = renderSubagentsView;
+  window.renderSubagentTracesView = renderSubagentTracesView;
   window.handleSubagentEvent = handleSubagentEvent;
 
   function handleCopyTraceCardClick(e) {
@@ -5559,6 +5779,19 @@ function initializeDashboard() {
         }
       }
     }
+    if (message.type === "agentEvent" && message.event && message.event.type === "request_diff") {
+      var diffEv = message.event;
+      var diffParentSid = diffEv.parentSessionId || diffEv.rootSessionId || state.activeConversationId;
+      if (diffEv.agentType === 'subagent' || diffEv.subagentId || diffEv.subagentName) {
+        if (typeof window.saveSubagentDiff === 'function') {
+          window.saveSubagentDiff(diffParentSid, diffEv);
+        }
+        var subAreaContainer = document.getElementById('subagents-area-container');
+        if (subAreaContainer && subAreaContainer.style.display !== 'none' && state.activeConversationId === diffParentSid) {
+          renderSubagentsView(subAreaContainer);
+        }
+      }
+    }
     if (message.type === "agentEvent" && message.event && message.event.type === "stream_error") {
       var activeId = state.activeConversationId;
       var errMsg = message.event.error || "An error occurred";
@@ -5640,7 +5873,30 @@ function initializeDashboard() {
               }
             }
             if (fIdx >= 0) {
+              var existingDiffs = (mergedSubs[fIdx].diffs || []).slice();
+              var incomingDiffs = incSub.diffs || [];
+              var mergedDiffs = existingDiffs.slice();
+              for (var ind = 0; ind < incomingDiffs.length; ind++) {
+                var incD = incomingDiffs[ind];
+                var foundDiff = false;
+                for (var md = 0; md < mergedDiffs.length; md++) {
+                  if (mergedDiffs[md].id === incD.id) {
+                    foundDiff = true;
+                    if (mergedDiffs[md].status && mergedDiffs[md].status !== 'pending' && incD.status === 'pending') {
+                      incD.status = mergedDiffs[md].status;
+                    }
+                    mergedDiffs[md] = Object.assign({}, mergedDiffs[md], incD);
+                    break;
+                  }
+                }
+                if (!foundDiff) {
+                  mergedDiffs.push(incD);
+                }
+              }
               mergedSubs[fIdx] = Object.assign({}, mergedSubs[fIdx], incSub);
+              if (mergedDiffs.length > 0) {
+                mergedSubs[fIdx].diffs = mergedDiffs;
+              }
             } else {
               mergedSubs.push(incSub);
             }
@@ -5759,6 +6015,11 @@ function initializeDashboard() {
         mcpErrEl.textContent = message.error || "An error occurred while connecting to MCP server.";
         mcpErrEl.style.display = "block";
         mcpErrEl.style.color = "#f48771";
+      }
+    }
+    if (message.type === "undoCheckpointResult" && message.filePath) {
+      if (typeof window !== "undefined" && window.updateActionsBarStatus) {
+        window.updateActionsBarStatus(message.filePath, message.success ? "Restored" : "Failed", message.checkpointId);
       }
     }
   }

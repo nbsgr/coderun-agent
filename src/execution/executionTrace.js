@@ -201,6 +201,8 @@ export function recordToolCall(sessionId, stepIndex, toolData) {
     output: (toolData && toolData.output) || '',
     success: toolData && toolData.success !== false,
     durationMs: (toolData && toolData.durationMs) || 0,
+    checkpointId: (toolData && (toolData.checkpointId || toolData.checkpoint_id)) || null,
+    filePath: (toolData && toolData.filePath) || '',
     timestamp: Date.now()
   };
 

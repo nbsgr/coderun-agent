@@ -62,6 +62,8 @@ export function storePatch(event) {
     createdAt: Date.now(),
     deferred: event.deferred || null,
     sessionId: event.sessionId || 'default',
+    parentSessionId: event.parentSessionId || null,
+    rootSessionId: event.rootSessionId || null,
     agentId: event.agentId || null,
     timer: timer
   };
@@ -88,9 +90,11 @@ export async function applyPatch(diffId, workspace, sessionId) {
     patch.timer = null;
   }
 
-  // Session ownership check
+  // Session ownership check: allow exact match or parent/root session
   if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
-    return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
+    if (patch.parentSessionId !== sessionId && patch.rootSessionId !== sessionId) {
+      return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
+    }
   }
 
   // Canonical workspace safety validation
@@ -155,7 +159,9 @@ export function rejectPatch(diffId, sessionId) {
     patch.timer = null;
   }
   if (sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
-    return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
+    if (patch.parentSessionId !== sessionId && patch.rootSessionId !== sessionId) {
+      return { success: false, message: 'Unauthorized: patch belongs to another session (' + patch.sessionId + ')' };
+    }
   }
   patch.status = 'rejected';
   if (patch.deferred && patch.deferred.resolve) {
@@ -175,7 +181,7 @@ export async function resolveDiff(diffId, accepted, sessionId, workspace) {
 export function clearSessionPatches(sessionId) {
   for (var id in _pendingPatches) {
     var p = _pendingPatches[id];
-    if (p && (!sessionId || p.sessionId === sessionId || p.sessionId === 'default')) {
+    if (p && (!sessionId || p.sessionId === sessionId || p.parentSessionId === sessionId || p.rootSessionId === sessionId || p.sessionId === 'default')) {
       if (p.timer) clearTimeout(p.timer);
       if (p.deferred && p.deferred.resolve) {
         p.deferred.resolve({ accepted: false });
@@ -188,7 +194,9 @@ export function clearSessionPatches(sessionId) {
 export function getPatch(diffId, sessionId) {
   var patch = _pendingPatches[diffId] || null;
   if (patch && sessionId && patch.sessionId && patch.sessionId !== 'default' && patch.sessionId !== sessionId) {
-    return null;
+    if (patch.parentSessionId !== sessionId && patch.rootSessionId !== sessionId) {
+      return null;
+    }
   }
   return patch;
 }
@@ -198,7 +206,7 @@ export function getPendingPatches(sessionId) {
   for (var id in _pendingPatches) {
     var p = _pendingPatches[id];
     if (p.status === 'pending') {
-      if (!sessionId || p.sessionId === sessionId) {
+      if (!sessionId || p.sessionId === sessionId || p.parentSessionId === sessionId || p.rootSessionId === sessionId) {
         result.push(p);
       }
     }
@@ -232,7 +240,7 @@ export function cancelSession(sessionId) {
   if (!sessionId) return;
   for (var id in _pendingPatches) {
     var patch = _pendingPatches[id];
-    if (patch && patch.sessionId === sessionId) {
+    if (patch && (patch.sessionId === sessionId || patch.parentSessionId === sessionId || patch.rootSessionId === sessionId)) {
       if (patch.deferred && patch.deferred.resolve) {
         patch.deferred.resolve({ accepted: false });
       }

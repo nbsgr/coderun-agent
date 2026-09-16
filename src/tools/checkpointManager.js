@@ -310,7 +310,10 @@ export async function undoCheckpointById(checkpointId, workspace, sessionId) {
     return { success: false, message: 'Checkpoint not found: ' + checkpointId };
   }
   if (sessionId && cp.session_id && cp.session_id !== 'session_unknown' && cp.session_id !== sessionId) {
-    return { success: false, message: 'Checkpoint does not belong to session: ' + sessionId };
+    var isSubagentCp = cp.session_id.indexOf(sessionId) !== -1 || (cp.agent_id && cp.agent_id !== 'root');
+    if (!isSubagentCp) {
+      return { success: false, message: 'Checkpoint does not belong to session: ' + sessionId };
+    }
   }
 
   var safeCheck = pathSecurity.resolveSafePath(cp.file_path, workspace);

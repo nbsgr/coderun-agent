@@ -752,10 +752,15 @@ function initializeChatSpace() {
             '</div>' +
           '</div>';
       } else {
+        var subDiffBadge = '';
+        var firstPendingDiff = msgList ? msgList.querySelector('.cr-diff-card[data-diff-status="pending"]') : null;
+        if (firstPendingDiff && firstPendingDiff.dataset.toolDisplayName) {
+          subDiffBadge = ' <span class="cr-controls-tool-badge">' + esc(firstPendingDiff.dataset.toolDisplayName) + '</span>';
+        }
         html +=
           '<div class="cr-controls-left">' +
             '<span class="cr-controls-shield">' + shieldSvg + '</span>' +
-            '<span class="cr-controls-label">' + pendingDiffs.length + ' file change(s) pending approval</span>' +
+            '<span class="cr-controls-label">Confirmation required:' + subDiffBadge + ' (' + pendingDiffs.length + ' file change' + (pendingDiffs.length > 1 ? 's' : '') + ' pending approval)</span>' +
           '</div>' +
           '<div class="cr-controls-buttons">' +
             '<button class="cr-btn cr-btn-accept-all-diffs" title="Accept all pending file changes">Accept All</button>' +
@@ -896,12 +901,18 @@ function initializeChatSpace() {
         '</button>' +
       '</div>';
 
+    var badgeTitle = 'CLARIFICATION NEEDED';
+    var subagentName = questionData.subagentName || (questionData.agentType === 'subagent' && questionData.agentName ? questionData.agentName : null);
+    if (subagentName) {
+      badgeTitle = 'CLARIFICATION NEEDED — [SUBAGENT: ' + esc(subagentName) + ']';
+    }
+
     banner.innerHTML =
       '<div class="cr-question-card">' +
         '<div class="cr-question-card-header">' +
           '<div class="cr-question-badge-icon">?</div>' +
           '<div class="cr-question-header-text">' +
-            '<div class="cr-question-badge-title">CLARIFICATION NEEDED</div>' +
+            '<div class="cr-question-badge-title">' + badgeTitle + '</div>' +
             '<div class="cr-question-text">' + esc(qText) + '</div>' +
           '</div>' +
         '</div>' +
@@ -963,10 +974,11 @@ function initializeChatSpace() {
     clearQuestionBanner(chatCtx);
 
     // Append compact user response chip in bot message so conversation reflects user's decision
-    if (chatCtx.S && chatCtx.S.botBody) {
+    var targetContainer = (chatCtx.S && chatCtx.S.botBody) ? chatCtx.S.botBody : chatCtx.msgList;
+    if (targetContainer) {
       var respBox = mk('div', 'cr-question-resolved-chip');
       respBox.innerHTML = '<strong>' + esc(originalQuestion) + '</strong><br/>↳ <em>' + esc(answer) + '</em>';
-      chatCtx.S.botBody.appendChild(respBox);
+      targetContainer.appendChild(respBox);
       scrollBottom(chatCtx.msgList);
     }
   }
@@ -1372,9 +1384,23 @@ function initializeChatSpace() {
 
   function handleActiveChatStream(chatCtx, ev) {
     if (!ev) return;
-    var isSubagentLifecycle = ev.type === 'subagent_completed' || ev.type === 'subagent_failed' || ev.type === 'subagent_spawned' || ev.type === 'requestPermission' || ev.type === 'subagent_status';
+    var isSubagentLifecycle = ev.type === 'subagent_completed' ||
+      ev.type === 'subagent_failed' ||
+      ev.type === 'subagent_spawned' ||
+      ev.type === 'subagent_paused' ||
+      ev.type === 'subagent_resumed' ||
+      ev.type === 'subagent_stopped' ||
+      ev.type === 'requestPermission' ||
+      ev.type === 'request_diff' ||
+      ev.type === 'ask_question' ||
+      ev.type === 'trace_updated' ||
+      ev.type === 'checkpoints_created' ||
+      ev.type === 'subagent_status';
+
     if (isSubagentLifecycle) {
-      var matchesSession = (!ev.sessionId || ev.sessionId === chatCtx.convId) || (!ev.parentSessionId || ev.parentSessionId === chatCtx.convId);
+      var matchesSession = (!ev.sessionId || ev.sessionId === chatCtx.convId) ||
+                           (ev.parentSessionId && ev.parentSessionId === chatCtx.convId) ||
+                           (ev.rootSessionId && ev.rootSessionId === chatCtx.convId);
       if (!matchesSession) return;
     } else {
       if (ev.agentType === 'subagent' || ev.parentSessionId || (ev.sessionId && ev.sessionId !== chatCtx.convId)) {
@@ -2059,7 +2085,10 @@ function initializeChatSpace() {
               else if (resTool === 'edit_file') actionLabel = 'Edit: ' + targetPath;
               else if (resTool === 'patch_file') actionLabel = 'Patches: ' + targetPath;
               else actionLabel = 'Edit: ' + targetPath;
-              appendCheckpointUndoForCard(cardToUpdate, ev.checkpoint_id, targetPath, actionLabel);
+              appendCheckpointUndoForCard(cardToUpdate, ev.checkpoint_id, targetPath, actionLabel, ev.sessionId || (ev.args && ev.args.sessionId) || chatCtx.convId);
+              if (targetPath && ev.checkpoint_id) {
+                setSubagentDiffCheckpoint(ev.sessionId || chatCtx.convId, targetPath, ev.checkpoint_id);
+              }
             }
           } else {
             var domCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
@@ -2087,8 +2116,38 @@ function initializeChatSpace() {
                     else if (resTool === 'edit_file') actionLabel2 = 'Edit: ' + targetPath2;
                     else if (resTool === 'patch_file') actionLabel2 = 'Patches: ' + targetPath2;
                     else actionLabel2 = 'Edit: ' + targetPath2;
-                    appendCheckpointUndoForCard(dc, ev.checkpoint_id, targetPath2, actionLabel2);
+                    appendCheckpointUndoForCard(dc, ev.checkpoint_id, targetPath2, actionLabel2, ev.sessionId || (ev.args && ev.args.sessionId) || chatCtx.convId);
+                    if (targetPath2 && ev.checkpoint_id) {
+                      setSubagentDiffCheckpoint(ev.sessionId || chatCtx.convId, targetPath2, ev.checkpoint_id);
+                    }
                   }
+                  break;
+                }
+              }
+            }
+          }
+          if (!updated && ev.checkpoint_id) {
+            var targetPathD = ev.file_path || ev.folder_path || '';
+            var normTargetD = String(targetPathD).replace(/\\/g, '/').toLowerCase();
+            var searchRootD = S.botBody || chatCtx.msgList;
+            var domDiffCardsD = searchRootD ? searchRootD.querySelectorAll('.cr-diff-card') : [];
+            for (var dcd = domDiffCardsD.length - 1; dcd >= 0; dcd--) {
+              var dcEl = domDiffCardsD[dcd];
+              var cardFileD = String(dcEl.dataset.filePath || '').replace(/\\/g, '/').toLowerCase();
+              var hasUndoD = dcEl.nextElementSibling && dcEl.nextElementSibling.classList && dcEl.nextElementSibling.classList.contains('cr-tool-undo-bar');
+              if (!hasUndoD) {
+                if (cardFileD && normTargetD && (cardFileD === normTargetD || normTargetD.endsWith(cardFileD) || cardFileD.endsWith(normTargetD))) {
+                  var dLabel = '';
+                  if (resTool === 'create_folder') dLabel = 'Created: ' + targetPathD;
+                  else if (resTool === 'delete_folder') dLabel = 'Deleted: ' + targetPathD;
+                  else if (resTool === 'delete_file') dLabel = 'Deleted: ' + targetPathD;
+                  else if (resTool === 'write_file') dLabel = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPathD) : ('Write: ' + targetPathD);
+                  else if (resTool === 'edit_file') dLabel = 'Edit: ' + targetPathD;
+                  else if (resTool === 'patch_file') dLabel = 'Patches: ' + targetPathD;
+                  else dLabel = 'Edit: ' + targetPathD;
+                  appendCheckpointUndoForCard(dcEl, ev.checkpoint_id, targetPathD, dLabel, ev.sessionId || (ev.args && ev.args.sessionId) || chatCtx.convId);
+                  setSubagentDiffCheckpoint(ev.sessionId || chatCtx.convId, targetPathD, ev.checkpoint_id);
+                  updated = true;
                   break;
                 }
               }
@@ -2101,6 +2160,21 @@ function initializeChatSpace() {
             if (addedCard && (ev.args || ev.result)) {
               var sId = (ev.args && (ev.args.id || ev.args.agentId || ev.args.subagent_id)) || (ev.result && (ev.result.id || ev.result.agentId || ev.result.subagent_id)) || '';
               if (sId) addedCard.dataset.subagentId = sId;
+            }
+            if (addedCard && ev.checkpoint_id) {
+              var targetPathA = ev.file_path || ev.folder_path || '';
+              var actionLabelA = '';
+              if (resTool === 'create_folder') actionLabelA = 'Created: ' + targetPathA;
+              else if (resTool === 'delete_folder') actionLabelA = 'Deleted: ' + targetPathA;
+              else if (resTool === 'delete_file') actionLabelA = 'Deleted: ' + targetPathA;
+              else if (resTool === 'write_file') actionLabelA = (ev.is_new_file || !ev.existed) ? ('Created: ' + targetPathA) : ('Write: ' + targetPathA);
+              else if (resTool === 'edit_file') actionLabelA = 'Edit: ' + targetPathA;
+              else if (resTool === 'patch_file') actionLabelA = 'Patches: ' + targetPathA;
+              else actionLabelA = 'Edit: ' + targetPathA;
+              appendCheckpointUndoForCard(addedCard, ev.checkpoint_id, targetPathA, actionLabelA, ev.sessionId || (ev.args && ev.args.sessionId) || chatCtx.convId);
+              if (targetPathA && ev.checkpoint_id) {
+                setSubagentDiffCheckpoint(ev.sessionId || chatCtx.convId, targetPathA, ev.checkpoint_id);
+              }
             }
           }
           closeCurrentContentBlock(S);
@@ -2184,7 +2258,6 @@ function initializeChatSpace() {
                 }
               }
             }
-            break;
           }
 
           var responseCardExists = false;
@@ -2502,27 +2575,69 @@ function initializeChatSpace() {
               if (cp.toolCallId && S.toolCards[cp.toolCallId]) {
                 targetCard = S.toolCards[cp.toolCallId];
               }
-              if (!targetCard && S.botBody) {
-                var domCards2 = S.botBody.querySelectorAll('.cr-tool-card');
-                for (var dci2 = domCards2.length - 1; dci2 >= 0; dci2--) {
-                  var cEl = domCards2[dci2];
-                  if (!cEl.nextElementSibling || !cEl.nextElementSibling.classList.contains('cr-tool-undo-bar')) {
-                    targetCard = cEl;
+              var normCpPath = String(cp.filePath || '').replace(/\\/g, '/').toLowerCase();
+              var searchRoot2 = S.botBody || (chatCtx && chatCtx.msgList);
+
+              if (!targetCard && searchRoot2 && normCpPath) {
+                var domDiffCards2 = searchRoot2.querySelectorAll('.cr-diff-card');
+                for (var ddci2 = domDiffCards2.length - 1; ddci2 >= 0; ddci2--) {
+                  var dCard2 = domDiffCards2[ddci2];
+                  var cardFilePath2 = String(dCard2.dataset.filePath || '').replace(/\\/g, '/').toLowerCase();
+                  var hasUndo2 = dCard2.nextElementSibling && dCard2.nextElementSibling.classList && dCard2.nextElementSibling.classList.contains('cr-tool-undo-bar');
+                  if (!hasUndo2 && cardFilePath2 && (cardFilePath2 === normCpPath || normCpPath.endsWith(cardFilePath2) || cardFilePath2.endsWith(normCpPath))) {
+                    targetCard = dCard2;
                     break;
                   }
                 }
               }
+
+              if (!targetCard && searchRoot2 && normCpPath) {
+                var domCards2 = searchRoot2.querySelectorAll('.cr-tool-card');
+                for (var dci2 = domCards2.length - 1; dci2 >= 0; dci2--) {
+                  var cEl = domCards2[dci2];
+                  var cTool = cEl.dataset.toolName || '';
+                  var isFileTool = (cTool === 'create_folder' || cTool === 'delete_folder' || cTool === 'write_file' || cTool === 'edit_file' || cTool === 'patch_file' || cTool === 'delete_file');
+                  if (isFileTool) {
+                    var cFile = String(cEl.dataset.filePath || '').replace(/\\/g, '/').toLowerCase();
+                    var hasUndo1 = cEl.nextElementSibling && cEl.nextElementSibling.classList && cEl.nextElementSibling.classList.contains('cr-tool-undo-bar');
+                    if (!hasUndo1) {
+                      if (cFile && (cFile === normCpPath || normCpPath.endsWith(cFile) || cFile.endsWith(normCpPath))) {
+                        targetCard = cEl;
+                        break;
+                      } else if (!cFile && dci2 === domCards2.length - 1) {
+                        targetCard = cEl;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
               if (targetCard) {
-                appendCheckpointUndoForCard(targetCard, cp.id, cp.filePath, cp.label);
+                appendCheckpointUndoForCard(targetCard, cp.id, cp.filePath, cp.label, cp.parentSessionId || cp.sessionId);
+              }
+              if (cp.filePath && cp.id) {
+                setSubagentDiffCheckpoint(cp.parentSessionId || cp.sessionId || chatCtx.convId, cp.filePath, cp.id);
               }
             }
           }
           break;
         }
         case 'request_diff': {
-          removeTyping(S.botBody);
-          appendDiffCard(chatCtx, S.botBody, ev);
-          closeCurrentContentBlock(S);
+          var isSubagentDiff = !!(ev.agentType === 'subagent' || ev.subagentName || ev.subagentId || (ev.parentSessionId && ev.parentSessionId === chatCtx.convId));
+          if (isSubagentDiff) {
+            saveSubagentDiff(chatCtx.convId, ev);
+            var subArea = document.getElementById('subagents-area-container');
+            if (subArea && subArea.style.display !== 'none' && typeof window.renderSubagentsView === 'function') {
+              window.renderSubagentsView(subArea);
+            }
+            removeTyping(S.botBody);
+            appendSubagentDiffPermissionCard(chatCtx, S.botBody, ev);
+            closeCurrentContentBlock(S);
+          } else {
+            removeTyping(S.botBody);
+            appendDiffCard(chatCtx, S.botBody, ev);
+            closeCurrentContentBlock(S);
+          }
           break;
         }
         case 'terminal_start': {
@@ -3165,13 +3280,15 @@ function initializeChatSpace() {
       });
     }
 
+    var effectiveBody = body || (chatCtx.S && chatCtx.S.botBody) || chatCtx.msgList;
+    updateAgentControlsPanel(chatCtx);
+
     // UNIVERSAL RULE: If tool call is from ANY subagent, NEVER render in main chat!
     if (isSubagentTool) {
-      updateAgentControlsPanel(chatCtx);
       return null;
     }
 
-    if (!body) return null;
+    if (!effectiveBody) return null;
     var argsStr = '';
     try {
       argsStr = JSON.stringify(sanitizedArgs, null, 2);
@@ -3192,7 +3309,7 @@ function initializeChatSpace() {
     if (!pendingCard) {
       var cardKey = tool + '_' + (++chatCtx.S._toolIdCounter) + '_' + Date.now();
       if (tool === 'run_terminal') {
-        pendingCard = appendTerminalCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'pending', null);
+        pendingCard = appendTerminalCard(chatCtx.S, chatCtx.msgList, effectiveBody, cardKey, tool, sanitizedArgs, 'pending', null);
         pendingCard.dataset.toolCallId = id;
         pendingCard.dataset.permissionId = id;
         pendingCard.dataset.terminalId = '';
@@ -3200,7 +3317,7 @@ function initializeChatSpace() {
         chatCtx.S.toolCards[id] = pendingCard;
         chatCtx.S._toolQueue.push({ key: cardKey, toolName: tool, id: id });
       } else {
-        pendingCard = appendToolCard(chatCtx.S, chatCtx.msgList, chatCtx.S.botBody, cardKey, tool, sanitizedArgs, 'running', null);
+        pendingCard = appendToolCard(chatCtx.S, chatCtx.msgList, effectiveBody, cardKey, tool, sanitizedArgs, 'running', null);
         pendingCard.dataset.toolCallId = id;
         pendingCard.dataset.permissionId = id;
         chatCtx.S.toolCards[cardKey] = pendingCard;
@@ -3218,7 +3335,7 @@ function initializeChatSpace() {
       }
     }
 
-    var targetParent = body;
+    var targetParent = effectiveBody;
     var isEmbedded = false;
 
     var isMatch = false;
@@ -3600,13 +3717,30 @@ function initializeChatSpace() {
     }
   }
 
-  function appendCheckpointUndoForCard(card, cpId, filePath, label) {
+  function appendActionsBar(chatCtx, body, checkpoints) {
+    // Checkpoint undo bars are attached inline directly below each respective tool card or diff card
+    // upon tool execution and checkpoint creation. Maintained as a safe no-op.
+  }
+
+  function appendCheckpointUndoForCard(card, cpId, filePath, label, sessionId) {
     if (!card) return;
     var cardParent = card.parentNode;
     if (!cardParent) return;
 
     var existingBar = card.nextElementSibling;
-    if (existingBar && existingBar.classList && existingBar.classList.contains('cr-tool-undo-bar') && existingBar.dataset.cpId === cpId) {
+    if (existingBar && existingBar.classList && existingBar.classList.contains('cr-tool-undo-bar')) {
+      if (cpId) existingBar.dataset.cpId = cpId;
+      if (filePath) existingBar.dataset.filePath = filePath;
+      var existingBtn = existingBar.querySelector('.cr-action-undo');
+      if (existingBtn) {
+        if (cpId) existingBtn.dataset.cpId = cpId;
+        if (filePath) existingBtn.dataset.filePath = filePath;
+        if (sessionId) existingBtn.dataset.sessionId = sessionId;
+        if (label) {
+          var labelEl = existingBtn.querySelector('.cr-action-label');
+          if (labelEl) labelEl.textContent = label;
+        }
+      }
       return;
     }
 
@@ -3621,6 +3755,7 @@ function initializeChatSpace() {
     var undoBtn = mk('button', 'cr-action-btn cr-action-undo');
     undoBtn.dataset.cpId = cpId || '';
     undoBtn.dataset.filePath = filePath || '';
+    if (sessionId) undoBtn.dataset.sessionId = sessionId;
     undoBtn.innerHTML = '↩ Undo <span class="cr-action-label">' + esc(label || filePath) + '</span>';
     undoBtn.addEventListener('click', handleUndoBtnClick);
 
@@ -3636,23 +3771,288 @@ function initializeChatSpace() {
       window.VSCODE_API.postMessage({
         type: 'undoCheckpoint',
         filePath: btn.dataset.filePath,
-        checkpointId: btn.dataset.cpId
+        checkpointId: btn.dataset.cpId,
+        sessionId: btn.dataset.sessionId || (window._activeChatCtx && window._activeChatCtx.convId) || null
       });
     }
   }
 
-  function updateActionsBarStatus(filePath, statusText) {
+  function markSubagentCheckpointUndone(filePath, checkpointId) {
+    if (!filePath && !checkpointId) return;
+    try {
+      var normFile = filePath ? String(filePath).replace(/\\/g, '/').toLowerCase() : '';
+      var sessionKeys = [];
+      for (var k = 0; k < localStorage.length; k++) {
+        var key = localStorage.key(k);
+        if (key && (key.indexOf('coderun_subagents_') === 0 || key.indexOf('coderun_subagent_traces_') === 0)) {
+          sessionKeys.push(key);
+        }
+      }
+      for (var s = 0; s < sessionKeys.length; s++) {
+        var storageKey = sessionKeys[s];
+        var raw = localStorage.getItem(storageKey);
+        if (!raw) continue;
+        var list = JSON.parse(raw);
+        if (!Array.isArray(list)) continue;
+        var changed = false;
+        for (var i = 0; i < list.length; i++) {
+          var item = list[i];
+          if (item && item.diffs && Array.isArray(item.diffs)) {
+            for (var d = 0; d < item.diffs.length; d++) {
+              var df = item.diffs[d];
+              if (!df) continue;
+              var dfFile = String(df.file_path || '').replace(/\\/g, '/').toLowerCase();
+              if ((checkpointId && df.checkpointId === checkpointId) || (normFile && dfFile && (dfFile === normFile || normFile.endsWith(dfFile) || dfFile.endsWith(normFile)))) {
+                df.undone = true;
+                df.restored = true;
+                df.status = 'restored';
+                changed = true;
+              }
+            }
+          }
+          if (item && item.trace && item.trace.diffs && Array.isArray(item.trace.diffs)) {
+            for (var td = 0; td < item.trace.diffs.length; td++) {
+              var tdf = item.trace.diffs[td];
+              if (!tdf) continue;
+              var tdfFile = String(tdf.file_path || '').replace(/\\/g, '/').toLowerCase();
+              if ((checkpointId && tdf.checkpointId === checkpointId) || (normFile && tdfFile && (tdfFile === normFile || normFile.endsWith(tdfFile) || tdfFile.endsWith(normFile)))) {
+                tdf.undone = true;
+                tdf.restored = true;
+                tdf.status = 'restored';
+                changed = true;
+              }
+            }
+          }
+          if (item && item.trace && item.trace.toolCalls && Array.isArray(item.trace.toolCalls)) {
+            for (var tc = 0; tc < item.trace.toolCalls.length; tc++) {
+              var tCall = item.trace.toolCalls[tc];
+              if (!tCall) continue;
+              var tcFile = String(tCall.filePath || '').replace(/\\/g, '/').toLowerCase();
+              if ((checkpointId && tCall.checkpointId === checkpointId) || (normFile && tcFile && (tcFile === normFile || normFile.endsWith(tcFile) || tcFile.endsWith(normFile)))) {
+                tCall.undone = true;
+                tCall.restored = true;
+                changed = true;
+              }
+            }
+          }
+          var traceSteps = (item && item.trace && item.trace.steps) || (item && item.steps) || [];
+          if (Array.isArray(traceSteps)) {
+            for (var st = 0; st < traceSteps.length; st++) {
+              var stObj = traceSteps[st];
+              var stTools = (stObj && (stObj.toolCalls || stObj.tools)) || [];
+              if (Array.isArray(stTools)) {
+                for (var stc = 0; stc < stTools.length; stc++) {
+                  var toolCallItem = stTools[stc];
+                  if (!toolCallItem) continue;
+                  var tciFile = String(toolCallItem.filePath || (toolCallItem.input && (toolCallItem.input.file_path || toolCallItem.input.folder_path)) || '').replace(/\\/g, '/').toLowerCase();
+                  if ((checkpointId && toolCallItem.checkpointId === checkpointId) || (normFile && tciFile && (tciFile === normFile || normFile.endsWith(tciFile) || tciFile.endsWith(normFile)))) {
+                    toolCallItem.undone = true;
+                    toolCallItem.restored = true;
+                    changed = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (changed) {
+          localStorage.setItem(storageKey, JSON.stringify(list));
+        }
+      }
+    } catch (_) {}
+  }
+  window.markSubagentCheckpointUndone = markSubagentCheckpointUndone;
+
+  function updateActionsBarStatus(filePath, statusText, checkpointId) {
+    var normTarget = String(filePath || '').replace(/\\/g, '/').toLowerCase();
     var btns = document.querySelectorAll('.cr-action-undo');
     for (var bj = 0; bj < btns.length; bj++) {
       var btn = btns[bj];
-      if (btn.dataset.filePath === filePath) {
+      var btnFile = String(btn.dataset.filePath || btn.getAttribute('data-file-path') || '').replace(/\\/g, '/').toLowerCase();
+      var btnCp = btn.dataset.cpId || btn.getAttribute('data-cp-id');
+      var matches = false;
+      if (checkpointId && btnCp && btnCp === checkpointId) {
+        matches = true;
+      } else if (btnFile && normTarget && (btnFile === normTarget || normTarget.endsWith(btnFile) || btnFile.endsWith(normTarget))) {
+        matches = true;
+      }
+      if (matches) {
         btn.disabled = true;
         btn.innerHTML = '✓ ' + statusText;
         btn.classList.add('cr-action-done');
+        var parentCard = btn.closest('.cr-diff-card');
+        if (parentCard) {
+          var statusSpan = parentCard.querySelector('.cr-diff-status');
+          if (statusSpan) {
+            statusSpan.textContent = '✓ ' + statusText.toUpperCase();
+            statusSpan.className = 'cr-diff-status cr-permission-status allowed cr-diff-status--restored';
+          }
+        }
       }
+    }
+    if (statusText === 'Restored') {
+      markSubagentCheckpointUndone(filePath, checkpointId);
+      try {
+        var subArea = document.getElementById('subagents-area-container');
+        if (subArea && subArea.style.display !== 'none' && typeof window.renderSubagentsView === 'function') {
+          window.renderSubagentsView(subArea);
+        }
+        var subTracesArea = document.getElementById('subagent-traces-area-container');
+        if (subTracesArea && subTracesArea.style.display !== 'none' && typeof window.renderSubagentTracesView === 'function') {
+          window.renderSubagentTracesView(subTracesArea);
+        }
+      } catch (_) {}
     }
   }
   window.updateActionsBarStatus = updateActionsBarStatus;
+
+  function saveSubagentDiff(sessionId, diffEv) {
+    if (!sessionId || !diffEv) return;
+    try {
+      var raw = localStorage.getItem('coderun_subagents_' + sessionId);
+      var list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) list = [];
+      var sId = diffEv.subagentId || diffEv.agentId || diffEv.sessionId;
+      var targetSub = null;
+      for (var i = 0; i < list.length; i++) {
+        var item = list[i];
+        if (item.agentId === sId || item.id === sId || item.sessionId === sId || (sId && item.agentId && item.agentId.indexOf(sId) !== -1)) {
+          targetSub = item;
+          break;
+        }
+      }
+      if (!targetSub && list.length > 0) {
+        targetSub = list[list.length - 1];
+      }
+      if (targetSub) {
+        if (!targetSub.diffs) targetSub.diffs = [];
+        var existingDiff = null;
+        for (var d = 0; d < targetSub.diffs.length; d++) {
+          if (targetSub.diffs[d].id === diffEv.id) {
+            existingDiff = targetSub.diffs[d];
+            break;
+          }
+        }
+        var diffObj = {
+          id: diffEv.id,
+          file_path: diffEv.file_path,
+          is_new_file: !!diffEv.is_new_file,
+          original_content: diffEv.original_content || '',
+          new_content: diffEv.new_content || '',
+          tool: diffEv.tool || 'write_file',
+          status: diffEv.status || 'pending',
+          sessionId: diffEv.sessionId,
+          parentSessionId: diffEv.parentSessionId
+        };
+        if (existingDiff) {
+          Object.assign(existingDiff, diffObj);
+        } else {
+          targetSub.diffs.push(diffObj);
+        }
+        localStorage.setItem('coderun_subagents_' + sessionId, JSON.stringify(list));
+      }
+    } catch (_) {
+      // Intentionally ignore storage write errors
+    }
+  }
+  window.saveSubagentDiff = saveSubagentDiff;
+
+  function updateSubagentDiffStatus(sessionId, diffId, status) {
+    if (!diffId) return;
+    try {
+      var normStatus = (status === 'accepted' || status === 'applied') ? 'approved' : status;
+      var sessionKeys = [];
+      if (sessionId) {
+        sessionKeys.push('coderun_subagents_' + sessionId);
+        sessionKeys.push('coderun_subagent_traces_' + sessionId);
+      }
+      for (var k = 0; k < localStorage.length; k++) {
+        var key = localStorage.key(k);
+        if (key && (key.indexOf('coderun_subagents_') === 0 || key.indexOf('coderun_subagent_traces_') === 0)) {
+          if (sessionKeys.indexOf(key) === -1) {
+            sessionKeys.push(key);
+          }
+        }
+      }
+
+      for (var s = 0; s < sessionKeys.length; s++) {
+        var storageKey = sessionKeys[s];
+        var raw = localStorage.getItem(storageKey);
+        if (!raw) continue;
+        var list = JSON.parse(raw);
+        if (!Array.isArray(list)) continue;
+        var changed = false;
+
+        for (var i = 0; i < list.length; i++) {
+          var item = list[i];
+          if (item && item.diffs && Array.isArray(item.diffs)) {
+            for (var d = 0; d < item.diffs.length; d++) {
+              if (item.diffs[d] && item.diffs[d].id === diffId) {
+                item.diffs[d].status = normStatus;
+                changed = true;
+              }
+            }
+          }
+          if (item && item.trace && item.trace.diffs && Array.isArray(item.trace.diffs)) {
+            for (var td = 0; td < item.trace.diffs.length; td++) {
+              if (item.trace.diffs[td] && item.trace.diffs[td].id === diffId) {
+                item.trace.diffs[td].status = normStatus;
+                changed = true;
+              }
+            }
+          }
+        }
+
+        if (changed) {
+          localStorage.setItem(storageKey, JSON.stringify(list));
+        }
+      }
+    } catch (_) {
+      // Intentionally ignore storage write errors
+    }
+  }
+  window.updateSubagentDiffStatus = updateSubagentDiffStatus;
+
+  function setSubagentDiffCheckpoint(sessionId, filePath, checkpointId) {
+    if (!filePath || !checkpointId) return;
+    try {
+      var normFile = String(filePath).replace(/\\/g, '/').toLowerCase();
+      var sessionKeys = [];
+      if (sessionId) {
+        sessionKeys.push('coderun_subagents_' + sessionId);
+      }
+      for (var k = 0; k < localStorage.length; k++) {
+        var key = localStorage.key(k);
+        if (key && key.indexOf('coderun_subagents_') === 0 && sessionKeys.indexOf(key) === -1) {
+          sessionKeys.push(key);
+        }
+      }
+      for (var s = 0; s < sessionKeys.length; s++) {
+        var raw = localStorage.getItem(sessionKeys[s]);
+        if (!raw) continue;
+        var list = JSON.parse(raw);
+        if (!Array.isArray(list)) continue;
+        var changed = false;
+        for (var i = 0; i < list.length; i++) {
+          var item = list[i];
+          if (item && item.diffs && Array.isArray(item.diffs)) {
+            for (var d = 0; d < item.diffs.length; d++) {
+              var df = item.diffs[d];
+              var dfFile = String(df.file_path || '').replace(/\\/g, '/').toLowerCase();
+              if (dfFile && (dfFile === normFile || normFile.endsWith(dfFile) || dfFile.endsWith(normFile))) {
+                df.checkpointId = checkpointId;
+                changed = true;
+              }
+            }
+          }
+        }
+        if (changed) {
+          localStorage.setItem(sessionKeys[s], JSON.stringify(list));
+        }
+      }
+    } catch (_) {}
+  }
+  window.setSubagentDiffCheckpoint = setSubagentDiffCheckpoint;
 
   function buildDiffLines(originalText, modifiedText) {
     var origLines = originalText.split('\n');
@@ -3677,7 +4077,7 @@ function initializeChatSpace() {
   }
 
   function appendDiffCard(chatCtx, body, ev) {
-    if (!body) return;
+    if (!body && (!chatCtx || !chatCtx.msgList)) return;
     var diffId = ev.id || 'diff_' + Date.now();
     var filePath = ev.file_path || 'unknown';
     var isNew = ev.is_new_file || false;
@@ -3697,11 +4097,15 @@ function initializeChatSpace() {
     var card = mk('div', 'cr-diff-card');
     card.dataset.diffId = diffId;
     card.dataset.diffStatus = 'pending';
+    card.dataset.filePath = filePath;
+    card.dataset.sessionId = ev.sessionId || (chatCtx && chatCtx.convId) || '';
 
     var head = mk('div', 'cr-diff-head');
+    var subagentTag = (ev.subagentName || ev.agentName || (ev.agentType === 'subagent' ? 'Subagent' : ''));
+    var subagentBadge = subagentTag ? ('<span class="cr-tool-badge" style="margin-left:6px;font-size:10px;padding:2px 6px;background:rgba(255,255,255,0.08);border-radius:3px;color:var(--vscode-descriptionForeground,#888);">' + esc(subagentTag) + '</span>') : '';
     head.innerHTML =
       I.file +
-      '<span class="cr-diff-title">' + esc(filePath) + '</span>' +
+      '<span class="cr-diff-title">' + esc(filePath) + subagentBadge + '</span>' +
       '<span class="cr-diff-stats">' +
         '<span class="cr-diff-stat-add">+' + additions + '</span>' +
         '<span class="cr-diff-stat-del">-' + deletions + '</span>' +
@@ -3767,10 +4171,10 @@ function initializeChatSpace() {
 
     var targetParent = body;
     var pendingCard = null;
-    if (ev.toolCallId && chatCtx.S.toolCards[ev.toolCallId]) {
+    if (ev.toolCallId && chatCtx.S && chatCtx.S.toolCards && chatCtx.S.toolCards[ev.toolCallId]) {
       pendingCard = chatCtx.S.toolCards[ev.toolCallId];
     }
-    if (!pendingCard) {
+    if (!pendingCard && chatCtx.S) {
       pendingCard = findPendingCardByToolName(chatCtx.S, toolName) || getLastPendingCard(chatCtx.S);
     }
     if (pendingCard) {
@@ -3781,9 +4185,116 @@ function initializeChatSpace() {
         if (argsBlock) argsBlock.style.display = 'none';
       }
     }
-    targetParent.appendChild(card);
+    if (!targetParent && chatCtx.msgList) {
+      var botWrappers = chatCtx.msgList.querySelectorAll('.cr-bot-body');
+      if (botWrappers.length > 0) {
+        targetParent = botWrappers[botWrappers.length - 1];
+      } else {
+        targetParent = chatCtx.msgList;
+      }
+    }
+    if (targetParent) {
+      targetParent.appendChild(card);
+    }
     scrollBottom(chatCtx.msgList);
     updateAgentControlsPanel(chatCtx);
+  }
+
+  function appendSubagentDiffPermissionCard(chatCtx, body, ev) {
+    if (!chatCtx || !chatCtx.msgList) return null;
+    var effectiveBody = body || (chatCtx.S && chatCtx.S.botBody);
+    if (!effectiveBody) {
+      var botWrappers = chatCtx.msgList.querySelectorAll('.cr-bot-body');
+      if (botWrappers.length > 0) {
+        effectiveBody = botWrappers[botWrappers.length - 1];
+      } else {
+        effectiveBody = chatCtx.msgList;
+      }
+    }
+    var diffId = ev.id || ('diff_' + Date.now());
+    var filePath = ev.file_path || 'unknown';
+    var toolName = ev.tool || 'write_file';
+    var subName = ev.subagentName || ev.agentName || 'Subagent';
+    var subRole = (ev.subagentRole || ev.role || 'coder').toUpperCase();
+    var displayName = '[' + subRole + ': ' + subName + '] ' + formatToolName(toolName);
+
+    var additions = 0;
+    var deletions = 0;
+    if (ev.original_content != null || ev.new_content != null) {
+      var diffLines = buildDiffLines(ev.original_content || '', ev.new_content || '');
+      for (var dli = 0; dli < diffLines.length; dli++) {
+        if (diffLines[dli].type === 'add') additions++;
+        else if (diffLines[dli].type === 'del') deletions++;
+      }
+    }
+
+    var card = mk('div', 'cr-permission-card cr-diff-card cr-diff-permission-card');
+    card.dataset.diffId = diffId;
+    card.dataset.diffStatus = 'pending';
+    card.dataset.tool = toolName;
+    card.dataset.toolDisplayName = displayName;
+    card.dataset.filePath = filePath;
+    card.dataset.sessionId = ev.sessionId || (chatCtx && chatCtx.convId) || '';
+
+    var shieldSvg = '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+
+    var statsText = '';
+    if (additions > 0 || deletions > 0) {
+      statsText = ' (+' + additions + ' -' + deletions + ')';
+    } else if (ev.is_new_file) {
+      statsText = ' (New File)';
+    }
+
+    card.innerHTML =
+      '<div class="cr-permission-head">' +
+        shieldSvg +
+        '<span class="cr-permission-title">Permission Required</span>' +
+        '<span class="cr-perm-tool-badge">' + esc(displayName) + '</span>' +
+      '</div>' +
+      '<div class="cr-permission-body">' +
+        '<div class="cr-permission-target">File Change: <strong>' + esc(filePath) + '</strong>' + esc(statsText) + '</div>' +
+      '</div>' +
+      '<div class="cr-diff-actions cr-permission-actions" id="actions-' + esc(diffId) + '">' +
+        '<button type="button" class="cr-btn cr-btn-allow cr-diff-accept" data-diff-id="' + esc(diffId) + '" title="Accept this file change">Accept</button>' +
+        '<button type="button" class="cr-btn cr-btn-deny cr-diff-reject" data-diff-id="' + esc(diffId) + '" title="Reject this file change">Reject</button>' +
+        '<span class="cr-permission-divider"></span>' +
+        '<button type="button" class="cr-diff-full-btn" data-diff-id="' + esc(diffId) + '" title="Open in VS Code diff editor">Open Full Diff</button>' +
+        '<span class="cr-diff-status" style="display:none"></span>' +
+      '</div>';
+
+    function onDiffAccept() {
+      handleDiffAcceptClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList, ev.sessionId || chatCtx.convId);
+      try {
+        var subCard = document.querySelector('#subagents-area-container .cr-diff-card[data-diff-id="' + diffId + '"]');
+        if (subCard) {
+          setDiffCardStatus(subCard, 'approved');
+        }
+      } catch (_) {}
+    }
+    function onDiffReject() {
+      handleDiffRejectClick(diffId, card, chatCtx.controlsPanel, chatCtx.msgList, ev.sessionId || chatCtx.convId);
+      try {
+        var subCard = document.querySelector('#subagents-area-container .cr-diff-card[data-diff-id="' + diffId + '"]');
+        if (subCard) {
+          setDiffCardStatus(subCard, 'rejected');
+        }
+      } catch (_) {}
+    }
+    function onDiffFull() {
+      handleDiffFullClick(diffId, ev.sessionId || chatCtx.convId);
+    }
+
+    var acceptBtn = card.querySelector('.cr-diff-accept');
+    if (acceptBtn) acceptBtn.onclick = onDiffAccept;
+    var rejectBtn = card.querySelector('.cr-diff-reject');
+    if (rejectBtn) rejectBtn.onclick = onDiffReject;
+    var fullBtn = card.querySelector('.cr-diff-full-btn');
+    if (fullBtn) fullBtn.onclick = onDiffFull;
+
+    effectiveBody.appendChild(card);
+    scrollBottom(chatCtx.msgList);
+    updateAgentControlsPanel(chatCtx);
+    return card;
   }
 
   function handleDiffAcceptClick(diffId, card, controlsPanel, msgList, sessionId) {
@@ -3792,6 +4303,15 @@ function initializeChatSpace() {
     setDiffCardStatus(card, 'approved');
     var chatCtx = { controlsPanel: controlsPanel, msgList: msgList };
     updateAgentControlsPanel(chatCtx);
+    if (typeof updateSubagentDiffStatus === 'function') {
+      updateSubagentDiffStatus(sessionId, diffId, 'approved');
+    }
+    try {
+      var allCards = document.querySelectorAll('.cr-diff-card[data-diff-id="' + diffId + '"]');
+      for (var ci = 0; ci < allCards.length; ci++) {
+        setDiffCardStatus(allCards[ci], 'approved');
+      }
+    } catch (_) {}
   }
 
   function handleDiffRejectClick(diffId, card, controlsPanel, msgList, sessionId) {
@@ -3800,6 +4320,15 @@ function initializeChatSpace() {
     setDiffCardStatus(card, 'rejected');
     var chatCtx = { controlsPanel: controlsPanel, msgList: msgList };
     updateAgentControlsPanel(chatCtx);
+    if (typeof updateSubagentDiffStatus === 'function') {
+      updateSubagentDiffStatus(sessionId, diffId, 'rejected');
+    }
+    try {
+      var allCards = document.querySelectorAll('.cr-diff-card[data-diff-id="' + diffId + '"]');
+      for (var ci = 0; ci < allCards.length; ci++) {
+        setDiffCardStatus(allCards[ci], 'rejected');
+      }
+    } catch (_) {}
   }
 
   function handleDiffFullClick(diffId, sessionId) {
@@ -3847,14 +4376,24 @@ function initializeChatSpace() {
     var acceptBtn = card.querySelector('.cr-diff-accept');
     var rejectBtn = card.querySelector('.cr-diff-reject');
     var fullBtn = card.querySelector('.cr-diff-full-btn');
+    var divider = card.querySelector('.cr-permission-divider');
     var statusEl = card.querySelector('.cr-diff-status');
     if (acceptBtn) acceptBtn.style.display = 'none';
     if (rejectBtn) rejectBtn.style.display = 'none';
     if (fullBtn) fullBtn.style.display = 'none';
+    if (divider) divider.style.display = 'none';
+    var isOk = (status === 'accepted' || status === 'approved' || status === 'applied');
+    if (!statusEl) {
+      var actionsContainer = card.querySelector('.cr-diff-actions');
+      if (actionsContainer) {
+        statusEl = document.createElement('span');
+        actionsContainer.appendChild(statusEl);
+      }
+    }
     if (statusEl) {
       statusEl.style.display = 'inline-block';
-      statusEl.textContent = (status === 'accepted' || status === 'approved') ? '✓ Approved' : status === 'applied' ? '✓ Applied' : '✗ Rejected';
-      statusEl.className = 'cr-diff-status cr-diff-status--' + status;
+      statusEl.textContent = isOk ? (status === 'applied' ? '✓ Applied' : '✓ Approved') : '✗ Rejected';
+      statusEl.className = 'cr-diff-status cr-permission-status ' + (isOk ? 'allowed cr-diff-status--approved' : 'denied cr-diff-status--rejected');
     }
   }
   window.setDiffCardStatus = setDiffCardStatus;
@@ -4811,6 +5350,11 @@ function initializeChatSpace() {
       function onStopStream() { stopCurrentChatStream(chatCtx); }
       window.stopCurrentChatStream = onStopStream;
 
+      function onRefreshActiveAgentControls() {
+        updateAgentControlsPanel(chatCtx);
+      }
+      window.refreshActiveAgentControls = onRefreshActiveAgentControls;
+
       if (conversation.plan) {
         renderTodos(chatCtx, conversation.plan);
       } else {
@@ -4963,9 +5507,18 @@ function initializeChatSpace() {
     }
 
     if (message.type === 'diffResult' && message.diffId) {
-      var card = document.querySelector('.cr-diff-card[data-diff-id="' + message.diffId + '"]');
-      if (card && typeof window.setDiffCardStatus === 'function') {
-        window.setDiffCardStatus(card, message.result && message.result.success ? 'accepted' : 'rejected');
+      var diffStat = message.result && message.result.success ? 'accepted' : 'rejected';
+      var allDiffCards = document.querySelectorAll('.cr-diff-card[data-diff-id="' + message.diffId + '"]');
+      for (var dci = 0; dci < allDiffCards.length; dci++) {
+        if (typeof window.setDiffCardStatus === 'function') {
+          window.setDiffCardStatus(allDiffCards[dci], diffStat);
+        }
+      }
+      if (typeof updateSubagentDiffStatus === 'function') {
+        updateSubagentDiffStatus(message.sessionId, message.diffId, diffStat);
+      }
+      if (typeof window.refreshActiveAgentControls === 'function') {
+        window.refreshActiveAgentControls();
       }
     }
 
@@ -4973,17 +5526,26 @@ function initializeChatSpace() {
       for (var dr = 0; dr < message.results.length; dr++) {
         var r = message.results[dr];
         if (r.diffId) {
-          var card2 = document.querySelector('.cr-diff-card[data-diff-id="' + r.diffId + '"]');
-          if (card2 && typeof window.setDiffCardStatus === 'function') {
-            window.setDiffCardStatus(card2, r.success ? 'accepted' : 'rejected');
+          var rStat = r.success ? 'accepted' : 'rejected';
+          var allDiffCards2 = document.querySelectorAll('.cr-diff-card[data-diff-id="' + r.diffId + '"]');
+          for (var dci2 = 0; dci2 < allDiffCards2.length; dci2++) {
+            if (typeof window.setDiffCardStatus === 'function') {
+              window.setDiffCardStatus(allDiffCards2[dci2], rStat);
+            }
+          }
+          if (typeof updateSubagentDiffStatus === 'function') {
+            updateSubagentDiffStatus(message.sessionId, r.diffId, rStat);
           }
         }
+      }
+      if (typeof window.refreshActiveAgentControls === 'function') {
+        window.refreshActiveAgentControls();
       }
     }
 
     if (message.type === 'undoCheckpointResult' && message.filePath) {
       if (window.updateActionsBarStatus) {
-        window.updateActionsBarStatus(message.filePath, message.success ? 'Restored' : 'Failed');
+        window.updateActionsBarStatus(message.filePath, message.success ? 'Restored' : 'Failed', message.checkpointId);
       }
     }
 

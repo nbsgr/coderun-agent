@@ -123,7 +123,10 @@ export async function buildMessages(userPrompt, options) {
       rulesContent;
   }
 
-  systemContent += '\n\n## TERMINAL OUTPUT RULES:\n- The user sees the live terminal execution output directly in a dedicated console box.\n- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed, but do not print raw output blocks or listings (like folder contents or file outputs) that are already visible in the console.';
+  systemContent += '\n\n## TERMINAL & DEV SERVER RULES:\n' +
+    '- The user sees the live terminal execution output directly in a dedicated console box.\n' +
+    '- DO NOT duplicate, repeat, or list the full command output in your text response. Summarize or explain the outcome briefly if needed.\n' +
+    '- For long-running servers, dev watchers, or persistent daemons (e.g. `npm run dev`, `vite`, `python -m http.server`, `flask run`), ALWAYS pass `background: true` in `run_terminal`. The system will run them in the background, detect the listening port/URL, and allow you to proceed immediately without hanging.';
 
   systemContent += '\n\n## CLARIFICATION AND USER QUESTIONS:\n' +
     'When a user request is underspecified, ambiguous, or involves architectural/framework decisions (e.g. "build a website", "setup auth", "choose a database"), DO NOT guess or hallucinate.\n' +

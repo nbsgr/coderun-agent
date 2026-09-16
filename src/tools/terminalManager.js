@@ -69,6 +69,13 @@ function killChildProcess(proc) {
   }
 }
 
+function sleep(ms) {
+  function onTimeout(resolve) {
+    setTimeout(resolve, ms);
+  }
+  return new Promise(onTimeout);
+}
+
 // ── Shell detection ────────────────────────────────────────
 function detectShellName(terminal) {
   try {
@@ -540,6 +547,8 @@ export async function executeCommand(command, timeout, background, isInteractive
 
     var fullArgs = shellArg.split(' ').concat([command]);
     var bgProcess = null;
+    var bgStdout = '';
+    var bgStderr = '';
     try {
       var spawnOptions = {
         cwd: cwd || undefined,
@@ -568,8 +577,31 @@ export async function executeCommand(command, timeout, background, isInteractive
         }
       }
       bgProcess = execFile(shellExe, fullArgs, spawnOptions, onBgExit);
+      if (bgProcess && bgProcess.stdout) {
+        function onBgStdoutData(chunk) {
+          bgStdout += chunk.toString();
+        }
+        bgProcess.stdout.on('data', onBgStdoutData);
+      }
+      if (bgProcess && bgProcess.stderr) {
+        function onBgStderrData(chunk) {
+          bgStderr += chunk.toString();
+        }
+        bgProcess.stderr.on('data', onBgStderrData);
+      }
     } catch (_) {
       terminal.sendText(command, true);
+    }
+
+    if (bgProcess) {
+      await sleep(1500);
+    }
+
+    var detectedUrl = null;
+    var rawCombined = (bgStdout + ' ' + bgStderr);
+    var urlMatch = rawCombined.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):[0-9]+/i);
+    if (urlMatch) {
+      detectedUrl = urlMatch[0].replace('0.0.0.0', 'localhost');
     }
 
     sess.backgroundTasks[bgExecId] = {
@@ -577,7 +609,8 @@ export async function executeCommand(command, timeout, background, isInteractive
       command: command,
       status: bgProcess ? 'running' : 'submitted_to_terminal',
       startedAt: startedAt,
-      childProcess: bgProcess
+      childProcess: bgProcess,
+      url: detectedUrl
     };
 
     if (sendEvent) {
@@ -588,7 +621,8 @@ export async function executeCommand(command, timeout, background, isInteractive
         shell: shellName,
         platform: platformName,
         cwd: cwd,
-        background: true
+        background: true,
+        url: detectedUrl
       });
     }
 
@@ -597,14 +631,18 @@ export async function executeCommand(command, timeout, background, isInteractive
       platform: platformName,
       command: command,
       taskId: bgExecId,
-      stdout: '',
-      stderr: '',
+      url: detectedUrl,
+      stdout: bgStdout,
+      stderr: bgStderr,
       exitCode: null,
       durationMs: Date.now() - startedAt,
       success: true,
       workingDirectory: cwd,
       background: true,
-      status: bgProcess ? 'running' : 'submitted_to_terminal'
+      status: bgProcess ? 'running' : 'submitted_to_terminal',
+      message: detectedUrl
+        ? ('Background server started and listening on ' + detectedUrl + ' (taskId: ' + bgExecId + ').')
+        : ('Background command started successfully (taskId: ' + bgExecId + ').')
     };
   }
 

@@ -62,7 +62,8 @@ function persistRecord(record) {
     completedAt: record.completedAt,
     result: record.result || null,
     error: record.error ? (record.error.message || String(record.error)) : null,
-    trace: subTrace || record.trace || null
+    trace: subTrace || record.trace || null,
+    diffs: record.diffs || []
   };
   _persistedSubagents[key] = persisted[key];
   try {
@@ -176,7 +177,8 @@ export function listSubagents(parentSessionId) {
         toolsExecuted: rec.toolsExecuted || 0,
         result: rec.result || null,
         error: rec.error ? (rec.error.message || String(rec.error)) : ((rec.result && rec.result.failure) ? rec.result.failure.message : null),
-        trace: subTrace || null
+        trace: subTrace || null,
+        diffs: rec.diffs || []
       });
     }
   }
@@ -207,6 +209,7 @@ export function listSubagents(parentSessionId) {
       result: persistedRecord.result || null,
       error: persistedRecord.error || (persistedRecord.result && persistedRecord.result.failure) || null,
       trace: pTrace || null,
+      diffs: persistedRecord.diffs || [],
       canResume: false,
       canStop: false
     });
@@ -218,6 +221,37 @@ export function getSubagentResult(subagentId, parentSessionId) {
   var rec = getSubagent(subagentId, parentSessionId);
   if (!rec) return null;
   return rec.result || null;
+}
+
+export function updateSubagentDiffStatus(diffId, status) {
+  if (!diffId) return;
+  var normStatus = (status === 'accepted' || status === 'applied') ? 'approved' : status;
+  for (var key in _subagents) {
+    var rec = _subagents[key];
+    if (rec && rec.diffs && Array.isArray(rec.diffs)) {
+      for (var d = 0; d < rec.diffs.length; d++) {
+        if (rec.diffs[d] && rec.diffs[d].id === diffId) {
+          rec.diffs[d].status = normStatus;
+          persistRecord(rec);
+        }
+      }
+    }
+  }
+  for (var pKey in _persistedSubagents) {
+    var pRec = _persistedSubagents[pKey];
+    if (pRec && pRec.diffs && Array.isArray(pRec.diffs)) {
+      for (var pd = 0; pd < pRec.diffs.length; pd++) {
+        if (pRec.diffs[pd] && pRec.diffs[pd].id === diffId) {
+          pRec.diffs[pd].status = normStatus;
+          try {
+            if (_storageContext && _storageContext.globalState) {
+              _storageContext.globalState.update(SUBAGENT_STORAGE_KEY, _persistedSubagents);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  }
 }
 
 export function spawnSubagent(options, parentContext) {
@@ -297,12 +331,15 @@ export function spawnSubagent(options, parentContext) {
     if (!event.sessionId) event.sessionId = subagentSessionId;
     event.subagentId = identity.id;
     event.subagentName = identity.name;
+    event.subagentRole = identity.role;
     event.agentType = 'subagent';
     event.agentId = identity.agentId;
     event.parentAgentId = identity.parentAgentId;
     event.parentSessionId = parentSessionId;
+    event.rootSessionId = identity.rootSessionId || parentSessionId;
     if (event.type === 'trace_updated' && event.trace) {
       event.trace.parentSessionId = parentSessionId;
+      event.trace.rootSessionId = event.rootSessionId;
       event.trace.agentType = 'subagent';
       event.trace.agentId = identity.agentId;
       event.trace.role = identity.role;
@@ -331,9 +368,6 @@ export function spawnSubagent(options, parentContext) {
         event.type === 'subagent_resumed' || event.type === 'subagent_stopped' ||
         event.type === 'subagent_status') {
       events.emit(event.type, event);
-      if (typeof parentCtx.sendEvent === 'function') {
-        parentCtx.sendEvent(event);
-      }
     }
 
     if (event.type === 'tool_result' || event.type === 'tool_call') {
@@ -342,20 +376,58 @@ export function spawnSubagent(options, parentContext) {
       }
       if (event.type === 'tool_call') {
         var tName = event.tool || (event.function && event.function.name) || '';
-        if (typeof parentCtx.sendEvent === 'function') {
-          parentCtx.sendEvent({
-            type: 'subagent_status',
-            subagent_id: identity.id,
-            agentId: identity.agentId,
-            name: identity.name,
-            role: identity.role,
-            sessionId: subagentSessionId,
-            parentSessionId: parentSessionId,
-            status: 'running',
-            currentTool: tName
-          });
+        events.emit('subagent_status', {
+          type: 'subagent_status',
+          subagent_id: identity.id,
+          agentId: identity.agentId,
+          name: identity.name,
+          role: identity.role,
+          sessionId: subagentSessionId,
+          parentSessionId: parentSessionId,
+          status: 'running',
+          currentTool: tName
+        });
+      }
+    }
+
+    if (event.type === 'request_diff') {
+      if (!record.diffs) record.diffs = [];
+      record.diffs.push(event);
+      persistRecord(record);
+    }
+
+    if (event.type === 'checkpoints_created' && event.checkpoints) {
+      for (var cpi = 0; cpi < event.checkpoints.length; cpi++) {
+        var cpItem = event.checkpoints[cpi];
+        if (record.diffs && Array.isArray(record.diffs)) {
+          for (var rdi = 0; rdi < record.diffs.length; rdi++) {
+            var rDiff = record.diffs[rdi];
+            if (rDiff && rDiff.file_path && cpItem.filePath && (rDiff.file_path === cpItem.filePath || cpItem.filePath.endsWith(rDiff.file_path))) {
+              rDiff.checkpointId = cpItem.id;
+            }
+          }
         }
       }
+      persistRecord(record);
+    }
+
+    if (event.type === 'tool_result' && event.checkpoint_id) {
+      var resFile = event.file_path || event.folder_path || '';
+      if (record.diffs && Array.isArray(record.diffs)) {
+        for (var rdi2 = 0; rdi2 < record.diffs.length; rdi2++) {
+          var rDiff2 = record.diffs[rdi2];
+          if (rDiff2 && rDiff2.file_path && resFile && (rDiff2.file_path === resFile || resFile.endsWith(rDiff2.file_path))) {
+            rDiff2.checkpointId = event.checkpoint_id;
+          }
+        }
+      }
+      persistRecord(record);
+    }
+
+    // Unified Pipeline: Forward ALL events to parent context so UI, dashboard,
+    // diffManager, permission system, and execution traces stay 100% synchronized
+    if (typeof parentCtx.sendEvent === 'function') {
+      parentCtx.sendEvent(event);
     }
   }
 
@@ -831,3 +903,63 @@ export function disposeSubagents(parentSessionId) {
   }
   delete _subagentsByParent[sid];
 }
+
+export function markSubagentDiffUndone(filePath, checkpointId) {
+  var normTarget = String(filePath || '').replace(/\\/g, '/').toLowerCase();
+  for (var key in _subagents) {
+    var rec = _subagents[key];
+    if (rec && rec.diffs && Array.isArray(rec.diffs)) {
+      var changed = false;
+      for (var d = 0; d < rec.diffs.length; d++) {
+        var diff = rec.diffs[d];
+        if (!diff) continue;
+        var diffFile = String(diff.file_path || '').replace(/\\/g, '/').toLowerCase();
+        var match = false;
+        if (checkpointId && diff.checkpointId && diff.checkpointId === checkpointId) {
+          match = true;
+        } else if (normTarget && diffFile && (diffFile === normTarget || normTarget.endsWith(diffFile) || diffFile.endsWith(normTarget))) {
+          match = true;
+        }
+        if (match) {
+          diff.undone = true;
+          diff.restored = true;
+          diff.status = 'restored';
+          changed = true;
+        }
+      }
+      if (changed) {
+        persistRecord(rec);
+      }
+    }
+  }
+
+  for (var pKey in _persistedSubagents) {
+    var pRec = _persistedSubagents[pKey];
+    if (pRec && pRec.diffs && Array.isArray(pRec.diffs)) {
+      var pChanged = false;
+      for (var pd = 0; pd < pRec.diffs.length; pd++) {
+        var pDiff = pRec.diffs[pd];
+        if (!pDiff) continue;
+        var pDiffFile = String(pDiff.file_path || '').replace(/\\/g, '/').toLowerCase();
+        var pMatch = false;
+        if (checkpointId && pDiff.checkpointId && pDiff.checkpointId === checkpointId) {
+          pMatch = true;
+        } else if (normTarget && pDiffFile && (pDiffFile === normTarget || normTarget.endsWith(pDiffFile) || pDiffFile.endsWith(normTarget))) {
+          pMatch = true;
+        }
+        if (pMatch) {
+          pDiff.undone = true;
+          pDiff.restored = true;
+          pDiff.status = 'restored';
+          pChanged = true;
+        }
+      }
+      if (pChanged && _storageContext && _storageContext.globalState) {
+        try {
+          _storageContext.globalState.update(SUBAGENT_STORAGE_KEY, _persistedSubagents);
+        } catch (_) {}
+      }
+    }
+  }
+}
+

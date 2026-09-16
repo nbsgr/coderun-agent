@@ -3,10 +3,36 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as vscode from 'vscode';
 
 // ═══════════════════════════════════════════════════════════
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════
+
+export function checkCompilerDiagnostics(fullPath, relPath) {
+  var diagIssues = [];
+  try {
+    var vs = (typeof globalThis !== 'undefined' && globalThis.vscode && globalThis.vscode.languages) ? globalThis.vscode : vscode;
+    if (vs && vs.languages && typeof vs.languages.getDiagnostics === 'function') {
+      var uri = (vs.Uri && typeof vs.Uri.file === 'function') ? vs.Uri.file(fullPath) : { fsPath: fullPath, path: fullPath };
+      var diags = vs.languages.getDiagnostics(uri);
+      if (diags && diags.length) {
+        for (var d = 0; d < diags.length; d++) {
+          var item = diags[d];
+          var isError = (item.severity === 0) || (vs.DiagnosticSeverity && item.severity === vs.DiagnosticSeverity.Error);
+          if (isError) {
+            var lineNum = (item.range && item.range.start && typeof item.range.start.line === 'number') ? item.range.start.line + 1 : 1;
+            var src = item.source ? ('[' + item.source + '] ') : '';
+            diagIssues.push(relPath + ': Line ' + lineNum + ': ' + src + item.message);
+          }
+        }
+      }
+    }
+  } catch (_) {
+    // Intentionally ignored if diagnostics API is unavailable in test environment
+  }
+  return diagIssues;
+}
 
 // Conduct a code review and self-reflection audit on modified and created files.
 export async function reviewChanges(workspaceRoot, modifiedFiles) {
@@ -53,6 +79,15 @@ export async function reviewChanges(workspaceRoot, modifiedFiles) {
       // 4. Check for console.log debugging prints in production files
       if (lowerContent.includes('console.log(') && !relPath.startsWith('scripts') && !relPath.includes('test')) {
         issues.push(relPath + ': Debugging console.log statement found.');
+      }
+
+      // 5. Check for Compiler & LSP Diagnostics (Errors/Syntax/Broken imports)
+      var diagErrors = checkCompilerDiagnostics(fullPath, relPath);
+      if (diagErrors && diagErrors.length) {
+        for (var de = 0; de < diagErrors.length; de++) {
+          issues.push(diagErrors[de]);
+        }
+        passed = false;
       }
 
     } catch (e) {

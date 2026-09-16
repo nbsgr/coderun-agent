@@ -2207,7 +2207,9 @@ select {
   border-radius: 6px;
 }
 
-.cr-diff-status--accepted { color: #3fb950; background: rgba(63, 185, 80, 0.12); }
+.cr-diff-status--accepted,
+.cr-diff-status--approved,
+.cr-diff-status--applied { color: #3fb950; background: rgba(63, 185, 80, 0.12); }
 .cr-diff-status--rejected { color: #f85149; background: rgba(248, 81, 73, 0.12); }
 
 /* ── Running Subagents Status Panel ───────────────────── */

@@ -1,0 +1,1 @@
+function computeTotal() { return 42; }

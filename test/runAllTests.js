@@ -22,7 +22,7 @@ import * as terminalManager from '../src/tools/terminalManager.js';
 import * as permissions from '../src/tools/permissions.js';
 import * as questionManager from '../src/tools/questionManager.js';
 import * as toolRegistry from '../src/tools/toolRegistry.js';
-import { registerAllTools } from '../src/tools/tools.js';
+import { registerAllTools, findFuzzyLineMatch, normalizeLineBreaks } from '../src/tools/tools.js';
 import * as approvalSystem from '../src/tools/approvalSystem.js';
 import { createMcpClient } from '../src/mcp/mcpClient.js';
 import * as mcpManager from '../src/mcp/mcpManager.js';
@@ -34,6 +34,7 @@ import * as subagentManager from '../src/agents/subagentManager.js';
 import * as subagentTools from '../src/tools/subagentTools.js';
 import * as subagentPanel from '../src/SubagentPanel.js';
 import '../src/MarkdownRenderer.js';
+import * as reviewEngine from '../src/execution/reviewEngine.js';
 
 function noopResolve() {}
 
@@ -2084,6 +2085,680 @@ assert.ok(execEnum61.indexOf('wait') !== -1, 'tools.js enum includes wait');
 
 console.log('✓ Vector 61 Passed: Subagent parallel non-blocking execution, live completion dropdown updates & execution routing verified.');
 
+// --- TEST 62: Fuzzy Line Matching in edit_file & patch_file ---
+console.log('\n--- TEST 62: Fuzzy Line Matching in edit_file & patch_file ---');
+
+var sampleCode62 = [
+  'function computeTotal(items) {',
+  '  var total = 0;',
+  '  for (var i = 0; i < items.length; i++) {',
+  '    total += items[i].price;',
+  '  }',
+  '  return total;',
+  '}'
+].join('\r\n');
+
+// 1. Test normalizeLineBreaks converts CRLF to LF
+var norm62 = normalizeLineBreaks(sampleCode62);
+assert.ok(!norm62.includes('\r\n'), 'CRLF properly normalized to LF');
+assert.ok(norm62.includes('\n'), 'LF preserved');
+
+// 2. Test exact match finding
+var exactTarget62 = '  for (var i = 0; i < items.length; i++) {\n    total += items[i].price;\n  }';
+var exactMatch62 = findFuzzyLineMatch(sampleCode62, exactTarget62, 0.85);
+assert.ok(exactMatch62, 'Exact line match found');
+assert.strictEqual(exactMatch62.score, 1.0, 'Exact match score is 1.0');
+assert.ok(exactMatch62.matchedText.includes('total += items[i].price;'), 'Exact matchedText contains snippet');
+
+// 3. Test fuzzy match with whitespace & indentation variance (e.g. 6-space indentation vs 2-space)
+var indentedTarget62 = '      for (var i = 0; i < items.length; i++) {\n          total += items[i].price;\n      }';
+var fuzzyMatch62 = findFuzzyLineMatch(sampleCode62, indentedTarget62, 0.85);
+assert.ok(fuzzyMatch62, 'Fuzzy line match found despite indentation differences');
+assert.ok(fuzzyMatch62.score >= 0.85, 'Fuzzy score exceeds threshold');
+assert.ok(fuzzyMatch62.matchedText.includes('total += items[i].price;'), 'Fuzzy matchedText extracted correctly');
+
+// 4. Test quote and semicolon tolerance
+var quoteTarget62 = 'function computeTotal(items) {\n  var total = 0;\n';
+var quoteMatch62 = findFuzzyLineMatch(sampleCode62, quoteTarget62, 0.85);
+assert.ok(quoteMatch62, 'Fuzzy match found for function header and variable');
+
+// 5. Test rejection of unmatched content
+var nonExistentTarget62 = 'function completelyDifferent() {\n  return false;\n}';
+var noMatch62 = findFuzzyLineMatch(sampleCode62, nonExistentTarget62, 0.85);
+assert.strictEqual(noMatch62, null, 'Non-matching snippet correctly returns null');
+
+console.log('✓ Vector 62 Passed: Pure fuzzy line matching algorithm verifies exact match, CRLF normalization, indentation tolerance, and non-match rejection.');
+
+// --- TEST 63: Compiler & LSP Diagnostics Integration ---
+console.log('\n--- TEST 63: Compiler & LSP Diagnostics Integration ---');
+
+// 1. Diagnostics safely handles empty/missing environment
+var safeDiags63 = reviewEngine.checkCompilerDiagnostics(path.join(testDir, 'sample_63.js'), 'sample_63.js');
+assert.ok(Array.isArray(safeDiags63), 'checkCompilerDiagnostics returns array when diagnostics unavailable');
+
+// 2. Diagnostics integration with mock VS Code diagnostics
+function mockGetDiagnostics(uri) {
+  return [
+    {
+      severity: 0,
+      message: 'Cannot find name "missingVar"',
+      range: { start: { line: 3, character: 4 } },
+      source: 'ts'
+    }
+  ];
+}
+
+function mockUriFile(f) {
+  return { fsPath: f, path: f };
+}
+
+globalThis.vscode = {
+  languages: {
+    getDiagnostics: mockGetDiagnostics
+  },
+  Uri: {
+    file: mockUriFile
+  },
+  DiagnosticSeverity: { Error: 0, Warning: 1 }
+};
+
+var foundDiags63 = reviewEngine.checkCompilerDiagnostics(path.join(testDir, 'sample_63.js'), 'sample_63.js');
+assert.strictEqual(foundDiags63.length, 1, 'Found 1 compiler diagnostic error');
+assert.ok(foundDiags63[0].indexOf('Line 4: [ts] Cannot find name "missingVar"') !== -1, 'Diagnostic formatted with line and message');
+
+// 3. reviewChanges integrates compiler diagnostics into audit result
+var testFile63 = path.join(testDir, 'sample_63.js');
+fs.writeFileSync(testFile63, 'var a = 1;', 'utf-8');
+var reviewResult63 = await reviewEngine.reviewChanges(testDir, ['sample_63.js']);
+assert.strictEqual(reviewResult63.passed, false, 'Review marked as failed due to compiler diagnostic');
+
+function hasDiagIssue(issue) {
+  return issue.indexOf('Cannot find name "missingVar"') !== -1;
+}
+assert.ok(reviewResult63.issues.some(hasDiagIssue), 'Review issues includes compiler diagnostic');
+
+delete globalThis.vscode;
+console.log('✓ Vector 63 Passed: Compiler & LSP diagnostics detection and review engine integration verified.');
+
+// --- TEST 64: Background Dev Server Port Sniffing & Daemon Management ---
+console.log('\n--- TEST 64: Background Dev Server Port Sniffing & Daemon Management ---');
+
+var bgCmd64 = 'node -e "var s=require(\'http\').createServer(function(q,r){r.end(\'ok\');});s.listen(8921,function(){console.log(\'Server running at http://localhost:8921\');});"';
+var bgExec64 = await terminalManager.executeCommand(bgCmd64, 5, true, false, 'sess_test_64', testDir);
+
+assert.strictEqual(bgExec64.success, true, 'Background command launched successfully');
+assert.strictEqual(bgExec64.background, true, 'Execution flagged as background');
+assert.strictEqual(bgExec64.status, 'running', 'Background process status is running');
+assert.ok(bgExec64.taskId, 'Background taskId generated');
+assert.strictEqual(bgExec64.url, 'http://localhost:8921', 'Localhost server URL successfully sniffed from stdout');
+
+var bgTask64 = terminalManager.getBackgroundTaskStatus(bgExec64.taskId, 'sess_test_64');
+assert.ok(bgTask64, 'Background task registered in terminalManager');
+assert.strictEqual(bgTask64.url, 'http://localhost:8921', 'Task object retains detected URL');
+
+// Stop the background server
+var stopRes64 = await terminalManager.stopBackgroundTask(bgExec64.taskId, 'sess_test_64');
+assert.strictEqual(stopRes64.success, true, 'Background task stopped cleanly');
+
+console.log('✓ Vector 64 Passed: Background dev server execution, URL port sniffing, and task lifecycle verified.');
+
+// --- TEST 65: Codebase Content Search Abstraction ---
+console.log('\n--- TEST 65: Codebase Content Search Abstraction ---');
+
+var testFile65 = path.join(testDir, 'sample_65.js');
+fs.writeFileSync(testFile65, 'function computeTotal() { return 42; }', 'utf-8');
+
+var contentSearchResults65 = await searchManager.searchContent('computeTotal', testDir);
+assert.ok(Array.isArray(contentSearchResults65), 'searchContent returns an array');
+assert.ok(contentSearchResults65.length > 0, 'Found at least one match for computeTotal');
+
+function hasMatchPath(item) {
+  return item.path.indexOf('sample_65.js') !== -1;
+}
+assert.ok(contentSearchResults65.some(hasMatchPath), 'searchContent found sample_65.js');
+
+var pkChunksResult65 = projectKnowledge.searchChunks('testQuery');
+assert.ok(Array.isArray(pkChunksResult65), 'projectKnowledge.searchChunks safely returns array without throwing');
+
+console.log('✓ Vector 65 Passed: Codebase content search and SQLite chunk search abstraction verified.');
+
+// --- TEST 66: Subagent Interactive Questions & Cross-Session Resolution ---
+console.log('\n--- TEST 66: Subagent Interactive Questions & Cross-Session Resolution ---');
+
+var subagentSid66 = 'subagent_sess_66';
+var parentSid66 = 'parent_conv_66';
+var rootSid66 = 'parent_conv_66';
+
+// 1. Create question with subagent context
+var subQ = questionManager.createQuestion(
+  'Which database driver should we install?',
+  ['pg', 'mysql2', 'sqlite3'],
+  subagentSid66,
+  300000,
+  parentSid66,
+  rootSid66,
+  'DB Subagent',
+  'subagent'
+);
+
+assert.strictEqual(subQ.sessionId, subagentSid66, 'Question sessionId matches subagent');
+assert.strictEqual(subQ.parentSessionId, parentSid66, 'Question parentSessionId matches parent');
+assert.strictEqual(subQ.rootSessionId, rootSid66, 'Question rootSessionId matches root');
+assert.strictEqual(subQ.agentName, 'DB Subagent', 'Question agentName matches');
+assert.strictEqual(subQ.agentType, 'subagent', 'Question agentType matches');
+
+// 2. An unrelated intruder session should be rejected
+var intruderRes66 = questionManager.resolveQuestion(subQ.id, 'mysql2', 'intruder_session_66');
+assert.strictEqual(intruderRes66.success, false, 'Intruder session cannot resolve subagent question');
+
+// 3. Parent session can resolve subagent question
+var parentRes66 = questionManager.resolveQuestion(subQ.id, 'pg', parentSid66);
+assert.strictEqual(parentRes66.success, true, 'Parent conversation session successfully resolves subagent question');
+
+var subQOutcome = await subQ.promise;
+assert.strictEqual(subQOutcome.answered, true, 'Subagent deferred promise resolves as answered');
+assert.strictEqual(subQOutcome.answer, 'pg', 'Subagent deferred promise receives user answer');
+
+// 4. End-to-end generator execution with subagent toolContext
+var subGen66 = toolRegistry.execute('ask_question', {
+  question: 'Select cloud provider:',
+  options: ['GCP', 'AWS', 'Azure']
+}, {
+  workspace: '.',
+  sessionId: subagentSid66,
+  parentSessionId: parentSid66,
+  rootSessionId: rootSid66,
+  agentName: 'Cloud Architect',
+  agentType: 'subagent'
+});
+
+var actEv66 = await subGen66.next();
+assert.strictEqual(actEv66.value.type, 'action', 'Yields action event');
+
+var askEv66 = await subGen66.next();
+assert.strictEqual(askEv66.value.type, 'ask_question', 'Yields ask_question event');
+assert.strictEqual(askEv66.value.parentSessionId, parentSid66, 'ask_question event has parentSessionId');
+assert.strictEqual(askEv66.value.subagentName, 'Cloud Architect', 'ask_question event has subagentName');
+
+// Parent resolves the question
+var parentResolveGen = questionManager.resolveQuestion(askEv66.value.id, 'GCP', parentSid66);
+assert.strictEqual(parentResolveGen.success, true, 'Parent session successfully resolves ask_question event');
+
+var resultEv66 = await subGen66.next();
+assert.strictEqual(resultEv66.value.type, 'tool_result', 'Subagent yields tool_result');
+assert.strictEqual(resultEv66.value.success, true, 'Tool result is successful');
+assert.strictEqual(resultEv66.value.answer, 'GCP', 'Tool result receives parent answer');
+
+console.log('✓ Vector 66 Passed: Subagent interactive questions, metadata propagation, and parent resolution verified.');
+
+// --- TEST 67: Unified Subagent Execution, Permission & Diff Lifecycle ---
+console.log('\n--- TEST 67: Unified Subagent Execution, Permission & Diff Lifecycle ---');
+
+var parentSid67 = 'sess_parent_67_' + Date.now();
+var forwardedEvents67 = [];
+
+function mockParentSendEvent67(ev) {
+  forwardedEvents67.push(ev);
+}
+
+var askedTool67 = null;
+var askedTcId67 = null;
+var askedSid67 = null;
+var askedPid67 = null;
+
+function mockParentAskPermission67(toolName, args, tcId, sendEv, sid, parentSid) {
+  askedTool67 = toolName;
+  askedTcId67 = tcId;
+  askedSid67 = sid;
+  askedPid67 = parentSid;
+  return permissions.requestPermission(toolName, args, tcId, null, sid, parentSid);
+}
+
+var mockParentCtx67 = {
+  workspace: testDir,
+  sessionId: parentSid67,
+  rootSessionId: parentSid67,
+  sendEvent: mockParentSendEvent67,
+  askPermission: mockParentAskPermission67
+};
+
+// 1. Spawn subagent
+var sub67 = subagentManager.spawnSubagent({
+  id: 'subagent_writer_67',
+  name: 'SampleFileWriter',
+  role: 'coder',
+  task: 'Create sample.txt',
+  parentSessionId: parentSid67,
+  execution: 'async'
+}, mockParentCtx67);
+
+assert.ok(sub67, 'Subagent created successfully');
+assert.strictEqual(sub67.parentSessionId, parentSid67, 'Subagent parentSessionId matches');
+
+// 2. Simulate subagent invoking permission-requiring tool (e.g. write_file)
+var permCallId67 = 'perm_call_67_' + Date.now();
+var permPromise67 = permissions.requestPermission('write_file', { file_path: 'sample.txt' }, permCallId67, null, sub67.sessionId, parentSid67);
+
+// Verify parent session can resolve subagent permission
+var resolvePermRes67 = permissions.resolvePermission(permCallId67, true, {
+  tool: 'write_file',
+  sessionId: parentSid67,
+  parentSessionId: parentSid67
+}, parentSid67);
+
+assert.strictEqual(resolvePermRes67, true, 'Parent conversation session successfully resolves subagent permission');
+var permApproved67 = await permPromise67;
+assert.strictEqual(permApproved67, true, 'Subagent permission promise unblocks as approved without hanging');
+
+// 3. Simulate subagent forwarding trace_updated and diff events
+sub67.sendEvent({
+  type: 'trace_updated',
+  trace: {
+    sessionId: sub67.sessionId,
+    steps: [{ llmCall: { thinking: 'Writing sample.txt' } }]
+  }
+});
+
+var foundTraceEv67 = false;
+for (var fti = 0; fti < forwardedEvents67.length; fti++) {
+  if (forwardedEvents67[fti].type === 'trace_updated' && forwardedEvents67[fti].agentType === 'subagent') {
+    foundTraceEv67 = true;
+    assert.strictEqual(forwardedEvents67[fti].subagentName, 'SampleFileWriter');
+    assert.strictEqual(forwardedEvents67[fti].parentSessionId, parentSid67);
+    break;
+  }
+}
+assert.strictEqual(foundTraceEv67, true, 'subagentSendEvent forwards trace_updated to parentCtx with subagent metadata');
+
+// 4. Verify diffManager applies subagent diff when approved by parent session
+var diffId67 = 'diff_sub_67_' + Date.now();
+var patch67 = diffManager.storePatch({
+  id: diffId67,
+  file_path: 'sample_67.txt',
+  original_content: '',
+  new_content: 'Hello from subagent',
+  is_new_file: true,
+  sessionId: sub67.sessionId,
+  parentSessionId: parentSid67,
+  rootSessionId: parentSid67,
+  subagentName: 'SampleFileWriter'
+});
+
+assert.strictEqual(patch67.status, 'pending', 'Subagent patch is pending');
+var applyDiffRes67 = await diffManager.applyPatch(diffId67, testDir, parentSid67);
+assert.strictEqual(applyDiffRes67.success, true, 'Parent session successfully approves subagent diff without cross-session rejection');
+
+// Cleanup
+subagentManager.disposeSubagents(parentSid67);
+console.log('✓ Vector 67 Passed: Unified subagent execution, permission & diff lifecycle verified without 5-minute hang.');
+
+// --- TEST 68: Subagent Tool Dropdown & Diff Isolation to Subagent View ---
+console.log('\n--- TEST 68: Subagent Tool Dropdown & Diff Isolation to Subagent View ---');
+var parentSid68 = 'session_parent_68_' + Date.now();
+var subagentPanelModule = await import('../src/SubagentPanel.js');
+
+// 1. Verify buildSubagentDiffCardHtml renders complete diff with Accept/Reject buttons
+var sampleDiff68 = {
+  id: 'diff_sample_68',
+  file_path: 'sample.txt',
+  is_new_file: true,
+  original_content: '',
+  new_content: 'This is a sample test file.',
+  status: 'pending'
+};
+var diffHtml68 = subagentPanelModule.buildSubagentDiffCardHtml(sampleDiff68);
+assert.ok(diffHtml68.includes('cr-diff-card'), 'Diff card element is rendered');
+assert.ok(diffHtml68.includes('sample.txt'), 'File path is rendered');
+assert.ok(diffHtml68.includes('cr-diff-accept'), 'Accept button is rendered');
+assert.ok(diffHtml68.includes('cr-diff-reject'), 'Reject button is rendered');
+assert.ok(diffHtml68.includes('cr-diff-line-add'), 'Additions diff lines are rendered');
+
+// 2. Verify buildSubagentDropdownCardHtml includes diffsHtml for subagents with diffs
+var subagentWithDiff68 = {
+  agentId: 'sub_diff_68',
+  id: 'sub_diff_68',
+  name: 'SampleFileWriter',
+  role: 'coder',
+  status: 'completed',
+  diffs: [sampleDiff68]
+};
+var subCardHtml68 = subagentPanelModule.buildSubagentDropdownCardHtml(subagentWithDiff68, true);
+assert.ok(subCardHtml68.includes('cr-subagent-diffs-section'), 'Subagent card houses diffs section');
+assert.ok(subCardHtml68.includes('diff_sample_68'), 'Diff card is rendered inside subagent dropdown card');
+
+// 3. Verify subagentManager stores and returns diffs in listSubagents
+function dummySendEvent68() {}
+var sub68 = subagentManager.spawnSubagent({
+  id: 'sub_test_68',
+  name: 'SampleFileWriter',
+  role: 'coder',
+  task: 'Create sample.txt',
+  parentSessionId: parentSid68
+}, {
+  sessionId: parentSid68,
+  sendEvent: dummySendEvent68
+});
+
+sub68.sendEvent({
+  type: 'request_diff',
+  id: 'diff_event_68',
+  file_path: 'sample.txt',
+  original_content: '',
+  new_content: 'content from subagent',
+  is_new_file: true,
+  subagentId: 'sub_test_68',
+  parentSessionId: parentSid68
+});
+
+var listedSubs68 = subagentManager.listSubagents(parentSid68);
+assert.ok(listedSubs68.length > 0, 'Subagent listed');
+var foundSub68 = null;
+for (var lsi = 0; lsi < listedSubs68.length; lsi++) {
+  if (listedSubs68[lsi].id === 'sub_test_68') {
+    foundSub68 = listedSubs68[lsi];
+    break;
+  }
+}
+assert.ok(foundSub68 !== null, 'Subagent found');
+assert.ok(Array.isArray(foundSub68.diffs), 'Subagent has diffs array');
+assert.strictEqual(foundSub68.diffs.length, 1, 'Subagent recorded the diff event');
+assert.strictEqual(foundSub68.diffs[0].id, 'diff_event_68', 'Diff ID is stored on subagent');
+
+subagentManager.disposeSubagents(parentSid68);
+console.log('✓ Vector 68 Passed: Subagent tool dropdown & diff isolation to subagent view verified.');
+
+// --- TEST 69: Subagent Diff Permission Prompt in ChatSpace & Bi-Directional Diff Approval Sync ---
+console.log('\n--- TEST 69: Subagent Diff Permission Prompt in ChatSpace & Bi-Directional Diff Approval Sync ---');
+
+var chatSpaceCode69 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceCode69.includes('function appendSubagentDiffPermissionCard'), 'appendSubagentDiffPermissionCard is defined in ChatSpace.js');
+assert.ok(chatSpaceCode69.includes('cr-diff-permission-card'), 'cr-diff-permission-card class is present in ChatSpace.js');
+assert.ok(chatSpaceCode69.includes('window.refreshActiveAgentControls'), 'refreshActiveAgentControls is exposed on window');
+
+var dashboardCode69 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+assert.ok(dashboardCode69.includes('window.refreshActiveAgentControls'), 'Dashboard.js syncs diff approval with ChatSpace');
+
+var subagentPanelCode69 = fs.readFileSync(path.resolve('src/SubagentPanel.js'), 'utf-8');
+assert.ok(subagentPanelCode69.includes('window.refreshActiveAgentControls'), 'SubagentPanel.js syncs diff approval with ChatSpace');
+
+console.log('✓ Vector 69 Passed: Subagent diff permission prompt in ChatSpace & bi-directional approval sync verified.');
+
+// --- TEST 70: Subagent Diff Status Persistence & Multi-View Approval Sync ---
+console.log('\n--- TEST 70: Subagent Diff Status Persistence & Multi-View Approval Sync ---');
+
+var parentSid70 = 'sess_suite_70_' + Math.random().toString(36).slice(2, 8);
+var spawnedRec70 = subagentManager.spawnSubagent({
+  name: 'DiffSyncTester',
+  role: 'coder',
+  task: 'Test diff status persistence and sync',
+  parentSessionId: parentSid70,
+  execution: 'wait'
+}, { sessionId: parentSid70 });
+
+// Send a mock request_diff event to the subagent
+spawnedRec70.sendEvent({
+  type: 'request_diff',
+  id: 'diff_event_70',
+  subagentId: spawnedRec70.agentId,
+  agentType: 'subagent',
+  file_path: 'sub_test/example.txt',
+  original_content: 'old text',
+  new_content: 'new text',
+  tool: 'write_file',
+  status: 'pending',
+  sessionId: spawnedRec70.sessionId,
+  parentSessionId: parentSid70
+});
+
+// Update diff status in subagentManager
+subagentManager.updateSubagentDiffStatus('diff_event_70', 'approved');
+
+var subList70 = subagentManager.listSubagents(parentSid70);
+assert.ok(subList70 && subList70.length > 0, 'Subagents listed for session 70');
+var targetSub70 = subList70[0];
+assert.ok(targetSub70.diffs && targetSub70.diffs.length > 0, 'Subagent diffs retained');
+assert.strictEqual(targetSub70.diffs[0].status, 'approved', 'Diff status in subagentManager updated to approved');
+
+// Verify SubagentPanel updateSubagentDiffStatus export and buildSubagentDiffCardHtml
+assert.strictEqual(typeof subagentPanel.updateSubagentDiffStatus, 'function', 'SubagentPanel exports updateSubagentDiffStatus');
+
+var pendingHtml70 = subagentPanel.buildSubagentDiffCardHtml({
+  id: 'diff_pending_70',
+  file_path: 'sub_test/example.txt',
+  original_content: 'old',
+  new_content: 'new',
+  status: 'pending'
+});
+assert.ok(pendingHtml70.includes('cr-diff-accept'), 'Pending diff card contains Accept button');
+assert.ok(pendingHtml70.includes('cr-diff-reject'), 'Pending diff card contains Reject button');
+assert.ok(pendingHtml70.includes('cr-diff-status" style="display:none"'), 'Pending diff card contains hidden status element for dynamic updates');
+
+var approvedHtml70 = subagentPanel.buildSubagentDiffCardHtml({
+  id: 'diff_approved_70',
+  file_path: 'sub_test/example.txt',
+  original_content: 'old',
+  new_content: 'new',
+  status: 'approved'
+});
+assert.ok(!approvedHtml70.includes('cr-diff-accept'), 'Approved diff card does NOT contain Accept button');
+assert.ok(!approvedHtml70.includes('cr-diff-reject'), 'Approved diff card does NOT contain Reject button');
+assert.ok(approvedHtml70.includes('✓ APPROVED'), 'Approved diff card displays APPROVED badge');
+
+// Verify ChatSpace and Dashboard persistence contract
+var chatSpaceCode70 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceCode70.includes('function updateSubagentDiffStatus'), 'ChatSpace defines updateSubagentDiffStatus');
+assert.ok(chatSpaceCode70.includes('window.updateSubagentDiffStatus'), 'ChatSpace exposes updateSubagentDiffStatus on window');
+
+var extensionCode70 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
+assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'approved\')'), 'extension.js updates subagent diff status on acceptDiff');
+assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'rejected\')'), 'extension.js updates subagent diff status on rejectDiff');
+
+subagentManager.disposeSubagents(parentSid70);
+console.log('✓ Vector 70 Passed: Subagent diff status persistence & multi-view approval sync verified.');
+
+// --- TEST 71: Subagent Checkpointing, Diff Undo Actions & Cross-Session Rollback ---
+console.log('\n--- TEST 71: Subagent Checkpointing, Diff Undo Actions & Cross-Session Rollback ---');
+
+var testWs71 = path.resolve('scratch/test_ws_71_' + Math.random().toString(36).slice(2, 8));
+fs.mkdirSync(testWs71, { recursive: true });
+var subagentDir71 = path.join(testWs71, 'subagent_test');
+fs.mkdirSync(subagentDir71, { recursive: true });
+var sampleFile71 = path.join(subagentDir71, 'sample.txt');
+fs.writeFileSync(sampleFile71, 'Initial Content');
+
+var parentSid71 = 'sess_suite_71_' + Math.random().toString(36).slice(2, 8);
+var subagentId71 = 'subagent_tester_71';
+var subagentSessionId71 = parentSid71 + '_' + subagentId71;
+
+// 1. Create a checkpoint from a subagent write_file action
+var cpRecord71 = await checkpointManager.createCheckpoint(
+  testWs71,
+  'subagent_test/sample.txt',
+  subagentSessionId71,
+  subagentId71
+);
+fs.writeFileSync(sampleFile71, 'Modified Content by Subagent');
+
+assert.ok(cpRecord71, 'Checkpoint created for subagent file modification');
+assert.strictEqual(cpRecord71.agentId, subagentId71, 'Checkpoint recorded with subagent agent_id');
+
+// 2. Undo the subagent checkpoint from the parent session
+var undoRes71 = await checkpointManager.undoCheckpointById(cpRecord71.id, testWs71, parentSid71);
+assert.ok(undoRes71.success, 'Subagent checkpoint undone successfully from parent session: ' + (undoRes71.message || ''));
+var restoredContent71 = fs.readFileSync(sampleFile71, 'utf-8');
+assert.strictEqual(restoredContent71, 'Initial Content', 'File content restored to initial state');
+
+// 3. Test UI rendering of Undo button on approved subagent diff cards
+var approvedSubagentDiff71 = {
+  id: 'diff_sub_71',
+  file_path: 'subagent_test/sample.txt',
+  original_content: 'Initial Content',
+  new_content: 'Modified Content',
+  status: 'approved',
+  checkpointId: cpRecord71.id
+};
+var diffHtml71 = subagentPanelModule.buildSubagentDiffCardHtml(approvedSubagentDiff71);
+assert.ok(diffHtml71.includes('cr-action-undo'), 'Approved subagent diff card renders Undo button');
+assert.ok(diffHtml71.includes('↩ Undo'), 'Approved subagent diff card displays Undo label');
+assert.ok(diffHtml71.includes(cpRecord71.id), 'Approved subagent diff card contains checkpointId');
+
+// 4. Test UI rendering of Undo button on subagent tool cards
+var toolCardWithCp71 = {
+  toolName: 'write_file',
+  filePath: 'subagent_test/sample.txt',
+  checkpointId: cpRecord71.id,
+  success: true,
+  output: 'Successfully wrote file'
+};
+var toolCardHtml71 = subagentPanelModule.buildSubagentToolCardHtml(toolCardWithCp71);
+assert.ok(toolCardHtml71.includes('cr-tool-undo-bar'), 'Subagent tool card renders cr-tool-undo-bar');
+assert.ok(toolCardHtml71.includes('cr-action-undo'), 'Subagent tool card renders Undo button');
+assert.ok(toolCardHtml71.includes(cpRecord71.id), 'Subagent tool card contains checkpointId');
+
+// 5. Verify ChatSpace wiring for subagent diff cards and checkpoint undo
+var chatSpaceCode71 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceCode71.includes('card.dataset.filePath = filePath;'), 'ChatSpace attaches filePath to diff cards');
+assert.ok(chatSpaceCode71.includes('setSubagentDiffCheckpoint'), 'ChatSpace provides setSubagentDiffCheckpoint helper');
+assert.ok(chatSpaceCode71.includes('domDiffCards2'), 'ChatSpace checkpoints_created matches diff cards for undo attachment');
+
+// Clean up workspace
+try {
+  fs.rmSync(testWs71, { recursive: true, force: true });
+} catch (_) {}
+
+console.log('✓ Vector 71 Passed: Subagent checkpointing, diff undo actions & cross-session rollback verified.');
+
+// --- TEST 72: Undone Checkpoint Status Reflection Across Subagent Chat & Views ---
+console.log('\n--- TEST 72: Undone Checkpoint Status Reflection Across Subagent Chat & Views ---');
+
+// 1. Verify buildSubagentDiffCardHtml renders Restored badge and removes Undo button when diff is undone
+var restoredDiff72 = {
+  id: 'diff_sub_72',
+  file_path: 'subagent_test/sample.txt',
+  original_content: 'Initial Content',
+  new_content: 'Modified Content',
+  status: 'restored',
+  undone: true,
+  restored: true,
+  checkpointId: 'cp_test_72'
+};
+var restoredDiffHtml72 = subagentPanelModule.buildSubagentDiffCardHtml(restoredDiff72);
+assert.ok(restoredDiffHtml72.includes('✓ RESTORED'), 'Diff card status displays ✓ RESTORED');
+assert.ok(restoredDiffHtml72.includes('✓ Restored'), 'Diff card displays ✓ Restored action done label');
+assert.ok(!restoredDiffHtml72.includes('↩ Undo'), 'Diff card does NOT display ↩ Undo button once restored');
+
+// 2. Verify buildSubagentToolCardHtml renders Restored label when tool call is undone
+var restoredTool72 = {
+  toolName: 'write_file',
+  filePath: 'subagent_test/sample.txt',
+  checkpointId: 'cp_test_72',
+  success: true,
+  undone: true,
+  restored: true,
+  output: 'Successfully wrote file'
+};
+var restoredToolHtml72 = subagentPanelModule.buildSubagentToolCardHtml(restoredTool72);
+assert.ok(restoredToolHtml72.includes('✓ Restored'), 'Tool card displays ✓ Restored label');
+assert.ok(!restoredToolHtml72.includes('↩ Undo'), 'Tool card does NOT display ↩ Undo button once restored');
+
+// 3. Verify buildSubagentExecutionChatHtml includes diff cards and restored tool cards
+var subagentWithRestoredChat72 = {
+  agentId: 'subagent_chat_72',
+  role: 'coder',
+  task: 'Write sample file',
+  status: 'completed',
+  diffs: [restoredDiff72],
+  trace: {
+    steps: [
+      {
+        toolCalls: [restoredTool72]
+      }
+    ]
+  }
+};
+var subagentChatHtml72 = subagentPanelModule.buildSubagentExecutionChatHtml(subagentWithRestoredChat72);
+assert.ok(subagentChatHtml72.includes('File Changes &amp; Diffs'), 'Subagent chat stream includes File Changes & Diffs section');
+assert.ok(subagentChatHtml72.includes('✓ RESTORED'), 'Subagent chat stream displays ✓ RESTORED on diff card');
+assert.ok(subagentChatHtml72.includes('✓ Restored'), 'Subagent chat stream displays ✓ Restored on tool card');
+
+// 4. Verify subagentManager.markSubagentDiffUndone export and backend persistence
+assert.strictEqual(typeof subagentManager.markSubagentDiffUndone, 'function', 'subagentManager exports markSubagentDiffUndone');
+var parentSid72 = 'sess_suite_72_' + Math.random().toString(36).slice(2, 8);
+var spawnedSub72 = await subagentManager.spawnSubagent({
+  name: 'DiffUndoneTester',
+  role: 'coder',
+  task: 'Test undo reflection',
+  parentSessionId: parentSid72,
+  execution: 'async'
+}, { sendEvent: function() {} });
+assert.ok(spawnedSub72, 'Subagent spawned for vector 72');
+
+// Attach a diff to the spawned subagent
+var rawSub72 = subagentManager.getSubagent(spawnedSub72.agentId, parentSid72);
+assert.ok(rawSub72, 'Subagent found in subagentManager');
+rawSub72.diffs = [{
+  id: 'diff_backend_72',
+  file_path: 'subagent_test/sample.txt',
+  checkpointId: 'cp_backend_72',
+  status: 'approved'
+}];
+
+// Call markSubagentDiffUndone
+subagentManager.markSubagentDiffUndone('subagent_test/sample.txt', 'cp_backend_72');
+assert.strictEqual(rawSub72.diffs[0].status, 'restored', 'Subagent diff status updated to restored in subagentManager');
+assert.strictEqual(rawSub72.diffs[0].undone, true, 'Subagent diff marked undone: true in subagentManager');
+assert.strictEqual(rawSub72.diffs[0].restored, true, 'Subagent diff marked restored: true in subagentManager');
+
+// 5. Verify SubagentPanel markSubagentCheckpointUndone export and storage mutation
+assert.strictEqual(typeof subagentPanelModule.markSubagentCheckpointUndone, 'function', 'SubagentPanel exports markSubagentCheckpointUndone');
+var mockSessionId72 = 'sess_subpanel_72_' + Math.random().toString(36).slice(2, 8);
+var mockSubagents72 = [
+  {
+    agentId: 'sub_sp_72',
+    diffs: [
+      {
+        id: 'diff_sp_72',
+        file_path: 'subagent_test/sample.txt',
+        checkpointId: 'cp_sp_72',
+        status: 'approved'
+      }
+    ],
+    trace: {
+      steps: [
+        {
+          toolCalls: [
+            {
+              toolName: 'write_file',
+              filePath: 'subagent_test/sample.txt',
+              checkpointId: 'cp_sp_72'
+            }
+          ]
+        }
+      ]
+    }
+  }
+];
+subagentPanelModule.saveSubagentsToLocalStorage(mockSessionId72, mockSubagents72);
+subagentPanelModule.markSubagentCheckpointUndone('subagent_test/sample.txt', 'cp_sp_72');
+var updatedSubs72 = subagentPanelModule.getSubagentListForSession(mockSessionId72);
+assert.ok(updatedSubs72 && updatedSubs72.length > 0, 'Updated subagent list retrieved');
+assert.strictEqual(updatedSubs72[0].diffs[0].status, 'restored', 'SubagentPanel updated diff status to restored');
+assert.strictEqual(updatedSubs72[0].diffs[0].undone, true, 'SubagentPanel updated diff undone to true');
+assert.strictEqual(updatedSubs72[0].trace.steps[0].toolCalls[0].undone, true, 'SubagentPanel updated toolCall undone to true');
+assert.strictEqual(updatedSubs72[0].trace.steps[0].toolCalls[0].restored, true, 'SubagentPanel updated toolCall restored to true');
+
+// 6. Verify Dashboard and ChatSpace code integration
+var dashboardCode72 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+assert.ok(dashboardCode72.includes('window.renderSubagentTracesView = renderSubagentTracesView;'), 'Dashboard exposes renderSubagentTracesView');
+assert.ok(dashboardCode72.includes('window.updateActionsBarStatus(message.filePath, message.success ? "Restored" : "Failed", message.checkpointId);'), 'Dashboard passes checkpointId to updateActionsBarStatus');
+
+var chatSpaceCode72 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceCode72.includes('statusSpan.textContent = \'✓ \' + statusText.toUpperCase();'), 'ChatSpace updates parent diff card status to RESTORED');
+assert.ok(chatSpaceCode72.includes('window.renderSubagentTracesView(subTracesArea);'), 'ChatSpace refreshes subagent traces view on checkpoint restore');
+
+subagentManager.disposeSubagents(parentSid72);
+console.log('✓ Vector 72 Passed: Undone checkpoint status reflection across subagent chat & views verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -2096,7 +2771,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 61 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 72 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

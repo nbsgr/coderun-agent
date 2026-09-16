@@ -1262,6 +1262,9 @@ async function handleFrontendMessage(message, webview) {
         message: result ? result.message : 'Failed'
       });
       if (result && result.success) {
+        if (subagentManager && typeof subagentManager.markSubagentDiffUndone === 'function') {
+          subagentManager.markSubagentDiffUndone(message.filePath || (result && result.filePath), message.checkpointId);
+        }
         vscode.window.showInformationMessage(result.message);
       }
       break;
@@ -1271,7 +1274,10 @@ async function handleFrontendMessage(message, webview) {
       var wsPath = getWorkspaceFolder();
       var diffSessionId = message.sessionId || message.conversationId;
       var result = await diffManager.applyPatch(message.diffId, wsPath, diffSessionId);
-      webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
+      if (subagentManager && typeof subagentManager.updateSubagentDiffStatus === 'function') {
+        subagentManager.updateSubagentDiffStatus(message.diffId, 'approved');
+      }
+      webview.postMessage({ type: 'diffResult', diffId: message.diffId, sessionId: diffSessionId, result: result });
       break;
     }
 
@@ -1279,7 +1285,14 @@ async function handleFrontendMessage(message, webview) {
       var wsPath = getWorkspaceFolder();
       var diffSessionId = message.sessionId || message.conversationId;
       var results = await diffManager.acceptAll(wsPath, diffSessionId);
-      webview.postMessage({ type: 'diffAllResult', results: results });
+      if (subagentManager && typeof subagentManager.updateSubagentDiffStatus === 'function' && Array.isArray(results)) {
+        for (var rIdx = 0; rIdx < results.length; rIdx++) {
+          if (results[rIdx] && results[rIdx].diffId) {
+            subagentManager.updateSubagentDiffStatus(results[rIdx].diffId, results[rIdx].success ? 'approved' : 'rejected');
+          }
+        }
+      }
+      webview.postMessage({ type: 'diffAllResult', sessionId: diffSessionId, results: results });
       break;
     }
 
@@ -1287,7 +1300,10 @@ async function handleFrontendMessage(message, webview) {
       if (message.diffId) {
         var diffSessionId = message.sessionId || message.conversationId;
         var result = diffManager.rejectPatch(message.diffId, diffSessionId);
-        webview.postMessage({ type: 'diffResult', diffId: message.diffId, result: result });
+        if (subagentManager && typeof subagentManager.updateSubagentDiffStatus === 'function') {
+          subagentManager.updateSubagentDiffStatus(message.diffId, 'rejected');
+        }
+        webview.postMessage({ type: 'diffResult', diffId: message.diffId, sessionId: diffSessionId, result: result });
       }
       break;
     }
@@ -1295,7 +1311,14 @@ async function handleFrontendMessage(message, webview) {
     case 'rejectAllDiffs': {
       var diffSessionId = message.sessionId || message.conversationId;
       var results = diffManager.rejectAll(diffSessionId);
-      webview.postMessage({ type: 'diffAllResult', results: results });
+      if (subagentManager && typeof subagentManager.updateSubagentDiffStatus === 'function' && Array.isArray(results)) {
+        for (var rIdx2 = 0; rIdx2 < results.length; rIdx2++) {
+          if (results[rIdx2] && results[rIdx2].diffId) {
+            subagentManager.updateSubagentDiffStatus(results[rIdx2].diffId, 'rejected');
+          }
+        }
+      }
+      webview.postMessage({ type: 'diffAllResult', sessionId: diffSessionId, results: results });
       break;
     }
 

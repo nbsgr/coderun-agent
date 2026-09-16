@@ -606,8 +606,31 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
       // Capture deferred resolve for diff review requests in diffManager
       if (event.type === 'request_diff' && event.id) {
         event.sessionId = sessionId;
+        if (!event.parentSessionId && toolContext && toolContext.parentSessionId) {
+          event.parentSessionId = toolContext.parentSessionId;
+        }
+        if (!event.rootSessionId && toolContext && toolContext.rootSessionId) {
+          event.rootSessionId = toolContext.rootSessionId;
+        }
+        if (!event.subagentName && toolContext && toolContext.agentName && toolContext.agentType === 'subagent') {
+          event.subagentName = toolContext.agentName;
+        }
         diffManager.storePatch(event);
         _createdDiffIds.push(event.id);
+      }
+
+      // Propagate subagent metadata for interactive user question events
+      if (event.type === 'ask_question' && event.id) {
+        event.sessionId = sessionId;
+        if (!event.parentSessionId && toolContext && toolContext.parentSessionId) {
+          event.parentSessionId = toolContext.parentSessionId;
+        }
+        if (!event.rootSessionId && toolContext && toolContext.rootSessionId) {
+          event.rootSessionId = toolContext.rootSessionId;
+        }
+        if (!event.subagentName && toolContext && toolContext.agentName && toolContext.agentType === 'subagent') {
+          event.subagentName = toolContext.agentName;
+        }
       }
 
       if (event.type === 'tool_result' && event.checkpoint_id) {
@@ -925,7 +948,9 @@ async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent,
       input: args,
       output: toolResText,
       success: isToolSuccess,
-      durationMs: toolDuration
+      durationMs: toolDuration,
+      checkpointId: lastResult && (lastResult.checkpoint_id || lastResult.checkpointId),
+      filePath: args.file_path || args.folder_path || ''
     });
     if (updatedToolTrace) {
       sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: updatedToolTrace });
@@ -1583,7 +1608,7 @@ export async function runAgentLoop(userPrompt, config, options) {
                 role: 'user',
                 content: '## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
                          reviewReport.issues.map(formatReviewIssueItem).join('\n') +
-                         '\n\nPlease address these issues (such as removing placeholders, resolving empty catch blocks, fixing syntax, or correcting credential leaks) in the next iteration.'
+                         '\n\nPlease address these issues (such as resolving compiler/diagnostic errors, fixing syntax, removing placeholders, resolving empty catch blocks, or correcting credential leaks) in the next iteration.'
               };
               messages.push(feedbackMsg);
               sendHistoryUpdate();

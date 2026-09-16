@@ -1,4 +1,4 @@
-﻿// questionManager.js — Session-scoped Interactive Question Lifecycle Manager
+// questionManager.js — Session-scoped Interactive Question Lifecycle Manager
 // Manages pending questions from ask_question tool calls.
 // Allows webview UI to resolve questions with user-selected answers.
 
@@ -15,7 +15,7 @@ function createDeferredPromise() {
   return deferred;
 }
 
-export function createQuestion(question, options, sessionId, timeoutMs) {
+export function createQuestion(question, options, sessionId, timeoutMs, parentSessionId, rootSessionId, agentName, agentType) {
   var sid = sessionId || 'default';
   var questionId = 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   var deferred = createDeferredPromise();
@@ -41,6 +41,10 @@ export function createQuestion(question, options, sessionId, timeoutMs) {
     question: question || '',
     options: Array.isArray(options) ? options : [],
     sessionId: sid,
+    parentSessionId: parentSessionId || null,
+    rootSessionId: rootSessionId || null,
+    agentName: agentName || null,
+    agentType: agentType || null,
     deferred: deferred,
     timer: timer,
     createdAt: Date.now()
@@ -51,6 +55,10 @@ export function createQuestion(question, options, sessionId, timeoutMs) {
     question: question,
     options: options,
     sessionId: sid,
+    parentSessionId: parentSessionId || null,
+    rootSessionId: rootSessionId || null,
+    agentName: agentName || null,
+    agentType: agentType || null,
     promise: deferred.promise
   };
 }
@@ -62,9 +70,14 @@ export function resolveQuestion(questionId, answer, sessionId) {
     return { success: false, message: 'Question not found or already answered: ' + questionId };
   }
 
-  if (sessionId && item.sessionId && item.sessionId !== sessionId) {
-    console.warn('[QUESTION MANAGER] Cross-session resolve rejected. Request session:', item.sessionId, 'Caller session:', sessionId);
-    return { success: false, message: 'Cross-session authorization denied.' };
+  // Session ownership check: allow exact match, default session, or parent/root session
+  if (sessionId && item.sessionId && item.sessionId !== 'default' && item.sessionId !== sessionId) {
+    var isParentOrRoot = (item.parentSessionId && item.parentSessionId === sessionId) ||
+                         (item.rootSessionId && item.rootSessionId === sessionId);
+    if (!isParentOrRoot) {
+      console.warn('[QUESTION MANAGER] Cross-session resolve rejected. Request session:', item.sessionId, 'Caller session:', sessionId);
+      return { success: false, message: 'Cross-session authorization denied.' };
+    }
   }
 
   if (item.timer) {
@@ -90,12 +103,15 @@ export function listPendingQuestions(sessionId) {
   var list = [];
   for (var id in pendingQuestions) {
     var item = pendingQuestions[id];
-    if (!sessionId || item.sessionId === sessionId) {
+    if (!sessionId || item.sessionId === sessionId || item.parentSessionId === sessionId || item.rootSessionId === sessionId) {
       list.push({
         id: item.id,
         question: item.question,
         options: item.options,
         sessionId: item.sessionId,
+        parentSessionId: item.parentSessionId,
+        rootSessionId: item.rootSessionId,
+        agentName: item.agentName,
         createdAt: item.createdAt
       });
     }
@@ -107,7 +123,7 @@ export function cancelSessionQuestions(sessionId) {
   if (!sessionId) return;
   for (var id in pendingQuestions) {
     var item = pendingQuestions[id];
-    if (item.sessionId === sessionId) {
+    if (item.sessionId === sessionId || item.parentSessionId === sessionId || item.rootSessionId === sessionId) {
       if (item.timer) clearTimeout(item.timer);
       item.deferred.resolve({
         answered: false,

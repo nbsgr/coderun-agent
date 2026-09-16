@@ -50,6 +50,87 @@ function sleep(ms) {
   return new Promise(sleepPromise);
 }
 
+export function normalizeLineBreaks(str) {
+  return String(str || '').replace(/\r\n/g, '\n');
+}
+
+export function findFuzzyLineMatch(content, targetSnippet, minThreshold) {
+  if (!content || !targetSnippet) return null;
+  var threshold = minThreshold || 0.85;
+
+  var normContent = normalizeLineBreaks(content);
+  var normTarget = normalizeLineBreaks(targetSnippet);
+
+  var exactIdx = normContent.indexOf(normTarget);
+  if (exactIdx !== -1) {
+    var nextIdx = normContent.indexOf(normTarget, exactIdx + 1);
+    if (nextIdx === -1) {
+      return {
+        matchedText: normContent.substring(exactIdx, exactIdx + normTarget.length),
+        score: 1.0,
+        startIndex: exactIdx,
+        endIndex: exactIdx + normTarget.length
+      };
+    }
+  }
+
+  var fileLines = normContent.split('\n');
+  var targetLines = normTarget.split('\n');
+
+  if (targetLines.length > 1 && targetLines[targetLines.length - 1].trim() === '') {
+    targetLines.pop();
+  }
+
+  var targetLen = targetLines.length;
+  if (targetLen === 0 || fileLines.length < targetLen) return null;
+
+  var bestScore = 0;
+  var bestStart = -1;
+  var ties = 0;
+
+  for (var i = 0; i <= fileLines.length - targetLen; i++) {
+    var matches = 0;
+    for (var j = 0; j < targetLen; j++) {
+      var fLine = fileLines[i + j].trim();
+      var tLine = targetLines[j].trim();
+      if (fLine === tLine) {
+        matches++;
+      } else if (fLine.replace(/['"]/g, '"').replace(/[;,]$/, '') === tLine.replace(/['"]/g, '"').replace(/[;,]$/, '')) {
+        matches += 0.9;
+      }
+    }
+    var score = matches / targetLen;
+    if (score > bestScore) {
+      bestScore = score;
+      bestStart = i;
+      ties = 0;
+    } else if (score === bestScore && score >= threshold) {
+      ties++;
+    }
+  }
+
+  if (bestScore >= threshold && ties === 0 && bestStart !== -1) {
+    var lineStartIdx = 0;
+    for (var k = 0; k < bestStart; k++) {
+      lineStartIdx += fileLines[k].length + 1;
+    }
+    var matchedLength = 0;
+    for (var m = 0; m < targetLen; m++) {
+      matchedLength += fileLines[bestStart + m].length;
+      if (m < targetLen - 1) matchedLength += 1;
+    }
+
+    return {
+      matchedText: normContent.substring(lineStartIdx, lineStartIdx + matchedLength),
+      score: bestScore,
+      startIndex: lineStartIdx,
+      endIndex: lineStartIdx + matchedLength
+    };
+  }
+
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════
 // TOOL INTERFACE
 // Every tool is an async generator: async function*(args, context)
@@ -195,39 +276,57 @@ async function* edit_file(args, context) {
     }
     var content = await fs.readFile(target, 'utf-8');
     var originalHash = computeSha256(content);
+    var normContent = normalizeLineBreaks(content);
+    var normOldString = normalizeLineBreaks(oldString);
+    var normNewString = normalizeLineBreaks(newString);
     var newContent = '';
 
-    var idx = content.indexOf(oldString);
+    var idx = normContent.indexOf(normOldString);
     if (idx !== -1) {
-      newContent = content.substring(0, idx) + newString + content.substring(idx + oldString.length);
+      newContent = normContent.substring(0, idx) + normNewString + normContent.substring(idx + normOldString.length);
+      if (content.indexOf('\r\n') !== -1) {
+        newContent = newContent.replace(/\n/g, '\r\n');
+      }
     } else {
-      var tokens = oldString.trim().split(/\s+/);
-      if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
-        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string is empty.' };
-        return;
-      }
+      var fuzzyMatch = findFuzzyLineMatch(normContent, normOldString, 0.85);
+      if (fuzzyMatch) {
+        newContent = normContent.substring(0, fuzzyMatch.startIndex) + normNewString + normContent.substring(fuzzyMatch.endIndex);
+        if (content.indexOf('\r\n') !== -1) {
+          newContent = newContent.replace(/\n/g, '\r\n');
+        }
+      } else {
+        var tokens = oldString.trim().split(/\s+/);
+        if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
+          yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string is empty.' };
+          return;
+        }
 
-      var regexParts = [];
-      for (var ti = 0; ti < tokens.length; ti++) {
-        regexParts.push(escapeStringForRegExp(tokens[ti]));
-      }
-      var pattern = regexParts.join('\\s+');
-      var regex = new RegExp(pattern, 'g');
+        var regexParts = [];
+        for (var ti = 0; ti < tokens.length; ti++) {
+          regexParts.push(escapeStringForRegExp(tokens[ti]));
+        }
+        var pattern = regexParts.join('\\s+');
+        var regex = new RegExp(pattern, 'g');
 
-      var matches = [...content.matchAll(regex)];
-      if (matches.length === 0) {
-        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string not found in file (tried exact and fuzzy whitespace matching).' };
-        return;
-      }
-      if (matches.length > 1) {
-        yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'Multiple fuzzy matches for old_string found in file. Please provide more surrounding context.' };
-        return;
-      }
+        var matches = [];
+        var matchObj;
+        while ((matchObj = regex.exec(content)) !== null) {
+          matches.push(matchObj);
+        }
+        if (matches.length === 0) {
+          yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'old_string not found in file (tried exact, fuzzy line, and whitespace matching).' };
+          return;
+        }
+        if (matches.length > 1) {
+          yield { type: 'tool_result', tool: 'edit_file', success: false, message: 'Multiple fuzzy matches for old_string found in file. Please provide more surrounding context.' };
+          return;
+        }
 
-      var match = matches[0];
-      var matchIdx = match.index;
-      var matchLen = match[0].length;
-      newContent = content.substring(0, matchIdx) + newString + content.substring(matchIdx + matchLen);
+        var match = matches[0];
+        var matchIdx = match.index;
+        var matchLen = match[0].length;
+        newContent = content.substring(0, matchIdx) + newString + content.substring(matchIdx + matchLen);
+      }
     }
 
     var deferred = createDeferredPromise();
@@ -1189,37 +1288,56 @@ async function* patch_file(args, context) {
       var replaceStr = p.replace || '';
       if (!findStr) continue;
 
-      var idx = newContent.indexOf(findStr);
+      var normBlockContent = normalizeLineBreaks(newContent);
+      var normFindStr = normalizeLineBreaks(findStr);
+      var normReplaceStr = normalizeLineBreaks(replaceStr);
+
+      var idx = normBlockContent.indexOf(normFindStr);
       if (idx !== -1) {
-        newContent = newContent.substring(0, idx) + replaceStr + newContent.substring(idx + findStr.length);
+        newContent = normBlockContent.substring(0, idx) + normReplaceStr + normBlockContent.substring(idx + normFindStr.length);
+        if (content.indexOf('\r\n') !== -1) {
+          newContent = newContent.replace(/\n/g, '\r\n');
+        }
       } else {
-        var tokens = findStr.trim().split(/\s+/);
-        if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
-          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is empty.' };
-          return;
-        }
+        var fuzzyMatch = findFuzzyLineMatch(normBlockContent, normFindStr, 0.85);
+        if (fuzzyMatch) {
+          newContent = normBlockContent.substring(0, fuzzyMatch.startIndex) + normReplaceStr + normBlockContent.substring(fuzzyMatch.endIndex);
+          if (content.indexOf('\r\n') !== -1) {
+            newContent = newContent.replace(/\n/g, '\r\n');
+          }
+        } else {
+          var tokens = findStr.trim().split(/\s+/);
+          if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
+            yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is empty.' };
+            return;
+          }
 
-        var regexParts = [];
-        for (var ti = 0; ti < tokens.length; ti++) {
-          regexParts.push(escapeStringForRegExp(tokens[ti]));
-        }
-        var pattern = regexParts.join('\\s+');
-        var regex = new RegExp(pattern, 'g');
+          var regexParts = [];
+          for (var ti = 0; ti < tokens.length; ti++) {
+            regexParts.push(escapeStringForRegExp(tokens[ti]));
+          }
+          var pattern = regexParts.join('\\s+');
+          var regex = new RegExp(pattern, 'g');
 
-        var matches = [...newContent.matchAll(regex)];
-        if (matches.length === 0) {
-          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block not found in file (tried exact and fuzzy matching).' };
-          return;
-        }
-        if (matches.length > 1) {
-          yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is ambiguous (multiple matches found in file). Please add more context.' };
-          return;
-        }
+          var matches = [];
+          var matchObj;
+          while ((matchObj = regex.exec(newContent)) !== null) {
+            matches.push(matchObj);
+          }
+          if (matches.length === 0) {
+            yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block not found in file (tried exact, fuzzy line, and whitespace matching).' };
+            return;
+          }
+          if (matches.length > 1) {
+            yield { type: 'tool_result', tool: 'patch_file', success: false, message: 'Patch #' + (i + 1) + ' search block is ambiguous (multiple matches found in file). Please add more context.' };
+            return;
+          }
 
-        var match = matches[0];
-        var matchIdx = match.index;
-        var matchLen = match[0].length;
-        newContent = newContent.substring(0, matchIdx) + replaceStr + newContent.substring(matchIdx + matchLen);
+          var match = matches[0];
+          var matchIdx = match.index;
+          var matchLen = match[0].length;
+          newContent = newContent.substring(0, matchIdx) + replaceStr + newContent.substring(matchIdx + matchLen);
+        }
       }
     }
 
@@ -1785,6 +1903,11 @@ async function* ask_question(args, context) {
   var question = (args && args.question) || '';
   var options = (args && args.options) || [];
   var sessionId = (context && context.sessionId) || 'default';
+  var parentSessionId = (context && context.parentSessionId) || null;
+  var rootSessionId = (context && context.rootSessionId) || null;
+  var agentName = (context && context.agentName) || null;
+  var agentType = (context && context.agentType) || null;
+  var subagentName = (agentType === 'subagent' ? agentName : null);
 
   if (!question) {
     yield {
@@ -1802,14 +1925,28 @@ async function* ask_question(args, context) {
     message: 'Asking user: ' + question
   };
 
-  var qRecord = questionManager.createQuestion(question, options, sessionId);
+  var qRecord = questionManager.createQuestion(
+    question,
+    options,
+    sessionId,
+    null,
+    parentSessionId,
+    rootSessionId,
+    agentName,
+    agentType
+  );
 
   yield {
     type: 'ask_question',
     id: qRecord.id,
     question: question,
     options: options,
-    sessionId: sessionId
+    sessionId: sessionId,
+    parentSessionId: parentSessionId,
+    rootSessionId: rootSessionId,
+    agentName: agentName,
+    agentType: agentType,
+    subagentName: subagentName
   };
 
   try {

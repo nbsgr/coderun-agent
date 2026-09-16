@@ -1,6 +1,6 @@
 [
   {
-    "id": "run_1789408322137_kird67",
+    "id": "run_1789541702517_xhxzzy",
     "sessionId": "sess_suite_59",
     "agentId": "root",
     "name": "Root Architect",
@@ -10,9 +10,9 @@
     "depth": 0,
     "role": "architect",
     "agentType": "root",
-    "startedAt": 1789408322137,
-    "completedAt": 1789408322137,
-    "durationMs": 0,
+    "startedAt": 1789541702517,
+    "completedAt": 1789541702518,
+    "durationMs": 1,
     "status": "completed",
     "provider": "ollama",
     "model": "qwen2.5-coder",
@@ -47,7 +47,7 @@
         },
         "toolCalls": [
           {
-            "id": "tool_1789408322137",
+            "id": "tool_1789541702518",
             "toolName": "list_directory",
             "command": "",
             "input": {
@@ -56,7 +56,9 @@
             "output": "agentLoop.js\nsubagentManager.js\nexecutionTrace.js",
             "success": true,
             "durationMs": 18,
-            "timestamp": 1789408322137
+            "checkpointId": null,
+            "filePath": "",
+            "timestamp": 1789541702518
           }
         ]
       }
@@ -67,7 +69,7 @@
       "durationMs": 0
     },
     "metrics": {
-      "totalDurationMs": 0,
+      "totalDurationMs": 1,
       "totalTokens": {
         "input": 60,
         "output": 30,
