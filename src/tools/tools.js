@@ -22,6 +22,8 @@ import * as fileLockManager from './fileLockManager.js';
 import * as checkpointManager from './checkpointManager.js';
 import * as questionManager from './questionManager.js';
 import * as subagentTools from './subagentTools.js';
+import * as mediaManager from '../media/mediaManager.js';
+import * as providerManager from '../providers/providerManager.js';
 
 var DEBUG = false;
 function dbg() { if (DEBUG) console.log.apply(console, arguments); }
@@ -2317,5 +2319,90 @@ export function registerAllTools() {
     required: ['subagent_id']
   });
 
+  reg('generate_image', generate_image, {
+    category: 'media',
+    description: 'Generate an image from a descriptive text prompt using OpenAI-compatible image endpoints (/v1/images/generations). Saves the resulting image to persistent globalStorage and returns its file path.',
+    parameters: {
+      prompt: { type: 'string', description: 'Detailed prompt describing the image to generate' },
+      model: { type: 'string', description: 'Optional image generation model name (e.g. dall-e-3, agnes-image-2.5-flash)' },
+      size: { type: 'string', description: 'Optional image resolution (e.g. 1024x1024)' }
+    },
+    required: ['prompt']
+  });
+
+  reg('generate_video', generate_video, {
+    category: 'media',
+    description: 'Generate a video from a descriptive text prompt using OpenAI-compatible video endpoints (/v1/videos). Saves the resulting video to persistent globalStorage and returns its file path.',
+    parameters: {
+      prompt: { type: 'string', description: 'Detailed prompt describing the video to generate' },
+      model: { type: 'string', description: 'Optional video generation model name (e.g. sora, agnes-video-2.5)' }
+    },
+    required: ['prompt']
+  });
+
   console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');
+}
+
+export async function* generate_image(args, context) {
+  var prompt = args && args.prompt;
+  if (!prompt) {
+    yield { type: 'error', error: 'Missing required parameter: prompt' };
+    return;
+  }
+  yield { type: 'action', action: 'Generating image: ' + String(prompt).substring(0, 60) + '...' };
+  try {
+    var cfg = (context && context.config) || {};
+    var pCfg = Object.assign({}, cfg);
+    if (args.model) pCfg.model = args.model;
+    var provider = providerManager.createProvider(pCfg);
+    var imgResult = await provider.images(pCfg, prompt);
+    if (!imgResult) throw new Error('No image returned from provider endpoint');
+    var sId = (context && context.sessionId) || 'default';
+    var saved = await mediaManager.saveMediaFromDataOrUrl(null, sId, imgResult, 'png');
+    var resPath = saved ? saved.filePath : (typeof imgResult === 'string' ? imgResult : 'Image generated');
+    yield {
+      type: 'result',
+      result: 'Image generated successfully.\nFile: ' + resPath + '\nMarkdown: ![Generated Image](' + resPath + ')',
+      media: {
+        type: 'image',
+        filePath: saved ? saved.filePath : null,
+        filename: saved ? saved.filename : null,
+        url: typeof imgResult === 'string' ? imgResult : null
+      }
+    };
+  } catch (err) {
+    yield { type: 'error', error: 'Failed to generate image: ' + err.message };
+  }
+}
+
+export async function* generate_video(args, context) {
+  var prompt = args && args.prompt;
+  if (!prompt) {
+    yield { type: 'error', error: 'Missing required parameter: prompt' };
+    return;
+  }
+  yield { type: 'action', action: 'Generating video: ' + String(prompt).substring(0, 60) + '...' };
+  try {
+    var cfg = (context && context.config) || {};
+    var pCfg = Object.assign({}, cfg);
+    if (args.model) pCfg.model = args.model;
+    var provider = providerManager.createProvider(pCfg);
+    var vidResult = await provider.videos(pCfg, prompt);
+    if (!vidResult) throw new Error('No video returned from provider endpoint');
+    var sId = (context && context.sessionId) || 'default';
+    var saved = await mediaManager.saveMediaFromDataOrUrl(null, sId, vidResult, 'mp4');
+    var resPath = saved ? saved.filePath : (typeof vidResult === 'string' ? vidResult : 'Video generated');
+    yield {
+      type: 'result',
+      result: 'Video generated successfully.\nFile: ' + resPath + '\nMarkdown: ![Generated Video](' + resPath + ')',
+      media: {
+        type: 'video',
+        filePath: saved ? saved.filePath : null,
+        filename: saved ? saved.filename : null,
+        url: typeof vidResult === 'string' ? vidResult : null
+      }
+    };
+  } catch (err) {
+    yield { type: 'error', error: 'Failed to generate video: ' + err.message };
+  }
 }

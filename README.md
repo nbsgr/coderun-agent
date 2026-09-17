@@ -29,7 +29,7 @@ The repository follows a deliberately small JavaScript architecture:
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 72-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 78-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -39,6 +39,20 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 
 ### 🤖 Multi-Provider Model Orchestration
 *   **8 Native Providers Supported:** Ollama, OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter, xAI (Grok), and custom OpenAI Compatible endpoints.
+*   **Intelligent Media Routing & Persistent Storage:** Automatically classifies image and video models (such as `agnes-image-*`, `dall-e-*`, `flux`, `sdxl`, `agnes-video-*`, `sora`, `kling`, `runway`, `minimax`) using provider metadata inspection and keyword heuristics. Routes media generation requests directly to `/v1/images/generations` and `/v1/videos` instead of chat completions to prevent HTTP 400 errors.
+*   **Native Zero-Dependency HTML5 Video Player:** Generated videos render with a built-in interactive HTML5 player:
+    *   **Play / Pause Toggle:** Click the player button or click directly on the video screen.
+    *   **Skip ±10 Seconds:** Quick rewind (`⏪ -10s`) and forward (`⏩ +10s`) buttons.
+    *   **Draggable Progress Scrubber:** Responsive range slider with real-time progress fill bar tracking watched time.
+    *   **Timestamps & Display Controls:** Monospace current/duration time indicators (`0:05 / 0:30`), Volume Mute toggle (`🔊`/`🔇`), and Fullscreen toggle (`⛶`).
+*   **Storage Isolation & Manual "Save to Project":**
+    *   **Zero Workspace Pollution:** Generated media is saved strictly into VS Code's persistent `globalStorageUri/media/` folder for chat history persistence. It is **never** saved directly into your workspace automatically.
+    *   **Manual Export On-Demand:** Clicking the **"📥 Save to Project"** button on any media card copies the file into `<workspace>/assets/<fileName>` and displays a VS Code notification with an **"Open File"** action.
+*   **Adaptive Self-Healing & Async Task Polling:** Automatically adapts payloads if an endpoint requires `mode: 'text'`, polls asynchronous video generation tasks across standard and custom routes, and automatically retries with exponential backoff on HTTP 503 `video_queue_full` errors.
+*   **Differentiated Request Timeouts (Local-First vs Cloud):**
+    *   **Local LLMs (Ollama / Localhost / 127.0.0.1 / :11434):** Generous **10-Minute Timeout (600,000 ms)** allowing local models ample time for cold weight loading and extended inference without premature "Request timed out." errors.
+    *   **Remote Cloud Providers (OpenAI, Anthropic, OpenRouter, Groq):** **30-Second Timeout (30,000 ms)** for prompt network failure detection.
+    *   **Automatic Detection:** Automatically identifies local runtimes via `isLocalEndpoint(config)`.
 *   **Saved Provider Configurations:** Save credentials (API keys, base URLs, default models) for multiple endpoints. Switch models on the fly in the middle of a chat session without resetting settings.
 *   **Unified Model Dropdown:** All models from your active and saved providers are dynamically retrieved and presented in a single, clean dropdown, grouped logically by provider.
 *   **API Type Selection:** Custom compatible providers support setting the underlying **API Type** (**OpenAI Compatible**, **Anthropic Compatible**, or **Google Gemini Compatible**) to correctly format request bodies, endpoint paths, and API headers.
@@ -155,8 +169,34 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Saved Providers Selection:** Subagent provider dropdown lists only saved, verified provider configurations (e.g. Ollama, OpenAI-compatible endpoints) rather than unconfigured generic endpoints, with `(Inherit from Main Agent)` as the default.
 *   **Model Combobox with Instant Search:** Full-featured searchable model combobox matching the main chatspace with sticky search bar (`🔍 Search models...`), collapsible provider groups, and active checkmark badges (`✓`).
 *   **Automatic Model Inheritance:** Selecting `(Inherit from Main Agent)` automatically syncs the subagent model to inherit the main agent's active model in real time.
-*   **Configurable Execution Limits:** Fine-tune concurrency and iteration limits: Max Concurrent Subagents (1–50, default: 10), Subagent Max Iterations (1–100, default: 20), and Subagent Max Depth (0–3, default: 1) to prevent runaway nesting.
 *   **Distinct Checkpoint & Trace Attribution:** Checkpoints, file modifications, and execution traces are attributed to unique subagent IDs (`agentId`), enabling isolated rollbacks and dedicated Subagent Traces inspection.
+
+### 🎨 Intelligent Image & Video Generation & Persistent Media Storage
+
+<p align="center">
+  <img src="./media-generation.png" width="520" alt="CodeRun Multimodal Media Generation (Image & Video)"/>
+</p>
+
+*   **Dual-Strategy Modality Classification:**
+    *   **Strategy 1 (Provider Metadata Inspection):** Automatically inspects model metadata returned by OpenAI, OpenRouter, and OpenAI-compatible providers (examining `type`, `modalities`, `architecture.modality`, and `task`) to determine whether a model is intended for text chat, image generation, video generation, or embeddings.
+    *   **Strategy 2 (Keyword Token Heuristics):** Fallback token analysis identifies models from their ID or alias (detecting `video`, `sora`, `kling`, `runway`, `image`, `dall-e`, `imagen`, `flux`, `sdxl`, `embed`, `audio`), ensuring unannotated custom proxies like `agnes-image-2.5-flash` or `agnes-video-2.5` route properly without manual configuration.
+*   **Two-Layer Execution Safeguard & Self-Healing:**
+    *   **Pre-Flight Direct Media Dispatch:** When a model is known to be an image or video model, the agent bypasses standard chat completion (`/v1/chat/completions`) entirely and dispatches the user's prompt directly to `/v1/images/generations` or `/v1/videos`.
+    *   **Runtime Self-Healing Recovery:** If an uncatalogued model is called via chat and the upstream server responds with HTTP 400 (e.g. `"Model X is an image model. Use /v1/images/generations"` or `"Model Y is a video model. Use /v1/videos"`), CodeRun catches the error, parses the target endpoint, re-routes the prompt to the appropriate media pipeline, and presents the generated asset seamlessly.
+*   **Persistent Storage in VS Code `globalStorage`:**
+    *   **URL Expiration Elimination:** Cloud providers frequently return short-lived signed URLs (SAS tokens expiring within 60 minutes). CodeRun immediately downloads remote media assets and writes them to `<globalStorageUri>/media/`.
+    *   **Zero `localStorage` Bloat:** Large base64 data payloads are saved directly as binary files (`.png`, `.jpg`, `.mp4`, `.webm`) on disk instead of congesting browser `localStorage`, preventing the 5MB browser storage quota limit from ever being exceeded.
+    *   **Secure Webview URI Resolution:** Local media paths are transformed via `webview.asWebviewUri(vscode.Uri.file(filePath))` for smooth, sandboxed display inside VS Code webviews.
+*   **Interactive Chat UI Cards & Built-in HTML5 Player:**
+    *   Images and videos render inside `.cr-media-card` components with subtle border styling, responsive aspect ratios, and full playback controls for videos.
+    *   **Zero-Dependency HTML5 Video Player:** Includes ▶/⏸ play/pause, ⏪ -10s rewind, ⏩ +10s forward, a draggable range progress scrubber with real-time fill tracking, current/duration timestamps (`0:05 / 0:30`), volume mute, and fullscreen toggle.
+    *   **"Save to Project" Button:** Copies the asset from isolated global storage into `<workspace>/assets/<fileName>` on demand with a notification and "Open File" action.
+    *   **"Copy URL" Button:** Copies the resource URI or path directly to your clipboard for quick sharing.
+*   **Visual Modality Badges & Adaptive Input:**
+    *   The model dropdown visually tags models with modality icons (`🖼️ Image`, `🎬 Video`, `🔍 Embed`).
+    *   Selecting an image or video model dynamically adapts the chat composer placeholder (e.g., `"Describe the image you want to generate..."`), guiding user interaction.
+*   **Native Agent Media Tools (`generate_image`, `generate_video`):**
+    *   Agents can autonomously generate visuals, UI mockups, and video assets during execution loops using the registered `generate_image` and `generate_video` tools.
 
 ---
 
@@ -171,6 +211,7 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Transparent User Sandbox** | Dedicated user sandbox directory (`~/.coderun/sandbox/`) with automatic CWD sync | ✅ **Native** isolated execution without polluting workspace git repo |
 | **On-Install Browser & Puppeteer MCP** | Embedded browser discovery in `src/mcp/mcpManager.js` + Puppeteer MCP server | ✅ **Auto-detects Chrome/Edge/Brave** or installs Chromium with screenshot capture |
 | **Persistent Memory Graph MCP** | Built-in stdio-based knowledge graph server (`src/mcp/builtinServers/memoryGraphServer.cjs`) | ✅ **Pre-configured built-in catalog** for cross-session entity & relation tracking |
+| **Media Model Routing & Persistence** | Dual-strategy classifier in `src/providers/modelClassifier.js` + `src/media/mediaManager.js` | ✅ **Automatic routing** to `/v1/images/generations` and `/v1/videos` with persistent disk storage in VS Code `globalStorage` |
 | **Deterministic Context Compaction** | Local 0ms checkpoint generator (`src/context/compactionManager.js`) | ✅ **0ms Instant Local Checkpoints** with zero external API calls or token cost |
 | **Historical Tool Compaction** | Wire-protocol optimizer in `src/context/contextManager.js` | ✅ **Automatic** reduction of old tool turns by up to 90% while retaining full active outputs & failure diffs |
 | **Local SQLite Codebase Index** | Embedded SQL.js database (`src/context/projectKnowledge.js`) with serialized disk persistence | ✅ **Embedded SQL.js** for fast local symbol & file indexing with zero cloud upload |
@@ -179,14 +220,14 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
 | **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background & Synchronous delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **72 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **74 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, media routing & tools |
 
 
 ---
 
-## 🧰 Complete Tool Matrix (31 Core Tools)
+## 🧰 Complete Tool Matrix (33 Core Tools)
 
-CodeRun exposes a curated set of **31 active core tools** organized across 8 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **33 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -211,6 +252,8 @@ CodeRun exposes a curated set of **31 active core tools** organized across 8 ope
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
+| **🎨 Media Generation** | `generate_image` | Generate images via `/v1/images/generations` and save to persistent storage | No |
+| | `generate_video` | Generate videos via `/v1/videos` and save to persistent storage | No |
 | **🤖 Subagents** | `spawn_subagent` | Launch an autonomous child agent in `sync` (background) or `wait` mode | ⚠️ Yes |
 | | `subagent_status` | Inspect a child subagent's state, progress, and files read/modified | No |
 | | `subagents_list` | List all active and completed child subagents in the session | No |
@@ -285,7 +328,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **72 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **74 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.

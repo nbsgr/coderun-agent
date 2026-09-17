@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agents/agent.js';
@@ -28,6 +29,7 @@ import * as executionTrace from './execution/executionTrace.js';
 import * as rulesLoader from './context/rulesLoader.js';
 import * as mcpManager from './mcp/mcpManager.js';
 import * as subagentManager from './agents/subagentManager.js';
+import * as mediaManager from './media/mediaManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -150,6 +152,81 @@ function handleAskPermission(webview, toolName, args, id, sessionId, parentSessi
   return permissions.requestPermission(toolName, args, id, null, sid, parentSid);
 }
 
+function convertPathToWebviewUri(webview, filePath) {
+  if (!filePath || typeof filePath !== 'string' || !webview || !webview.asWebviewUri) return filePath;
+  try {
+    return webview.asWebviewUri(vscode.Uri.file(filePath)).toString();
+  } catch (_) {
+    return filePath;
+  }
+}
+
+function rewriteMarkdownMediaPaths(webview, text) {
+  if (!text || typeof text !== 'string' || !webview || !webview.asWebviewUri) return text;
+  function onMarkdownMediaMatch(match, alt, src) {
+    var cleanSrc = String(src || '').trim();
+    if (cleanSrc.startsWith('http://') || cleanSrc.startsWith('https://') || cleanSrc.startsWith('vscode-webview:') || cleanSrc.startsWith('data:')) {
+      return match;
+    }
+    var webviewUri = convertPathToWebviewUri(webview, cleanSrc);
+    return '![' + alt + '](' + webviewUri + ')';
+  }
+  return text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, onMarkdownMediaMatch);
+}
+
+function convertMediaPathsToWebviewUris(webview, obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  try {
+    var mediaObj = obj.media || (obj.message && obj.message.media) || obj;
+    if (mediaObj && mediaObj.filePath && typeof mediaObj.filePath === 'string') {
+      var localUri = convertPathToWebviewUri(webview, mediaObj.filePath);
+      mediaObj.webviewUri = localUri;
+    }
+    if (obj.filePath && typeof obj.filePath === 'string') {
+      obj.webviewUri = convertPathToWebviewUri(webview, obj.filePath);
+    }
+    if (obj.media && typeof obj.media === 'object') {
+      if (obj.media.filePath && typeof obj.media.filePath === 'string') {
+        obj.media.webviewUri = convertPathToWebviewUri(webview, obj.media.filePath);
+      }
+    }
+    if (obj.message && typeof obj.message === 'object') {
+      if (obj.message.media && typeof obj.message.media.filePath === 'string') {
+        obj.message.media.webviewUri = convertPathToWebviewUri(webview, obj.message.media.filePath);
+      }
+      if (typeof obj.message.content === 'string') {
+        obj.message.content = rewriteMarkdownMediaPaths(webview, obj.message.content);
+      }
+    }
+    if (typeof obj.content === 'string') {
+      obj.content = rewriteMarkdownMediaPaths(webview, obj.content);
+    }
+    if (typeof obj.full_content === 'string') {
+      obj.full_content = rewriteMarkdownMediaPaths(webview, obj.full_content);
+    }
+  } catch (_) {}
+  return obj;
+}
+
+function convertStoredConversationsToWebviewUris(webview, storedRaw) {
+  if (!storedRaw || !webview || !webview.asWebviewUri) return storedRaw;
+  try {
+    var convs = typeof storedRaw === 'string' ? JSON.parse(storedRaw) : storedRaw;
+    if (!Array.isArray(convs)) return storedRaw;
+    for (var ci = 0; ci < convs.length; ci++) {
+      var conv = convs[ci];
+      if (conv && Array.isArray(conv.messages)) {
+        for (var mi = 0; mi < conv.messages.length; mi++) {
+          convertMediaPathsToWebviewUris(webview, conv.messages[mi]);
+        }
+      }
+    }
+    return JSON.stringify(convs);
+  } catch (_) {
+    return storedRaw;
+  }
+}
+
 function handleAgentEvent(webview, event) {
   var eventForWebview = event;
   if (event && event.type === 'request_diff' && event.deferred) {
@@ -160,6 +237,10 @@ function handleAgentEvent(webview, event) {
       if (key !== 'deferred') eventForWebview[key] = event[key];
     }
   }
+
+  // Convert local media file paths to webview safe URIs
+  convertMediaPathsToWebviewUris(webview, eventForWebview);
+
   webview.postMessage({ type: 'agentEvent', event: eventForWebview });
   if (event && event.type === 'trace_updated' && event.sessionId && extensionContext && extensionContext.globalStorageUri) {
     executionTrace.saveTraceToDisk(extensionContext.globalStorageUri.fsPath, event.sessionId).catch(function onTraceSaveError(err) {
@@ -199,6 +280,13 @@ export async function activate(context) {
   extensionContext = context;
   if (context && context.globalStorageUri) {
     executionTrace.setDefaultStoragePath(context.globalStorageUri.fsPath);
+    mediaManager.setDefaultMediaStoragePath(context.globalStorageUri.fsPath);
+    try {
+      var mediaFolderOnActivate = path.join(context.globalStorageUri.fsPath, 'media');
+      if (!fs.existsSync(mediaFolderOnActivate)) {
+        fs.mkdirSync(mediaFolderOnActivate, { recursive: true });
+      }
+    } catch (_) {}
   }
 
   // Register all tools
@@ -352,6 +440,33 @@ function createSidebarWebviewViewProvider(extensionUri) {
   };
 }
 
+function getWebviewLocalResourceRoots(extensionUri, ctx) {
+  var roots = [
+    vscode.Uri.file(path.join(extensionUri.fsPath, 'src')),
+    extensionUri
+  ];
+  var effCtx = (ctx && ctx.globalStorageUri) ? ctx : extensionContext;
+  if (effCtx && effCtx.globalStorageUri) {
+    roots.push(effCtx.globalStorageUri);
+    roots.push(vscode.Uri.file(path.join(effCtx.globalStorageUri.fsPath, 'media')));
+  }
+  var defStorage = mediaManager.getDefaultMediaStoragePath();
+  if (defStorage) {
+    roots.push(vscode.Uri.file(defStorage));
+    roots.push(vscode.Uri.file(path.join(defStorage, 'media')));
+  }
+  var ws = getWorkspaceFolder();
+  if (ws) {
+    roots.push(vscode.Uri.file(ws));
+  }
+  if (vscode.workspace && vscode.workspace.workspaceFolders) {
+    for (var i = 0; i < vscode.workspace.workspaceFolders.length; i++) {
+      roots.push(vscode.workspace.workspaceFolders[i].uri);
+    }
+  }
+  return roots;
+}
+
 function handleResolveWebviewView(extensionUri, webviewView, context, token) {
   console.log('[CODERUN] resolveWebviewView called');
   sidebarWebviewView = webviewView;
@@ -359,7 +474,7 @@ function handleResolveWebviewView(extensionUri, webviewView, context, token) {
 
   webviewView.webview.options = {
     enableScripts: true,
-    localResourceRoots: [vscode.Uri.file(path.join(extensionUri.fsPath, 'src'))]
+    localResourceRoots: getWebviewLocalResourceRoots(extensionUri, extensionContext)
   };
 
   webviewView.webview.html = getWebviewHtml(webviewView.webview, extensionUri);
@@ -383,7 +498,7 @@ function createOrShowPanel(extensionUri) {
     {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.file(path.join(extensionUri.fsPath, 'src'))]
+      localResourceRoots: getWebviewLocalResourceRoots(extensionUri, extensionContext)
     }
   );
 
@@ -424,6 +539,14 @@ function getWebviewHtml(webview, extensionUri) {
   var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'bot-avatar.jpg'))).toString();
   var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'user-avatar.svg'))).toString();
 
+  var mediaDirPath = '';
+  var mediaRootUri = '';
+  if (extensionContext && extensionContext.globalStorageUri) {
+    var mediaDiskFolder = path.join(extensionContext.globalStorageUri.fsPath, 'media');
+    mediaDirPath = mediaDiskFolder;
+    mediaRootUri = webview.asWebviewUri(vscode.Uri.file(mediaDiskFolder)).toString();
+  }
+
   var workspaceFolder = getWorkspaceFolder();
   var cfg = config.getConfig();
 
@@ -432,7 +555,7 @@ function getWebviewHtml(webview, extensionUri) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval'; connect-src https: http:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; media-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource} https:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-eval'; connect-src https: http:;">
   <title>CodeRun Agent</title>
   <style>
     html, body {
@@ -464,6 +587,8 @@ function getWebviewHtml(webview, extensionUri) {
     window.WORKSPACE_FOLDER = ${JSON.stringify(workspaceFolder)};
     window.CODERUN_BOT_AVATAR = "${botAvatarUri}";
     window.CODERUN_USER_AVATAR = "${userAvatarUri}";
+    window.CODERUN_MEDIA_DIR_PATH = ${JSON.stringify(mediaDirPath)};
+    window.CODERUN_MEDIA_ROOT_URI = ${JSON.stringify(mediaRootUri)};
     window.VSCODE = true;
     try {
       const vscode = acquireVsCodeApi();
@@ -589,7 +714,8 @@ async function handleFrontendMessage(message, webview) {
         var selectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
         var selectedProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
         var pinnedModels = extensionContext?.globalState.get('coderun_pinned_models', {}) || {};
-        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
+        var storedWithWebviewUris = convertStoredConversationsToWebviewUris(webview, stored);
+        webview.postMessage({ type: 'loadConversations', conversations: storedWithWebviewUris, selectedModel: selectedModel, selectedProvider: selectedProvider });
         webview.postMessage({ type: 'loadPinnedModels', pinnedModels: pinnedModels });
         webview.postMessage({
           type: 'permissionState',
@@ -1014,6 +1140,161 @@ async function handleFrontendMessage(message, webview) {
       break;
     }
 
+    case 'saveMediaToWorkspace': {
+      var rawPath = message.sourcePath || message.filePath || '';
+      if (rawPath) {
+        try {
+          var ws = getWorkspaceFolder();
+          if (!ws) throw new Error('No workspace folder open in VS Code. Please open a workspace folder first.');
+          var mediaFolder = extensionContext && extensionContext.globalStorageUri ? path.join(extensionContext.globalStorageUri.fsPath, 'media') : mediaManager.getDefaultMediaStoragePath();
+          var resolvedSourcePath = rawPath;
+
+          if (typeof rawPath === 'string' && rawPath.startsWith('data:')) {
+            var savedFromData = await mediaManager.saveMediaFromDataOrUrl(mediaFolder, 'save_' + Date.now(), rawPath);
+            if (savedFromData && savedFromData.filePath) {
+              resolvedSourcePath = savedFromData.filePath;
+            }
+          } else if (typeof rawPath === 'string' && (rawPath.startsWith('http://') || rawPath.startsWith('https://')) && rawPath.indexOf('vscode-resource') === -1 && rawPath.indexOf('vscode-cdn') === -1) {
+            var savedFromUrl = await mediaManager.saveMediaFromDataOrUrl(mediaFolder, 'download_' + Date.now(), rawPath);
+            if (savedFromUrl && savedFromUrl.filePath) {
+              resolvedSourcePath = savedFromUrl.filePath;
+            }
+          } else if (!fs.existsSync(resolvedSourcePath)) {
+            var decoded = '';
+            try {
+              decoded = decodeURIComponent(resolvedSourcePath.split('?')[0].split('#')[0]);
+            } catch (_) {
+              decoded = resolvedSourcePath.split('?')[0].split('#')[0];
+            }
+            var winPathMatch = decoded.match(/([a-zA-Z]:[\\\/].+)$/);
+            if (winPathMatch && fs.existsSync(winPathMatch[1])) {
+              resolvedSourcePath = winPathMatch[1];
+            } else {
+              var cleanBase = path.basename(decoded);
+              var candidatePath = mediaFolder ? path.join(mediaFolder, cleanBase) : '';
+              if (candidatePath && fs.existsSync(candidatePath)) {
+                resolvedSourcePath = candidatePath;
+              } else if (mediaFolder && fs.existsSync(mediaFolder)) {
+                var mediaFiles = fs.readdirSync(mediaFolder);
+                for (var fi = 0; fi < mediaFiles.length; fi++) {
+                  if (mediaFiles[fi] === cleanBase || cleanBase.indexOf(mediaFiles[fi]) !== -1 || mediaFiles[fi].indexOf(cleanBase) !== -1) {
+                    resolvedSourcePath = path.join(mediaFolder, mediaFiles[fi]);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          var targetRel = message.targetRelPath || path.basename(resolvedSourcePath.split('?')[0]);
+          if (!targetRel || targetRel === '.' || targetRel === '/') {
+            targetRel = 'assets/' + path.basename(resolvedSourcePath);
+          }
+          var savedDest = await mediaManager.copyMediaToWorkspace(resolvedSourcePath, targetRel, ws);
+          var relDisplay = path.relative(ws, savedDest);
+
+          function onSavedAction(action) {
+            if (action === 'Open File') {
+              vscode.commands.executeCommand('vscode.open', vscode.Uri.file(savedDest));
+            }
+          }
+          vscode.window.showInformationMessage('Image saved to workspace: ' + relDisplay, 'Open File').then(onSavedAction);
+
+          webview.postMessage({
+            type: 'mediaSavedResult',
+            success: true,
+            path: savedDest,
+            relPath: relDisplay,
+            sourcePath: rawPath,
+            reqId: message.reqId
+          });
+        } catch (err) {
+          vscode.window.showErrorMessage('Failed to save media: ' + err.message);
+          webview.postMessage({
+            type: 'mediaSavedResult',
+            success: false,
+            error: err.message,
+            sourcePath: rawPath,
+            reqId: message.reqId
+          });
+        }
+      }
+      break;
+    }
+
+    case 'getMediaData': {
+      var reqPath = message.path || message.filePath || '';
+      if (reqPath) {
+        try {
+          var mediaFolder = extensionContext && extensionContext.globalStorageUri ? path.join(extensionContext.globalStorageUri.fsPath, 'media') : mediaManager.getDefaultMediaStoragePath();
+          var resolvedFile = reqPath;
+          if (!fs.existsSync(resolvedFile)) {
+            var decoded = '';
+            try {
+              decoded = decodeURIComponent(resolvedFile.split('?')[0].split('#')[0]);
+            } catch (_) {
+              decoded = resolvedFile.split('?')[0].split('#')[0];
+            }
+            var winMatch = decoded.match(/([a-zA-Z]:[\\\/].+)$/);
+            if (winMatch && fs.existsSync(winMatch[1])) {
+              resolvedFile = winMatch[1];
+            } else {
+              var cleanName = path.basename(decoded);
+              var candidate = mediaFolder ? path.join(mediaFolder, cleanName) : '';
+              if (candidate && fs.existsSync(candidate)) {
+                resolvedFile = candidate;
+              } else if (mediaFolder && fs.existsSync(mediaFolder)) {
+                var allFiles = fs.readdirSync(mediaFolder);
+                for (var afi = 0; afi < allFiles.length; afi++) {
+                  if (allFiles[afi] === cleanName || cleanName.indexOf(allFiles[afi]) !== -1 || allFiles[afi].indexOf(cleanName) !== -1) {
+                    resolvedFile = path.join(mediaFolder, allFiles[afi]);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (fs.existsSync(resolvedFile)) {
+            var fileBuf = await fs.promises.readFile(resolvedFile);
+            var ext = path.extname(resolvedFile).replace(/^\./, '').toLowerCase() || 'png';
+            var mimeType = 'image/png';
+            if (ext === 'jpg' || ext === 'jpeg') {
+              mimeType = 'image/jpeg';
+            } else if (ext === 'webp') {
+              mimeType = 'image/webp';
+            } else if (ext === 'gif') {
+              mimeType = 'image/gif';
+            } else if (ext === 'mp4') {
+              mimeType = 'video/mp4';
+            }
+            var dataUri = 'data:' + mimeType + ';base64,' + fileBuf.toString('base64');
+            webview.postMessage({
+              type: 'mediaDataResult',
+              success: true,
+              path: reqPath,
+              resolvedPath: resolvedFile,
+              dataUri: dataUri
+            });
+          } else {
+            webview.postMessage({
+              type: 'mediaDataResult',
+              success: false,
+              path: reqPath,
+              error: 'File not found on disk'
+            });
+          }
+        } catch (readErr) {
+          webview.postMessage({
+            type: 'mediaDataResult',
+            success: false,
+            path: reqPath,
+            error: readErr.message
+          });
+        }
+      }
+      break;
+    }
+
     case 'resumeSubagent': {
       if (message.agentId) {
         try {
@@ -1189,7 +1470,8 @@ async function handleFrontendMessage(message, webview) {
         var stored = extensionContext.globalState.get('coderun_conversations', '[]');
         var selectedModel = extensionContext.globalState.get('coderun_selected_model', '');
         var selectedProvider = extensionContext.globalState.get('coderun_selected_provider', '');
-        webview.postMessage({ type: 'loadConversations', conversations: stored, selectedModel: selectedModel, selectedProvider: selectedProvider });
+        var storedWithWebviewUris = convertStoredConversationsToWebviewUris(webview, stored);
+        webview.postMessage({ type: 'loadConversations', conversations: storedWithWebviewUris, selectedModel: selectedModel, selectedProvider: selectedProvider });
       } catch (e) {
         // Intentionally fall back to empty list on globalState reading exception
         webview.postMessage({ type: 'loadConversations', conversations: '[]', selectedModel: '', selectedProvider: '' });

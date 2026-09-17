@@ -1690,6 +1690,7 @@
           <li><a href="#saving-providers" class="sidebar-link">How to Save Providers</a></li>
           <li><a href="#provider-reflection" class="sidebar-link">How Providers Reflect</a></li>
           <li><a href="#gemini-sanitization" class="sidebar-link">Gemini Schema Sanitization</a></li>
+          <li><a href="#media-routing" class="sidebar-link">Media Routing &amp; Persistence</a></li>
         </ul>
       </div>
 
@@ -1718,7 +1719,7 @@
         <div class="sidebar-group-title">Tools & Execution</div>
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 31-Tool Matrix</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 33-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
           <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
@@ -1735,7 +1736,7 @@
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">72 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">78 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2362,6 +2363,90 @@ function sanitizeGeminiSchema(schema) {
         <div class="callout tip">
           <div class="callout-header">Why this matters</div>
           Without this filter, tools like Puppeteer MCP (which use <code>additionalProperties: false</code> and <code>$defs</code>) immediately crash Gemini with HTTP 400. CodeRun's automatic sanitization ensures 100% plug-and-play compatibility.
+        </div>
+      </section>
+
+      <!-- Media Model Routing & Persistent Storage -->
+      <section id="media-routing">
+        <h2 class="section-heading">🎨 Universal Media Generation, Native HTML5 Player &amp; Storage Isolation</h2>
+        <p>
+          Specialized multimodal generative models (such as <code>dall-e-3</code>, <code>imagen-3</code>, <code>flux</code>, <code>sdxl</code>, <code>sora</code>, <code>kling</code>, <code>runway</code>, <code>minimax</code>, or compatible video/image proxies like <code>agnes-image-2.5-flash</code> and <code>agnes-video-2.5-flash</code>) cannot process chat completion payloads sent to <code>/v1/chat/completions</code>.
+        </p>
+        <p>
+          CodeRun provides an end-to-end, provider-agnostic media pipeline featuring automated modality classification, adaptive parameter self-healing, native zero-dependency HTML5 playback, isolated persistent storage, and differentiated request timeouts:
+        </p>
+
+        <!-- Live Media Card UI Preview -->
+        <div style="text-align: center; margin: 28px 0;">
+          <div style="display: inline-block; background: #0b0f17; border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55); max-width: 500px; width: 100%; text-align: left;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+              <span style="display: flex; align-items: center; gap: 6px;">
+                <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); display: inline-block;"></span>
+                <span>Active Model: <strong>agnes-image-2.5-flash</strong></span>
+              </span>
+              <span>9.9K tokens</span>
+            </div>
+            <img src="media-generation.png" alt="CodeRun Multimodal Media Generation Card" style="width: 100%; height: auto; border-radius: 8px; display: block; border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center;">
+              <span>Prompt: <em>"generate a cute image a dog"</em></span>
+              <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(63, 185, 80, 0.15); color: var(--accent-green); border: 1px solid rgba(63, 185, 80, 0.3);">📥 Save to Project</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🧠</div>
+            <div class="card-title">Dual Modality Classifier</div>
+            <div class="card-text">
+              <strong>Strategy 1 (Metadata Inspection):</strong> Inspects upstream provider metadata (<code>type</code>, <code>modalities</code>, <code>architecture.modality</code>, <code>task</code>).<br>
+              <strong>Strategy 2 (Token Heuristics):</strong> Automatic token heuristics identify image/video keywords in model IDs without manual configuration.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🎬</div>
+            <div class="card-title">Native HTML5 Video Player</div>
+            <div class="card-text">
+              Zero external dependencies. Interactive Chromium player controls:
+              <strong>Play/Pause</strong> (▶/⏸), <strong>Skip 10s</strong> (⏪ -10s / ⏩ +10s), <strong>Draggable Progress Scrubber</strong> with real-time watch fill, <strong>Timestamps</strong> (<code>0:05 / 0:30</code>), <strong>Mute</strong> (🔊/🔇), and <strong>Fullscreen</strong> (⛶).
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">💾</div>
+            <div class="card-title">Zero-Pollution Storage Isolation</div>
+            <div class="card-text">
+              Generated media is saved <em>strictly</em> into VS Code's persistent <code>globalStorageUri/media/</code> folder for session history. Assets are <strong>never</strong> auto-saved to your project workspace. Clicking <strong>📥 Save to Project</strong> exports directly to <code>&lt;workspace&gt;/assets/</code>.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🔄</div>
+            <div class="card-title">Adaptive Self-Healing &amp; Async Polling</div>
+            <div class="card-text">
+              Sends standard <code>{ model, prompt }</code> and automatically retries with <code>mode: 'text'</code> if an endpoint requires it. Detects asynchronous task IDs (<code>task_id</code>, <code>video_id</code>, <code>id</code>) and polls until completion with automatic 503 <code>video_queue_full</code> backoff retries.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⏱️</div>
+            <div class="card-title">Local-First 10m vs Cloud 30s Timeouts</div>
+            <div class="card-text">
+              <strong>Local LLMs (Ollama / Localhost / 127.0.0.1):</strong> Generous <strong>10-Minute Timeout (600,000 ms)</strong> prevents premature "Request timed out." errors during cold weight loading.<br>
+              <strong>Remote Cloud Providers:</strong> <strong>30-Second Timeout (30,000 ms)</strong> for fast network failure detection.
+            </div>
+          </div>
+        </div>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>providerCompatible.js &amp; providerManager.js — Universal Request &amp; Timeout Pipeline</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>// Dynamic timeout: 10 minutes for local LLMs, 30 seconds for remote cloud
+var timeoutMs = isLocalEndpoint(config) ? 600000 : 30000;
+
+// Universal video generation with adaptive retry & async polling
+var vidResult = await provider.videos(config, prompt);
+// Persisted strictly in globalStorage (never pollutes workspace)
+var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult, 'mp4');</code></pre>
         </div>
       </section>
 
@@ -3032,11 +3117,11 @@ function sanitizeGeminiSchema(schema) {
         </div>
       </section>
 
-      <!-- 31 Tools Matrix -->
+      <!-- 33 Tools Matrix -->
       <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 31-Tool Matrix</h2>
+        <h2 class="section-heading">🧰 The Complete 33-Tool Matrix</h2>
         <p>
-          CodeRun comes equipped with 31 built-in core tools across 8 operational categories:
+          CodeRun comes equipped with 33 built-in core tools across 9 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -3234,6 +3319,18 @@ function sanitizeGeminiSchema(schema) {
                 <td><strong>🗄️ Database</strong></td>
                 <td><code>query_project_db</code></td>
                 <td>Safe read-only SQL queries on the SQLite knowledge database</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🎨 Media Generation</strong></td>
+                <td><code>generate_image</code></td>
+                <td>Generate images via <code>/v1/images/generations</code> and store to VS Code <code>globalStorage</code></td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>generate_video</code></td>
+                <td>Generate videos via <code>/v1/videos</code> and store to VS Code <code>globalStorage</code></td>
                 <td>Safe</td>
               </tr>
             </tbody>
@@ -3435,9 +3532,9 @@ node --check src/agents/agentLoop.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 72 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 78 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against an exhaustive 72-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 78-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3447,7 +3544,7 @@ node --check src/agents/agentLoop.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), and subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), and differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78).
         </p>
       </section>
 
@@ -3485,6 +3582,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#saving-providers" class="toc-link">How to Save Providers</a></li>
         <li class="toc-item"><a href="#provider-reflection" class="toc-link">How Providers Reflect</a></li>
         <li class="toc-item"><a href="#gemini-sanitization" class="toc-link">Gemini Sanitization</a></li>
+        <li class="toc-item"><a href="#media-routing" class="toc-link">Media Routing &amp; Persistence</a></li>
         <li class="toc-item"><a href="#mcp-overview" class="toc-link">What is MCP?</a></li>
         <li class="toc-item"><a href="#adding-mcp" class="toc-link">How to Add MCP</a></li>
         <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
@@ -3494,7 +3592,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#subagent-settings" class="toc-link">Subagent Settings</a></li>
         <li class="toc-item"><a href="#subagent-tools" class="toc-link">Subagent Tools</a></li>
         <li class="toc-item"><a href="#subagent-traces" class="toc-link">Subagent Traces</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">31-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">33-Tool Matrix</a></li>
         <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
@@ -3503,7 +3601,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">72 Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">74 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting &amp; FAQ</a></li>
       </ul>
     </aside>

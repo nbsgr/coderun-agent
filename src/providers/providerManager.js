@@ -71,3 +71,5 @@ export function needsApiKey(provider) {
   };
   return needs[provider] || false;
 }
+
+export { extractModelModality, isLocalEndpoint, getProviderTimeout } from './modelClassifier.js';

@@ -32,6 +32,8 @@ import * as memoryManager from '../context/memoryManager.js';
 import * as diffManager from '../tools/diffManager.js';
 import * as mcpManager from '../mcp/mcpManager.js';
 import * as subagentManager from './subagentManager.js';
+import { extractModelModality } from '../providers/modelClassifier.js';
+import * as mediaManager from '../media/mediaManager.js';
 
 var DEBUG = false;
 function dbg() {
@@ -1170,6 +1172,158 @@ export async function runAgentLoop(userPrompt, config, options) {
   var sessionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   var pendingSyncSubagents = [];
 
+  var selectedModality = extractModelModality(config.model);
+
+  // ── Direct Image Generation for Image Models ─────────────────
+  if (selectedModality === 'image') {
+    console.log('[AGENT LOOP] Direct Image Generation triggered for model: ' + config.model);
+    sendEvent({
+      type: EVENT_TYPES.AGENT_STATUS,
+      status: 'generating_image',
+      iteration: 0,
+      content: '🎨 Synthesizing image with ' + config.model + '...'
+    });
+    try {
+      var imgResult = await provider.images(config, effectivePrompt);
+      if (!imgResult) {
+        throw new Error('No image returned from image generation endpoint');
+      }
+      var savedMedia = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, imgResult, 'png');
+      var localImgPath = savedMedia ? savedMedia.filePath : (typeof imgResult === 'string' ? imgResult : 'generated_image.png');
+      var mdContent = '![Generated Image](' + localImgPath + ')\n\n*Generated with ' + config.model + '*';
+
+      agentState.transition('completed', sessionId);
+      executionTrace.finishRun(sessionId, 'completed');
+
+      var assistantMediaMsg = {
+        role: 'assistant',
+        content: mdContent,
+        media: {
+          type: 'image',
+          filePath: localImgPath,
+          filename: savedMedia ? savedMedia.filename : 'image.png',
+          model: config.model
+        }
+      };
+      messages.push(assistantMediaMsg);
+      sendHistoryUpdate();
+
+      try {
+        executionTrace.recordFinalResponse(sessionId, {
+          text: mdContent,
+          thinking: '',
+          durationMs: 0
+        });
+        executionTrace.saveTraceToDisk(null, sessionId);
+      } catch (_) {}
+
+      sendEvent({
+        type: 'media_generated',
+        mediaType: 'image',
+        prompt: effectivePrompt,
+        filePath: localImgPath,
+        filename: savedMedia ? savedMedia.filename : 'image.png',
+        model: config.model,
+        sessionId: sessionId
+      });
+      sendEvent({
+        message: assistantMediaMsg
+      });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_DONE,
+        reason: 'completed',
+        content: mdContent,
+        thinking: ''
+      });
+      return { content: mdContent, thinking: '', done: true, stopped: false };
+    } catch (imgErr) {
+      console.error('[AGENT LOOP] Image generation error:', imgErr);
+      agentState.transition('failed', sessionId);
+      executionTrace.finishRun(sessionId, 'failed', { error: imgErr.message });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_ERROR,
+        message: 'Image generation failed: ' + imgErr.message,
+        sessionId: sessionId
+      });
+      throw imgErr;
+    }
+  }
+
+  // ── Direct Video Generation for Video Models ─────────────────
+  if (selectedModality === 'video') {
+    console.log('[AGENT LOOP] Direct Video Generation triggered for model: ' + config.model);
+    sendEvent({
+      type: EVENT_TYPES.AGENT_STATUS,
+      status: 'generating_video',
+      iteration: 0,
+      content: '🎬 Generating video with ' + config.model + '...'
+    });
+    try {
+      var vidResult = await provider.videos(config, effectivePrompt);
+      if (!vidResult) {
+        throw new Error('No video returned from video generation endpoint');
+      }
+      var savedVid = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult, 'mp4');
+      var localVidPath = savedVid ? savedVid.filePath : (typeof vidResult === 'string' ? vidResult : 'generated_video.mp4');
+      var vidMdContent = '![Generated Video](' + localVidPath + ')\n\n*Generated with ' + config.model + '*';
+
+      agentState.transition('completed', sessionId);
+      executionTrace.finishRun(sessionId, 'completed');
+
+      var assistantVidMsg = {
+        role: 'assistant',
+        content: vidMdContent,
+        media: {
+          type: 'video',
+          filePath: localVidPath,
+          filename: savedVid ? savedVid.filename : 'video.mp4',
+          model: config.model
+        }
+      };
+      messages.push(assistantVidMsg);
+      sendHistoryUpdate();
+
+      try {
+        executionTrace.recordFinalResponse(sessionId, {
+          text: vidMdContent,
+          thinking: '',
+          durationMs: 0
+        });
+        executionTrace.saveTraceToDisk(null, sessionId);
+      } catch (_) {}
+
+      sendEvent({
+        type: 'media_generated',
+        mediaType: 'video',
+        prompt: effectivePrompt,
+        filePath: localVidPath,
+        filename: savedVid ? savedVid.filename : 'video.mp4',
+        model: config.model,
+        sessionId: sessionId
+      });
+      sendEvent({
+        message: assistantVidMsg
+      });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_DONE,
+        reason: 'completed',
+        content: vidMdContent,
+        thinking: ''
+      });
+      return { content: vidMdContent, thinking: '', done: true, stopped: false };
+    } catch (vidErr) {
+      console.error('[AGENT LOOP] Video generation error:', vidErr);
+      agentState.transition('failed', sessionId);
+      executionTrace.finishRun(sessionId, 'failed', { error: vidErr.message });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_ERROR,
+        message: 'Video generation failed: ' + vidErr.message,
+        sessionId: sessionId
+      });
+      throw vidErr;
+    }
+  }
+
   try {
     while (iteration < maxIterations) {
       if (signal && (signal.stopped || signal.aborted)) {
@@ -1357,10 +1511,61 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
       } catch (err) {
+        var errMsg = (err && err.message) ? err.message : String(err);
+        // Self-healing: if error states it is an image model, fallback to provider.images
+        if (errMsg.indexOf('is an image model') !== -1 || errMsg.indexOf('/v1/images/generations') !== -1) {
+          console.log('[AGENT LOOP] 400 error caught: model is an image model. Auto-recovering via provider.images...');
+          try {
+            var recImg = await provider.images(config, effectivePrompt);
+            if (recImg) {
+              var recSaved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, recImg, 'png');
+              var recPath = recSaved ? recSaved.filePath : (typeof recImg === 'string' ? recImg : 'image.png');
+              var recMd = '![Generated Image](' + recPath + ')\n\n*Auto-routed to /v1/images/generations for ' + config.model + '*';
+              sendEvent({
+                message: {
+                  role: 'assistant',
+                  content: recMd,
+                  media: { type: 'image', filePath: recPath, filename: recSaved ? recSaved.filename : 'image.png' }
+                }
+              });
+              agentState.transition('completed', sessionId);
+              executionTrace.finishRun(sessionId, 'completed');
+              sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'completed', content: recMd, thinking: '' });
+              return { content: recMd, thinking: '', done: true, stopped: false };
+            }
+          } catch (recErr) {
+            console.warn('[AGENT LOOP] Image auto-recovery failed:', recErr.message);
+          }
+        }
+        // Self-healing: if error states it is a video model, fallback to provider.videos
+        if (errMsg.indexOf('is a video model') !== -1 || errMsg.indexOf('/v1/videos') !== -1) {
+          console.log('[AGENT LOOP] 400 error caught: model is a video model. Auto-recovering via provider.videos...');
+          try {
+            var recVid = await provider.videos(config, effectivePrompt);
+            if (recVid) {
+              var recVidSaved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, recVid, 'mp4');
+              var recVidMd = '![Generated Video](' + recVidPath + ')\n\n*Generated with ' + config.model + ' (Auto-routed to /v1/videos)*';
+              sendEvent({
+                message: {
+                  role: 'assistant',
+                  content: recVidMd,
+                  media: { type: 'video', filePath: recVidPath, filename: recVidSaved ? recVidSaved.filename : 'video.mp4' }
+                }
+              });
+              agentState.transition('completed', sessionId);
+              executionTrace.finishRun(sessionId, 'completed');
+              sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'completed', content: recVidMd, thinking: '' });
+              return { content: recVidMd, thinking: '', done: true, stopped: false };
+            }
+          } catch (recVidErr) {
+            console.warn('[AGENT LOOP] Video auto-recovery failed:', recVidErr.message);
+          }
+        }
+
         try {
           agentState.transition('failed', sessionId);
         } catch (_) {}
-        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: err.message, sessionId: sessionId });
+        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: errMsg, sessionId: sessionId });
         throw err;
       }
 

@@ -88,6 +88,15 @@ function initializeDashboard() {
     state.modelContextWindows = {};
   }
 
+  try {
+    var storedModalities = localStorage.getItem("coderun_model_modalities");
+    if (storedModalities) {
+      state.modelModalities = JSON.parse(storedModalities);
+    }
+  } catch (_) {
+    state.modelModalities = {};
+  }
+
   function getModelContextWindow(modelName) {
     if (!modelName || !state.modelContextWindows) return null;
     return state.modelContextWindows[modelName] || null;
@@ -4897,6 +4906,32 @@ function initializeDashboard() {
     nameSpan.title = modelName + (isSelected ? " (Currently selected)" : "");
     item.appendChild(nameSpan);
 
+    var mod = (state.modelModalities && state.modelModalities[modelName]) || '';
+    if (!mod) {
+      if (/(?:^|[-_])video(?:[-_]|$)|sora|kling|runway|cogvideo|luma|pika/i.test(modelName)) mod = 'video';
+      else if (/(?:^|[-_])image(?:[-_]|$)|dall-?e|imagen|flux|stable-diffusion|sdxl/i.test(modelName)) mod = 'image';
+      else if (/(?:^|[-_])embed(?:ding)?(?:[-_]|$)|text-similarity|bge-/i.test(modelName)) mod = 'embedding';
+    }
+    if (mod === 'image') {
+      var badgeImg = document.createElement("span");
+      badgeImg.className = "cr-model-badge cr-badge-image";
+      badgeImg.textContent = "🖼️ Image";
+      badgeImg.title = "Image Generation Model (uses /v1/images/generations)";
+      item.appendChild(badgeImg);
+    } else if (mod === 'video') {
+      var badgeVid = document.createElement("span");
+      badgeVid.className = "cr-model-badge cr-badge-video";
+      badgeVid.textContent = "🎬 Video";
+      badgeVid.title = "Video Generation Model (uses /v1/videos)";
+      item.appendChild(badgeVid);
+    } else if (mod === 'embedding') {
+      var badgeEmb = document.createElement("span");
+      badgeEmb.className = "cr-model-badge cr-badge-embedding";
+      badgeEmb.textContent = "🔍 Embed";
+      badgeEmb.title = "Embedding Model";
+      item.appendChild(badgeEmb);
+    }
+
     var pinBtn = document.createElement("span");
     pinBtn.className = "cr-model-pin-btn" + (isPinned ? " pinned" : "");
     pinBtn.title = isPinned ? "Unpin model" : "Pin model to top";
@@ -5095,6 +5130,22 @@ function initializeDashboard() {
         modelInput.value = state.selectedModel || "";
         modelInput.placeholder = "Select model...";
         modelInput.disabled = false;
+
+        var curMod = (state.modelModalities && state.modelModalities[state.selectedModel]) || '';
+        if (!curMod) {
+          if (/(?:^|[-_])video(?:[-_]|$)|sora|kling/i.test(state.selectedModel || '')) curMod = 'video';
+          else if (/(?:^|[-_])image(?:[-_]|$)|dall-?e|flux/i.test(state.selectedModel || '')) curMod = 'image';
+        }
+        var promptTextarea = document.getElementById("promptInput");
+        if (promptTextarea) {
+          if (curMod === 'image') {
+            promptTextarea.placeholder = "Describe the image you want to generate...";
+          } else if (curMod === 'video') {
+            promptTextarea.placeholder = "Describe the video you want to generate...";
+          } else {
+            promptTextarea.placeholder = "Ask anything...";
+          }
+        }
       }
     }
   }
@@ -5465,6 +5516,7 @@ function initializeDashboard() {
     if (extra.sources) message.sources = extra.sources;
     if (extra.image) message.image = extra.image;
     if (extra.images) message.images = extra.images;
+    if (extra.media) message.media = extra.media;
     if (extra.tool_calls) message.tool_calls = extra.tool_calls;
     if (extra.tool_call_id) message.tool_call_id = extra.tool_call_id;
     if (extra.tool_name) message.tool_name = extra.tool_name;
@@ -5476,6 +5528,7 @@ function initializeDashboard() {
       if (content) last.content = content;
       if (message.thinking) last.thinking = message.thinking;
       if (message.sources) last.sources = message.sources;
+      if (message.media) last.media = message.media;
       if (message.tool_calls) last.tool_calls = message.tool_calls;
       if (message.tool_name) last.tool_name = message.tool_name;
       if (message.result) last.result = message.result;
@@ -5534,6 +5587,9 @@ function initializeDashboard() {
           }
           if (!nMsg.thinking && oldMsg && oldMsg.thinking) {
             nMsg.thinking = oldMsg.thinking;
+          }
+          if (!nMsg.media && oldMsg && oldMsg.media) {
+            nMsg.media = oldMsg.media;
           }
           mergedAll.push(nMsg);
         }
@@ -5691,6 +5747,7 @@ function initializeDashboard() {
         delete state.providerErrors[currentProv];
         var parsedModels = [];
         state.modelContextWindows = state.modelContextWindows || {};
+        state.modelModalities = state.modelModalities || {};
         for (var mi = 0; mi < message.models.length; mi++) {
           var item = message.models[mi];
           if (typeof item === 'object' && item !== null) {
@@ -5700,13 +5757,30 @@ function initializeDashboard() {
             if (ctx && mId) {
               state.modelContextWindows[mId] = ctx;
             }
+            if (mId) {
+              var modVal = item.modality || '';
+              if (!modVal) {
+                if (/(?:^|[-_])video(?:[-_]|$)|sora|kling|runway|cogvideo|luma|pika/i.test(mId)) modVal = 'video';
+                else if (/(?:^|[-_])image(?:[-_]|$)|dall-?e|imagen|flux|stable-diffusion|sdxl/i.test(mId)) modVal = 'image';
+                else if (/(?:^|[-_])embed(?:ding)?(?:[-_]|$)|text-similarity|bge-/i.test(mId)) modVal = 'embedding';
+                else modVal = 'chat';
+              }
+              state.modelModalities[mId] = modVal;
+            }
           } else if (item) {
-            parsedModels.push(String(item));
+            var itemStr = String(item);
+            parsedModels.push(itemStr);
+            var modVal2 = 'chat';
+            if (/(?:^|[-_])video(?:[-_]|$)|sora|kling|runway|cogvideo|luma|pika/i.test(itemStr)) modVal2 = 'video';
+            else if (/(?:^|[-_])image(?:[-_]|$)|dall-?e|imagen|flux|stable-diffusion|sdxl/i.test(itemStr)) modVal2 = 'image';
+            else if (/(?:^|[-_])embed(?:ding)?(?:[-_]|$)|text-similarity|bge-/i.test(itemStr)) modVal2 = 'embedding';
+            state.modelModalities[itemStr] = modVal2;
           }
         }
         state.modelsByProvider[currentProv] = parsedModels;
         try {
           localStorage.setItem('coderun_model_context_windows', JSON.stringify(state.modelContextWindows));
+          localStorage.setItem('coderun_model_modalities', JSON.stringify(state.modelModalities));
         } catch (_) {}
 
         if (isActiveProvider) {
@@ -6022,8 +6096,287 @@ function initializeDashboard() {
         window.updateActionsBarStatus(message.filePath, message.success ? "Restored" : "Failed", message.checkpointId);
       }
     }
+    if (message.type === "mediaSavedResult") {
+      var allSaveBtns = document.querySelectorAll(".cr-btn-save-media");
+      for (var bi = 0; bi < allSaveBtns.length; bi++) {
+        var b = allSaveBtns[bi];
+        var bPath = b.dataset.mediaPath || b.getAttribute("data-media-path") || "";
+        if (b.dataset.saving === "true" || (message.sourcePath && bPath === message.sourcePath)) {
+          b.dataset.saving = "false";
+          var origHtml = b.dataset.origHtml || "📥 Save to Project";
+          if (message.success) {
+            b.innerHTML = "✓ Saved to " + (message.relPath || "workspace");
+            b.classList.add("cr-btn-saved");
+            function createResetSavedTimer(targetBtn, defaultText) {
+              setTimeout(function onResetSaved() {
+                targetBtn.innerHTML = defaultText;
+                targetBtn.classList.remove("cr-btn-saved");
+              }, 4000);
+            }
+            createResetSavedTimer(b, origHtml);
+          } else {
+            b.innerHTML = "❌ " + (message.error || "Failed to save");
+            function createResetErrTimer(targetBtn, defaultText) {
+              setTimeout(function onResetErr() {
+                targetBtn.innerHTML = defaultText;
+              }, 4000);
+            }
+            createResetErrTimer(b, origHtml);
+          }
+        }
+      }
+    }
+    if (message.type === "mediaDataResult") {
+      if (message.success && message.dataUri) {
+        var cleanTarget = String(message.path || "").split("?")[0];
+        var targetBase = cleanTarget.split("/").pop().split("\\").pop();
+        for (var pmi = 0; pmi < pendingMediaImages.length; pmi++) {
+          var item = pendingMediaImages[pmi];
+          if (item && item.element) {
+            var itemSrc = String(item.src || "").split("?")[0];
+            var itemBase = itemSrc.split("/").pop().split("\\").pop();
+            if (itemSrc === cleanTarget || itemBase === targetBase || (message.resolvedPath && itemSrc.indexOf(targetBase) !== -1)) {
+              item.element.src = message.dataUri;
+            }
+          }
+        }
+        var allMedia = document.querySelectorAll("img.md-img, video.cr-media-video");
+        for (var aii = 0; aii < allMedia.length; aii++) {
+          var im = allMedia[aii];
+          var imSrc = String(im.getAttribute("data-media-src") || im.src || "").split("?")[0];
+          var imBase = imSrc.split("/").pop().split("\\").pop();
+          if (imSrc === cleanTarget || imBase === targetBase) {
+            im.src = message.dataUri;
+          }
+        }
+      }
+    }
   }
   window.addEventListener("message", handleWindowMessage);
+
+  var pendingMediaImages = [];
+  function requestMediaData(imgEl, rawSrc) {
+    if (!imgEl || !rawSrc) return;
+    pendingMediaImages.push({ element: imgEl, src: rawSrc });
+    var api = window.VSCODE_API || window.vscode;
+    if (api && api.postMessage) {
+      api.postMessage({
+        type: "getMediaData",
+        path: rawSrc
+      });
+    }
+  }
+  window.requestMediaData = requestMediaData;
+
+  function formatMediaTime(seconds) {
+    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+    var m = Math.floor(seconds / 60);
+    var s = Math.floor(seconds % 60);
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  window.formatMediaTime = formatMediaTime;
+
+  function bindVideoCardEvents(card) {
+    if (!card || card.dataset.eventsBound === "1") return;
+    card.dataset.eventsBound = "1";
+    var video = card.querySelector("video.cr-media-video");
+    if (!video) return;
+
+    var playBtn = card.querySelector(".cr-vid-play");
+    var overlayPlay = card.querySelector(".cr-video-overlay-play");
+    var rewindBtn = card.querySelector(".cr-vid-rewind");
+    var forwardBtn = card.querySelector(".cr-vid-forward");
+    var progressInput = card.querySelector("input.cr-vid-progress");
+    var progressFill = card.querySelector(".cr-vid-progress-fill");
+    var timeCurrent = card.querySelector(".cr-vid-time-current");
+    var timeDuration = card.querySelector(".cr-vid-time-duration");
+    var muteBtn = card.querySelector(".cr-vid-mute");
+    var fullscreenBtn = card.querySelector(".cr-vid-fullscreen");
+
+    function updatePlayState() {
+      if (video.paused) {
+        if (playBtn) playBtn.textContent = "▶";
+        if (overlayPlay) overlayPlay.style.display = "flex";
+      } else {
+        if (playBtn) playBtn.textContent = "⏸";
+        if (overlayPlay) overlayPlay.style.display = "none";
+      }
+    }
+
+    function togglePlayPause() {
+      if (video.paused) {
+        video.play();
+      } else {
+        video.pause();
+      }
+      updatePlayState();
+    }
+
+    function onVideoLoadedMetadata() {
+      if (timeDuration && video.duration) {
+        timeDuration.textContent = formatMediaTime(video.duration);
+      }
+    }
+
+    function onVideoTimeUpdate() {
+      if (video.duration && !progressInput.dataset.dragging) {
+        var pct = (video.currentTime / video.duration) * 100;
+        if (progressInput) progressInput.value = pct;
+        if (progressFill) progressFill.style.width = pct + "%";
+        if (timeCurrent) timeCurrent.textContent = formatMediaTime(video.currentTime);
+      }
+    }
+
+    function onVideoEnded() {
+      if (playBtn) playBtn.textContent = "▶";
+      if (overlayPlay) overlayPlay.style.display = "flex";
+      if (progressInput) progressInput.value = 0;
+      if (progressFill) progressFill.style.width = "0%";
+    }
+
+    video.addEventListener("loadedmetadata", onVideoLoadedMetadata);
+    video.addEventListener("timeupdate", onVideoTimeUpdate);
+    video.addEventListener("play", updatePlayState);
+    video.addEventListener("pause", updatePlayState);
+    video.addEventListener("ended", onVideoEnded);
+
+    if (video.readyState >= 1) {
+      onVideoLoadedMetadata();
+    }
+
+    if (playBtn) {
+      playBtn.addEventListener("click", togglePlayPause);
+    }
+    if (overlayPlay) {
+      overlayPlay.addEventListener("click", togglePlayPause);
+    }
+    var videoPreview = card.querySelector(".cr-video-preview");
+    if (videoPreview) {
+      function onPreviewClick(e) {
+        if (e.target === videoPreview || e.target === video) {
+          togglePlayPause();
+        }
+      }
+      videoPreview.addEventListener("click", onPreviewClick);
+    }
+
+    if (rewindBtn) {
+      function onRewindClick() {
+        video.currentTime = Math.max(0, video.currentTime - 10);
+        onVideoTimeUpdate();
+      }
+      rewindBtn.addEventListener("click", onRewindClick);
+    }
+
+    if (forwardBtn) {
+      function onForwardClick() {
+        var maxDur = video.duration || 0;
+        video.currentTime = maxDur ? Math.min(maxDur, video.currentTime + 10) : (video.currentTime + 10);
+        onVideoTimeUpdate();
+      }
+      forwardBtn.addEventListener("click", onForwardClick);
+    }
+
+    if (progressInput) {
+      function onProgressInput() {
+        progressInput.dataset.dragging = "1";
+        var val = parseFloat(progressInput.value) || 0;
+        if (progressFill) progressFill.style.width = val + "%";
+        if (video.duration && timeCurrent) {
+          var previewSec = (val / 100) * video.duration;
+          timeCurrent.textContent = formatMediaTime(previewSec);
+        }
+      }
+
+      function onProgressChange() {
+        progressInput.dataset.dragging = "";
+        var val = parseFloat(progressInput.value) || 0;
+        if (video.duration) {
+          video.currentTime = (val / 100) * video.duration;
+        }
+        if (progressFill) progressFill.style.width = val + "%";
+      }
+
+      progressInput.addEventListener("input", onProgressInput);
+      progressInput.addEventListener("change", onProgressChange);
+    }
+
+    if (muteBtn) {
+      function onMuteClick() {
+        video.muted = !video.muted;
+        muteBtn.textContent = video.muted ? "🔇" : "🔊";
+      }
+      muteBtn.addEventListener("click", onMuteClick);
+    }
+
+    if (fullscreenBtn) {
+      function onFullscreenClick() {
+        if (document.fullscreenElement) {
+          if (document.exitFullscreen) document.exitFullscreen();
+        } else {
+          if (video.requestFullscreen) {
+            video.requestFullscreen();
+          } else if (card.requestFullscreen) {
+            card.requestFullscreen();
+          }
+        }
+      }
+      fullscreenBtn.addEventListener("click", onFullscreenClick);
+    }
+  }
+
+  function initAllVideoPlayers() {
+    var cards = document.querySelectorAll(".cr-video-card[data-video-card='1']");
+    for (var ci = 0; ci < cards.length; ci++) {
+      bindVideoCardEvents(cards[ci]);
+    }
+  }
+  window.initAllVideoPlayers = initAllVideoPlayers;
+
+  document.addEventListener("click", function handleMediaClick(e) {
+    var card = e.target.closest(".cr-video-card");
+    if (card && card.dataset.eventsBound !== "1") {
+      bindVideoCardEvents(card);
+    }
+    var saveBtn = e.target.closest(".cr-btn-save-media");
+    if (saveBtn) {
+      if (saveBtn.dataset.saving === "true") return;
+      var mediaPath = saveBtn.dataset.mediaPath || saveBtn.getAttribute("data-media-path");
+      if (mediaPath) {
+        var cleanPath = mediaPath.split("?")[0].split("#")[0];
+        var baseName = cleanPath.split("/").pop().split("\\").pop() || ("media_" + Date.now() + ".png");
+        try {
+          baseName = decodeURIComponent(baseName);
+        } catch (_) {}
+        var defaultRel = "assets/" + baseName;
+        saveBtn.dataset.saving = "true";
+        saveBtn.dataset.origHtml = saveBtn.innerHTML;
+        saveBtn.innerHTML = "⏳ Saving to project...";
+        var api = window.VSCODE_API || window.vscode;
+        if (api && api.postMessage) {
+          api.postMessage({
+            type: "saveMediaToWorkspace",
+            sourcePath: mediaPath,
+            filePath: mediaPath,
+            targetRelPath: defaultRel
+          });
+        }
+      }
+      return;
+    }
+    var copyBtn = e.target.closest(".cr-btn-copy-media");
+    if (copyBtn) {
+      var copyPath = copyBtn.dataset.mediaPath || copyBtn.getAttribute("data-media-path");
+      if (copyPath && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(copyPath).then(function onCopied() {
+          var oldText = copyBtn.textContent;
+          copyBtn.textContent = "✓ Copied!";
+          setTimeout(function resetCopied() { copyBtn.textContent = oldText; }, 2000);
+        });
+      }
+      return;
+    }
+  });
 
   function getDashboardActiveConversationId() {
     return state.activeConversationId;

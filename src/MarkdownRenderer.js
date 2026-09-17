@@ -18,6 +18,25 @@ function sanitizeUrl(url) {
   if (lower.startsWith('javascript:') || lower.startsWith('vbscript:') || lower.startsWith('data:text/html')) {
     return '#';
   }
+
+  if (lower.startsWith('vscode-webview:') || lower.indexOf('vscode-resource') !== -1 || lower.indexOf('vscode-cdn') !== -1 || lower.startsWith('data:image/') || lower.startsWith('data:video/')) {
+    return clean;
+  }
+
+  // Dynamic media resolution for webview environment
+  if (typeof window !== 'undefined' && window.CODERUN_MEDIA_DIR_PATH && window.CODERUN_MEDIA_ROOT_URI) {
+    var normClean = clean.replace(/\\/g, '/').toLowerCase();
+    var normDir = String(window.CODERUN_MEDIA_DIR_PATH).replace(/\\/g, '/').toLowerCase();
+    if (normClean.indexOf(normDir) !== -1 || normClean.indexOf('/media/') !== -1) {
+      var segs = clean.split(/[/\\]/);
+      var filename = segs[segs.length - 1];
+      if (filename && filename.indexOf('?') !== -1) filename = filename.split('?')[0];
+      if (filename && /\.(png|jpg|jpeg|webp|gif|svg|mp4|webm|mov|mkv)$/i.test(filename)) {
+        return window.CODERUN_MEDIA_ROOT_URI + '/' + filename;
+      }
+    }
+  }
+
   if (lower.startsWith('http:') || lower.startsWith('https:') || lower.startsWith('file:') ||
       lower.startsWith('vscode:') || lower.startsWith('mailto:') || lower.startsWith('/') ||
       lower.startsWith('./') || lower.startsWith('../') || lower.startsWith('#')) {
@@ -249,7 +268,50 @@ function renderInlineStyles(text) {
 
 function replaceMarkdownImage(match, alt, src) {
   var safeSrc = sanitizeUrl(src);
-  return '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" />';
+  var isVideo = /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(safeSrc) || safeSrc.startsWith('data:video/');
+  if (isVideo) {
+    return '<div class="cr-media-card cr-video-card" data-video-card="1">' +
+      '<div class="cr-media-header">' +
+        '<span class="cr-media-badge">🎬 Video</span>' +
+        (alt ? '<span class="cr-media-alt">' + esc(alt) + '</span>' : '') +
+      '</div>' +
+      '<div class="cr-media-preview cr-video-preview">' +
+        '<video controls playsinline preload="metadata" class="cr-media-video" src="' + esc(safeSrc) + '" data-media-src="' + esc(safeSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,\'' + esc(safeSrc) + '\');}}"></video>' +
+        '<div class="cr-video-overlay-play">▶</div>' +
+      '</div>' +
+      '<div class="cr-video-controls">' +
+        '<button type="button" class="cr-vid-btn cr-vid-play" title="Play / Pause">▶</button>' +
+        '<button type="button" class="cr-vid-btn cr-vid-rewind" title="Rewind 10 seconds">⏪ -10s</button>' +
+        '<button type="button" class="cr-vid-btn cr-vid-forward" title="Forward 10 seconds">⏩ +10s</button>' +
+        '<span class="cr-vid-time cr-vid-time-current">0:00</span>' +
+        '<div class="cr-vid-progress-container">' +
+          '<input type="range" class="cr-vid-progress" min="0" max="100" step="0.1" value="0" title="Seek video" />' +
+          '<div class="cr-vid-progress-fill"></div>' +
+        '</div>' +
+        '<span class="cr-vid-time cr-vid-time-duration">0:00</span>' +
+        '<button type="button" class="cr-vid-btn cr-vid-mute" title="Mute / Unmute">🔊</button>' +
+        '<button type="button" class="cr-vid-btn cr-vid-fullscreen" title="Fullscreen">⛶</button>' +
+      '</div>' +
+      '<div class="cr-media-actions">' +
+        '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '">📥 Save to Project</button>' +
+        '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '">📋 Copy URL</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  return '<div class="cr-media-card cr-image-card">' +
+    '<div class="cr-media-header">' +
+      '<span class="cr-media-badge">🖼️ Image</span>' +
+      (alt ? '<span class="cr-media-alt">' + esc(alt) + '</span>' : '') +
+    '</div>' +
+    '<div class="cr-media-preview">' +
+      '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" data-media-src="' + esc(safeSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,\'' + esc(safeSrc) + '\');}}" loading="lazy" />' +
+    '</div>' +
+    '<div class="cr-media-actions">' +
+      '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '">📥 Save to Project</button>' +
+      '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '">📋 Copy URL</button>' +
+    '</div>' +
+  '</div>';
 }
 
 function replaceMarkdownLink(match, label, href) {

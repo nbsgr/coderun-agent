@@ -1289,14 +1289,16 @@ function initializeChatSpace() {
       return;
     }
 
-    if (S.fullResponse || S.fullThinking || (S._toolCalls && S._toolCalls.length)) {
+    if (S.fullResponse || S.fullThinking || S.media || (S._toolCalls && S._toolCalls.length)) {
       var extra = {};
       if (S.sources && S.sources.length) extra.sources = S.sources;
       if (S.fullThinking) extra.thinking = S.fullThinking;
+      if (S.media) extra.media = S.media;
       if (S._toolCalls && S._toolCalls.length) extra.tool_calls = S._toolCalls;
       var lastMsg = chatCtx.conversation.messages[chatCtx.conversation.messages.length - 1];
       if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === (S.fullResponse || '')) {
         if (S.fullThinking && !lastMsg.thinking) lastMsg.thinking = S.fullThinking;
+        if (S.media && !lastMsg.media) lastMsg.media = S.media;
         if (S._toolCalls && S._toolCalls.length && !lastMsg.tool_calls) lastMsg.tool_calls = S._toolCalls;
         return;
       }
@@ -1802,6 +1804,9 @@ function initializeChatSpace() {
         S.fullResponse = S.contentText;
         scheduleContentRender(S);
       }
+      if (msg.media && !S.media) {
+        S.media = msg.media;
+      }
       if (msg.tool_calls && msg.tool_calls.length) {
         removeTyping(S.botBody);
         for (var tci = 0; tci < msg.tool_calls.length; tci++) {
@@ -1848,6 +1853,18 @@ function initializeChatSpace() {
 
     if (ev.type) {
       switch (ev.type) {
+        case 'media_generated': {
+          removeTyping(S.botBody);
+          if (!S.media) {
+            S.media = {
+              type: ev.mediaType || 'image',
+              filePath: ev.filePath,
+              filename: ev.filename,
+              model: ev.model
+            };
+          }
+          break;
+        }
         case 'plan_created':
         case 'plan_updated': {
             chatCtx.conversation.plan = mergeChatPlan(chatCtx.conversation.plan, ev.plan);

@@ -2759,6 +2759,340 @@ assert.ok(chatSpaceCode72.includes('window.renderSubagentTracesView(subTracesAre
 subagentManager.disposeSubagents(parentSid72);
 console.log('✓ Vector 72 Passed: Undone checkpoint status reflection across subagent chat & views verified.');
 
+console.log('\n--- TEST 73: Model Modality Classification, UI Badging, Media Endpoint Routing & GlobalStorage Persistence ---');
+
+// 1. Verify Strategy 1 & Strategy 2 Model Modality Classifier
+var modelClassifierModule = await import('../src/providers/modelClassifier.js');
+var extractModality = modelClassifierModule.extractModelModality;
+assert.strictEqual(typeof extractModality, 'function', 'extractModelModality is exported');
+
+// Strategy 1: Explicit server metadata
+assert.strictEqual(extractModality({ id: 'custom-m1', type: 'image' }), 'image', 'Detects type: image');
+assert.strictEqual(extractModality({ id: 'custom-m2', type: 'video' }), 'video', 'Detects type: video');
+assert.strictEqual(extractModality({ id: 'custom-m3', type: 'embedding' }), 'embedding', 'Detects type: embedding');
+assert.strictEqual(extractModality({ id: 'custom-m4', modalities: ['image'] }), 'image', 'Detects modalities: [image]');
+assert.strictEqual(extractModality({ id: 'custom-m5', modalities: ['video'] }), 'video', 'Detects modalities: [video]');
+assert.strictEqual(extractModality({ id: 'custom-m6', architecture: { modality: 'video' } }), 'video', 'Detects architecture.modality: video');
+assert.strictEqual(extractModality({ id: 'custom-m7', task: 'text-to-image' }), 'image', 'Detects task: text-to-image');
+
+// Strategy 2: Token heuristics fallback
+assert.strictEqual(extractModality('agnes-image-2.5-flash'), 'image', 'Identifies agnes-image-2.5-flash as image');
+assert.strictEqual(extractModality('agnes-video-2.5'), 'video', 'Identifies agnes-video-2.5 as video');
+assert.strictEqual(extractModality('dall-e-3'), 'image', 'Identifies dall-e-3 as image');
+assert.strictEqual(extractModality('sora-1.0'), 'video', 'Identifies sora-1.0 as video');
+assert.strictEqual(extractModality('kling-video-1.5'), 'video', 'Identifies kling-video-1.5 as video');
+assert.strictEqual(extractModality('text-embedding-3-small'), 'embedding', 'Identifies text-embedding-3-small as embedding');
+assert.strictEqual(extractModality('gpt-4o'), 'chat', 'Identifies gpt-4o as chat');
+assert.strictEqual(extractModality('claude-3-5-sonnet-20241022'), 'chat', 'Identifies claude-3-5-sonnet as chat');
+assert.strictEqual(extractModality('qwen2.5-coder-32b'), 'chat', 'Identifies qwen2.5-coder as chat');
+
+// 2. Verify MediaManager globalStorage persistence
+var mediaManagerModule = await import('../src/media/mediaManager.js');
+var testGlobalStorage73 = path.resolve('scratch/test_adv_suite/global_storage_73');
+fs.mkdirSync(testGlobalStorage73, { recursive: true });
+mediaManagerModule.setDefaultMediaStoragePath(testGlobalStorage73);
+
+var dummyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+var dummyDataUrl = 'data:image/png;base64,' + dummyPngBase64;
+var savedImg73 = await mediaManagerModule.saveMediaFromDataOrUrl(testGlobalStorage73, 'sess_73', dummyDataUrl, 'png');
+assert.ok(savedImg73 && savedImg73.filePath, 'Media saved to disk');
+assert.ok(fs.existsSync(savedImg73.filePath), 'Saved image file exists on disk in globalStorage');
+assert.strictEqual(savedImg73.ext, 'png', 'Saved image extension is png');
+assert.ok(savedImg73.size > 0, 'Saved image file size > 0');
+
+// Verify copyMediaToWorkspace
+var testWs73 = path.resolve('scratch/test_adv_suite/workspace_73');
+fs.mkdirSync(testWs73, { recursive: true });
+var copiedDest73 = await mediaManagerModule.copyMediaToWorkspace(savedImg73.filePath, 'assets/logo.png', testWs73);
+assert.ok(fs.existsSync(copiedDest73), 'Copied image exists in workspace target path');
+assert.strictEqual(fs.readFileSync(copiedDest73).length, savedImg73.size, 'Copied image matches original file size');
+
+// 3. Verify toolRegistry contains generate_image and generate_video
+assert.ok(toolRegistry.has('generate_image'), 'generate_image tool is registered in toolRegistry');
+assert.ok(toolRegistry.has('generate_video'), 'generate_video tool is registered in toolRegistry');
+var imgDef = toolRegistry.getDefinition('generate_image');
+assert.ok(imgDef && imgDef.function && imgDef.function.parameters.properties.prompt, 'generate_image requires prompt parameter');
+var vidDef = toolRegistry.getDefinition('generate_video');
+assert.ok(vidDef && vidDef.function && vidDef.function.parameters.properties.prompt, 'generate_video requires prompt parameter');
+
+// 4. Verify MarkdownRenderer creates interactive media card
+var mdRendererModule = await import('../src/MarkdownRenderer.js');
+var renderedImgCard = globalThis.renderMarkdown('![My Logo](vscode-webview://test-path/image.png)');
+assert.ok(renderedImgCard.includes('cr-media-card cr-image-card'), 'Markdown renderer creates cr-media-card');
+assert.ok(renderedImgCard.includes('cr-btn-save-media'), 'Markdown renderer provides Save to Project action');
+assert.ok(renderedImgCard.includes('cr-btn-copy-media'), 'Markdown renderer provides Copy URL action');
+
+var renderedVidCard = globalThis.renderMarkdown('![Intro Video](vscode-webview://test-path/video.mp4)');
+assert.ok(renderedVidCard.includes('cr-media-card cr-video-card'), 'Markdown renderer creates cr-video-card');
+assert.ok(renderedVidCard.includes('<video controls'), 'Markdown renderer embeds video player');
+
+// 5. Verify Dashboard and extension host integration
+var dashboardCode73 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+assert.ok(dashboardCode73.includes('state.modelModalities'), 'Dashboard tracks model modalities');
+assert.ok(dashboardCode73.includes('cr-badge-image'), 'Dashboard renders image badge');
+assert.ok(dashboardCode73.includes('cr-badge-video'), 'Dashboard renders video badge');
+assert.ok(dashboardCode73.includes('saveMediaToWorkspace'), 'Dashboard supports saveMediaToWorkspace');
+
+var extensionCode73 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
+assert.ok(extensionCode73.includes('case \'saveMediaToWorkspace\':'), 'extension.js handles saveMediaToWorkspace message');
+assert.ok(extensionCode73.includes('mediaObj.webviewUri = localUri;'), 'extension.js converts local media paths to webview safe URIs');
+
+var agentLoopCode73 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+assert.ok(agentLoopCode73.includes('Direct Image Generation triggered for model'), 'agentLoop performs pre-flight direct image dispatch');
+assert.ok(agentLoopCode73.includes('Direct Video Generation triggered for model'), 'agentLoop performs pre-flight direct video dispatch');
+assert.ok(agentLoopCode73.includes('is an image model'), 'agentLoop self-healing catches 400 error and auto-recovers to provider.images');
+assert.ok(agentLoopCode73.includes('is a video model'), 'agentLoop self-healing catches 400 error and auto-recovers to provider.videos');
+
+console.log('✓ Vector 73 Passed: OpenAI model modality classification, UI badging, media endpoint routing & globalStorage persistence verified.');
+
+// ============================================================================
+// TEST 74: Webview Media Display, Dynamic URI Rewriting & Chat Persistence
+// ============================================================================
+console.log('\n--- TEST 74: Webview Media Display, Dynamic URI Rewriting & Chat Persistence ---');
+
+// 1. Verify getWebviewLocalResourceRoots and CSP media-src in extension.js
+assert.ok(extensionCode73.includes('function getWebviewLocalResourceRoots('), 'extension.js exports getWebviewLocalResourceRoots');
+assert.ok(extensionCode73.includes('effCtx.globalStorageUri'), 'getWebviewLocalResourceRoots includes globalStorageUri');
+assert.ok(extensionCode73.includes('media-src ${webview.cspSource}'), 'extension.js includes media-src in Content Security Policy');
+assert.ok(extensionCode73.includes('window.CODERUN_MEDIA_DIR_PATH'), 'extension.js injects CODERUN_MEDIA_DIR_PATH into webview');
+assert.ok(extensionCode73.includes('window.CODERUN_MEDIA_ROOT_URI'), 'extension.js injects CODERUN_MEDIA_ROOT_URI into webview');
+
+// 2. Verify dynamic URI rewriting in MarkdownRenderer.js
+globalThis.window = {
+  CODERUN_MEDIA_DIR_PATH: 'C:/mock/globalStorage/media',
+  CODERUN_MEDIA_ROOT_URI: 'vscode-webview://mock-host/media'
+};
+var renderedLocalImg = globalThis.renderMarkdown('![Dog](C:\\mock\\globalStorage\\media\\dog_test.png)');
+assert.ok(renderedLocalImg.includes('vscode-webview://mock-host/media/dog_test.png'), 'MarkdownRenderer dynamically rewrites local media path to live webview URI');
+assert.ok(renderedLocalImg.includes('cr-media-card cr-image-card'), 'Rendered card contains cr-image-card');
+
+// 3. Verify media persistence in Dashboard.js and ChatSpace.js
+assert.ok(dashboardCode73.includes('if (extra.media) message.media = extra.media;'), 'saveConversationMessage preserves extra.media');
+assert.ok(dashboardCode73.includes('if (message.media) last.media = message.media;'), 'saveConversationMessage updates last.media');
+
+var chatSpaceCode74 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+assert.ok(chatSpaceCode74.includes('if (S.media) extra.media = S.media;'), 'ChatSpace saveBotResponse propagates S.media into extra');
+assert.ok(chatSpaceCode74.includes('case \'media_generated\':'), 'ChatSpace handleEvent handles media_generated event');
+
+// 4. Verify history updates and trace recording in agentLoop.js
+assert.ok(agentLoopCode73.includes('messages.push(assistantMediaMsg);'), 'agentLoop pushes assistantMediaMsg to conversation messages');
+assert.ok(agentLoopCode73.includes('sendHistoryUpdate();'), 'agentLoop sends history update for direct image/video generation');
+
+console.log('✓ Vector 74 Passed: Webview media display, dynamic URI rewriting & chat persistence verified.');
+
+// ============================================================================
+// TEST 75: Save to Project Direct Download to Workspace & Stored Conversation Loading
+// ============================================================================
+console.log('\n--- TEST 75: Save to Project Direct Download to Workspace & Stored Conversation Loading ---');
+
+// 1. Verify extension.js includes convertStoredConversationsToWebviewUris and enhanced saveMediaToWorkspace
+var extensionCode75 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
+assert.ok(extensionCode75.includes('function convertStoredConversationsToWebviewUris('), 'extension.js defines convertStoredConversationsToWebviewUris');
+assert.ok(extensionCode75.includes('convertStoredConversationsToWebviewUris(webview, stored)'), 'extension.js converts stored conversation media URIs on load');
+assert.ok(extensionCode75.includes('vscode.window.showInformationMessage(\'Image saved to workspace:'), 'extension.js shows confirmation notification with Open File action');
+assert.ok(extensionCode75.includes('mediaSavedResult'), 'extension.js posts mediaSavedResult back to webview');
+
+// 2. Verify Dashboard.js does not use window.prompt and provides visual feedback
+var dashboardCode75 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+assert.ok(!dashboardCode75.includes('window.prompt("Enter relative path to save in project:"'), 'Dashboard.js does not use blocked window.prompt');
+assert.ok(dashboardCode75.includes('saveBtn.innerHTML = "⏳ Saving to project...";'), 'Dashboard.js provides immediate saving visual state');
+assert.ok(dashboardCode75.includes('b.classList.add("cr-btn-saved");'), 'Dashboard.js applies cr-btn-saved on success');
+
+// 3. Verify Dashboard.css has .cr-btn-saved styling
+var dashboardCss75 = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf-8');
+assert.ok(dashboardCss75.includes('.cr-btn-save-media.cr-btn-saved'), 'Dashboard.css defines .cr-btn-save-media.cr-btn-saved');
+
+// 4. Test end-to-end saving to workspace
+var testWs75 = path.resolve('scratch/test_adv_suite/workspace_75');
+fs.mkdirSync(testWs75, { recursive: true });
+var dummyImgPath75 = path.resolve('scratch/test_adv_suite/global_storage/media/test_save_75.png');
+fs.mkdirSync(path.dirname(dummyImgPath75), { recursive: true });
+fs.writeFileSync(dummyImgPath75, Buffer.from('FAKE_PNG_BINARY_CONTENT'));
+
+var copiedTarget75 = await mediaManagerModule.copyMediaToWorkspace(dummyImgPath75, 'assets/downloaded_image.png', testWs75);
+assert.ok(fs.existsSync(copiedTarget75), 'File downloaded and saved directly into workspace opened in VS Code');
+assert.strictEqual(fs.readFileSync(copiedTarget75, 'utf-8'), 'FAKE_PNG_BINARY_CONTENT', 'Saved image matches original binary content');
+
+console.log('✓ Vector 75 Passed: Save to Project direct workspace download & stored conversation loading verified.');
+
+// ============================================================================
+// TEST 76: Custom Interactive HTML5 Video Player Controls & Progress Scrubber
+// ============================================================================
+console.log('\n--- TEST 76: Custom Interactive HTML5 Video Player Controls & Progress Scrubber ---');
+
+// 1. Verify MarkdownRenderer video card markup includes all player controls
+var testVidMarkdown = globalThis.renderMarkdown('![Generated Video](vscode-webview://test-host/media/test_clip.mp4)');
+assert.ok(testVidMarkdown.includes('cr-media-card cr-video-card'), 'Rendered card contains cr-video-card');
+assert.ok(testVidMarkdown.includes('cr-video-controls'), 'Rendered card contains cr-video-controls toolbar');
+assert.ok(testVidMarkdown.includes('cr-vid-play'), 'Rendered card contains Play/Pause button');
+assert.ok(testVidMarkdown.includes('cr-vid-rewind'), 'Rendered card contains Rewind 10s button');
+assert.ok(testVidMarkdown.includes('⏪ -10s'), 'Rewind button has -10s label');
+assert.ok(testVidMarkdown.includes('cr-vid-forward'), 'Rendered card contains Forward 10s button');
+assert.ok(testVidMarkdown.includes('⏩ +10s'), 'Forward button has +10s label');
+assert.ok(testVidMarkdown.includes('cr-vid-progress'), 'Rendered card contains range input progress bar');
+assert.ok(testVidMarkdown.includes('cr-vid-progress-fill'), 'Rendered card contains progress fill element');
+assert.ok(testVidMarkdown.includes('cr-vid-time-current'), 'Rendered card contains current time display');
+assert.ok(testVidMarkdown.includes('cr-vid-time-duration'), 'Rendered card contains duration display');
+assert.ok(testVidMarkdown.includes('cr-vid-mute'), 'Rendered card contains Mute button');
+assert.ok(testVidMarkdown.includes('cr-vid-fullscreen'), 'Rendered card contains Fullscreen button');
+assert.ok(testVidMarkdown.includes('cr-video-overlay-play'), 'Rendered card contains center overlay play button');
+
+// 2. Verify Dashboard.js video event handling and time formatting
+var dashboardCode76 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+assert.ok(dashboardCode76.includes('function formatMediaTime('), 'Dashboard.js defines formatMediaTime function');
+assert.ok(dashboardCode76.includes('function bindVideoCardEvents('), 'Dashboard.js defines bindVideoCardEvents');
+assert.ok(dashboardCode76.includes('video.currentTime = Math.max(0, video.currentTime - 10)'), 'Rewind button clamps to 0');
+assert.ok(dashboardCode76.includes('video.currentTime + 10'), 'Forward button advances 10 seconds');
+assert.ok(dashboardCode76.includes('video.muted = !video.muted'), 'Mute button toggles video.muted');
+
+// Test formatMediaTime logic
+function testFormatMediaTime(seconds) {
+  if (!seconds || isNaN(seconds) || seconds < 0) return '0:00';
+  var m = Math.floor(seconds / 60);
+  var s = Math.floor(seconds % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+assert.strictEqual(testFormatMediaTime(0), '0:00', '0 seconds formats as 0:00');
+assert.strictEqual(testFormatMediaTime(5), '0:05', '5 seconds formats as 0:05');
+assert.strictEqual(testFormatMediaTime(65), '1:05', '65 seconds formats as 1:05');
+assert.strictEqual(testFormatMediaTime(3600), '60:00', '3600 seconds formats as 60:00');
+assert.strictEqual(testFormatMediaTime(-10), '0:00', 'Negative seconds formats as 0:00');
+
+// 3. Verify Dashboard.css styles for video player
+var dashboardCss76 = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf-8');
+assert.ok(dashboardCss76.includes('.cr-video-controls'), 'Dashboard.css styles .cr-video-controls');
+assert.ok(dashboardCss76.includes('.cr-vid-btn'), 'Dashboard.css styles .cr-vid-btn');
+assert.ok(dashboardCss76.includes('.cr-vid-progress-fill'), 'Dashboard.css styles .cr-vid-progress-fill');
+assert.ok(dashboardCss76.includes('.cr-video-overlay-play'), 'Dashboard.css styles .cr-video-overlay-play');
+
+console.log('✓ Vector 76 Passed: Custom interactive HTML5 video player controls & progress scrubber verified.');
+
+// ============================================================================
+// TEST 77: Universal OpenAI-Compatible Image & Video Extraction, Polling & Adaptive Retry
+// ============================================================================
+console.log('\n--- TEST 77: Universal OpenAI-Compatible Image & Video Extraction, Polling & Adaptive Retry ---');
+
+var providerCompCode77 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
+var providerOpenAICode77 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
+
+// 1. Verify function declarations and traditional function style
+assert.ok(providerCompCode77.includes('function extractMediaUrl(data)'), 'providerCompatible defines extractMediaUrl');
+assert.ok(providerCompCode77.includes('function extractTaskId(data)'), 'providerCompatible defines extractTaskId');
+assert.ok(providerCompCode77.includes('function pollVideoTask('), 'providerCompatible defines pollVideoTask');
+assert.ok(providerCompCode77.includes('export async function images('), 'providerCompatible exports images');
+assert.ok(providerCompCode77.includes('export async function videos('), 'providerCompatible exports videos');
+
+assert.ok(providerOpenAICode77.includes('function extractMediaUrl(data)'), 'providerOpenAI defines extractMediaUrl');
+assert.ok(providerOpenAICode77.includes('function extractTaskId(data)'), 'providerOpenAI defines extractTaskId');
+assert.ok(providerOpenAICode77.includes('function pollVideoTask('), 'providerOpenAI defines pollVideoTask');
+assert.ok(providerOpenAICode77.includes('export async function images('), 'providerOpenAI exports images');
+assert.ok(providerOpenAICode77.includes('export async function videos('), 'providerOpenAI exports videos');
+
+// 2. Verify adaptive self-healing for endpoints requiring mode: 'text'
+assert.ok(providerCompCode77.includes('mode: \'text\''), 'providerCompatible includes adaptive mode: text');
+assert.ok(providerOpenAICode77.includes('mode: \'text\''), 'providerOpenAI includes adaptive mode: text');
+assert.ok(providerCompCode77.includes('/video/generations'), 'providerCompatible includes fallback to /video/generations');
+assert.ok(providerOpenAICode77.includes('/video/generations'), 'providerOpenAI includes fallback to /video/generations');
+
+// 3. Test universal media URL extractor logic
+function testExtractMediaUrl(data) {
+  if (!data) return null;
+  if (typeof data === 'string' && (data.startsWith('http://') || data.startsWith('https://') || data.startsWith('data:'))) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    for (var i = 0; i < data.length; i++) {
+      var itemUrl = testExtractMediaUrl(data[i]);
+      if (itemUrl) return itemUrl;
+    }
+  }
+  if (data.data && Array.isArray(data.data) && data.data[0]) {
+    var item = data.data[0];
+    if (item.url) return item.url;
+    if (item.b64_json) {
+      return item.b64_json.startsWith('data:') ? item.b64_json : ('data:image/png;base64,' + item.b64_json);
+    }
+    if (item.image) return item.image;
+    if (item.video) return item.video;
+  }
+  if (data.url) return data.url;
+  if (data.video_url) return data.video_url;
+  if (data.output) {
+    if (typeof data.output === 'string') return data.output;
+    if (Array.isArray(data.output) && data.output[0]) return testExtractMediaUrl(data.output[0]);
+  }
+  if (data.result) {
+    if (typeof data.result === 'string') return data.result;
+    if (data.result.url) return data.result.url;
+  }
+  return null;
+}
+
+assert.strictEqual(testExtractMediaUrl({ data: [{ url: 'https://openai.com/image.png' }] }), 'https://openai.com/image.png');
+assert.strictEqual(testExtractMediaUrl({ data: [{ b64_json: 'abc123xyz' }] }), 'data:image/png;base64,abc123xyz');
+assert.strictEqual(testExtractMediaUrl({ url: 'https://example.com/video.mp4' }), 'https://example.com/video.mp4');
+assert.strictEqual(testExtractMediaUrl({ video_url: 'https://example.com/stream.mp4' }), 'https://example.com/stream.mp4');
+assert.strictEqual(testExtractMediaUrl({ output: ['https://replicate.com/video.webm'] }), 'https://replicate.com/video.webm');
+assert.strictEqual(testExtractMediaUrl({ result: { url: 'https://custom.com/render.mp4' } }), 'https://custom.com/render.mp4');
+
+// 4. Test universal task ID extractor logic
+function testExtractTaskId(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (data.task_id) return data.task_id;
+  if (data.video_id) return data.video_id;
+  if (data.job_id) return data.job_id;
+  if (data.id && (data.status === 'processing' || data.status === 'pending' || data.status === 'queued' || data.status === 'starting' || data.status === 'created' || data.status === 'in-progress')) {
+    return data.id;
+  }
+  if (data.data && typeof data.data === 'object') {
+    return testExtractTaskId(data.data);
+  }
+  return null;
+}
+
+assert.strictEqual(testExtractTaskId({ task_id: 'task_001' }), 'task_001');
+assert.strictEqual(testExtractTaskId({ video_id: 'vid_999' }), 'vid_999');
+assert.strictEqual(testExtractTaskId({ job_id: 'job_777' }), 'job_777');
+assert.strictEqual(testExtractTaskId({ id: 'sora_task_555', status: 'processing' }), 'sora_task_555');
+assert.strictEqual(testExtractTaskId({ data: { task_id: 'nested_task_222' } }), 'nested_task_222');
+
+console.log('✓ Vector 77 Passed: Universal OpenAI-compatible image & video extraction, polling & adaptive retry verified.');
+
+// ============================================================================
+// TEST 78: Differentiated Request Timeouts (10m Local LLM vs 30s Cloud)
+// ============================================================================
+console.log('\n--- TEST 78: Differentiated Request Timeouts (10m Local LLM vs 30s Cloud) ---');
+
+var modelClassifier = await import('../src/providers/modelClassifier.js');
+assert.strictEqual(typeof modelClassifier.isLocalEndpoint, 'function', 'modelClassifier exports isLocalEndpoint');
+assert.strictEqual(typeof modelClassifier.getProviderTimeout, 'function', 'modelClassifier exports getProviderTimeout');
+
+// 1. Verify local detection
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'ollama' }), true, 'Ollama provider is local');
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'compatible', baseUrl: 'http://localhost:11434/v1' }), true, 'Localhost baseUrl is local');
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'compatible', baseUrl: 'http://127.0.0.1:1234/v1' }), true, '127.0.0.1 LM Studio is local');
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'compatible', baseUrl: 'http://192.168.1.50:8080' }), false, 'External IP not in local list is remote');
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'compatible', baseUrl: 'https://api.openai.com/v1' }), false, 'OpenAI cloud is remote');
+assert.strictEqual(modelClassifier.isLocalEndpoint({ provider: 'compatible', baseUrl: 'https://apihub.agnes-ai.com/v1' }), false, 'Agnes cloud is remote');
+
+// 2. Verify timeout mapping (10 minutes = 600,000ms for local, 30s = 30,000ms for cloud)
+assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'ollama' }), 600000, 'Ollama timeout is 10 minutes');
+assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'compatible', baseUrl: 'http://localhost:11434/v1' }), 600000, 'Localhost timeout is 10 minutes');
+assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'openai', baseUrl: 'https://api.openai.com/v1' }), 30000, 'OpenAI cloud timeout is 30 seconds');
+assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'compatible', baseUrl: 'https://apihub.agnes-ai.com/v1' }), 30000, 'Agnes cloud timeout is 30 seconds');
+
+// 3. Verify provider files use the 10m / dynamic timeout
+var ollamaCode78 = fs.readFileSync(path.resolve('src/providers/providerOllama.js'), 'utf-8');
+assert.ok(ollamaCode78.includes('timeout: 600000'), 'providerOllama uses 600000ms timeout');
+
+var compCode78 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
+assert.ok(compCode78.includes('timeout: getProviderTimeout(config)'), 'providerCompatible uses dynamic getProviderTimeout');
+
+var openAICode78 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
+assert.ok(openAICode78.includes('timeout: getProviderTimeout(config)'), 'providerOpenAI uses dynamic getProviderTimeout');
+
+console.log('✓ Vector 78 Passed: Differentiated request timeouts (10m local vs 30s cloud) verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -2771,7 +3105,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 72 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 78 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

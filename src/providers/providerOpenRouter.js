@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { extractModelModality } from './modelClassifier.js';
 
 function createClient(config) {
   var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://openrouter.ai/api/v1';
@@ -78,11 +79,12 @@ export async function listModels(config) {
     var mId = m.id || m.name || '';
     if (!mId) continue;
     var ctx = m.context_length || m.context_window || 0;
-    if (ctx) {
-      models.push({ id: mId, context_window: ctx });
-    } else {
-      models.push(mId);
-    }
+    models.push({
+      id: mId,
+      modality: extractModelModality(m),
+      context_window: ctx,
+      raw: m
+    });
   }
   return models;
 }
