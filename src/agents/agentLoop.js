@@ -57,7 +57,11 @@ function getEffectiveSessionUsage(sessionUsage, activeTrace) {
     outT = activeTrace.metrics.totalTokens.output || 0;
     totT = activeTrace.metrics.totalTokens.total || (inT + outT);
   }
-  return { prompt_tokens: inT, completion_tokens: outT, total_tokens: totT, input: inT, output: outT, total: totT };
+  var res = { prompt_tokens: inT, completion_tokens: outT, total_tokens: totT, input: inT, output: outT, total: totT };
+  if (sessionUsage && sessionUsage.reasoning_tokens) {
+    res.reasoning_tokens = sessionUsage.reasoning_tokens;
+  }
+  return res;
 }
 
 function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
@@ -1418,6 +1422,9 @@ export async function runAgentLoop(userPrompt, config, options) {
             if (chunk.usage.prompt_tokens) sessionUsage.prompt_tokens += chunk.usage.prompt_tokens;
             if (chunk.usage.completion_tokens) sessionUsage.completion_tokens += chunk.usage.completion_tokens;
             if (chunk.usage.total_tokens) sessionUsage.total_tokens += chunk.usage.total_tokens;
+            if (chunk.usage.reasoning_tokens) {
+              sessionUsage.reasoning_tokens = (sessionUsage.reasoning_tokens || 0) + chunk.usage.reasoning_tokens;
+            }
             sendEvent({
               type: 'usage',
               usage: chunk.usage,
@@ -1844,6 +1851,9 @@ export async function runAgentLoop(userPrompt, config, options) {
         if (iterationThinking || fullThinking) {
           assistantMsg.thinking = iterationThinking || fullThinking;
         }
+        if (iterationThinkingKey) {
+          assistantMsg.thinkingKey = iterationThinkingKey;
+        }
         messages.push(assistantMsg);
         sendHistoryUpdate();
 
@@ -2217,40 +2227,49 @@ export async function runAgentLoop(userPrompt, config, options) {
   return { content: fullContent, thinking: fullThinking, done: false, maxReached: true, toolFailures: sessionCtx.failedMutations };
 }
 
+var THINK_TAG_PAIRS = [
+  { open: '\uE000', close: '\uE001' },
+  { open: '<think>', close: '</think>' },
+  { open: '<thought>', close: '</thought>' },
+  { open: '<thinking>', close: '</thinking>' },
+  { open: '<reasoning>', close: '</reasoning>' }
+];
+
 function processThinkTags(text, inThinkTag, buffer) {
   var contentPart = '';
   var thinkingPart = '';
   buffer += text;
 
-  var OPEN_UNICODE = '\uE000';
-  var CLOSE_UNICODE = '\uE001';
-  var OPEN_HTML = '<think>';
-  var CLOSE_HTML = '</think>';
-
   while (true) {
     if (!inThinkTag) {
-      var uIdx = buffer.indexOf(OPEN_UNICODE);
-      var hIdx = buffer.indexOf(OPEN_HTML);
       var startIdx = -1;
-      var tagLen = 0;
+      var matchedPair = null;
 
-      if (uIdx !== -1 && (hIdx === -1 || uIdx <= hIdx)) {
-        startIdx = uIdx;
-        tagLen = OPEN_UNICODE.length;
-      } else if (hIdx !== -1) {
-        startIdx = hIdx;
-        tagLen = OPEN_HTML.length;
+      for (var pi = 0; pi < THINK_TAG_PAIRS.length; pi++) {
+        var pair = THINK_TAG_PAIRS[pi];
+        var idx = buffer.indexOf(pair.open);
+        if (idx !== -1 && (startIdx === -1 || idx < startIdx)) {
+          startIdx = idx;
+          matchedPair = pair;
+        }
       }
 
-      if (startIdx !== -1) {
+      if (startIdx !== -1 && matchedPair) {
         contentPart += buffer.substring(0, startIdx);
-        inThinkTag = true;
-        buffer = buffer.substring(startIdx + tagLen);
+        inThinkTag = matchedPair.close;
+        buffer = buffer.substring(startIdx + matchedPair.open.length);
       } else {
         var partialLen = 0;
-        for (var i = 1; i <= Math.min(buffer.length, 7); i++) {
+        for (var i = 1; i <= Math.min(buffer.length, 11); i++) {
           var tail = buffer.slice(-i);
-          if (OPEN_HTML.startsWith(tail) || OPEN_UNICODE.startsWith(tail)) {
+          var hasMatch = false;
+          for (var p2 = 0; p2 < THINK_TAG_PAIRS.length; p2++) {
+            if (THINK_TAG_PAIRS[p2].open.startsWith(tail)) {
+              hasMatch = true;
+              break;
+            }
+          }
+          if (hasMatch) {
             partialLen = i;
             break;
           }
@@ -2260,17 +2279,19 @@ function processThinkTags(text, inThinkTag, buffer) {
         break;
       }
     } else {
-      var uEndIdx = buffer.indexOf(CLOSE_UNICODE);
-      var hEndIdx = buffer.indexOf(CLOSE_HTML);
-      var endIdx = -1;
-      var closeLen = 0;
+      var closeTag = (typeof inThinkTag === 'string') ? inThinkTag : '</think>';
+      var endIdx = buffer.indexOf(closeTag);
+      var closeLen = closeTag.length;
 
-      if (uEndIdx !== -1 && (hEndIdx === -1 || uEndIdx <= hEndIdx)) {
-        endIdx = uEndIdx;
-        closeLen = CLOSE_UNICODE.length;
-      } else if (hEndIdx !== -1) {
-        endIdx = hEndIdx;
-        closeLen = CLOSE_HTML.length;
+      if (endIdx === -1) {
+        for (var cpi = 0; cpi < THINK_TAG_PAIRS.length; cpi++) {
+          var cPair = THINK_TAG_PAIRS[cpi];
+          var altIdx = buffer.indexOf(cPair.close);
+          if (altIdx !== -1 && (endIdx === -1 || altIdx < endIdx)) {
+            endIdx = altIdx;
+            closeLen = cPair.close.length;
+          }
+        }
       }
 
       if (endIdx !== -1) {
@@ -2278,16 +2299,27 @@ function processThinkTags(text, inThinkTag, buffer) {
         inThinkTag = false;
         buffer = buffer.substring(endIdx + closeLen);
       } else {
-        var partialLen = 0;
-        for (var i = 1; i <= Math.min(buffer.length, 8); i++) {
-          var tail = buffer.slice(-i);
-          if (CLOSE_HTML.startsWith(tail) || CLOSE_UNICODE.startsWith(tail)) {
-            partialLen = i;
+        var partialLen2 = 0;
+        for (var k = 1; k <= Math.min(buffer.length, 12); k++) {
+          var tail2 = buffer.slice(-k);
+          var hasCloseMatch = false;
+          if (closeTag.startsWith(tail2)) {
+            hasCloseMatch = true;
+          } else {
+            for (var cpi2 = 0; cpi2 < THINK_TAG_PAIRS.length; cpi2++) {
+              if (THINK_TAG_PAIRS[cpi2].close.startsWith(tail2)) {
+                hasCloseMatch = true;
+                break;
+              }
+            }
+          }
+          if (hasCloseMatch) {
+            partialLen2 = k;
             break;
           }
         }
-        thinkingPart += buffer.substring(0, buffer.length - partialLen);
-        buffer = buffer.substring(buffer.length - partialLen);
+        thinkingPart += buffer.substring(0, buffer.length - partialLen2);
+        buffer = buffer.substring(buffer.length - partialLen2);
         break;
       }
     }

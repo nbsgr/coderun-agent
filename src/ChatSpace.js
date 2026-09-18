@@ -1084,21 +1084,29 @@ function initializeChatSpace() {
           var m = turn.botMessages[mi];
           if (m.role === 'assistant') {
             var content = m.content || '';
-            var thinking = m.thinking || null;
-            console.log('[LOAD_HISTORY] assistant msg #' + mi + ' has .thinking:', !!m.thinking, 'content length:', content.length, 'keys:', Object.keys(m).join(','));
-            var startIdx = content.indexOf('\uE000');
-            var endIdx = content.indexOf('\uE001');
-            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-              thinking = content.substring(startIdx + 1, endIdx);
-              content = content.substring(0, startIdx) + content.substring(endIdx + 1);
-              content = content.replace(/^\n+/, '');
-            } else if (!thinking && content.includes('<think>')) {
-              var tStart = content.indexOf('<think>');
-              var tEnd = content.indexOf('</think>');
-              if (tStart !== -1 && tEnd !== -1 && tEnd > tStart) {
-                thinking = content.substring(tStart + 7, tEnd);
-                content = content.substring(0, tStart) + content.substring(tEnd + 8);
-                content = content.replace(/^\n+/, '');
+            var thinking = m.thinking || m.reasoning_content || m.reasoning || m.thought || m.thoughts || m.thinking_content || m.reasoning_text || null;
+            if (!thinking && m.reasoning_summary) {
+              thinking = typeof m.reasoning_summary === 'string' ? m.reasoning_summary : (m.reasoning_summary.content || '');
+            }
+            if (!thinking && content) {
+              var histOpenTags = ['\uE000', '<think>', '<thought>', '<thinking>', '<reasoning>'];
+              var histCloseTags = ['\uE001', '</think>', '</thought>', '</thinking>', '</reasoning>'];
+              for (var hti = 0; hti < histOpenTags.length; hti++) {
+                var oTag = histOpenTags[hti];
+                var cTag = histCloseTags[hti];
+                var sIdx = content.indexOf(oTag);
+                var eIdx = content.indexOf(cTag);
+                if (sIdx !== -1 && eIdx !== -1 && eIdx > sIdx) {
+                  thinking = content.substring(sIdx + oTag.length, eIdx);
+                  content = content.substring(0, sIdx) + content.substring(eIdx + cTag.length);
+                  content = content.replace(/^\n+/, '');
+                  break;
+                } else if (sIdx !== -1 && eIdx === -1) {
+                  thinking = content.substring(sIdx + oTag.length);
+                  content = content.substring(0, sIdx);
+                  content = content.replace(/^\n+/, '');
+                  break;
+                }
               }
             }
             console.log('[LOAD_HISTORY] final thinking resolved:', !!thinking, thinking ? thinking.substring(0, 80) : '(none)');
@@ -1610,7 +1618,9 @@ function initializeChatSpace() {
             model: m.model || '',
             provider: m.provider || ''
           };
-          if (m.thinking) h.thinking = m.thinking;
+          var thSend = m.thinking || m.reasoning_content || m.reasoning || m.thought || m.thoughts || m.thinking_content || m.reasoning_text || (m.reasoning_summary && (typeof m.reasoning_summary === 'string' ? m.reasoning_summary : m.reasoning_summary.content)) || null;
+          if (thSend) h.thinking = thSend;
+          if (m.thinkingKey) h.thinkingKey = m.thinkingKey;
           if (m.error) h.error = m.error;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
@@ -1715,7 +1725,9 @@ function initializeChatSpace() {
             model: m.model || '',
             provider: m.provider || ''
           };
-          if (m.thinking) h.thinking = m.thinking;
+          var thCont = m.thinking || m.reasoning_content || m.reasoning || m.thought || m.thoughts || m.thinking_content || m.reasoning_text || (m.reasoning_summary && (typeof m.reasoning_summary === 'string' ? m.reasoning_summary : m.reasoning_summary.content)) || null;
+          if (thCont) h.thinking = thCont;
+          if (m.thinkingKey) h.thinkingKey = m.thinkingKey;
           if (m.error) h.error = m.error;
           if (m.tool_calls) h.tool_calls = m.tool_calls;
           if (m.tool_call_id) h.tool_call_id = m.tool_call_id;
@@ -1782,9 +1794,14 @@ function initializeChatSpace() {
         removeTyping(S.botBody);
         if (!S.thinkBlock) {
           S.thinkBlock = appendThinkBlock(S.botBody);
+          S.thinkBlock.open = !S.fullResponse;
           S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
           S.thinkText = '';
           S.iterationThinking = '';
+          if (S.fullResponse) {
+            var trailingLbl = S.thinkBlock.querySelector('.cr-think-label');
+            if (trailingLbl) trailingLbl.textContent = 'Thought process';
+          }
         }
         var chunk = msg.thinking;
         S.thinkText += chunk;
@@ -1893,9 +1910,14 @@ function initializeChatSpace() {
           removeTyping(S.botBody);
           if (!S.thinkBlock) {
             S.thinkBlock = appendThinkBlock(S.botBody);
+            S.thinkBlock.open = !S.fullResponse;
             S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
             S.thinkText = '';
             S.iterationThinking = '';
+            if (S.fullResponse) {
+              var trailingLbl2 = S.thinkBlock.querySelector('.cr-think-label');
+              if (trailingLbl2) trailingLbl2.textContent = 'Thought process';
+            }
           }
           var chunk = ev.content || '';
           S.thinkText += chunk;
@@ -3260,7 +3282,12 @@ function initializeChatSpace() {
         '<span class="cr-think-chevron"></span>' +
       '</summary>' +
       '<pre class="cr-think-pre"></pre>';
-    body.appendChild(det);
+    var contentBlock = body.querySelector('.cr-content-block');
+    if (contentBlock) {
+      body.insertBefore(det, contentBlock);
+    } else {
+      body.appendChild(det);
+    }
     return det;
   }
 
