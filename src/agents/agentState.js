@@ -95,12 +95,7 @@ export function transitionWithTrace(to, sessionId, traceModule) {
   if (fromState === to) {
     return fromState;
   }
-  try {
-    transition(to, sid);
-  } catch (_) {
-    reset(sid);
-    transition(to, sid);
-  }
+  transition(to, sid);
   try {
     if (traceModule && typeof traceModule.recordTransition === 'function') {
       traceModule.recordTransition(sid, fromState, to);
@@ -108,4 +103,5 @@ export function transitionWithTrace(to, sessionId, traceModule) {
   } catch (_) {}
   return fromState;
 }
+
 

@@ -66,6 +66,15 @@ export function register(descriptor) {
   if (!descriptor.metadata.category) descriptor.metadata.category = descriptor.category || 'utility';
   if (!descriptor.metadata.timeout) descriptor.metadata.timeout = 30000;
   if (descriptor.metadata.rootOnly === undefined) descriptor.metadata.rootOnly = descriptor.rootOnly || false;
+  if (descriptor.metadata.readOnly === undefined) {
+    descriptor.metadata.readOnly = descriptor.readOnly !== undefined ? descriptor.readOnly : false;
+  }
+  if (descriptor.metadata.mutation === undefined) {
+    descriptor.metadata.mutation = descriptor.mutation !== undefined ? descriptor.mutation : false;
+  }
+  if (descriptor.metadata.sideEffect === undefined) {
+    descriptor.metadata.sideEffect = descriptor.sideEffect || (descriptor.metadata.readOnly ? 'none' : (descriptor.metadata.mutation ? 'mutation' : 'unknown'));
+  }
 
   _tools[name] = descriptor;
   _aliasMap[name] = name;
@@ -309,6 +318,22 @@ export function isDangerous(name) {
 export function needsPermission(name) {
   var tool = get(name);
   return tool ? !!tool.metadata.needsPermission : false;
+}
+
+export function isReadOnly(name) {
+  var tool = get(name);
+  if (!tool) return false;
+  if (tool.metadata && tool.metadata.readOnly !== undefined) return !!tool.metadata.readOnly;
+  if (tool.metadata && tool.metadata.sideEffect === 'none') return true;
+  return false;
+}
+
+export function isMutation(name) {
+  var tool = get(name);
+  if (!tool) return false;
+  if (tool.metadata && tool.metadata.mutation !== undefined) return !!tool.metadata.mutation;
+  if (tool.metadata && (tool.metadata.sideEffect === 'mutation' || tool.metadata.sideEffect === 'filesystem')) return true;
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -35,6 +35,7 @@ import * as subagentTools from '../src/tools/subagentTools.js';
 import * as subagentPanel from '../src/SubagentPanel.js';
 import '../src/MarkdownRenderer.js';
 import * as reviewEngine from '../src/execution/reviewEngine.js';
+import * as toolContextBuilder from '../src/agents/toolContextBuilder.js';
 
 function noopResolve() {}
 
@@ -696,7 +697,33 @@ for await (var wEvt of ctxGen) {
 }
 var ctxHistory = projectKnowledge.getRecentCheckpoints(ctxSessionId, 5);
 assert.ok(ctxHistory && ctxHistory.length > 0, 'Checkpoint was saved under session_ctx_prop_38 rather than default');
-console.log('✓ Vector 38 Passed: ToolRegistry propagates full context object including sessionId to tools.');
+
+// Test tool descriptor metadata queries
+assert.strictEqual(toolRegistry.isReadOnly('read_file'), true, 'read_file is recognized as readOnly');
+assert.strictEqual(toolRegistry.isReadOnly('search_files'), true, 'search_files is recognized as readOnly');
+assert.strictEqual(toolRegistry.isReadOnly('list_directory'), true, 'list_directory is recognized as readOnly');
+assert.strictEqual(toolRegistry.isMutation('write_file'), true, 'write_file is recognized as mutation');
+assert.strictEqual(toolRegistry.isMutation('edit_file'), true, 'edit_file is recognized as mutation');
+assert.strictEqual(toolRegistry.isMutation('delete_file'), true, 'delete_file is recognized as mutation');
+
+assert.strictEqual(toolContextBuilder.isReadOnlyTool('read_file'), true, 'toolContextBuilder identifies read_file as readOnly');
+assert.strictEqual(toolContextBuilder.isReadOnlyTool('search_files'), true, 'toolContextBuilder identifies search_files as readOnly');
+assert.strictEqual(toolContextBuilder.isMutationTool('write_file'), true, 'toolContextBuilder identifies write_file as mutation');
+assert.strictEqual(toolContextBuilder.isMutationTool('patch_file'), true, 'toolContextBuilder identifies patch_file as mutation');
+
+function mockCustomReadTool() {}
+toolRegistry.register({
+  name: 'dynamic_custom_reader',
+  handler: mockCustomReadTool,
+  readOnly: true,
+  description: 'A dynamic custom read tool'
+});
+assert.strictEqual(toolRegistry.isReadOnly('dynamic_custom_reader'), true, 'Dynamic tool is read-only in toolRegistry');
+assert.strictEqual(toolContextBuilder.isReadOnlyTool('dynamic_custom_reader'), true, 'Dynamic tool is read-only in toolContextBuilder via registry metadata');
+toolRegistry.unregister('dynamic_custom_reader');
+assert.strictEqual(toolRegistry.has('dynamic_custom_reader'), false, 'Dynamic tool unregistered cleanly');
+
+console.log('✓ Vector 38 Passed: ToolRegistry propagates full context object, and descriptor metadata queries (isReadOnly/isMutation) verified.');
 
 // 39. Signal Cancellation Propagation in Web Request
 console.log('--- TEST 39: Signal Cancellation Propagation ---');
@@ -735,6 +762,14 @@ assert.strictEqual(agentState.getState(stateSessionId), 'max_iterations');
 // Test continuation from max_iterations
 agentState.transition('thinking', stateSessionId);
 assert.strictEqual(agentState.getState(stateSessionId), 'thinking', 'State machine cleanly resumes thinking from max_iterations on continuation');
+
+// Verify invalid transition throws StateError and is NOT silently reset
+agentState.transition('completed', stateSessionId);
+assert.throws(function testInvalidTransition() {
+  agentState.transitionWithTrace('executing', stateSessionId, null);
+}, /Invalid state transition/);
+assert.strictEqual(agentState.getState(stateSessionId), 'completed', 'State machine preserves terminal state without silent reset');
+
 console.log('✓ Vector 41 Passed: State machine transitions cleanly support max_iterations and continuation.');
 
 // 42. Interactive Command & Prompt Detection

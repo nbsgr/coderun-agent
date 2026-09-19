@@ -22,6 +22,7 @@ import * as reviewEngine from '../execution/reviewEngine.js';
 import * as executionTrace from '../execution/executionTrace.js';
 import * as memoryManager from '../context/memoryManager.js';
 import * as diffManager from '../tools/diffManager.js';
+import * as mediaManager from '../media/mediaManager.js';
 import { extractModelModality } from '../providers/modelClassifier.js';
 // Phase 1 engines — extracted from agentLoop
 import * as contextEngine from './contextEngine.js';
@@ -447,6 +448,9 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: targetState, iteration: iteration });
 
+      var iterationStartInput = sessionUsage.prompt_tokens;
+      var iterationStartOutput = sessionUsage.completion_tokens;
+
       var streamBuffer = '';
       var inThinkTag = false;
       var iterationThinking = '';
@@ -600,6 +604,7 @@ export async function runAgentLoop(userPrompt, config, options) {
             var recVid = await provider.videos(config, effectivePrompt);
             if (recVid) {
               var recVidSaved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, recVid, 'mp4');
+              var recVidPath = recVidSaved ? recVidSaved.filePath : (typeof recVid === 'string' ? recVid : 'video.mp4');
               var recVidMd = '![Generated Video](' + recVidPath + ')\n\n*Generated with ' + config.model + ' (Auto-routed to /v1/videos)*';
               sendEvent({
                 message: {
@@ -700,8 +705,8 @@ export async function runAgentLoop(userPrompt, config, options) {
           thinking: iterationThinking || fullThinking,
           decision: decisionText,
           tokens: {
-            input: sessionUsage.prompt_tokens || Math.round(JSON.stringify(messages).length / 4),
-            output: sessionUsage.completion_tokens || Math.round(((iterationContent || '').length + (iterationThinking || '').length) / 4)
+            input: (sessionUsage.prompt_tokens - iterationStartInput) || Math.round(JSON.stringify(messages).length / 4),
+            output: (sessionUsage.completion_tokens - iterationStartOutput) || Math.round(((iterationContent || '').length + (iterationThinking || '').length) / 4)
           },
           durationMs: 0
         });
@@ -768,7 +773,9 @@ export async function runAgentLoop(userPrompt, config, options) {
               console.log('[AGENT LOOP] Review failed. Injecting feedback and repeating iteration.');
               var feedbackMsg = {
                 role: 'user',
-                content: '## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
+                source: 'system_verification',
+                isSystemFeedback: true,
+                content: '[SYSTEM VERIFICATION FEEDBACK — AUTOMATED CODE REVIEW]\n## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
                          reviewReport.issues.map(formatReviewIssueItem).join('\n') +
                          '\n\nPlease address these issues (such as resolving compiler/diagnostic errors, fixing syntax, removing placeholders, resolving empty catch blocks, or correcting credential leaks) in the next iteration.'
               };
@@ -825,15 +832,32 @@ export async function runAgentLoop(userPrompt, config, options) {
           // Intentionally ignored to allow safe execution fallback
         }
 
+        var completionEvidence = {
+          modelCompleted: true,
+          reviewPassed: !hasReviewIssues,
+          modifiedFilesCount: modifiedFiles ? modifiedFiles.length : 0,
+          failedMutationsCount: (sessionCtx.failedMutations && sessionCtx.failedMutations.length) || 0,
+          verified: (!sessionCtx.failedMutations || sessionCtx.failedMutations.length === 0) && !hasReviewIssues
+        };
+
         var executionReportText = formatExecutionReport();
         sendEvent({
           type: EVENT_TYPES.AGENT_DONE,
           reason: 'completed',
           content: fullContent,
           thinking: fullThinking,
-          report: executionReportText
+          report: executionReportText,
+          completionEvidence: completionEvidence
         });
-        return { content: fullContent, thinking: fullThinking, done: true, report: executionReportText, toolFailures: sessionCtx.failedMutations };
+        return {
+          content: fullContent,
+          thinking: fullThinking,
+          done: true,
+          verified: completionEvidence.verified,
+          completionEvidence: completionEvidence,
+          report: executionReportText,
+          toolFailures: sessionCtx.failedMutations
+        };
       }
 
       try {

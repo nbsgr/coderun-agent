@@ -1,6 +1,7 @@
 // toolContextBuilder.js — Tool execution context and loop safety utilities
 // Extracted from agentLoop.js. All functions are pure or operate on their arguments only.
-// No imports needed — keeps this module dependency-free and easy to test in isolation.
+
+import * as toolRegistry from '../tools/toolRegistry.js';
 
 /**
  * Build the context object passed to every tool execution.
@@ -28,32 +29,57 @@ export function buildToolContext(workspace, sessionId, signal, sessionCtx, sendE
 
 /**
  * Returns true when the tool is read-only and safe to run in parallel
- * without worrying about write conflicts.
+ * without worrying about write conflicts. First queries toolRegistry metadata,
+ * falling back to built-in descriptor knowledge.
  */
 export function isReadOnlyTool(toolName) {
+  var canonical = (toolRegistry && typeof toolRegistry.resolveAlias === 'function')
+    ? (toolRegistry.resolveAlias(toolName) || toolName)
+    : toolName;
+  if (toolRegistry && typeof toolRegistry.isReadOnly === 'function' && toolRegistry.isReadOnly(canonical)) {
+    return true;
+  }
   var readTools = {
     read_file: true,
     search_code: true,
     search_files: true,
     list_dir: true,
+    list_directory: true,
+    get_file_info: true,
     grep_search: true,
     find_by_name: true,
+    find_in_files: true,
     get_symbols: true,
+    list_symbols: true,
     get_stats: true,
     view_file: true,
     read_url_content: true,
-    read_rules: true
+    read_rules: true,
+    get_definition: true,
+    find_references: true,
+    document_symbols: true,
+    get_current_datetime: true,
+    query_project_db: true,
+    subagent_status: true,
+    subagents_list: true
   };
-  return !!readTools[toolName];
+  return !!readTools[canonical];
 }
 
 /**
  * Returns true when the tool mutates the filesystem.
  * Used to track failed mutations and report them to the caller.
+ * First queries toolRegistry metadata, falling back to built-in descriptor knowledge.
  */
 export function isMutationTool(toolName) {
-  return toolName === 'write_file' || toolName === 'edit_file' || toolName === 'patch_file' ||
-    toolName === 'delete_file' || toolName === 'create_folder' || toolName === 'delete_folder';
+  var canonical = (toolRegistry && typeof toolRegistry.resolveAlias === 'function')
+    ? (toolRegistry.resolveAlias(toolName) || toolName)
+    : toolName;
+  if (toolRegistry && typeof toolRegistry.isMutation === 'function' && toolRegistry.isMutation(canonical)) {
+    return true;
+  }
+  return canonical === 'write_file' || canonical === 'edit_file' || canonical === 'patch_file' ||
+    canonical === 'delete_file' || canonical === 'create_folder' || canonical === 'delete_folder';
 }
 
 /**

@@ -1987,6 +1987,9 @@ async function* ask_question(args, context) {
 
 function reg(name, handler, opts) {
   opts = opts || {};
+  var isReadOnly = opts.readOnly || false;
+  var isMutation = opts.mutation || false;
+  var sideEffect = opts.sideEffect || (isReadOnly ? 'none' : (isMutation ? 'mutation' : 'unknown'));
   toolRegistry.register({
     name: name,
     handler: handler,
@@ -1996,13 +1999,19 @@ function reg(name, handler, opts) {
     parameters: opts.parameters || {},
     required: opts.required || [],
     hidden: opts.hidden || false,
+    readOnly: isReadOnly,
+    mutation: isMutation,
+    sideEffect: sideEffect,
     metadata: {
       dangerous: opts.dangerous || false,
       needsPermission: opts.needsPermission || opts.dangerous || false,
       hidden: opts.hidden || false,
       category: opts.category || 'utility',
       timeout: opts.timeout || 30000,
-      rootOnly: opts.rootOnly || false
+      rootOnly: opts.rootOnly || false,
+      readOnly: isReadOnly,
+      mutation: isMutation,
+      sideEffect: sideEffect
     }
   });
 }
@@ -2012,6 +2021,7 @@ export function registerAllTools() {
   reg('read_file', read_file, {
     aliases: ['read'],
     category: 'filesystem',
+    readOnly: true,
     description: 'Read the full contents of a file at the given relative path inside the workspace.',
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/main.py'" } },
     required: ['file_path']
@@ -2019,6 +2029,7 @@ export function registerAllTools() {
   reg('write_file', write_file, {
     aliases: ['write'],
     category: 'filesystem',
+    mutation: true,
     description: 'Create a new file or completely overwrite an existing file.',
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" }, content: { type: 'string', description: 'The complete file content' } },
     required: ['file_path', 'content'],
@@ -2027,6 +2038,7 @@ export function registerAllTools() {
   reg('edit_file', edit_file, {
     aliases: ['edit'],
     category: 'filesystem',
+    mutation: true,
     description: 'Replace the first occurrence of an exact string in a file with a new string.',
     parameters: { file_path: { type: 'string', description: 'Relative path' }, old_string: { type: 'string', description: 'The exact string to find' }, new_string: { type: 'string', description: 'The replacement string' } },
     required: ['file_path', 'old_string', 'new_string'],
@@ -2034,6 +2046,7 @@ export function registerAllTools() {
   });
   reg('delete_file', delete_file, {
     category: 'filesystem',
+    mutation: true,
     description: 'Permanently delete a file from the workspace.',
     parameters: { file_path: { type: 'string', description: 'Relative path' } },
     required: ['file_path'],
@@ -2041,12 +2054,14 @@ export function registerAllTools() {
   });
   reg('create_folder', create_folder, {
     category: 'filesystem',
+    mutation: true,
     description: 'Create a directory (and any parent directories) in the workspace.',
     parameters: { folder_path: { type: 'string', description: "Relative path e.g. 'src/components'" } },
     required: ['folder_path']
   });
   reg('delete_folder', delete_folder, {
     category: 'filesystem',
+    mutation: true,
     description: 'Delete a folder and ALL its contents recursively.',
     parameters: { folder_path: { type: 'string', description: 'Relative path to delete' } },
     required: ['folder_path'],
@@ -2054,18 +2069,21 @@ export function registerAllTools() {
   });
   reg('list_directory', list_directory, {
     category: 'filesystem',
+    readOnly: true,
     description: 'List all files and folders in a directory.',
     parameters: { folder_path: { type: 'string', description: "Relative path. Use '.' for root." } },
     required: []
   });
   reg('get_file_info', get_file_info, {
     category: 'filesystem',
+    readOnly: true,
     description: 'Get metadata about a file or folder (size, modified, type).',
     parameters: { file_path: { type: 'string', description: 'Relative path' } },
     required: ['file_path']
   });
   reg('patch_file', patch_file, {
     category: 'filesystem',
+    mutation: true,
     description: 'Apply multiple search-and-replace blocks to a single file at once.',
     parameters: {
       file_path: { type: 'string', description: 'Relative path' },
@@ -2078,6 +2096,7 @@ export function registerAllTools() {
   // ── Search ─────────────────────────────────────────
   reg('search_files', search_files, {
     category: 'search',
+    readOnly: true,
     description: 'Recursively search for files matching a glob pattern.',
     parameters: {
       glob_pattern: { type: 'string', description: "Glob pattern e.g. '*.py' or '**/*.js'" },
@@ -2087,12 +2106,14 @@ export function registerAllTools() {
   });
   reg('find_in_files', find_in_files, {
     category: 'search',
+    readOnly: true,
     description: 'Search file contents for a text query. Returns matching files with snippets.',
     parameters: { query: { type: 'string', description: 'Text to search for' } },
     required: ['query']
   });
   reg('list_symbols', list_symbols, {
     category: 'search',
+    readOnly: true,
     description: 'Extract code symbols (classes, functions) defined in a file.',
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" } },
     required: ['file_path']
@@ -2100,6 +2121,7 @@ export function registerAllTools() {
   reg('get_definition', get_definition, {
     aliases: ['goto_definition', 'go_to_definition'],
     category: 'search',
+    readOnly: true,
     description: 'Jump directly to the definition of a symbol at the given file position using VS Code language intelligence (LSP).',
     parameters: {
       file_path: { type: 'string', description: 'Relative path to the source file' },
@@ -2111,6 +2133,7 @@ export function registerAllTools() {
   reg('find_references', find_references, {
     aliases: ['find_usages'],
     category: 'search',
+    readOnly: true,
     description: 'Find all references, usages, and call-sites of a symbol across the workspace using VS Code language intelligence (LSP).',
     parameters: {
       file_path: { type: 'string', description: 'Relative path to the source file' },
@@ -2122,6 +2145,7 @@ export function registerAllTools() {
   reg('document_symbols', document_symbols, {
     aliases: ['outline', 'get_symbols'],
     category: 'search',
+    readOnly: true,
     description: 'Retrieve the hierarchical symbol tree (functions, classes, methods, variables) and line ranges for an entire file.',
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/app.js'" } },
     required: ['file_path']
@@ -2162,6 +2186,7 @@ export function registerAllTools() {
   // ── Utility ────────────────────────────────────────
   reg('get_current_datetime', get_current_datetime, {
     category: 'utility',
+    readOnly: true,
     description: 'Get the current date and time in ISO format.',
     parameters: {},
     required: []
@@ -2202,6 +2227,7 @@ export function registerAllTools() {
   // ── Database Queries ───────────────────────────────
   reg('query_project_db', query_project_db, {
     category: 'database',
+    readOnly: true,
     hidden: true,
     description: 'Query the SQLite project knowledge database containing file index, text chunks, and code symbols (functions, classes, logic structure) of the project workspace. Use SELECT read-only SQL queries.',
     parameters: {
@@ -2264,6 +2290,7 @@ export function registerAllTools() {
 
   reg('subagent_status', subagentTools.subagent_status, {
     category: 'subagent',
+    readOnly: true,
     rootOnly: true,
     description: "Inspect a child subagent's current state, progress, activity, files read/modified, and partial results.",
     parameters: {
@@ -2274,6 +2301,7 @@ export function registerAllTools() {
 
   reg('subagents_list', subagentTools.subagents_list, {
     category: 'subagent',
+    readOnly: true,
     rootOnly: true,
     description: 'List all child subagents created in this session with their current lifecycle and granular state.',
     parameters: {}
