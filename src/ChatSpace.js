@@ -106,7 +106,7 @@ function initializeChatSpace() {
     }
   }
 
-  // ── RAF-coalesced smooth scroll (avoids layout thrashing) ───
+  // ── RAF-coalesced scroll (always targets latest height) ───
   var _scrollRAF = null;
   function handleScrollRAF(el) {
     _scrollRAF = null;
@@ -122,23 +122,45 @@ function initializeChatSpace() {
     var lastChild = el.lastElementChild;
     var hasPendingPermissions = lastChild && lastChild.querySelector('.cr-permission-actions button') !== null;
     if (hasPendingPermissions) return;
-    if (_scrollRAF) return;
+    // Cancel any stale pending RAF so we always scroll to the LATEST height
+    if (_scrollRAF) {
+      cancelAnimationFrame(_scrollRAF);
+      _scrollRAF = null;
+    }
     function onScrollRAF() { handleScrollRAF(el); }
     _scrollRAF = requestAnimationFrame(onScrollRAF);
   }
 
-  // ── Debounced markdown render for streaming content ───
-  var _renderTimer = null;
-  function handleContentRenderTimeout(S) {
-    _renderTimer = null;
-    if (S.contentDiv && S.contentText !== undefined) {
-      S.contentDiv.innerHTML = md(S.contentText);
+  // ── Close all open dropdowns (thinking + tool/terminal cards) ──
+  function closeAllOpenCards(S) {
+    if (!S) return;
+    if (S.thinkBlock && S.thinkBlock.open && S.thinkBlock.dataset.userOpened !== 'true') {
+      S.thinkBlock.open = false;
+      var lbl = S.thinkBlock.querySelector('.cr-think-label');
+      if (lbl) lbl.textContent = 'Thought process';
+    }
+    for (var key in S.toolCards) {
+      var card = S.toolCards[key];
+      if (card && card.open && card.dataset.userOpened !== 'true') {
+        card.open = false;
+      }
     }
   }
 
-  function scheduleContentRender(S) {
+  // ── Debounced markdown render for streaming content ───
+  var _renderTimer = null;
+  function handleContentRenderTimeout(S, msgList) {
+    _renderTimer = null;
+    if (S.contentDiv && S.contentText !== undefined) {
+      S.contentDiv.innerHTML = md(S.contentText);
+      // Scroll AFTER the DOM is updated so scrollHeight is current
+      if (msgList) scrollBottomSmooth(msgList);
+    }
+  }
+
+  function scheduleContentRender(S, msgList) {
     if (_renderTimer) return;
-    function onRenderTimeout() { handleContentRenderTimeout(S); }
+    function onRenderTimeout() { handleContentRenderTimeout(S, msgList); }
     _renderTimer = setTimeout(onRenderTimeout, 30);
   }
 
@@ -1182,7 +1204,8 @@ function initializeChatSpace() {
                   var termCard = appendTerminalCard(chatCtx.S, msgList, body, cardKey, toolName, toolArgs, status, resultObj);
                   if (termCard) termCard.open = false;
                 } else {
-                  appendToolCard(chatCtx.S, msgList, body, cardKey, toolName, toolArgs, status, resultObj);
+                  var toolCard = appendToolCard(chatCtx.S, msgList, body, cardKey, toolName, toolArgs, status, resultObj);
+                  if (toolCard) toolCard.open = false;
                 }
               }
             }
@@ -1199,6 +1222,13 @@ function initializeChatSpace() {
     if (checkpoint && !checkpointRendered) {
       appendCompactCheckpoint(msgList, checkpoint);
       checkpointRendered = true;
+    }
+
+    var allHistoryDetails = msgList.querySelectorAll('details');
+    for (var ahd = 0; ahd < allHistoryDetails.length; ahd++) {
+      allHistoryDetails[ahd].open = false;
+      delete allHistoryDetails[ahd].dataset.userOpened;
+      delete allHistoryDetails[ahd].dataset.userClosed;
     }
 
     scrollBottom(msgList);
@@ -1793,8 +1823,9 @@ function initializeChatSpace() {
       if (msg.thinking) {
         removeTyping(S.botBody);
         if (!S.thinkBlock) {
+          closeAllOpenCards(S);
           S.thinkBlock = appendThinkBlock(S.botBody);
-          S.thinkBlock.open = !S.fullResponse;
+          S.thinkBlock.open = true;
           S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
           S.thinkText = '';
           S.iterationThinking = '';
@@ -1807,25 +1838,42 @@ function initializeChatSpace() {
         S.thinkText += chunk;
         S.iterationThinking += chunk;
         S.fullThinking += chunk;
-        if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
+        if (S.thinkPre) {
+          S.thinkPre.textContent = S.thinkText;
+          S.thinkPre.scrollTop = S.thinkPre.scrollHeight;
+        }
       }
       if (msg.content) {
         if (S.thinkBlock && S.thinkBlock.open) {
           var lbl = S.thinkBlock.querySelector('.cr-think-label');
           if (lbl) lbl.textContent = 'Thought process';
-          S.thinkBlock.open = false;
+          if (S.thinkBlock.dataset.userOpened !== 'true') {
+            S.thinkBlock.open = false;
+          }
         }
+        S.thinkBlock = null;
+        S.thinkPre = null;
+        S.thinkText = '';
         removeTyping(S.botBody);
         if (!S.contentDiv) { S.contentDiv = appendContentBlock(S.botBody); S.contentText = ''; }
         S.contentText += msg.content;
         S.fullResponse = S.contentText;
-        scheduleContentRender(S);
+        scheduleContentRender(S, chatCtx.msgList);
       }
       if (msg.media && !S.media) {
         S.media = msg.media;
       }
       if (msg.tool_calls && msg.tool_calls.length) {
         removeTyping(S.botBody);
+        closeCurrentContentBlock(S);
+        if (S.thinkBlock && S.thinkBlock.open && S.thinkBlock.dataset.userOpened !== 'true') {
+          S.thinkBlock.open = false;
+          var thinkLbl = S.thinkBlock.querySelector('.cr-think-label');
+          if (thinkLbl) thinkLbl.textContent = 'Thought process';
+        }
+        S.thinkBlock = null;
+        S.thinkPre = null;
+        S.thinkText = '';
         for (var tci = 0; tci < msg.tool_calls.length; tci++) {
           var tc = msg.tool_calls[tci];
           var fnName = (tc.function && tc.function.name) || tc.name || '';
@@ -1909,8 +1957,9 @@ function initializeChatSpace() {
         case 'thinking': {
           removeTyping(S.botBody);
           if (!S.thinkBlock) {
+            closeAllOpenCards(S);
             S.thinkBlock = appendThinkBlock(S.botBody);
-            S.thinkBlock.open = !S.fullResponse;
+            S.thinkBlock.open = true;
             S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
             S.thinkText = '';
             S.iterationThinking = '';
@@ -1923,7 +1972,10 @@ function initializeChatSpace() {
           S.thinkText += chunk;
           S.iterationThinking += chunk;
           S.fullThinking += chunk;
-          if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
+          if (S.thinkPre) {
+            S.thinkPre.textContent = S.thinkText;
+            S.thinkPre.scrollTop = S.thinkPre.scrollHeight;
+          }
           break;
         }
         case 'thinking_complete': {
@@ -1939,16 +1991,31 @@ function initializeChatSpace() {
             if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
             var lbl = S.thinkBlock.querySelector('.cr-think-label');
             if (lbl) lbl.textContent = 'Thought process';
-            S.thinkBlock.open = false;
+            if (S.thinkBlock.dataset.userOpened !== 'true') {
+              S.thinkBlock.open = false;
+            }
+            S.thinkBlock = null;
+            S.thinkPre = null;
+            S.thinkText = '';
           }
           break;
         }
         case 'content': {
+          if (S.thinkBlock && S.thinkBlock.open) {
+            var lbl2 = S.thinkBlock.querySelector('.cr-think-label');
+            if (lbl2) lbl2.textContent = 'Thought process';
+            if (S.thinkBlock.dataset.userOpened !== 'true') {
+              S.thinkBlock.open = false;
+            }
+          }
+          S.thinkBlock = null;
+          S.thinkPre = null;
+          S.thinkText = '';
           removeTyping(S.botBody);
           if (!S.contentDiv) { S.contentDiv = appendContentBlock(S.botBody); S.contentText = ''; }
           S.contentText += (ev.content || '');
           S.fullResponse = S.contentText;
-          scheduleContentRender(S);
+          scheduleContentRender(S, chatCtx.msgList);
           break;
         }
         case 'ask_question': {
@@ -3282,12 +3349,7 @@ function initializeChatSpace() {
         '<span class="cr-think-chevron"></span>' +
       '</summary>' +
       '<pre class="cr-think-pre"></pre>';
-    var contentBlock = body.querySelector('.cr-content-block');
-    if (contentBlock) {
-      body.insertBefore(det, contentBlock);
-    } else {
-      body.appendChild(det);
-    }
+    body.appendChild(det);
     return det;
   }
 
@@ -3590,7 +3652,8 @@ function initializeChatSpace() {
     status = status || 'pending';
 
     var card = mk('details', 'cr-tool-card cr-tool-card--' + status + ' cr-terminal-details');
-    card.open = false;
+    var _isActive = (status === 'running' || status === 'pending' || status === 'waiting');
+    card.open = _isActive;
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = 'run_terminal';
     card.dataset.status = status;
@@ -3699,7 +3762,9 @@ function initializeChatSpace() {
     }
 
     if (normStatus !== 'running' && normStatus !== 'waiting' && normStatus !== 'pending') {
-      card.open = false;
+      if (card.dataset.userOpened !== 'true') {
+        card.open = false;
+      }
     }
   }
 
@@ -4157,7 +4222,7 @@ function initializeChatSpace() {
     card.appendChild(head);
 
     var details = mk('details', 'cr-diff-details');
-    details.open = false;
+    details.open = true;
 
     var summary = mk('summary', 'cr-diff-summary');
     summary.textContent = isNew ? 'New File' : 'View Changes';
@@ -4222,11 +4287,14 @@ function initializeChatSpace() {
       pendingCard = findPendingCardByToolName(chatCtx.S, toolName) || getLastPendingCard(chatCtx.S);
     }
     if (pendingCard) {
+      pendingCard.open = true;
       var cardBody = pendingCard.querySelector('.cr-tool-card-body');
       if (cardBody) {
         targetParent = cardBody;
         var argsBlock = cardBody.querySelector('.cr-tool-card-args-block');
         if (argsBlock) argsBlock.style.display = 'none';
+        var inputBlock = cardBody.querySelector('.cr-tool-card-input-block');
+        if (inputBlock) inputBlock.style.display = 'none';
       }
     }
     if (!targetParent && chatCtx.msgList) {
@@ -4439,6 +4507,10 @@ function initializeChatSpace() {
       statusEl.textContent = isOk ? (status === 'applied' ? '✓ Applied' : '✓ Approved') : '✗ Rejected';
       statusEl.className = 'cr-diff-status cr-permission-status ' + (isOk ? 'allowed cr-diff-status--approved' : 'denied cr-diff-status--rejected');
     }
+    var diffDet = card.querySelector('.cr-diff-details');
+    if (diffDet && diffDet.dataset.userOpened !== 'true') {
+      diffDet.open = false;
+    }
   }
   window.setDiffCardStatus = setDiffCardStatus;
 
@@ -4511,14 +4583,11 @@ function initializeChatSpace() {
     S._seenToolIds[indexKey] = true;
     if (idKey) S._seenToolIds[idKey] = true;
 
+    closeAllOpenCards(S);
     closeCurrentContentBlock(S);
 
     var displayId = toolId || 'term_' + (++S._toolIdCounter);
     var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
-    for (var ti = 0; ti < S._terminalCardOrder.length; ti++) {
-      var prevCard = S._terminalCards[S._terminalCardOrder[ti]];
-      if (prevCard) prevCard.open = false;
-    }
 
     var cardElement = appendTerminalCard(S, msgList, S.botBody, cardKey, toolName, toolArgs, 'pending', null);
     if (toolId) cardElement.dataset.toolCallId = toolId;
@@ -4565,6 +4634,7 @@ function initializeChatSpace() {
     S._seenToolIds[indexKey] = true;
     if (idKey) S._seenToolIds[idKey] = true;
 
+    closeAllOpenCards(S);
     closeCurrentContentBlock(S);
 
     var displayId = toolId || 'tool_' + (++S._toolIdCounter);
@@ -4785,7 +4855,8 @@ function initializeChatSpace() {
     if (!body) return null;
     status = status || 'running';
     var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
-    card.open = false;
+    var _isFinished = (status === 'success' || status === 'completed' || status === 'error' || status === 'failed');
+    card.open = !_isFinished;
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = toolName;
     card.dataset.status = status;
@@ -4908,7 +4979,9 @@ function initializeChatSpace() {
     card.className = 'cr-tool-card cr-tool-card--' + normStatus;
     card.dataset.status = normStatus;
     var toolName = card.dataset.toolName;
-    card.open = false;
+    if (card.dataset.userOpened !== 'true') {
+      card.open = false;
+    }
 
     var iconEl = card.querySelector('.cr-tool-card-icon');
     if (iconEl) {
@@ -5448,6 +5521,22 @@ function initializeChatSpace() {
         }
       }
       msgList.addEventListener('click', handleMsgListCodeCopy);
+
+      function handleMsgListSummaryClick(evt) {
+        if (!evt || !evt.target) return;
+        var summary = evt.target.closest ? evt.target.closest('summary') : null;
+        if (!summary) return;
+        var details = summary.closest('details');
+        if (!details) return;
+        if (details.open) {
+          delete details.dataset.userOpened;
+          details.dataset.userClosed = 'true';
+        } else {
+          details.dataset.userOpened = 'true';
+          delete details.dataset.userClosed;
+        }
+      }
+      msgList.addEventListener('click', handleMsgListSummaryClick);
 
       var usageBadge = container.querySelector('.cr-usage-badge');
       var usageCard  = container.querySelector('.cr-usage-card');

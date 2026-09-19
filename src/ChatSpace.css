@@ -132,10 +132,12 @@ select {
 
 /* Smooth Scrolling */
 .cr-root,
-.cr-msg-list,
 .cr-todos-list {
   scroll-behavior: smooth;
 }
+/* NOTE: .cr-msg-list intentionally excluded — CSS smooth scroll
+   causes programmatic scrollTo() to animate over ~300-500ms,
+   which can't keep up with fast streaming content. */
 
 /* ── Header ─────────────────────────────────────────────── */
 .cr-header {
@@ -160,7 +162,6 @@ select {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px 16px 12px;
-  scroll-behavior: smooth;
   overflow-anchor: auto;
   display: flex;
   flex-direction: column;
