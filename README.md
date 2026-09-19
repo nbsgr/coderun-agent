@@ -19,13 +19,33 @@ Whether you are running completely offline with local models via **Ollama**, lev
 
 ---
 
-## 🧭 Current Engineering Contract
+## 🧭 Current Engineering Contract & Coding Standards
 
-The repository follows a deliberately small JavaScript architecture:
+The repository follows a deliberately small, modular JavaScript architecture designed for maximum reliability and failure containment:
 
-* **Plain ES JavaScript only:** Application, webview, script, and test implementations use `.js` or `.cjs`; there is no TypeScript or JSX build layer.
-* **Traditional functions:** New code uses named `function name() {}` declarations. Arrow functions, IIFEs, variable-assigned function expressions, JavaScript `.bind()`, `class` declarations, and JSDoc `@param` tags are not part of the project style.
-* **Intentional SQL.js exception:** `projectKnowledge.js` calls SQL.js prepared-statement `.bind(params)` to bind query parameters. This is a database API call, not JavaScript function binding.
+### 📐 Coding Style Rules
+* **Plain ES JavaScript only:** Application, webview, script, and test implementations use `.js` or `.cjs`; there is no TypeScript, JSX, or transpilation build layer.
+* **Strict Traditional Function Declarations:** All functions use named `function name() {}` declarations. 
+* **Disallowed Syntax Patterns:**
+  * **No Arrow Functions:** Arrow functions (`=>`) are strictly prohibited in runtime code, utilities, and tests.
+  * **No IIFEs:** Immediately Invoked Function Expressions (`(function() {})()`) are not used.
+  * **No Assigned Function Expressions:** Variable-assigned function expressions (`var foo = function() {}`) are prohibited; use named function declarations instead.
+  * **No `.bind()`:** JavaScript function `.bind()` is not permitted. *(Intentional SQL.js exception: `projectKnowledge.js` calls SQL.js prepared-statement `.bind(params)` to bind query parameters. This is a database API call, not JavaScript function binding).*
+  * **No `class` Keyword:** Object factories, prototypes, and plain object literals are used instead of ES classes.
+  * **No JSDoc `@param` tags:** Function contracts are self-documenting through clean parameters and inline commentary rather than JSDoc tags.
+
+### 🏗️ Modular Engine Architecture (Blast Radius Containment)
+The agent runtime decomposes responsibilities away from a monolithic loop into specialized, isolated engines behind stable interfaces:
+* **`src/agents/agentLoop.js` (Orchestrator):** Lightweight loop driver coordinating model stream responses, tool execution, and session state transitions.
+* **`src/tools/toolExecutor.js` (Execution Engine):** Manages `executeSingleToolCall`, robust argument parsing with markdown fence stripping and concatenated JSON recovery, permission gating, step verification, and automated recovery actions.
+* **`src/agents/contextEngine.js` (Context Engine):** Encapsulates startup context assembly (project knowledge, active plans, timeline, and MCP contexts) and dynamic per-iteration system prompt rebuilds.
+* **`src/agents/delegationEngine.js` (Delegation Engine):** Manages background subagent tracking, completion harvesting, blocking wait loops, and natural-language delegation rationale text.
+* **`src/agents/mediaRuntime.js` (Media Runtime):** Handles direct image and video model generation pre-flight, routing non-chat models directly to `/v1/images/generations` and `/v1/videos` with isolated disk persistence.
+* **`src/agents/decisionEngine.js` (Decision Engine):** Forces a concluding LLM response when tool execution completes as the last message in conversation history.
+* **`src/agents/toolContextBuilder.js` (Tool Context & Hygiene):** Pure utility library constructing tool context objects and detecting loop hygiene issues (repetitive tool calls, consecutive failures).
+* **`src/agents/agentState.js` (State Machine):** Formal finite state machine with atomic `transitionWithTrace` to enforce valid state progressions and record transition telemetry.
+
+### 🔒 Operational Boundaries
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
@@ -220,6 +240,7 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 
 | Feature / Capability | Architectural Design | Implementation & Highlights |
 | :--- | :--- | :--- |
+| **Modular Engine Architecture** | Decomposed runtime across 7 specialized engines (Context, Delegation, Tool Execution, Media, Decision, ContextBuilder, StateMachine) | ✅ **Failure Containment** reducing agentLoop by 50% to a pure coordinator |
 | **Multi-Provider Support** | Modular provider adapters in `src/providers/` with unified normalization & streaming | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) |
 | **100% Free & Local (Ollama)** | Native Ollama streaming adapter with model context length discovery | ✅ **Native** streaming, vision & context autodiscovery |
 | **Transparent User Sandbox** | Dedicated user sandbox directory (`~/.coderun/sandbox/`) with automatic CWD sync | ✅ **Native** isolated execution without polluting workspace git repo |

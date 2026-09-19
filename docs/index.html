@@ -1798,6 +1798,42 @@
           </div>
           CodeRun features deterministic local context compaction. When conversation history grows, old tool calls and large listings are compacted into chronological checkpoint summaries with zero external API calls or token costs.
         </div>
+        <h3 style="margin-top: 36px; margin-bottom: 12px; font-size: 20px; color: var(--text-primary);">Decomposed Modular Engine Runtime</h3>
+        <p>
+          To prevent monolithic failure modes and isolate operational blast radius, the agent runtime decomposes responsibilities into dedicated single-purpose engines behind stable interfaces:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🎛️</div>
+            <div class="card-title">Orchestrator (agentLoop.js)</div>
+            <div class="card-text">Lightweight coordinator answering what the model decided, what executes, what telemetry to report, and whether to continue.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚙️</div>
+            <div class="card-title">Tool Executor (toolExecutor.js)</div>
+            <div class="card-text">Handles argument parsing with JSON repair, approval gating, generator streaming, verification, self-healing recovery, and trace persistence.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🧠</div>
+            <div class="card-title">Context Engine (contextEngine.js)</div>
+            <div class="card-text">Gathers startup knowledge, active plans, timeline, and MCP context, dynamically rebuilding system prompts across iterations.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🤖</div>
+            <div class="card-title">Delegation Engine (delegationEngine.js)</div>
+            <div class="card-text">Manages background subagent tracking, completion harvesting, blocking wait loops, and natural-language rationale extraction.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🖼️</div>
+            <div class="card-title">Media Runtime (mediaRuntime.js)</div>
+            <div class="card-text">Shortcircuits image and video models directly to dedicated media endpoints with isolated disk persistence.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🎯</div>
+            <div class="card-title">Decision Engine (decisionEngine.js)</div>
+            <div class="card-text">Forces a dedicated concluding LLM response when tool execution completes as the final turn in conversation history.</div>
+          </div>
+        </div>
       </section>
 
       <!-- Architecture & Features -->
@@ -1818,6 +1854,11 @@
               </tr>
             </thead>
             <tbody>
+              <tr>
+                <td><strong>Modular Engine Decomposition</strong></td>
+                <td>Decoupled runtime across 7 specialized engines (Context, Delegation, Tool Execution, Media, Decision, ContextBuilder, StateMachine)</td>
+                <td><span class="pill-badge green">✅ High Reliability</span> Failure blast radius containment; agentLoop reduced by 50% to a pure coordinator</td>
+              </tr>
               <tr>
                 <td><strong>Multi-Provider Engine</strong></td>
                 <td>Modular provider adapters in <code>src/providers/</code> with unified streaming &amp; normalization</td>
@@ -3566,13 +3607,23 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         <div class="card-grid">
           <div class="feature-card">
             <div class="card-icon">🟨</div>
-            <div class="card-title">Plain JavaScript</div>
-            <div class="card-text">The implementation uses ES JavaScript in <code>.js</code> and <code>.cjs</code> files. There is no TypeScript, JSX, class-based runtime, or build-time type layer.</div>
+            <div class="card-title">Plain JavaScript Only</div>
+            <div class="card-text">Strict ECMAScript in <code>.js</code> and <code>.cjs</code> files. Zero TypeScript, JSX, or transpilation build layer overhead.</div>
           </div>
           <div class="feature-card">
             <div class="card-icon">🧩</div>
             <div class="card-title">Named Functions</div>
-            <div class="card-text">Traditional named function declarations are preferred. Arrow functions, IIFEs, assigned function expressions, and JSDoc <code>@param</code> tags are excluded from the project style.</div>
+            <div class="card-text">Traditional named <code>function name() {}</code> declarations only. Arrow functions (<code>=&gt;</code>), IIFEs, and assigned function expressions are strictly banned.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🚫</div>
+            <div class="card-title">No Classes or Bind</div>
+            <div class="card-text">Plain object factories and prototypes are used instead of the <code>class</code> keyword. Function <code>.bind()</code> is excluded across the codebase.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📝</div>
+            <div class="card-title">Clean Documentation</div>
+            <div class="card-text">JSDoc <code>@param</code> tags are omitted. Clean function parameter naming and inline architectural commentary are used instead.</div>
           </div>
           <div class="feature-card">
             <div class="card-icon">🔐</div>
@@ -3587,7 +3638,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         </div>
         <div class="callout info">
           <div class="callout-header">Intentional SQL.js API usage</div>
-          <code>projectKnowledge.js</code> uses prepared-statement <code>.bind(params)</code> calls to bind database parameters. This is an SQL.js API and is distinct from JavaScript function binding.
+          <code>projectKnowledge.js</code> uses prepared-statement <code>.bind(params)</code> calls to bind database query parameters. This is an external SQL.js database driver call, not JavaScript function binding.
         </div>
         <div class="code-container">
           <div class="code-header">
@@ -3595,7 +3646,8 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
             <button class="copy-btn" onclick="copyCode(this)">Copy</button>
           </div>
           <pre><code>npm test
-node --check src/agents/agentLoop.js</code></pre>
+node --check src/agents/agentLoop.js
+node --check src/tools/toolExecutor.js</code></pre>
         </div>
       </section>
 
