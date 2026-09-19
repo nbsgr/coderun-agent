@@ -1038,9 +1038,161 @@ function initializeChatSpace() {
     return null;
   }
 
+  function handleWelcomeAvatarError(img) {
+    if (!img) return;
+    if (window.CODERUN_LOGO_URI && img.src !== window.CODERUN_LOGO_URI) {
+      img.src = window.CODERUN_LOGO_URI;
+      return;
+    }
+    var wrapper = img.parentNode;
+    if (wrapper) {
+      img.style.display = 'none';
+      var existingSvg = wrapper.querySelector('.cr-welcome-avatar-svg');
+      if (!existingSvg) {
+        var svgWrap = document.createElement('div');
+        svgWrap.className = 'cr-welcome-avatar-svg';
+        svgWrap.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z"/></svg>';
+        wrapper.appendChild(svgWrap);
+      }
+    }
+  }
+
+  function handleWelcomeAction(chatCtx, promptText) {
+    if (!chatCtx || !chatCtx.input) return;
+    chatCtx.input.value = promptText;
+    handleInputTextChange(chatCtx.input, chatCtx.charCount);
+    chatCtx.input.focus();
+    if (typeof chatCtx.input.setSelectionRange === 'function') {
+      var len = chatCtx.input.value.length;
+      chatCtx.input.setSelectionRange(len, len);
+    }
+  }
+
+  function renderWelcomeScreen(chatCtx, msgList) {
+    if (!msgList) return;
+    var botAvatarSrc = (window.CODERUN_BOT_AVATAR || window.CODERUN_LOGO_URI || 'bot-avatar.jpg');
+    var wrap = document.createElement('div');
+    wrap.className = 'cr-welcome-screen';
+    wrap.innerHTML = 
+      '<div class="cr-welcome-container">' +
+        '<div class="cr-welcome-hero">' +
+          '<div class="cr-welcome-avatar-wrapper">' +
+            '<div class="cr-welcome-avatar-glow"></div>' +
+            '<img class="cr-welcome-avatar-img" src="' + botAvatarSrc + '" alt="Robot Mascot"/>' +
+          '</div>' +
+          '<h1 class="cr-welcome-title">Welcome to <span class="cr-welcome-brand">AI-AGENT</span></h1>' +
+          '<p class="cr-welcome-subtitle">Your intelligent coding companion</p>' +
+        '</div>' +
+        '<div class="cr-welcome-capabilities">' +
+          '<button type="button" class="cr-welcome-cap-card" data-prompt="Write code for ">' +
+            '<div class="cr-welcome-cap-icon-box cr-cap-icon-code">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' +
+            '</div>' +
+            '<span class="cr-welcome-cap-label">Write Code</span>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-cap-card" data-prompt="Explain this code: ">' +
+            '<div class="cr-welcome-cap-icon-box cr-cap-icon-explain">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>' +
+            '</div>' +
+            '<span class="cr-welcome-cap-label">Explain</span>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-cap-card" data-prompt="Build a ">' +
+            '<div class="cr-welcome-cap-icon-box cr-cap-icon-build">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><circle cx="15" cy="9" r="1"/><path d="M17.8 6.2L19 5"/><path d="M3 21l9-9"/><path d="M12.2 6.2L11 5"/></svg>' +
+            '</div>' +
+            '<span class="cr-welcome-cap-label">Build</span>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-cap-card" data-prompt="Write a script to automate ">' +
+            '<div class="cr-welcome-cap-icon-box cr-cap-icon-automate">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' +
+            '</div>' +
+            '<span class="cr-welcome-cap-label">Automate</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="cr-welcome-divider">' +
+          '<span class="cr-welcome-divider-line"></span>' +
+          '<span class="cr-welcome-divider-text">Try asking something like</span>' +
+          '<span class="cr-welcome-divider-line"></span>' +
+        '</div>' +
+        '<div class="cr-welcome-prompts-grid">' +
+          '<button type="button" class="cr-welcome-prompt-card" data-prompt="Create a React login page">' +
+            '<div class="cr-prompt-icon-box cr-prompt-icon-code">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>' +
+            '</div>' +
+            '<span class="cr-prompt-text">Create a React login page</span>' +
+            '<div class="cr-prompt-arrow">' +
+              '<svg class="cr-welcome-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>' +
+            '</div>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-prompt-card" data-prompt="Find and fix bugs in my code">' +
+            '<div class="cr-prompt-icon-box cr-prompt-icon-bug">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="14" x="8" y="6" rx="4"/><path d="m19 7-3 2"/><path d="m5 7 3 2"/><path d="m19 19-3-2"/><path d="m5 19 3-2"/><path d="M20 13h-4"/><path d="M4 13h4"/><path d="m10 4 1 2"/><path d="m14 4-1 2"/></svg>' +
+            '</div>' +
+            '<span class="cr-prompt-text">Find and fix bugs in my code</span>' +
+            '<div class="cr-prompt-arrow">' +
+              '<svg class="cr-welcome-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>' +
+            '</div>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-prompt-card" data-prompt="Explain this code to me">' +
+            '<div class="cr-prompt-icon-box cr-prompt-icon-explain">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>' +
+            '</div>' +
+            '<span class="cr-prompt-text">Explain this code to me</span>' +
+            '<div class="cr-prompt-arrow">' +
+              '<svg class="cr-welcome-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>' +
+            '</div>' +
+          '</button>' +
+          '<button type="button" class="cr-welcome-prompt-card" data-prompt="Write a script to automate this task">' +
+            '<div class="cr-prompt-icon-box cr-prompt-icon-term">' +
+              '<svg class="cr-welcome-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>' +
+            '</div>' +
+            '<span class="cr-prompt-text">Write a script to automate this task</span>' +
+            '<div class="cr-prompt-arrow">' +
+              '<svg class="cr-welcome-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>' +
+            '</div>' +
+          '</button>' +
+        '</div>' +
+        '<div class="cr-welcome-tip">' +
+          '<div class="cr-welcome-tip-icon">' +
+            '<svg class="cr-welcome-svg cr-bulb-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg>' +
+          '</div>' +
+          '<div class="cr-welcome-tip-text">' +
+            '<strong>Tip:</strong> You can ask anything \u2014 code, explanations, debugging, or even project ideas!' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    var avatarImg = wrap.querySelector('.cr-welcome-avatar-img');
+    if (avatarImg) {
+      function onAvatarError() {
+        handleWelcomeAvatarError(avatarImg);
+      }
+      avatarImg.addEventListener('error', onAvatarError);
+    }
+
+    function onWelcomeCardClick(e) {
+      var btn = e.target.closest('button[data-prompt]');
+      if (!btn) return;
+      var prompt = btn.getAttribute('data-prompt');
+      if (prompt) {
+        handleWelcomeAction(chatCtx, prompt);
+      }
+    }
+    wrap.addEventListener('click', onWelcomeCardClick);
+
+    msgList.appendChild(wrap);
+    msgList.scrollTop = 0;
+  }
+
   function loadHistory(chatCtx, msgList, messages) {
     if (!msgList || !messages) return;
     msgList.innerHTML = '';
+
+    if (messages.length === 0) {
+      renderWelcomeScreen(chatCtx, msgList);
+      msgList.scrollTop = 0;
+      return;
+    }
 
     var checkpoint = (chatCtx && chatCtx.conversation && chatCtx.conversation.compactCheckpoint) ? chatCtx.conversation.compactCheckpoint : null;
     var checkpointRendered = false;
@@ -3285,6 +3437,9 @@ function initializeChatSpace() {
   }
 
   function appendUserBubble(msgList, text, imgB64) {
+    if (!msgList) return null;
+    var welcome = msgList.querySelector('.cr-welcome-screen');
+    if (welcome) welcome.remove();
     var row = mk('div', 'cr-row cr-row--user');
     var bub = mk('div', 'cr-user-bubble');
     if (imgB64) {
@@ -3315,6 +3470,9 @@ function initializeChatSpace() {
   }
 
   function appendBotWrapper(msgList) {
+    if (!msgList) return null;
+    var welcome = msgList.querySelector('.cr-welcome-screen');
+    if (welcome) welcome.remove();
     var row = mk('div', 'cr-row cr-row--bot');
     var av = mk('div', 'cr-bot-avatar');
     av.innerHTML = I.bot;

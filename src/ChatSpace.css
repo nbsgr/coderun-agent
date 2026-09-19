@@ -3859,3 +3859,419 @@ body.vscode-light .cr-question-resolved-chip {
   border-color: rgba(9, 105, 218, 0.2);
   color: #24292f;
 }
+
+/* =====================================================
+   Welcome Screen (AI-AGENT / CodeRun)
+   Polished hero mascot, gradient title, capability cards,
+   prompt suggestions 2x2 grid, and tip banner.
+   ===================================================== */
+.cr-welcome-screen {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px 12px 28px;
+  user-select: none;
+}
+
+.cr-welcome-container {
+  max-width: 580px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto;
+}
+
+/* ── Hero Section ─────────────────────────────────────── */
+.cr-welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.cr-welcome-avatar-wrapper {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cr-welcome-avatar-glow {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.45) 0%, rgba(99, 102, 241, 0.3) 45%, transparent 70%);
+  filter: blur(12px);
+  pointer-events: none;
+  animation: cr-welcome-pulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes cr-welcome-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0.95;
+  }
+}
+
+.cr-welcome-avatar-img {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  object-fit: cover;
+  position: relative;
+  z-index: 2;
+  border: 2px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.25);
+  display: block;
+}
+
+.cr-welcome-avatar-svg {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  background: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+  border: 2px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.25);
+}
+
+.cr-welcome-avatar-svg svg {
+  width: 42px;
+  height: 42px;
+  color: #38bdf8;
+}
+
+.cr-welcome-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cr-welcome-brand {
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  filter: drop-shadow(0 0 12px rgba(129, 140, 248, 0.35));
+}
+
+.cr-welcome-subtitle {
+  margin: 6px 0 0 0;
+  font-size: 13.5px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+/* ── 4 Capabilities Row ───────────────────────────────── */
+.cr-welcome-capabilities {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.cr-welcome-cap-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cr-welcome-cap-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.cr-welcome-cap-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cr-welcome-cap-icon-box svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cr-cap-icon-code {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+}
+
+.cr-cap-icon-explain {
+  background: rgba(52, 211, 153, 0.14);
+  color: #34d399;
+}
+
+.cr-cap-icon-build {
+  background: rgba(192, 132, 252, 0.14);
+  color: #c084fc;
+}
+
+.cr-cap-icon-automate {
+  background: rgba(251, 146, 60, 0.14);
+  color: #fb923c;
+}
+
+.cr-welcome-cap-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+/* ── Divider ──────────────────────────────────────────── */
+.cr-welcome-divider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 14px;
+  margin: 2px 0;
+}
+
+.cr-welcome-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cr-welcome-divider-text {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── 2x2 Prompt Suggestion Cards ──────────────────────── */
+.cr-welcome-prompts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.cr-welcome-prompt-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.cr-welcome-prompt-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(99, 102, 241, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.cr-prompt-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cr-prompt-icon-box svg {
+  width: 17px;
+  height: 17px;
+}
+
+.cr-prompt-icon-code {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+}
+
+.cr-prompt-icon-bug {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.cr-prompt-icon-explain {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+}
+
+.cr-prompt-icon-term {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+}
+
+.cr-prompt-text {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #cbd5e1;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.cr-prompt-arrow {
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.cr-welcome-arrow {
+  width: 15px;
+  height: 15px;
+}
+
+.cr-welcome-prompt-card:hover .cr-prompt-arrow {
+  transform: translateX(3px);
+  color: #38bdf8;
+}
+
+/* ── Tip Callout ──────────────────────────────────────── */
+.cr-welcome-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 26px;
+  background: rgba(234, 179, 8, 0.05);
+  border: 1px solid rgba(234, 179, 8, 0.18);
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 2px;
+}
+
+.cr-welcome-tip-icon {
+  color: #eab308;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cr-welcome-tip-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cr-welcome-tip-text {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.cr-welcome-tip-text strong {
+  color: #facc15;
+  font-weight: 600;
+}
+
+/* ── Responsive Adaptations ───────────────────────────── */
+@media (max-width: 520px) {
+  .cr-welcome-capabilities {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cr-welcome-prompts-grid {
+    grid-template-columns: 1fr;
+  }
+  .cr-welcome-screen {
+    padding: 16px 12px;
+  }
+  .cr-welcome-title {
+    font-size: 21px;
+  }
+}
+
+/* ── Light Theme Adaptations ──────────────────────────── */
+body.vscode-light .cr-welcome-title {
+  color: #0f172a;
+}
+body.vscode-light .cr-welcome-subtitle {
+  color: #64748b;
+}
+body.vscode-light .cr-welcome-cap-card,
+body.vscode-light .cr-welcome-prompt-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+body.vscode-light .cr-welcome-cap-card:hover,
+body.vscode-light .cr-welcome-prompt-card:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+body.vscode-light .cr-welcome-cap-label {
+  color: #1e293b;
+}
+body.vscode-light .cr-prompt-text {
+  color: #1e293b;
+}
+body.vscode-light .cr-welcome-divider-line {
+  background: #e2e8f0;
+}
+body.vscode-light .cr-welcome-divider-text {
+  color: #94a3b8;
+}
+body.vscode-light .cr-welcome-tip {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.3);
+}
+body.vscode-light .cr-welcome-tip-text {
+  color: #475569;
+}

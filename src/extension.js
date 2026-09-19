@@ -537,6 +537,7 @@ function getWebviewHtml(webview, extensionUri) {
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'ChatSpace.js'))).toString() + '?cb=' + cb;
   var subagentPanelJs = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'SubagentPanel.js'))).toString() + '?cb=' + cb;
   var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'bot-avatar.jpg'))).toString();
+  var logoUri = webview.asWebviewUri(vscode.Uri.file(path.join(extensionUri.fsPath, 'logo.png'))).toString();
   var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(srcPath, 'user-avatar.svg'))).toString();
 
   var mediaDirPath = '';
@@ -586,6 +587,7 @@ function getWebviewHtml(webview, extensionUri) {
     window.CODERUN_CONFIG = ${JSON.stringify({ provider: cfg.provider, baseUrl: cfg.baseUrl, model: cfg.model })};
     window.WORKSPACE_FOLDER = ${JSON.stringify(workspaceFolder)};
     window.CODERUN_BOT_AVATAR = "${botAvatarUri}";
+    window.CODERUN_LOGO_URI = "${logoUri}";
     window.CODERUN_USER_AVATAR = "${userAvatarUri}";
     window.CODERUN_MEDIA_DIR_PATH = ${JSON.stringify(mediaDirPath)};
     window.CODERUN_MEDIA_ROOT_URI = ${JSON.stringify(mediaRootUri)};
