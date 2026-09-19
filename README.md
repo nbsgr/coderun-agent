@@ -82,8 +82,21 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Parallel Concurrency for Read-Only Tools:** Concurrent execution of independent read and search operations (`read_file`, `search_files`, `find_in_files`, `get_file_info`) via `Promise.all` for maximum speed.
 *   **Per-File Mutation Serialization:** Atomic file write locking via `fileLockManager.js` ensures sequential safety during concurrent writes.
 *   **Repetitive Failure Circuit Breaker:** Automatically detects repeated tool failures on identical arguments, halting loops and prompting reflection.
-*   **Reasoning Models Support:** Captures and renders thoughts from reasoning models (Gemma 4, DeepSeek-R1, o3-mini) in dedicated collapsible **Thought Process** blocks.
+*   **Zero-Latency Reasoning Stream:** Real-time synchronous token extraction and rendering for reasoning models (DeepSeek-R1, Gemma 4, o3-mini) in collapsible **Thought Process** blocks with live auto-scroll.
+*   **Persistent User Dropdown Retention:** User-opened dropdowns stay open across multi-step execution loops until manually collapsed by the user, while reloaded conversations start cleanly collapsed.
 *   **Signal Cancellation & Safe Stop:** Abort signals propagate cleanly into active tool invocations, auto-retries, and recovery steps without race conditions.
+
+### 🧩 Native VS Code LSP & Diagnostic Self-Reflection
+*   **VS Code Language Server Commands (`src/tools/tools.js`):** Interacts directly with VS Code's internal language provider commands:
+    *   `get_definition`: Invokes `vscode.commands.executeCommand('vscode.executeDefinitionProvider', uri, position)`. Returns the definition file path, line, character, and line preview. If the provider returns no results (or runs outside VS Code), falls back to cursor token extraction and local symbol lookup via `symbolParser.js`.
+    *   `find_references`: Invokes `vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, position)`. Returns all referenced locations with file paths, lines, characters, and preview snippets, with regex workspace fallback.
+    *   `document_symbols`: Invokes `vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', uri)`. Recursively formats symbols into hierarchical objects with name, SymbolKind string (`Class`, `Method`, `Function`, `Variable`, etc.), and start/end line bounds. Falls back to regex-based symbol parsing if uninitialized.
+*   **Compiler & LSP Diagnostic Inspection (`src/execution/reviewEngine.js`):**
+    *   In the self-reflection review phase, `checkCompilerDiagnostics()` queries `vscode.languages.getDiagnostics(uri)` for modified files.
+    *   Filters specifically for `DiagnosticSeverity.Error` (severity `0`), capturing file path, line number, source name, and error message to fail review audits if code modifications introduce syntax or compiler breaks.
+*   **Embedded SQLite Knowledge Base (`src/context/projectKnowledge.js`):**
+    *   Maintains a WebAssembly-based SQLite database (`index.db`) powered by `sql.js` in `globalStorageUri/projects/<Name_Hash>/` tracking indexed files, text chunks, metadata, and parsed symbols.
+    *   **`query_project_db` Tool:** Allows executing read-only `SELECT` SQL queries against this local database (strictly rejects any mutation statements like `INSERT`, `UPDATE`, `DELETE`, `DROP`).
 
 ### 🛡️ Clean Error Boundary & Dynamic Auto-Sizing
 *   **Dynamic Card Sizing:** Error notification cards automatically adapt their height and width to fit the exact volume of text and diagnostic details without awkward clipping.
@@ -93,7 +106,8 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 
 ### 🔍 Diff Management & Approval Pipeline
 *   **SHA-256 Optimistic Concurrency:** Stages proposed file changes in memory with baseline SHA-256 hashing to prevent overwriting external disk edits.
-*   **Inline Webview Diffs & Side-by-Side Editor:** Inspect additions (green) and deletions (red) directly inside chat cards or launch native side-by-side VS Code diff editors.
+*   **Auto-Open Inline Webview Diffs:** Diffs (`<details class="cr-diff-details">`) open by default during permission checks and tool executions so users immediately review file changes before approving/rejecting, automatically collapsing upon resolution.
+*   **Side-by-Side Editor:** Inspect additions (green) and deletions (red) directly inside chat cards or launch native side-by-side VS Code diff editors.
 *   **Single-Click Batch Operations:** Accept or reject individual diffs or click **Accept All** / **Reject All** in the agent controls bar.
 
 ### ↩️ Database-Backed Snapshots & Checkpoints
@@ -219,7 +233,9 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Dynamic Card Error Containment** | Dynamic card sizing & auto-wrapping CSS (`overflow-wrap: anywhere`) | ✅ **Auto-wrapping & no boundary overflow** on long uninterrupted URLs and JSON payloads |
 | **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
 | **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
-| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background & Synchronous delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
+| **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/tools/tools.js` & `src/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
+| **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/ChatSpace.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
+| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
 | **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **74 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, media routing & tools |
 
 

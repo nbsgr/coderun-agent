@@ -1719,6 +1719,7 @@
         <div class="sidebar-group-title">Tools & Execution</div>
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
+          <li><a href="#lsp-intelligence" class="sidebar-link">Native LSP &amp; Diagnostics</a></li>
           <li><a href="#tools-matrix" class="sidebar-link">Complete 33-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
@@ -1878,9 +1879,24 @@
                 <td><span class="pill-badge green">✅ ask_question</span> Interactive option chips + custom write-in directly in chat</td>
               </tr>
               <tr>
+                <td><strong>Native VS Code LSP &amp; Diagnostics</strong></td>
+                <td>Language Server Protocol integration in <code>src/tools/tools.js</code> &amp; <code>src/execution/reviewEngine.js</code></td>
+                <td><span class="pill-badge green">✅ Native LSP</span> Live definition, reference &amp; symbol discovery + compiler diagnostic self-healing</td>
+              </tr>
+              <tr>
+                <td><strong>Zero-Latency Reasoning &amp; UI State</strong></td>
+                <td>Synchronous thinking stream &amp; persistent user toggles in <code>src/ChatSpace.js</code></td>
+                <td><span class="pill-badge green">✅ Instant auto-scroll</span> Direct reasoning token rendering + dropdown retention across agent loops</td>
+              </tr>
+              <tr>
+                <td><strong>Autonomous Subagent Workers</strong></td>
+                <td>Hierarchical subagent runner in <code>src/agents/subagentManager.js</code> with dedicated tools</td>
+                <td><span class="pill-badge green">✅ Dual-Mode</span> Background (<code>sync</code>) &amp; Synchronous (<code>wait</code>) delegation with undo reflection</td>
+              </tr>
+              <tr>
                 <td><strong>Adversarial Regression Test Suite</strong></td>
                 <td>Standalone test harness (<code>test/runAllTests.js</code>) with zero external test dependencies</td>
-                <td><span class="pill-badge green">✅ 72 Test Groups</span> Comprehensive regression suite for reliability</td>
+                <td><span class="pill-badge green">✅ 74 Test Groups</span> Comprehensive regression suite for reliability</td>
               </tr>
             </tbody>
           </table>
@@ -3117,6 +3133,59 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         </div>
       </section>
 
+      <!-- Native LSP & Code Intelligence Section -->
+      <section id="lsp-intelligence">
+        <h2 class="section-heading">🧠 Native VS Code LSP &amp; Diagnostic Self-Reflection</h2>
+        <p>
+          CodeRun interacts directly with VS Code's internal language provider commands and diagnostic channels, with automatic local token fallback if running headless or uninitialized:
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🎯</div>
+            <div class="card-title">Symbol Definition (get_definition)</div>
+            <div class="card-text">
+              Calls <code>vscode.commands.executeCommand('vscode.executeDefinitionProvider', uri, position)</code>. Returns target file paths, lines, characters, and line previews, falling back to cursor token extraction and <code>symbolParser.js</code>.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🔗</div>
+            <div class="card-title">Workspace References (find_references)</div>
+            <div class="card-text">
+              Calls <code>vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, position)</code>. Returns all call-sites and usages with line numbers and preview snippets, with regex workspace fallback.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🌳</div>
+            <div class="card-title">Document Hierarchy (document_symbols)</div>
+            <div class="card-text">
+              Calls <code>vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', uri)</code>. Recursively maps SymbolKind names (<code>Class</code>, <code>Method</code>, <code>Function</code>, <code>Variable</code>) with start/end line bounds.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🩺</div>
+            <div class="card-title">Compiler Diagnostics (checkCompilerDiagnostics)</div>
+            <div class="card-text">
+              During self-reflection (<code>reviewEngine.js</code>), queries <code>vscode.languages.getDiagnostics(uri)</code> for modified files, filtering for <code>DiagnosticSeverity.Error</code> to flag syntax or compiler errors before turn completion.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🗄️</div>
+            <div class="card-title">Local SQLite Knowledge (query_project_db)</div>
+            <div class="card-text">
+              Maintains an embedded <code>sql.js</code> database (<code>index.db</code>) in global storage tracking indexed files, text chunks, and symbols. Allows running read-only <code>SELECT</code> queries over workspace metadata.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">Zero-Latency Reasoning &amp; Dropdown State</div>
+            <div class="card-text">
+              Synchronously streams reasoning tokens with auto-scroll in thinking blocks. User-opened dropdowns stay open across multi-step execution loops until explicitly closed by the user.
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 33 Tools Matrix -->
       <section id="tools-matrix">
         <h2 class="section-heading">🧰 The Complete 33-Tool Matrix</h2>
@@ -3592,6 +3661,7 @@ node --check src/agents/agentLoop.js</code></pre>
         <li class="toc-item"><a href="#subagent-settings" class="toc-link">Subagent Settings</a></li>
         <li class="toc-item"><a href="#subagent-tools" class="toc-link">Subagent Tools</a></li>
         <li class="toc-item"><a href="#subagent-traces" class="toc-link">Subagent Traces</a></li>
+        <li class="toc-item"><a href="#lsp-intelligence" class="toc-link">LSP &amp; Diagnostics</a></li>
         <li class="toc-item"><a href="#tools-matrix" class="toc-link">33-Tool Matrix</a></li>
         <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
