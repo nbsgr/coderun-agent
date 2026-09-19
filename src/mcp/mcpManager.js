@@ -203,6 +203,22 @@ function createMcpHandler(client, rawToolName, serverId) {
   return mcpToolGenerator;
 }
 
+function isPotentiallyDangerousTool(toolName, description) {
+  var name = String(toolName || '').toLowerCase();
+  var desc = String(description || '').toLowerCase();
+  var dangerousWords = [
+    'delete', 'remove', 'drop', 'destroy', 'truncate',
+    'execute', 'exec', 'command', 'terminal', 'shell', 'bash', 'run_command',
+    'kill', 'terminate', 'shutdown', 'reboot'
+  ];
+  for (var w = 0; w < dangerousWords.length; w++) {
+    var word = dangerousWords[w];
+    if (name.indexOf(word) !== -1) return true;
+    if (desc.indexOf(word) !== -1) return true;
+  }
+  return false;
+}
+
 export async function registerServerTools(client, serverConfig) {
   var serverId = serverConfig.id || serverConfig.name;
   toolRegistry.unregisterMcpServer(serverId);
@@ -228,6 +244,9 @@ export async function registerServerTools(client, serverConfig) {
     var toolDesc = '[' + (serverConfig.name || serverId) + '] ' + (t.description || '');
     var isToolDisabled = !!disabledMap[t.name];
 
+    var isDangerous = isPotentiallyDangerousTool(t.name, t.description);
+    var needsPerm = !alwaysAllow || isDangerous;
+
     var descriptor = {
       name: namespacedName,
       aliases: [t.name, serverId + '_' + t.name, serverId + '__' + t.name],
@@ -238,8 +257,11 @@ export async function registerServerTools(client, serverConfig) {
       metadata: {
         category: 'mcp',
         mcpServer: serverId,
-        dangerous: !alwaysAllow,
-        needsPermission: !alwaysAllow
+        dangerous: isDangerous || !alwaysAllow,
+        needsPermission: needsPerm,
+        readOnly: !isDangerous && (t.description || '').toLowerCase().indexOf('read') !== -1,
+        concurrency: isDangerous ? 'serialized' : 'parallel-safe',
+        workspaceAccess: isDangerous ? 'write' : 'read'
       },
       handler: createMcpHandler(client, t.name, serverId)
     };

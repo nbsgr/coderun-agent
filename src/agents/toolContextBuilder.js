@@ -149,6 +149,21 @@ export function checkLoopHygiene(sessionCtx, toolName, args, result, formattedRe
       return 'already ' + toolName + ' is called with this args(' + serializedArgs + ') with the same output. Please stop repeating this call, analyze why this action is not advancing the task, and choose an alternative strategy.';
     }
   }
+
+  if (list.length >= 6) {
+    var len = list.length;
+    var tA = list[len - 1].toolName;
+    var tB = list[len - 2].toolName;
+    if (tA !== tB) {
+      if (list[len - 3].toolName === tA &&
+          list[len - 4].toolName === tB &&
+          list[len - 5].toolName === tA &&
+          list[len - 6].toolName === tB) {
+        return '⚠️ RUNTIME PROGRESS STALL: Detected alternating sequence between "' + tB + '" and "' + tA + '" with no progress advancement. Please break the cycle, re-inspect your approach, or formulate a concrete new strategy.';
+      }
+    }
+  }
+
   return null;
 }
 

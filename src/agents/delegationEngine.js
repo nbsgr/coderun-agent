@@ -189,7 +189,13 @@ export async function waitForPendingSubagents(
     var waitSub = pendingSyncSubagents.shift();
     try {
       var waitSubRes = await subagentManager.waitForSubagent(waitSub.id, sessionId);
-      if (!waitSubRes) continue;
+      if (!waitSubRes) {
+        waitSubRes = {
+          status: 'failed',
+          output: 'Subagent terminated or returned no result',
+          success: false
+        };
+      }
 
       var wsOutput = (waitSubRes.summary || waitSubRes.output || waitSubRes.content) || '';
       if (!wsOutput && waitSubRes.finalResponse) {
@@ -208,7 +214,7 @@ export async function waitForPendingSubagents(
         task: waitSub.task || waitSubRes.task || '',
         execution: 'sync'
       };
-      var wsFormatted = '✓ Subagent [' + String(wsRole).toUpperCase() + '] ' +
+      var wsFormatted = (wsStatus === 'completed' ? '✓' : '✗') + ' Subagent [' + String(wsRole).toUpperCase() + '] ' +
         wsName + ' finished (' + wsStatus + ').\n\n' + wsOutput;
 
       sendEvent({ type: 'tool_call', tool: 'subagent_response', id: wsCallId, args: wsRespArgs });
@@ -253,6 +259,59 @@ export async function waitForPendingSubagents(
 
     } catch (wErr) {
       console.warn('[DELEGATION ENGINE] Error waiting for subagent:', wErr.message);
+      var failCallId = 'call_resp_' + waitSub.id;
+      var failErrMsg = (wErr && wErr.message) ? wErr.message : 'Subagent execution or wait failed';
+      var failRole = waitSub.role || 'subagent';
+      var failName = waitSub.name || waitSub.id;
+      var failFormatted = '✗ Subagent [' + String(failRole).toUpperCase() + '] ' +
+        failName + ' failed: ' + failErrMsg;
+      var failRespArgs = {
+        id: waitSub.id,
+        name: failName,
+        role: failRole,
+        task: waitSub.task || '',
+        execution: 'sync',
+        error: failErrMsg
+      };
+
+      sendEvent({ type: 'tool_call', tool: 'subagent_response', id: failCallId, args: failRespArgs });
+      sendEvent({
+        type: 'tool_result',
+        tool: 'subagent_response',
+        tool_name: 'subagent_response',
+        tool_call_id: failCallId,
+        args: failRespArgs,
+        status: 'error',
+        output: failErrMsg,
+        summary: failErrMsg,
+        formattedResult: failFormatted,
+        result: {
+          agentId: waitSub.id,
+          subagent_id: waitSub.id,
+          name: failName,
+          role: failRole,
+          status: 'failed',
+          error: failErrMsg,
+          remainingWork: true,
+          args: failRespArgs
+        }
+      });
+
+      messages.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: failCallId,
+          type: 'function',
+          function: { name: 'subagent_response', arguments: JSON.stringify(failRespArgs) }
+        }]
+      });
+      messages.push({
+        role: 'tool',
+        tool_name: 'subagent_response',
+        tool_call_id: failCallId,
+        content: failFormatted
+      });
     }
   }
 

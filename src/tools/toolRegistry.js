@@ -75,6 +75,12 @@ export function register(descriptor) {
   if (descriptor.metadata.sideEffect === undefined) {
     descriptor.metadata.sideEffect = descriptor.sideEffect || (descriptor.metadata.readOnly ? 'none' : (descriptor.metadata.mutation ? 'mutation' : 'unknown'));
   }
+  if (descriptor.metadata.concurrency === undefined) {
+    descriptor.metadata.concurrency = descriptor.concurrency || (descriptor.metadata.readOnly ? 'parallel-safe' : 'serialized');
+  }
+  if (descriptor.metadata.workspaceAccess === undefined) {
+    descriptor.metadata.workspaceAccess = descriptor.workspaceAccess || (descriptor.metadata.mutation ? 'write' : (descriptor.metadata.readOnly ? 'read' : 'none'));
+  }
 
   _tools[name] = descriptor;
   _aliasMap[name] = name;
@@ -323,17 +329,42 @@ export function needsPermission(name) {
 export function isReadOnly(name) {
   var tool = get(name);
   if (!tool) return false;
-  if (tool.metadata && tool.metadata.readOnly !== undefined) return !!tool.metadata.readOnly;
+  if (tool.readOnly === true) return true;
+  if (tool.metadata && tool.metadata.readOnly !== undefined) return Boolean(tool.metadata.readOnly);
   if (tool.metadata && tool.metadata.sideEffect === 'none') return true;
+  if (tool.metadata && tool.metadata.concurrency === 'parallel-safe') return true;
   return false;
 }
 
 export function isMutation(name) {
   var tool = get(name);
   if (!tool) return false;
-  if (tool.metadata && tool.metadata.mutation !== undefined) return !!tool.metadata.mutation;
+  if (tool.mutation === true) return true;
+  if (tool.metadata && tool.metadata.mutation !== undefined) return Boolean(tool.metadata.mutation);
   if (tool.metadata && (tool.metadata.sideEffect === 'mutation' || tool.metadata.sideEffect === 'filesystem')) return true;
   return false;
+}
+
+export function getExecutionSemantics(name) {
+  var canonical = resolveAlias(name) || name;
+  var tool = get(canonical);
+  if (!tool) {
+    return {
+      name: canonical,
+      sideEffect: 'unknown',
+      concurrency: 'serialized',
+      requiresApproval: false,
+      workspaceAccess: 'none'
+    };
+  }
+  var meta = tool.metadata || {};
+  return {
+    name: canonical,
+    sideEffect: meta.sideEffect || (meta.readOnly ? 'none' : (meta.mutation ? 'mutation' : 'unknown')),
+    concurrency: meta.concurrency || (meta.readOnly ? 'parallel-safe' : 'serialized'),
+    requiresApproval: Boolean(meta.needsPermission || meta.dangerous),
+    workspaceAccess: meta.workspaceAccess || (meta.mutation ? 'write' : (meta.readOnly ? 'read' : 'none'))
+  };
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -21,6 +21,7 @@ import * as recoveryEngine from '../execution/recoveryEngine.js';
 import * as reviewEngine from '../execution/reviewEngine.js';
 import * as executionTrace from '../execution/executionTrace.js';
 import * as memoryManager from '../context/memoryManager.js';
+import * as planningManager from '../context/planningManager.js';
 import * as diffManager from '../tools/diffManager.js';
 import * as mediaManager from '../media/mediaManager.js';
 import { extractModelModality } from '../providers/modelClassifier.js';
@@ -269,11 +270,32 @@ function autoCompletePlanOnDone(sessionCtx, sessionId, sendEvent) {
   }
 }
 
-
-
-
-
-
+function isVerificationToolOrCommand(toolName, args) {
+  var name = String(toolName || '').toLowerCase();
+  if (name === 'verify' || name === 'test' || name === 'run_tests') {
+    return true;
+  }
+  if (name === 'run_command' || name === 'run_terminal_command' || name === 'run_terminal' || name === 'terminal') {
+    var rawCmd = '';
+    if (typeof args === 'string') {
+      rawCmd = args;
+    } else if (args && typeof args === 'object') {
+      rawCmd = args.command || args.cmd || args.action || '';
+    }
+    var cmd = String(rawCmd).toLowerCase();
+    if (cmd.indexOf('test') !== -1 ||
+        cmd.indexOf('pytest') !== -1 ||
+        cmd.indexOf('jest') !== -1 ||
+        cmd.indexOf('vitest') !== -1 ||
+        cmd.indexOf('mocha') !== -1 ||
+        cmd.indexOf('check') !== -1 ||
+        cmd.indexOf('cargo test') !== -1 ||
+        cmd.indexOf('go test') !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export async function runAgentLoop(userPrompt, config, options) {
   var workspace = options.workspace || '';
@@ -623,9 +645,8 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
 
-        try {
-          agentState.transitionWithTrace('failed', sessionId, executionTrace);
-        } catch (_) {}
+        agentState.transitionWithTrace('failed', sessionId, executionTrace);
+        events.emit('state_changed', { state: 'failed', sessionId: sessionId });
         events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: errMsg, sessionId: sessionId });
         throw err;
       }
@@ -650,9 +671,8 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (!iterationContent && !iterationThinking && toolCalls.length === 0 && (!signal || (!signal.stopped && !signal.aborted))) {
         var emptyMsg = 'The model returned an empty response. It may have closed the connection prematurely or does not support tool calling.';
-        try {
-          agentState.transitionWithTrace('failed', sessionId, executionTrace);
-        } catch (_) {}
+        agentState.transitionWithTrace('failed', sessionId, executionTrace);
+        events.emit('state_changed', { state: 'failed', sessionId: sessionId });
         events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: emptyMsg, sessionId: sessionId });
         throw new Error(emptyMsg);
       }
@@ -773,9 +793,10 @@ export async function runAgentLoop(userPrompt, config, options) {
               console.log('[AGENT LOOP] Review failed. Injecting feedback and repeating iteration.');
               var feedbackMsg = {
                 role: 'user',
-                source: 'system_verification',
+                source: 'runtime_feedback',
+                feedbackType: 'verification_review',
                 isSystemFeedback: true,
-                content: '[SYSTEM VERIFICATION FEEDBACK — AUTOMATED CODE REVIEW]\n## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
+                content: '[SYSTEM RUNTIME NOTICE: CODE REVIEW FEEDBACK]\n## ⚠️ CODE REVIEW WARNING\nThe self-reflection check detected issues in your changes:\n' +
                          reviewReport.issues.map(formatReviewIssueItem).join('\n') +
                          '\n\nPlease address these issues (such as resolving compiler/diagnostic errors, fixing syntax, removing placeholders, resolving empty catch blocks, or correcting credential leaks) in the next iteration.'
               };
@@ -793,10 +814,8 @@ export async function runAgentLoop(userPrompt, config, options) {
           continue;
         }
 
-        try {
-          agentState.transitionWithTrace('completed', sessionId, executionTrace);
-          events.emit('state_changed', { state: 'completed', sessionId: sessionId });
-        } catch (_) {}
+        agentState.transitionWithTrace('completed', sessionId, executionTrace);
+        events.emit('state_changed', { state: 'completed', sessionId: sessionId });
 
         var assistantMsg = { role: 'assistant', content: iterationContent || '' };
         if (iterationThinking || fullThinking) {
@@ -832,12 +851,26 @@ export async function runAgentLoop(userPrompt, config, options) {
           // Intentionally ignored to allow safe execution fallback
         }
 
+        var modifiedCount = modifiedFiles ? modifiedFiles.length : 0;
+        var failedMutationsCount = (sessionCtx.failedMutations && sessionCtx.failedMutations.length) || 0;
+        var verificationRan = Boolean(sessionCtx.verificationRan);
+        var verificationPassed = Boolean(sessionCtx.verificationPassed);
+
+        var isTrulyVerified = (!hasReviewIssues) && (failedMutationsCount === 0) &&
+          (modifiedCount === 0 ? true : (verificationRan && verificationPassed));
+
         var completionEvidence = {
           modelCompleted: true,
           reviewPassed: !hasReviewIssues,
-          modifiedFilesCount: modifiedFiles ? modifiedFiles.length : 0,
-          failedMutationsCount: (sessionCtx.failedMutations && sessionCtx.failedMutations.length) || 0,
-          verified: (!sessionCtx.failedMutations || sessionCtx.failedMutations.length === 0) && !hasReviewIssues
+          modifiedFilesCount: modifiedCount,
+          failedMutationsCount: failedMutationsCount,
+          verification: {
+            required: modifiedCount > 0,
+            executed: verificationRan,
+            passed: verificationPassed
+          },
+          unverifiedChanges: modifiedCount > 0 && !verificationRan,
+          verified: isTrulyVerified
         };
 
         var executionReportText = formatExecutionReport();
@@ -860,9 +893,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         };
       }
 
-      try {
-        agentState.transitionWithTrace('executing', sessionId, executionTrace);
-      } catch (_) {}
+      agentState.transitionWithTrace('executing', sessionId, executionTrace);
       events.emit('state_changed', { state: 'executing', sessionId: sessionId });
       sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
 
@@ -917,6 +948,20 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (allCheckpoints.length) {
         sendEvent({ type: 'checkpoints_created', checkpoints: allCheckpoints });
+      }
+
+      for (var vrIdx = 0; vrIdx < results.length; vrIdx++) {
+        var rItem = results[vrIdx];
+        var tcItem = completedToolCalls[vrIdx];
+        var parsedArgs = (tcItem && tcItem.function && tcItem.function.arguments) || {};
+        if (isVerificationToolOrCommand(rItem.tool_name, parsedArgs)) {
+          sessionCtx.verificationRan = true;
+          if (rItem.result && rItem.result.success !== false && (rItem.result.exit_code === undefined || rItem.result.exit_code === 0)) {
+            sessionCtx.verificationPassed = true;
+          } else {
+            sessionCtx.verificationPassed = false;
+          }
+        }
       }
 
       currentPlan = sessionCtx.plan;
@@ -1012,7 +1057,10 @@ export async function runAgentLoop(userPrompt, config, options) {
       if (repeatWarning) {
         messages.push({
           role: 'user',
-          content: repeatWarning
+          source: 'runtime_feedback',
+          feedbackType: 'loop_hygiene',
+          isSystemFeedback: true,
+          content: '[SYSTEM RUNTIME NOTICE: EXECUTION GUARD]\n' + repeatWarning
         });
       }
 
@@ -1021,11 +1069,10 @@ export async function runAgentLoop(userPrompt, config, options) {
     }
   } catch (err) {
     console.error('[AGENT LOOP] Error in loop:', err);
-    try {
-      if (!agentState.isTerminal(sessionId)) {
-        agentState.transitionWithTrace('failed', sessionId, executionTrace);
-      }
-    } catch (_) {}
+    if (!agentState.isTerminal(sessionId)) {
+      agentState.transitionWithTrace('failed', sessionId, executionTrace);
+      events.emit('state_changed', { state: 'failed', sessionId: sessionId });
+    }
     try {
       var errText = err ? (err.message || String(err)) : 'Unknown error';
       executionTrace.recordFinalResponse(sessionId, {
@@ -1052,11 +1099,10 @@ export async function runAgentLoop(userPrompt, config, options) {
     sendHistoryUpdate();
   }
 
-  try {
-    if (!agentState.isTerminal(sessionId)) {
-      agentState.transitionWithTrace('max_iterations', sessionId, executionTrace);
-    }
-  } catch (_) {}
+  if (!agentState.isTerminal(sessionId)) {
+    agentState.transitionWithTrace('max_iterations', sessionId, executionTrace);
+    events.emit('state_changed', { state: 'max_iterations', sessionId: sessionId });
+  }
 
   try {
     executionTrace.recordFinalResponse(sessionId, {
