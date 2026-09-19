@@ -6,34 +6,38 @@ import { buildMessages } from './promptBuilder.js';
 import { createProvider } from '../providers/providerManager.js';
 import { getDefinitions } from '../tools/toolDefinitions.js';
 import * as toolRegistry from '../tools/toolRegistry.js';
-import { formatToolResult, formatExecutionReport } from '../tools/toolExecutor.js';
+import { formatToolResult, formatExecutionReport, executeSingleToolCall, robustParseToolArguments } from '../tools/toolExecutor.js';
 import { requestPermission } from '../tools/permissions.js';
-import * as projectKnowledge from '../context/projectKnowledge.js';
-import * as contextManager from '../context/contextManager.js';
-import * as planningManager from '../context/planningManager.js';
 import * as verificationManager from '../execution/verificationManager.js';
 import * as learningManager from '../context/learningManager.js';
-import * as timelineManager from '../execution/timelineManager.js';
 import * as checkpointManager from '../tools/checkpointManager.js';
 import * as terminalManager from '../tools/terminalManager.js';
 import * as events from './events.js';
 import * as agentState from './agentState.js';
 import * as runtime from './runtime.js';
-import { exec } from 'child_process';
 import * as observationEngine from '../execution/observationEngine.js';
-import * as goalTracker from '../context/goalTracker.js';
-import * as gitIntelligence from '../context/gitIntelligence.js';
 import * as approvalSystem from '../tools/approvalSystem.js';
 import * as recoveryEngine from '../execution/recoveryEngine.js';
 import * as reviewEngine from '../execution/reviewEngine.js';
 import * as executionTrace from '../execution/executionTrace.js';
-import * as multiAgentRuntime from '../execution/multiAgentRuntime.js';
 import * as memoryManager from '../context/memoryManager.js';
 import * as diffManager from '../tools/diffManager.js';
-import * as mcpManager from '../mcp/mcpManager.js';
-import * as subagentManager from './subagentManager.js';
 import { extractModelModality } from '../providers/modelClassifier.js';
-import * as mediaManager from '../media/mediaManager.js';
+// Phase 1 engines — extracted from agentLoop
+import * as contextEngine from './contextEngine.js';
+import * as mediaRuntime from './mediaRuntime.js';
+import * as delegationEngine from './delegationEngine.js';
+import * as decisionEngine from './decisionEngine.js';
+import {
+  buildToolContext,
+  isReadOnlyTool,
+  isMutationTool,
+  cleanToolArgs,
+  normalizeToolOutput,
+  checkLoopHygiene,
+  checkToolFailureRepetition
+} from './toolContextBuilder.js';
+
 
 var DEBUG = false;
 function dbg() {
@@ -47,6 +51,10 @@ export async function resolveDiff(id, accepted, sessionId, workspace) {
 }
 
 function noop() {}
+
+function formatReviewIssueItem(iss) {
+  return '- ' + iss;
+}
 
 function getEffectiveSessionUsage(sessionUsage, activeTrace) {
   var inT = (sessionUsage && sessionUsage.prompt_tokens) || 0;
@@ -75,9 +83,7 @@ function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
     };
   }
 
-  var fromState = currentState;
-  agentState.transition('stopped', sessionId);
-  executionTrace.recordTransition(sessionId, fromState, 'stopped');
+  agentState.transitionWithTrace('stopped', sessionId, executionTrace);
   events.emit('state_changed', { state: 'stopped', sessionId: sessionId });
   var stoppedTrace = executionTrace.finishRun(sessionId, 'stopped');
   if (stoppedTrace) {
@@ -262,726 +268,11 @@ function autoCompletePlanOnDone(sessionCtx, sessionId, sendEvent) {
   }
 }
 
-function getDelegationReason(toolCalls) {
-  if (!toolCalls || !toolCalls.length) return '';
-  for (var i = 0; i < toolCalls.length; i++) {
-    var fn = toolCalls[i].function;
-    if (fn && (fn.name === 'spawn_subagent' || fn.name === 'wait_for_subagent')) {
-      var sArgs = fn.arguments || {};
-      if (typeof sArgs === 'string') {
-        try { sArgs = JSON.parse(sArgs); } catch (_) {}
-      }
-      var sName = (sArgs && (sArgs.name || sArgs.id)) || 'subagent';
-      var sTask = (sArgs && sArgs.task) || '';
-      var sExec = String((sArgs && sArgs.execution) || 'sync').toLowerCase();
-      if (fn.name === 'spawn_subagent') {
-        if (sExec === 'wait') {
-          return "I am delegating this task to the specialized '" + sName + "' subagent (" + (sTask || 'to execute the delegated objective') + ") and waiting for it to complete.";
-        }
-        return "I am launching the '" + sName + "' subagent in the background to handle: " + (sTask || 'the delegated objective') + ".";
-      }
-      if (fn.name === 'wait_for_subagent') {
-        return "Waiting for subagent '" + sName + "' to complete its execution and return results.";
-      }
-    }
-  }
-  return '';
-}
 
-function formatReviewIssueItem(iss) {
-  return '- ' + iss;
-}
 
-function isReadOnlyTool(toolName) {
-  var readTools = {
-    read_file: true,
-    search_code: true,
-    search_files: true,
-    list_dir: true,
-    grep_search: true,
-    find_by_name: true,
-    get_symbols: true,
-    get_stats: true,
-    view_file: true,
-    read_url_content: true,
-    read_rules: true
-  };
-  return !!readTools[toolName];
-}
 
-function isMutationTool(toolName) {
-  return toolName === 'write_file' || toolName === 'edit_file' || toolName === 'patch_file' ||
-    toolName === 'delete_file' || toolName === 'create_folder' || toolName === 'delete_folder';
-}
 
-function checkToolFailureRepetition(sessionCtx, toolName, args, result) {
-  if (!sessionCtx) return null;
-  if (!result || result.success !== false) {
-    sessionCtx.recentFailures = [];
-    return null;
-  }
-  sessionCtx.recentFailures = sessionCtx.recentFailures || [];
-  var key = toolName + ':' + JSON.stringify(args || {});
-  sessionCtx.recentFailures.push(key);
 
-  if (sessionCtx.recentFailures.length >= 3) {
-    var count = 0;
-    for (var i = sessionCtx.recentFailures.length - 1; i >= 0; i--) {
-      if (sessionCtx.recentFailures[i] === key) {
-        count++;
-      } else {
-        break;
-      }
-    }
-    if (count >= 3) {
-      return '⚠️ REPETITIVE TOOL FAILURE: You have called "' + toolName + '" 3 times consecutively with the same failing result. Please stop repeating this command, inspect workspace files/directories, and choose an alternative strategy.';
-    }
-  }
-  return null;
-}
-
-function normalizeToolOutput(result, formattedResult) {
-  if (formattedResult && typeof formattedResult === 'string') {
-    return formattedResult.trim();
-  }
-  if (!result) return '';
-  if (typeof result === 'string') return result.trim();
-  var out = result.message || result.output || result.content || result.error || '';
-  if (typeof out === 'string') return out.trim();
-  return JSON.stringify(out);
-}
-
-function cleanToolArgs(args) {
-  if (!args || typeof args !== 'object') return {};
-  var clean = {};
-  var keys = Object.keys(args);
-  for (var i = 0; i < keys.length; i++) {
-    var k = keys[i];
-    if (k.charAt(0) === '_') continue;
-    clean[k] = args[k];
-  }
-  return clean;
-}
-
-function buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission) {
-  var identity = sessionCtx && sessionCtx.agentIdentity ? sessionCtx.agentIdentity : {};
-  return {
-    workspace: workspace,
-    sessionId: sessionId,
-    signal: signal,
-    config: sessionCtx ? sessionCtx.config : null,
-    sendEvent: sendEvent,
-    askPermission: askPermission,
-    agentId: identity.agentId || 'root',
-    agentName: identity.name || 'Main Agent',
-    parentAgentId: identity.parentAgentId || null,
-    parentSessionId: identity.parentSessionId || null,
-    rootSessionId: (identity.rootSessionId || (sessionCtx && sessionCtx.rootSessionId)) || sessionId,
-    agentType: identity.agentType || 'root',
-    agentRunner: sessionCtx ? sessionCtx.agentRunner : null,
-    images: sessionCtx ? sessionCtx.images : []
-  };
-}
-
-function checkLoopHygiene(sessionCtx, toolName, args, result, formattedResult) {
-  if (!sessionCtx || !toolName) return null;
-  sessionCtx.consecutiveToolInvocations = sessionCtx.consecutiveToolInvocations || [];
-
-  var cleanArgsObj = cleanToolArgs(args);
-  var serializedArgs = JSON.stringify(cleanArgsObj);
-  var normalizedOutput = normalizeToolOutput(result, formattedResult);
-  var signature = toolName + '|||' + serializedArgs + '|||' + normalizedOutput;
-
-  sessionCtx.consecutiveToolInvocations.push({
-    signature: signature,
-    toolName: toolName,
-    args: cleanArgsObj,
-    serializedArgs: serializedArgs
-  });
-
-  var list = sessionCtx.consecutiveToolInvocations;
-  if (list.length >= 3) {
-    var count = 0;
-    for (var i = list.length - 1; i >= 0; i--) {
-      if (list[i].signature === signature) {
-        count++;
-      } else {
-        break;
-      }
-    }
-    if (count >= 3) {
-      return 'already ' + toolName + ' is called with this args(' + serializedArgs + ') with the same output. Please stop repeating this call, analyze why this action is not advancing the task, and choose an alternative strategy.';
-    }
-  }
-  return null;
-}
-
-function robustParseToolArguments(rawArgs, toolName) {
-  if (!rawArgs) return { argsList: [{}] };
-  if (typeof rawArgs === 'object') return { argsList: [rawArgs] };
-
-  var str = String(rawArgs).trim();
-  if (!str) return { argsList: [{}] };
-
-  // 1. Strip markdown code fences if present (e.g. ```json ... ```)
-  if (str.startsWith('```json')) {
-    str = str.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-  } else if (str.startsWith('```')) {
-    str = str.replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
-  }
-
-  // 2. Try direct standard JSON.parse
-  try {
-    var parsed = JSON.parse(str);
-    if (parsed && typeof parsed === 'object') {
-      return { argsList: [parsed] };
-    }
-    return { argsList: [{}] };
-  } catch (err) {
-    // 3. Scan and recover concatenated or trailing JSON objects
-    var extractedList = [];
-    var remaining = str;
-
-    while (remaining.length > 0) {
-      remaining = remaining.trim();
-      if (!remaining.startsWith('{')) {
-        var nextBrace = remaining.indexOf('{');
-        if (nextBrace === -1) break;
-        remaining = remaining.substring(nextBrace);
-      }
-
-      var parsedObj = null;
-      var lastSuccessIdx = -1;
-      var depth = 0;
-      var inString = false;
-      var escape = false;
-
-      for (var i = 0; i < remaining.length; i++) {
-        var ch = remaining[i];
-        if (escape) {
-          escape = false;
-          continue;
-        }
-        if (ch === '\\') {
-          escape = true;
-          continue;
-        }
-        if (ch === '"') {
-          inString = !inString;
-          continue;
-        }
-        if (!inString) {
-          if (ch === '{') depth++;
-          else if (ch === '}') {
-            depth--;
-            if (depth === 0) {
-              var candidate = remaining.substring(0, i + 1);
-              try {
-                parsedObj = JSON.parse(candidate);
-                lastSuccessIdx = i + 1;
-                break;
-              } catch (_) {}
-            }
-          }
-        }
-      }
-
-      if (parsedObj && typeof parsedObj === 'object') {
-        extractedList.push(parsedObj);
-        remaining = remaining.substring(lastSuccessIdx);
-      } else {
-        break;
-      }
-    }
-
-    if (extractedList.length > 0) {
-      return { argsList: extractedList };
-    }
-
-    // 4. Return parse error if no JSON object could be extracted
-    return { argsList: [{ _jsonParseError: err.message, _rawArgs: str }] };
-  }
-}
-
-async function executeSingleToolCall(workspace, sessionId, iteration, sendEvent, askPermission, userPrompt, history, sessionCtx, tc, index, signal) {
-  var toolName = tc.function?.name;
-  var args = tc.function?.arguments || {};
-  var tcId = tc.id || 'call_' + iteration + '_' + index;
-
-  args = args || {};
-  args._sessionId = sessionId;
-
-  if (args._jsonParseError) {
-    var jsonErrText = 'Error: Malformed JSON arguments for tool "' + toolName + '": ' + args._jsonParseError + '. Please provide valid JSON parameters.';
-    sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: jsonErrText, toolCallId: tcId });
-    return {
-      tool_name: toolName,
-      tool_call_id: tcId,
-      formattedResult: jsonErrText,
-      result: {
-        success: false,
-        error: jsonErrText,
-        message: jsonErrText
-      },
-      checkpoints: []
-    };
-  }
-
-  sendEvent({
-    type: EVENT_TYPES.TOOL_CALL,
-    tool: toolName,
-    args: args,
-    id: tcId,
-    index: index
-  });
-
-  // Permission check
-  var approved = true;
-  if (approvalSystem.requiresApproval(toolName, args, sessionCtx ? sessionCtx.config : null)) {
-    try {
-      if (agentState.getState(sessionId) !== 'waiting') {
-        var fromWait = agentState.getState(sessionId);
-        agentState.transition('waiting', sessionId);
-        executionTrace.recordTransition(sessionId, fromWait, 'waiting');
-        events.emit('state_changed', { state: 'waiting', sessionId: sessionId });
-      }
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-
-    approved = await askPermission(toolName, args, tcId, sendEvent, sessionId);
-    memoryManager.recordUserDecision(toolName, args.command || args.file_path || args.folder_path || '', approved, sessionId);
-    executionTrace.recordDecision(sessionId, toolName, approved ? 'allow' : 'deny', 'User prompted approval');
-
-    try {
-      var fromExec2 = agentState.getState(sessionId);
-      agentState.transition('executing', sessionId);
-      executionTrace.recordTransition(sessionId, fromExec2, 'executing');
-      events.emit('state_changed', { state: 'executing', sessionId: sessionId });
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-  }
-  if (!approved) {
-    sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, success: false, message: 'Permission denied by user.', toolCallId: tcId });
-    return {
-      tool_name: toolName,
-      tool_call_id: tcId,
-      formattedResult: 'Permission denied by user.',
-      result: {
-        success: false,
-        message: 'Permission denied by user.',
-        error: 'Permission denied by user.'
-      },
-      checkpoints: []
-    };
-  }
-
-  // Execute tool
-  console.log('[AGENT LOOP] Running tool: ' + toolName);
-  var lastResult = null;
-  var startTime = Date.now();
-  var checkpointsCreated = [];
-
-  // Track which diff IDs are created during this tool call
-  var _createdDiffIds = [];
-  try {
-    dbg('[AGENT LOOP] Calling toolRegistry.execute for', toolName);
-    var toolContext = buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission);
-    var generator = toolRegistry.execute(toolName, args, toolContext);
-    dbg('[AGENT LOOP] toolRegistry.execute returned generator');
-    var eventCount = 0;
-    for await (var event of generator) {
-      eventCount++;
-      dbg('[AGENT LOOP] Generator event #' + eventCount + ' for', toolName, 'type:', event.type, 'success:', event.success);
-      // Attach tool call ID so the webview can link this event to the correct tool card
-      event.toolCallId = tcId;
-      if (!event.sessionId) {
-        event.sessionId = sessionId;
-      }
-      if (!event.tool) {
-        event.tool = toolName;
-      }
-      if (!event.tool_name) {
-        event.tool_name = toolName;
-      }
-      if (!event.args && args) {
-        event.args = args;
-      }
-
-      // Capture deferred resolve for diff review requests in diffManager
-      if (event.type === 'request_diff' && event.id) {
-        event.sessionId = sessionId;
-        if (!event.parentSessionId && toolContext && toolContext.parentSessionId) {
-          event.parentSessionId = toolContext.parentSessionId;
-        }
-        if (!event.rootSessionId && toolContext && toolContext.rootSessionId) {
-          event.rootSessionId = toolContext.rootSessionId;
-        }
-        if (!event.subagentName && toolContext && toolContext.agentName && toolContext.agentType === 'subagent') {
-          event.subagentName = toolContext.agentName;
-        }
-        diffManager.storePatch(event);
-        _createdDiffIds.push(event.id);
-      }
-
-      // Propagate subagent metadata for interactive user question events
-      if (event.type === 'ask_question' && event.id) {
-        event.sessionId = sessionId;
-        if (!event.parentSessionId && toolContext && toolContext.parentSessionId) {
-          event.parentSessionId = toolContext.parentSessionId;
-        }
-        if (!event.rootSessionId && toolContext && toolContext.rootSessionId) {
-          event.rootSessionId = toolContext.rootSessionId;
-        }
-        if (!event.subagentName && toolContext && toolContext.agentName && toolContext.agentType === 'subagent') {
-          event.subagentName = toolContext.agentName;
-        }
-      }
-
-      if (event.type === 'tool_result' && event.checkpoint_id) {
-        var targetPath = event.file_path || event.folder_path || args.file_path || args.folder_path || '';
-        var actionLabel = '';
-        if (toolName === 'create_folder') {
-          actionLabel = 'Created: ' + targetPath;
-        } else if (toolName === 'delete_folder') {
-          actionLabel = 'Deleted: ' + targetPath;
-        } else if (toolName === 'delete_file') {
-          actionLabel = 'Deleted: ' + targetPath;
-        } else if (toolName === 'write_file') {
-          actionLabel = (event.is_new_file || !event.existed) ? ('Created: ' + targetPath) : ('Write: ' + targetPath);
-        } else if (toolName === 'edit_file') {
-          actionLabel = 'Edit: ' + targetPath;
-        } else if (toolName === 'patch_file') {
-          actionLabel = 'Patches: ' + targetPath;
-        } else {
-          actionLabel = 'Edit: ' + targetPath;
-        }
-
-        var cpObj = {
-          id: event.checkpoint_id,
-          filePath: targetPath,
-          toolCallId: tcId,
-          agentId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.agentId) || 'root',
-          parentAgentId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.parentAgentId) || null,
-          parentSessionId: (sessionCtx && sessionCtx.agentIdentity && sessionCtx.agentIdentity.parentSessionId) || null,
-          isDir: event.is_directory || toolName === 'create_folder' || toolName === 'delete_folder',
-          label: actionLabel
-        };
-        checkpointsCreated.push(cpObj);
-        // User Directive: Emit checkpoints_created immediately so UI displays Undo buttons in real time!
-        sendEvent({ type: 'checkpoints_created', checkpoints: [cpObj] });
-      }
-
-      sendEvent(event);
-      if (event.type === 'tool_result') {
-        lastResult = event;
-      }
-    }
-  } catch (err) {
-    console.log('[AGENT LOOP] Generator threw for', toolName, ':', err.message);
-    sendEvent({ type: EVENT_TYPES.TOOL_RESULT, tool: toolName, tool_name: toolName, args: args, success: false, message: err.message, toolCallId: tcId });
-    lastResult = { success: false, message: err.message };
-  } finally {
-    dbg('[AGENT LOOP] Generator finally block for', toolName, 'eventCount:', eventCount, 'lastResult:', lastResult ? (lastResult.success !== false ? 'success' : 'fail') : 'null');
-    // Clean up diffs only if the operation was explicitly aborted/stopped
-    if (signal && (signal.stopped || signal.aborted)) {
-      for (var di = 0; di < _createdDiffIds.length; di++) {
-        var diffId = _createdDiffIds[di];
-        diffManager.rejectPatch(diffId, sessionId);
-      }
-    }
-  }
-
-  // Record tool usage for learning engine
-  try {
-    learningManager.recordToolUsage(toolName, args.command || args.file_path || args.folder_path || args.pattern || '');
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  // Record timeline event
-  try {
-    var tlSuccess = lastResult ? lastResult.success : undefined;
-    var tlMsg = lastResult ? (lastResult.message || lastResult.error || '') : '';
-    timelineManager.addToolEvent(toolName, args, tlSuccess, tlMsg, sessionId);
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  if (lastResult) {
-    // Verify tool result
-    if (toolName === 'create_plan' && lastResult.plan) {
-      try {
-        sessionCtx.plan = lastResult.plan;
-        sendEvent({ type: 'plan_created', plan: sessionCtx.plan });
-      } catch (_) {
-        // Intentionally ignored to allow safe execution fallback
-      }
-    } else if (toolName === 'update_plan' && lastResult.plan) {
-      try {
-        sessionCtx.plan = lastResult.plan;
-        sendEvent({ type: 'plan_updated', plan: sessionCtx.plan });
-      } catch (_) {
-        // Intentionally ignored to allow safe execution fallback
-      }
-    }
-
-    try {
-      var stepArgs = { action: toolName, target: args.file_path || args.folder_path || args.command || args.pattern || args.query || args.url || '', description: '' };
-      var stepResult = {
-        order: iteration,
-        action: toolName,
-        status: lastResult.success !== false ? 'completed' : 'failed',
-        duration: Date.now() - startTime,
-        output: lastResult.content || lastResult.message || (lastResult.results ? JSON.stringify(lastResult.results) : '') || '',
-        error: lastResult.success === false ? (lastResult.message || lastResult.error || 'failed') : null
-      };
-
-      var verification = await verificationManager.verifyStep(stepResult, stepArgs, workspace);
-
-      // Structured observation engine processing
-      var obs = observationEngine.generateObservation(toolName, args, lastResult, Date.now() - startTime, sessionId);
-      executionTrace.recordObservation(sessionId, obs);
-
-      if (!verification.verified) {
-        var actualErrorMsg = (verification.issues && verification.issues.length ? verification.issues.join('; ') : '') || (lastResult && (lastResult.error || lastResult.message)) || verification.summary || 'Verification failed';
-        var recovery = await recoveryEngine.diagnoseAndRecover(toolName, actualErrorMsg, {
-          workspace: workspace,
-          command: args.command || '',
-          file_path: args.file_path || '',
-          sessionId: sessionId,
-          activeTaskId: sessionCtx.plan ? sessionCtx.plan.activeTaskId : ''
-        });
-
-        events.emit('ToolFailed', { tool: toolName, error: actualErrorMsg, recovery: recovery.action });
-
-        if (recovery.action === 'llm_resolve_dependency') {
-          console.log('[AGENT LOOP] Recovery delegating dependency resolution to LLM:', recovery.detectedModule);
-          var envNote = recovery.environmentInfo ? ' (Environment: ' + recovery.environmentInfo.type + ')' : '';
-          lastResult.message = (lastResult.message || '') +
-            '\n\n[RECOVERY ENGINE: DEPENDENCY REQUIRED]' +
-            '\nDiagnosis: Missing ' + recovery.ecosystem + ' dependency detected: "' + (recovery.detectedModule || 'unknown') + '"' + envNote + '.' +
-            '\nAction Required by Model: Please inspect project configuration files (e.g. package.json, requirements.txt, pyproject.toml) to determine the exact package name and execute the appropriate run_terminal command to install it.';
-        } else if (recovery.action === 'retry') {
-          console.log('[AGENT LOOP] Recovery executing deterministic single retry for ' + toolName);
-          try {
-            if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'patch_file' || toolName === 'delete_file') {
-              var retryCpFile = args.file_path || '';
-              if (retryCpFile) {
-                var retryCpLabel = 'Retry ' + (toolName === 'delete_file' ? 'Deleted' : (toolName === 'write_file' ? 'Created' : 'Edited')) + ': ' + retryCpFile;
-                try {
-                  var retryCpId = await checkpointManager.createCheckpoint(retryCpFile, workspace, sessionId, retryCpLabel);
-                  if (retryCpId) {
-                    checkpointsCreated.push({ id: retryCpId, filePath: retryCpFile, label: retryCpLabel });
-                  }
-                } catch (_) {}
-              }
-            }
-
-            var retryCallId = tcId + '_retry';
-            sendEvent({
-              type: EVENT_TYPES.TOOL_CALL,
-              tool: toolName,
-              args: args,
-              id: retryCallId,
-              index: index
-            });
-
-            var retryApproved = true;
-            if (approvalSystem.requiresApproval(toolName, args, sessionCtx ? sessionCtx.config : null)) {
-              try {
-                if (agentState.getState(sessionId) !== 'waiting') {
-                  var fromWaitRetry = agentState.getState(sessionId);
-                  agentState.transition('waiting', sessionId);
-                  executionTrace.recordTransition(sessionId, fromWaitRetry, 'waiting');
-                  events.emit('state_changed', { state: 'waiting', sessionId: sessionId });
-                }
-              } catch (_) {}
-
-              retryApproved = await askPermission(toolName, args, retryCallId, sendEvent, sessionId);
-              memoryManager.recordUserDecision(toolName, args.command || args.file_path || args.folder_path || '', retryApproved, sessionId);
-              executionTrace.recordDecision(sessionId, toolName, retryApproved ? 'allow' : 'deny', 'User prompted approval on retry');
-
-              try {
-                var fromExecRetry = agentState.getState(sessionId);
-                agentState.transition('executing', sessionId);
-                executionTrace.recordTransition(sessionId, fromExecRetry, 'executing');
-                events.emit('state_changed', { state: 'executing', sessionId: sessionId });
-              } catch (_) {}
-            }
-
-            if (!retryApproved) {
-              sendEvent({
-                type: EVENT_TYPES.TOOL_RESULT,
-                tool: toolName,
-                success: false,
-                message: 'Permission denied by user on retry.',
-                toolCallId: retryCallId
-              });
-              lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry permission denied by user.' };
-            } else if (signal && (signal.stopped || signal.aborted)) {
-              lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry cancelled by user.' };
-            } else {
-              var retryGen = toolRegistry.execute(toolName, args, buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission));
-              for await (var retryEvent of retryGen) {
-                if (signal && (signal.stopped || signal.aborted)) {
-                  break;
-                }
-                retryEvent.toolCallId = retryCallId;
-                sendEvent(retryEvent);
-                if (retryEvent.type === 'tool_result') {
-                  lastResult = retryEvent;
-                }
-              }
-              if (lastResult && lastResult.success !== false) {
-                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry succeeded.';
-              } else {
-                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Auto-retry failed: ' + ((lastResult && (lastResult.error || lastResult.message)) || '');
-              }
-            }
-
-            // Rerun step verification and observation on retry result
-            var retryStepResult = {
-              order: iteration,
-              action: toolName,
-              status: lastResult && lastResult.success !== false ? 'completed' : 'failed',
-              duration: Date.now() - startTime,
-              output: lastResult ? (lastResult.content || lastResult.message || '') : '',
-              error: lastResult && lastResult.success === false ? (lastResult.message || lastResult.error || 'failed') : null
-            };
-            var retryVerification = await verificationManager.verifyStep(retryStepResult, stepArgs, workspace);
-            var retryObs = observationEngine.generateObservation(toolName, args, lastResult, Date.now() - startTime, sessionId);
-            executionTrace.recordObservation(sessionId, retryObs);
-          } catch (retryErr) {
-            lastResult = { success: false, message: '[RECOVERY ENGINE] Auto-retry error: ' + retryErr.message };
-          }
-        } else if ((recovery.action === 'execute_tool' || recovery.action === 'fallback') && (recovery.tool || recovery.command)) {
-          var recTool = recovery.tool || 'run_terminal';
-          var recArgs = recovery.args || { command: recovery.command };
-          console.log('[AGENT LOOP] Recovery proposed tool action: ' + recTool, recArgs);
-
-          var recCallId = 'rec_' + Date.now();
-
-          // 1. Emit TOOL_CALL first so the tool dropdown / terminal card is displayed in the UI
-          sendEvent({
-            type: EVENT_TYPES.TOOL_CALL,
-            tool: recTool,
-            args: recArgs,
-            id: recCallId,
-            index: index
-          });
-
-          // 2. Check permission if the tool requires approval
-          var recoveryApproved = true;
-          if (approvalSystem.requiresApproval(recTool, recArgs, sessionCtx ? sessionCtx.config : null)) {
-            try {
-              if (agentState.getState(sessionId) !== 'waiting') {
-                var fromWaitRec = agentState.getState(sessionId);
-                agentState.transition('waiting', sessionId);
-                executionTrace.recordTransition(sessionId, fromWaitRec, 'waiting');
-                events.emit('state_changed', { state: 'waiting', sessionId: sessionId });
-              }
-            } catch (_) {}
-
-            recoveryApproved = await askPermission(recTool, recArgs, recCallId, sendEvent, sessionId);
-            memoryManager.recordUserDecision(recTool, recArgs.command || recArgs.file_path || recArgs.folder_path || '', recoveryApproved, sessionId);
-            executionTrace.recordDecision(sessionId, recTool, recoveryApproved ? 'allow' : 'deny', 'User prompted approval on recovery action');
-
-            try {
-              var fromExecRec = agentState.getState(sessionId);
-              agentState.transition('executing', sessionId);
-              executionTrace.recordTransition(sessionId, fromExecRec, 'executing');
-              events.emit('state_changed', { state: 'executing', sessionId: sessionId });
-            } catch (_) {}
-          }
-
-          if (recoveryApproved) {
-            if (signal && (signal.stopped || signal.aborted)) {
-              lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery cancelled by user.';
-            } else {
-              try {
-                var recGen = toolRegistry.execute(recTool, recArgs, buildToolContext(workspace, sessionId, signal, sessionCtx, sendEvent, askPermission));
-                var recRes = null;
-                for await (var recEv of recGen) {
-                  if (signal && (signal.stopped || signal.aborted)) {
-                    break;
-                  }
-                  recEv.toolCallId = recCallId;
-                  sendEvent(recEv);
-                  if (recEv.type === 'tool_result') {
-                    recRes = recEv;
-                  }
-                }
-                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Executed ' + recTool + ' - ' + (recRes && recRes.success !== false ? 'success' : 'failed');
-              } catch (e) {
-                lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Recovery tool execution failed: ' + e.message;
-              }
-            }
-          } else {
-            sendEvent({
-              type: EVENT_TYPES.TOOL_RESULT,
-              tool: recTool,
-              success: false,
-              message: 'Permission denied by user for recovery action.',
-              toolCallId: recCallId
-            });
-            lastResult.message = (lastResult.message || '') + '\n[RECOVERY ENGINE] Proposed recovery action (' + (recArgs.command || recTool) + ') was denied by user.';
-          }
-        }
-      } else {
-        events.emit('ToolCompleted', { tool: toolName, result: lastResult });
-        memoryManager.recordTaskExecution(toolName, args, obs.summary, sessionId);
-        if (toolName === 'write_file') {
-          memoryManager.recordFileCreated(args.file_path, sessionId);
-        } else if (toolName === 'edit_file' || toolName === 'patch_file') {
-          memoryManager.recordFileModified(args.file_path, sessionId);
-        }
-      }
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-  }
-
-  try {
-    var toolDuration = Date.now() - startTime;
-    var isToolSuccess = lastResult ? lastResult.success !== false : false;
-    var toolResText = lastResult ? (lastResult.message || lastResult.content || (isToolSuccess ? 'Success' : 'Failed')) : 'Completed';
-    var updatedToolTrace = executionTrace.recordToolCall(sessionId, iteration, {
-      id: tcId,
-      toolName: toolName,
-      command: args.command || args.file_path || args.folder_path || args.pattern || '',
-      input: args,
-      output: toolResText,
-      success: isToolSuccess,
-      durationMs: toolDuration,
-      checkpointId: lastResult && (lastResult.checkpoint_id || lastResult.checkpointId),
-      filePath: args.file_path || args.folder_path || ''
-    });
-    if (updatedToolTrace) {
-      sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: updatedToolTrace });
-    }
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  if (lastResult && lastResult.success === false && isMutationTool(toolName)) {
-    if (!sessionCtx.failedMutations) sessionCtx.failedMutations = [];
-    sessionCtx.failedMutations.push({
-      tool: toolName,
-      filePath: args.file_path || args.folder_path || '',
-      message: lastResult.message || lastResult.error || 'Mutation failed'
-    });
-  }
-
-  return {
-    tool_name: toolName,
-    tool_call_id: tcId,
-    formattedResult: formatToolResult(toolName, lastResult),
-    checkpoints: checkpointsCreated,
-    result: lastResult
-  };
-}
 
 export async function runAgentLoop(userPrompt, config, options) {
   var workspace = options.workspace || '';
@@ -1054,93 +345,17 @@ export async function runAgentLoop(userPrompt, config, options) {
 
   var provider = createProvider(config);
 
-  // Gather context via ContextManager
-  var contextResult = null;
-  try {
-    contextResult = await contextManager.gatherContext(effectivePrompt, workspace, sessionId);
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-  var knowledge = contextResult ? contextResult.knowledge : {};
 
-  // Ensure knowledge has the minimum structure promptBuilder expects
-  if (!knowledge.projectMetadata) {
-    try {
-      if (projectKnowledge.getStats().ready) {
-        knowledge.projectMetadata = projectKnowledge.getProjectMetadata();
-        var stats2 = projectKnowledge.getStats();
-        knowledge.fileCount = stats2.tables && stats2.tables.files ? stats2.tables.files : 0;
-        knowledge.fileContext = true;
-      }
-    } catch (_) {
-      // Intentionally ignored to allow safe execution fallback
-    }
-    if (!knowledge.projectMemory) knowledge.projectMemory = '';
-    if (!knowledge.dependencyGraph) knowledge.dependencyGraph = '';
-    if (!knowledge.timeline) knowledge.timeline = '';
-  }
+  // ── Startup Context (knowledge, trace, goals, plan, MCP) ─────
+  var startupCtx = await contextEngine.gatherStartupContext(
+    effectivePrompt, userPrompt, workspace, sessionId,
+    isContinuation, config, agentIdentity, options.images || [], sendEvent
+  );
+  var knowledge = startupCtx.knowledge;
+  var currentPlan = startupCtx.currentPlan;
+  var mcpCtx = startupCtx.mcpCtx;
+  var activeTrace = startupCtx.activeTrace;
 
-  // Record session start in timeline
-  try {
-    var sessionLabel = String(effectivePrompt || '').substring(0, 60);
-    timelineManager.addEvent('session:start', sessionLabel, sessionId);
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  // ── Session Startup ──────────────────────────────────────────
-  var activeTrace = null;
-  try {
-    events.emit('TaskStarted', { goal: effectivePrompt, sessionId: sessionId });
-    var runContext = {
-      images: options.images || [],
-      workspaceFolder: workspace || '',
-      openFiles: (knowledge && knowledge.openFiles) || [],
-      agentId: agentIdentity ? agentIdentity.agentId : 'root',
-      parentAgentId: agentIdentity ? agentIdentity.parentAgentId : null,
-      parentSessionId: agentIdentity ? agentIdentity.parentSessionId : null,
-      depth: agentIdentity ? agentIdentity.depth : 0,
-      role: agentIdentity ? agentIdentity.role : 'coder',
-      agentType: agentIdentity ? agentIdentity.agentType : 'root'
-    };
-    activeTrace = executionTrace.startRun(sessionId, null, userPrompt || effectivePrompt, runContext, config.model, config.provider, isContinuation, agentIdentity);
-    sendEvent({ type: 'trace_updated', sessionId: sessionId, trace: activeTrace });
-    if (!isContinuation) {
-      goalTracker.initGoals(userPrompt, sessionId);
-      memoryManager.clear(sessionId);
-      memoryManager.setCurrentGoal(userPrompt, sessionId);
-    } else {
-      if (!goalTracker.getActiveTask(sessionId)) {
-        goalTracker.initGoals(effectivePrompt, sessionId);
-      }
-    }
-  } catch (e) {
-    console.error('[AGENT LOOP] Failed to initialize trace/goals:', e);
-  }
-
-  // Retrieve existing plan for this request session if any
-  var currentPlan = null;
-  try {
-    var sessionPlans = planningManager.getSessionPlans(sessionId);
-    if (sessionPlans && sessionPlans.length) {
-      currentPlan = sessionPlans[sessionPlans.length - 1];
-      if (currentPlan) runtime.setCurrentPlan(currentPlan, sessionId);
-      if (currentPlan && !knowledge.activePlans) {
-        try {
-          knowledge.activePlans = planningManager.getActivePlansContext(sessionId);
-        } catch (_) {
-          // Intentionally ignored to allow safe execution fallback
-        }
-      }
-    }
-  } catch (_) {
-    // Intentionally ignored to allow safe execution fallback
-  }
-
-  var mcpCtx = '';
-  try {
-    mcpCtx = mcpManager.getMcpPromptContext();
-  } catch (_) {}
 
   var messages = await buildMessages(userPrompt, {
     workspace: workspace,
@@ -1178,155 +393,21 @@ export async function runAgentLoop(userPrompt, config, options) {
 
   var selectedModality = extractModelModality(config.model);
 
-  // ── Direct Image Generation for Image Models ─────────────────
+
+  // ── Direct Image / Video Generation (shortcircuit for non-chat models) ─
+  // Note: mediaRuntime.handleDirectGeneration handles messages.push(assistantMediaMsg); and sendHistoryUpdate();
   if (selectedModality === 'image') {
     console.log('[AGENT LOOP] Direct Image Generation triggered for model: ' + config.model);
-    sendEvent({
-      type: EVENT_TYPES.AGENT_STATUS,
-      status: 'generating_image',
-      iteration: 0,
-      content: '🎨 Synthesizing image with ' + config.model + '...'
-    });
-    try {
-      var imgResult = await provider.images(config, effectivePrompt);
-      if (!imgResult) {
-        throw new Error('No image returned from image generation endpoint');
-      }
-      var savedMedia = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, imgResult, 'png');
-      var localImgPath = savedMedia ? savedMedia.filePath : (typeof imgResult === 'string' ? imgResult : 'generated_image.png');
-      var mdContent = '![Generated Image](' + localImgPath + ')\n\n*Generated with ' + config.model + '*';
-
-      agentState.transition('completed', sessionId);
-      executionTrace.finishRun(sessionId, 'completed');
-
-      var assistantMediaMsg = {
-        role: 'assistant',
-        content: mdContent,
-        media: {
-          type: 'image',
-          filePath: localImgPath,
-          filename: savedMedia ? savedMedia.filename : 'image.png',
-          model: config.model
-        }
-      };
-      messages.push(assistantMediaMsg);
-      sendHistoryUpdate();
-
-      try {
-        executionTrace.recordFinalResponse(sessionId, {
-          text: mdContent,
-          thinking: '',
-          durationMs: 0
-        });
-        executionTrace.saveTraceToDisk(null, sessionId);
-      } catch (_) {}
-
-      sendEvent({
-        type: 'media_generated',
-        mediaType: 'image',
-        prompt: effectivePrompt,
-        filePath: localImgPath,
-        filename: savedMedia ? savedMedia.filename : 'image.png',
-        model: config.model,
-        sessionId: sessionId
-      });
-      sendEvent({
-        message: assistantMediaMsg
-      });
-      sendEvent({
-        type: EVENT_TYPES.AGENT_DONE,
-        reason: 'completed',
-        content: mdContent,
-        thinking: ''
-      });
-      return { content: mdContent, thinking: '', done: true, stopped: false };
-    } catch (imgErr) {
-      console.error('[AGENT LOOP] Image generation error:', imgErr);
-      agentState.transition('failed', sessionId);
-      executionTrace.finishRun(sessionId, 'failed', { error: imgErr.message });
-      sendEvent({
-        type: EVENT_TYPES.AGENT_ERROR,
-        message: 'Image generation failed: ' + imgErr.message,
-        sessionId: sessionId
-      });
-      throw imgErr;
-    }
-  }
-
-  // ── Direct Video Generation for Video Models ─────────────────
-  if (selectedModality === 'video') {
+  } else if (selectedModality === 'video') {
     console.log('[AGENT LOOP] Direct Video Generation triggered for model: ' + config.model);
-    sendEvent({
-      type: EVENT_TYPES.AGENT_STATUS,
-      status: 'generating_video',
-      iteration: 0,
-      content: '🎬 Generating video with ' + config.model + '...'
-    });
-    try {
-      var vidResult = await provider.videos(config, effectivePrompt);
-      if (!vidResult) {
-        throw new Error('No video returned from video generation endpoint');
-      }
-      var savedVid = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult, 'mp4');
-      var localVidPath = savedVid ? savedVid.filePath : (typeof vidResult === 'string' ? vidResult : 'generated_video.mp4');
-      var vidMdContent = '![Generated Video](' + localVidPath + ')\n\n*Generated with ' + config.model + '*';
-
-      agentState.transition('completed', sessionId);
-      executionTrace.finishRun(sessionId, 'completed');
-
-      var assistantVidMsg = {
-        role: 'assistant',
-        content: vidMdContent,
-        media: {
-          type: 'video',
-          filePath: localVidPath,
-          filename: savedVid ? savedVid.filename : 'video.mp4',
-          model: config.model
-        }
-      };
-      messages.push(assistantVidMsg);
-      sendHistoryUpdate();
-
-      try {
-        executionTrace.recordFinalResponse(sessionId, {
-          text: vidMdContent,
-          thinking: '',
-          durationMs: 0
-        });
-        executionTrace.saveTraceToDisk(null, sessionId);
-      } catch (_) {}
-
-      sendEvent({
-        type: 'media_generated',
-        mediaType: 'video',
-        prompt: effectivePrompt,
-        filePath: localVidPath,
-        filename: savedVid ? savedVid.filename : 'video.mp4',
-        model: config.model,
-        sessionId: sessionId
-      });
-      sendEvent({
-        message: assistantVidMsg
-      });
-      sendEvent({
-        type: EVENT_TYPES.AGENT_DONE,
-        reason: 'completed',
-        content: vidMdContent,
-        thinking: ''
-      });
-      return { content: vidMdContent, thinking: '', done: true, stopped: false };
-    } catch (vidErr) {
-      console.error('[AGENT LOOP] Video generation error:', vidErr);
-      agentState.transition('failed', sessionId);
-      executionTrace.finishRun(sessionId, 'failed', { error: vidErr.message });
-      sendEvent({
-        type: EVENT_TYPES.AGENT_ERROR,
-        message: 'Video generation failed: ' + vidErr.message,
-        sessionId: sessionId
-      });
-      throw vidErr;
-    }
   }
+  var directMediaResult = await mediaRuntime.handleDirectGeneration(
+    selectedModality, provider, config, effectivePrompt,
+    sessionId, agentIdentity, sendEvent, messages, sendHistoryUpdate
+  );
+  if (directMediaResult) return directMediaResult;
+
+
 
   try {
     while (iteration < maxIterations) {
@@ -1337,18 +418,14 @@ export async function runAgentLoop(userPrompt, config, options) {
 
       if (pauseSignal && pauseSignal.paused) {
         console.log('[AGENT LOOP] Subagent paused at iteration ' + iteration);
-        var fromPausedState = agentState.getState(sessionId);
-        agentState.transition('paused', sessionId);
-        executionTrace.recordTransition(sessionId, fromPausedState, 'paused');
+        agentState.transitionWithTrace('paused', sessionId, executionTrace);
         events.emit('state_changed', { state: 'paused', sessionId: sessionId });
         sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'paused', sessionId: sessionId, iteration: iteration });
         await pauseSignal.resumePromise;
         if (signal && (signal.stopped || signal.aborted)) {
           return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
         }
-        var fromResumeState = agentState.getState(sessionId);
-        agentState.transition('thinking', sessionId);
-        executionTrace.recordTransition(sessionId, fromResumeState, 'thinking');
+        agentState.transitionWithTrace('thinking', sessionId, executionTrace);
         events.emit('state_changed', { state: 'thinking', sessionId: sessionId });
         sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'thinking', sessionId: sessionId, iteration: iteration });
       }
@@ -1360,41 +437,13 @@ export async function runAgentLoop(userPrompt, config, options) {
       var currentState = agentState.getState(sessionId);
       var targetState = (currentState === 'idle' || agentState.isTerminal(sessionId)) ? 'thinking' : currentState;
 
-      try {
-        if (agentState.getState(sessionId) !== targetState) {
-          var fromState = agentState.getState(sessionId);
-          agentState.transition(targetState, sessionId);
-          executionTrace.recordTransition(sessionId, fromState, targetState);
-        }
-      } catch (_) {
-        // Intentionally fallback to state reset if transition fails
-        agentState.reset(sessionId);
-        agentState.transition(targetState, sessionId);
-      }
-
+      agentState.transitionWithTrace(targetState, sessionId, executionTrace);
       events.emit('state_changed', { state: targetState, sessionId: sessionId });
 
-      // Inject execution context
-      try {
-        var roleName = multiAgentRuntime.mapStateToRole(targetState, sessionCtx.plan ? sessionCtx.plan.activeTaskAction : '');
-        var rolePrompt = multiAgentRuntime.getRolePrompt(roleName);
-        var gitPrompt = await gitIntelligence.getGitPromptFragment(workspace);
-        var memPrompt = memoryManager.getPromptFragment(sessionId);
-        var goalPrompt = goalTracker.getStatusReport(sessionId);
 
-        var activePlanCtx = planningManager.getActivePlansContext(sessionId);
-        if (messages && messages.length > 0 && messages[0].role === 'system') {
-          messages[0].content = messages[0].content.split('\n\n## ACTIVE EXECUTION CONTEXT')[0] +
-            '\n\n## ACTIVE EXECUTION CONTEXT\n' +
-            rolePrompt + '\n\n' +
-            (activePlanCtx ? activePlanCtx + '\n\n' : '') +
-            goalPrompt + '\n\n' +
-            gitPrompt + '\n\n' +
-            memPrompt;
-        }
-      } catch (e) {
-        console.error('[AGENT LOOP] Failed to update prompt context:', e);
-      }
+      // ── Refresh iteration context (role, plan, goals, git, memory) ──
+      await contextEngine.refreshIterationContext(messages, targetState, sessionCtx, sessionId, workspace);
+
 
       sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: targetState, iteration: iteration });
 
@@ -1409,7 +458,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       // Stream from provider
       try {
         var chatSignal = (signal && signal.signal) ? signal.signal : signal;
-        var activeToolDefinitions = (config && config.enableTools === false) ? [] : getDefinitions({ agentType: (agentIdentity ? agentIdentity.agentType : 'root') });
+        var activeToolDefinitions = (config && config.enableTools === false) ? [] : getDefinitions({ agentType: (agentIdentity ? agentIdentity.agentType : 'root'), modelModality: extractModelModality(config && config.model) });
         var stream = provider.chat(config, messages, activeToolDefinitions, { signal: chatSignal });
         for await (var chunk of stream) {
           if (signal && (signal.stopped || signal.aborted)) {
@@ -1535,7 +584,7 @@ export async function runAgentLoop(userPrompt, config, options) {
                   media: { type: 'image', filePath: recPath, filename: recSaved ? recSaved.filename : 'image.png' }
                 }
               });
-              agentState.transition('completed', sessionId);
+              agentState.transitionWithTrace('completed', sessionId, executionTrace);
               executionTrace.finishRun(sessionId, 'completed');
               sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'completed', content: recMd, thinking: '' });
               return { content: recMd, thinking: '', done: true, stopped: false };
@@ -1559,7 +608,7 @@ export async function runAgentLoop(userPrompt, config, options) {
                   media: { type: 'video', filePath: recVidPath, filename: recVidSaved ? recVidSaved.filename : 'video.mp4' }
                 }
               });
-              agentState.transition('completed', sessionId);
+              agentState.transitionWithTrace('completed', sessionId, executionTrace);
               executionTrace.finishRun(sessionId, 'completed');
               sendEvent({ type: EVENT_TYPES.AGENT_DONE, reason: 'completed', content: recVidMd, thinking: '' });
               return { content: recVidMd, thinking: '', done: true, stopped: false };
@@ -1570,7 +619,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
 
         try {
-          agentState.transition('failed', sessionId);
+          agentState.transitionWithTrace('failed', sessionId, executionTrace);
         } catch (_) {}
         events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: errMsg, sessionId: sessionId });
         throw err;
@@ -1597,7 +646,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       if (!iterationContent && !iterationThinking && toolCalls.length === 0 && (!signal || (!signal.stopped && !signal.aborted))) {
         var emptyMsg = 'The model returned an empty response. It may have closed the connection prematurely or does not support tool calling.';
         try {
-          agentState.transition('failed', sessionId);
+          agentState.transitionWithTrace('failed', sessionId, executionTrace);
         } catch (_) {}
         events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: emptyMsg, sessionId: sessionId });
         throw new Error(emptyMsg);
@@ -1663,135 +712,36 @@ export async function runAgentLoop(userPrompt, config, options) {
         // Intentionally ignored to allow safe execution fallback
       }
 
+
       if (completedToolCalls.length === 0) {
-        if (pendingSyncSubagents.length > 0) {
-          console.log('[AGENT LOOP] Awaiting ' + pendingSyncSubagents.length + ' pending sync subagent(s) before concluding...');
-          sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'waiting_for_subagent' });
-          while (pendingSyncSubagents.length > 0) {
-            var waitSub = pendingSyncSubagents.shift();
-            try {
-              var waitSubRes = await subagentManager.waitForSubagent(waitSub.id, sessionId);
-              if (waitSubRes) {
-                var wsOutput = (waitSubRes.summary || waitSubRes.output || waitSubRes.content) || '';
-                if (!wsOutput && waitSubRes.finalResponse) {
-                  wsOutput = typeof waitSubRes.finalResponse === 'string' ? waitSubRes.finalResponse : (waitSubRes.finalResponse.text || '');
-                }
-                var wsName = waitSubRes.name || waitSub.name || waitSub.id;
-                var wsRole = waitSubRes.role || waitSub.role || 'coder';
-                var wsStatus = waitSubRes.status || (waitSubRes.success !== false ? 'completed' : 'failed');
-                var wsCallId = 'call_resp_' + waitSub.id;
-                var wsRespArgs = {
-                  id: waitSub.id,
-                  name: wsName,
-                  role: wsRole,
-                  task: waitSub.task || waitSubRes.task || '',
-                  execution: 'sync'
-                };
-                var wsFormatted = '✓ Subagent [' + String(wsRole).toUpperCase() + '] ' + wsName + ' finished (' + wsStatus + ').\n\n' + wsOutput;
-
-                sendEvent({
-                  type: 'tool_call',
-                  tool: 'subagent_response',
-                  id: wsCallId,
-                  args: wsRespArgs
-                });
-
-                sendEvent({
-                  type: 'tool_result',
-                  tool: 'subagent_response',
-                  tool_name: 'subagent_response',
-                  tool_call_id: wsCallId,
-                  args: wsRespArgs,
-                  status: wsStatus === 'completed' ? 'success' : 'error',
-                  output: wsOutput,
-                  summary: wsOutput,
-                  formattedResult: wsFormatted,
-                  result: {
-                    agentId: waitSub.id,
-                    subagent_id: waitSub.id,
-                    name: wsName,
-                    role: wsRole,
-                    status: wsStatus,
-                    output: wsOutput,
-                    summary: wsOutput,
-                    result: waitSubRes,
-                    args: wsRespArgs
-                  }
-                });
-
-                messages.push({
-                  role: 'assistant',
-                  content: '',
-                  tool_calls: [{
-                    id: wsCallId,
-                    type: 'function',
-                    function: {
-                      name: 'subagent_response',
-                      arguments: JSON.stringify(wsRespArgs)
-                    }
-                  }]
-                });
-
-                messages.push({
-                  role: 'tool',
-                  tool_name: 'subagent_response',
-                  tool_call_id: wsCallId,
-                  content: wsFormatted
-                });
-              }
-            } catch (wErr) {
-              console.warn('[AGENT LOOP] Error waiting for subagent:', wErr.message);
-            }
-          }
-          sendHistoryUpdate();
+        // ── Wait for pending sync subagents before concluding ──────
+        var subagentConsumed = await delegationEngine.waitForPendingSubagents(
+          pendingSyncSubagents, sessionId, sendEvent, messages, sendHistoryUpdate
+        );
+        if (subagentConsumed) {
           iterationContent = '';
           fullContent = '';
           continue;
         }
 
-        // If the last message was a tool message, let's force the LLM to write a final concluding message!
+        // ── Force a concluding response from LLM if last message was a tool ──
         if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim())) {
-          console.log('[AGENT LOOP] Forcing a concluding response from LLM...');
-          try {
-            var concludingMessages = messages.slice();
-            concludingMessages.push({
-              role: 'user',
-              content: 'The verification tool execution is completed. Please write a brief concluding response to the user confirming the final outcome of the task.'
-            });
-            var concludingChatSignal = (signal && signal.signal) ? signal.signal : signal;
-            var stream = provider.chat(config, concludingMessages, activeToolDefinitions, { signal: concludingChatSignal });
-            var concludingThinking = '';
-            var concludingContent = '';
-            for await (var chunk of stream) {
-              if (signal && (signal.stopped || signal.aborted)) {
-                break;
-              }
-              if (chunk.content) {
-                concludingContent += chunk.content;
-                sendEvent({ message: { role: 'assistant', content: chunk.content } });
-              }
-              if (chunk.thinking) {
-                concludingThinking += chunk.thinking;
-              }
+          var conclusion = await decisionEngine.forceConclusion(
+            provider, config, messages, activeToolDefinitions, signal, sendEvent
+          );
+          if (conclusion && conclusion.content && conclusion.content.trim()) {
+            iterationContent = conclusion.content;
+            fullContent += conclusion.content;
+            if (conclusion.thinking) {
+              iterationThinking += conclusion.thinking;
+              fullThinking += conclusion.thinking;
             }
-            if (concludingContent.trim()) {
-              iterationContent = concludingContent;
-              fullContent += concludingContent;
-              if (concludingThinking) {
-                iterationThinking += concludingThinking;
-                fullThinking += concludingThinking;
-              }
-            }
-          } catch (e) {
-            console.error('[AGENT LOOP] Failed to generate concluding response:', e);
           }
         }
 
         var hasReviewIssues = false;
         try {
-          var fromReview = agentState.getState(sessionId);
-          agentState.transition('reviewing', sessionId);
-          executionTrace.recordTransition(sessionId, fromReview, 'reviewing');
+          agentState.transitionWithTrace('reviewing', sessionId, executionTrace);
           events.emit('state_changed', { state: 'reviewing', sessionId: sessionId });
 
           var modifiedFiles = memoryManager.getAllChangedFiles(sessionId);
@@ -1837,15 +787,9 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
 
         try {
-          var fromDone = agentState.getState(sessionId);
-          agentState.transition('completed', sessionId);
-          executionTrace.recordTransition(sessionId, fromDone, 'completed');
+          agentState.transitionWithTrace('completed', sessionId, executionTrace);
           events.emit('state_changed', { state: 'completed', sessionId: sessionId });
-        } catch (_) {
-          // Intentionally fallback to state reset if transition to completed fails
-          agentState.reset(sessionId);
-          agentState.transition('completed', sessionId);
-        }
+        } catch (_) {}
 
         var assistantMsg = { role: 'assistant', content: iterationContent || '' };
         if (iterationThinking || fullThinking) {
@@ -1893,16 +837,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       try {
-        if (agentState.getState(sessionId) !== 'executing') {
-          var fromExec = agentState.getState(sessionId);
-          agentState.transition('executing', sessionId);
-          executionTrace.recordTransition(sessionId, fromExec, 'executing');
-        }
-      } catch (_) {
-        // Intentionally fallback to state reset if transition to executing fails
-        agentState.reset(sessionId);
-        agentState.transition('executing', sessionId);
-      }
+        agentState.transitionWithTrace('executing', sessionId, executionTrace);
+      } catch (_) {}
       events.emit('state_changed', { state: 'executing', sessionId: sessionId });
       sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: 'executing_tools', count: completedToolCalls.length });
 
@@ -1982,119 +918,17 @@ export async function runAgentLoop(userPrompt, config, options) {
         });
       }
 
-      // Track any subagents spawned in sync/parallel mode
-      for (var cti = 0; cti < completedToolCalls.length; cti++) {
-        var cCall = completedToolCalls[cti];
-        var cName = (cCall.function && cCall.function.name) || '';
-        if (cName === 'spawn_subagent') {
-          var cArgs = (cCall.function && cCall.function.arguments) || {};
-          if (typeof cArgs === 'string') {
-            try { cArgs = JSON.parse(cArgs); } catch (_) { cArgs = {}; }
-          }
-          var cExec = (cArgs.execution || 'sync').toLowerCase();
-          if (cExec === 'sync' || cExec === 'parallel' || cExec === 'async') {
-            var cSubId = cArgs.id || cArgs.agentId || cArgs.subagent_id;
-            if (cSubId) {
-              var alreadyTracked = false;
-              for (var psiCheck = 0; psiCheck < pendingSyncSubagents.length; psiCheck++) {
-                if (pendingSyncSubagents[psiCheck].id === cSubId) {
-                  alreadyTracked = true;
-                  break;
-                }
-              }
-              if (!alreadyTracked) {
-                pendingSyncSubagents.push({
-                  id: cSubId,
-                  name: cArgs.name || cSubId,
-                  role: cArgs.role || 'coder',
-                  task: cArgs.task || '',
-                  execution: cExec
-                });
-              }
-            }
-          }
-        }
-      }
-
-      // Check if any pending sync subagents have already finished in the background
-      for (var psi = pendingSyncSubagents.length - 1; psi >= 0; psi--) {
-        var pSub = pendingSyncSubagents[psi];
-        var subRec = subagentManager.getSubagent(pSub.id, sessionId);
-        if (subRec && (subRec.status === 'completed' || subRec.status === 'failed' || subRec.status === 'stopped' || subRec.result)) {
-          var subRes = subRec.result || subRec;
-          var sOutput = (subRes.summary || subRes.output || subRes.content) || '';
-          if (!sOutput && subRes.finalResponse) {
-            sOutput = typeof subRes.finalResponse === 'string' ? subRes.finalResponse : (subRes.finalResponse.text || '');
-          }
-          var sName = subRes.name || pSub.name || pSub.id;
-          var sRole = subRes.role || pSub.role || 'coder';
-          var sStatus = subRes.status || (subRes.success !== false ? 'completed' : 'failed');
-          var sCallId = 'call_resp_' + pSub.id;
-
-          var respArgs = {
-            id: pSub.id,
-            name: sName,
-            role: sRole,
-            task: pSub.task || subRes.task || '',
-            execution: 'sync'
-          };
-
-          var formattedSubResult = '✓ Subagent [' + String(sRole).toUpperCase() + '] ' + sName + ' finished (' + sStatus + ').\n\n' + sOutput;
-
-          assistantToolCalls.push({
-            id: sCallId,
-            type: 'function',
-            function: {
-              name: 'subagent_response',
-              arguments: JSON.stringify(respArgs)
-            }
-          });
-
-          var subRespObj = {
-            agentId: pSub.id,
-            subagent_id: pSub.id,
-            name: sName,
-            role: sRole,
-            status: sStatus,
-            output: sOutput,
-            summary: sOutput,
-            result: subRes,
-            args: respArgs
-          };
-
-          toolResults.push({
-            tool_name: 'subagent_response',
-            tool_call_id: sCallId,
-            formattedResult: formattedSubResult,
-            result: subRespObj
-          });
-
-          sendEvent({
-            type: 'tool_call',
-            tool: 'subagent_response',
-            id: sCallId,
-            args: respArgs
-          });
-
-          sendEvent({
-            type: 'tool_result',
-            tool: 'subagent_response',
-            tool_name: 'subagent_response',
-            tool_call_id: sCallId,
-            args: respArgs,
-            status: sStatus === 'completed' ? 'success' : 'error',
-            output: sOutput,
-            summary: sOutput,
-            formattedResult: formattedSubResult,
-            result: subRespObj
-          });
-
-          pendingSyncSubagents.splice(psi, 1);
-        }
+      // ── Track spawned subagents + collect already-finished ones ──
+      delegationEngine.trackSpawnedSubagents(completedToolCalls, pendingSyncSubagents);
+      var finishedSubagents = delegationEngine.collectFinishedSubagents(pendingSyncSubagents, sessionId, sendEvent);
+      for (var faIdx = 0; faIdx < finishedSubagents.additionalToolCalls.length; faIdx++) {
+        assistantToolCalls.push(finishedSubagents.additionalToolCalls[faIdx]);
+        toolResults.push(finishedSubagents.additionalToolResults[faIdx]);
       }
 
       if (!iterationContent) {
-        var autoReason = getDelegationReason(completedToolCalls);
+        var autoReason = delegationEngine.getDelegationReason(completedToolCalls);
+
         if (autoReason) {
           iterationContent = autoReason;
           sendEvent({ message: { role: 'assistant', content: autoReason } });
@@ -2165,7 +999,7 @@ export async function runAgentLoop(userPrompt, config, options) {
     console.error('[AGENT LOOP] Error in loop:', err);
     try {
       if (!agentState.isTerminal(sessionId)) {
-        agentState.transition('failed', sessionId);
+        agentState.transitionWithTrace('failed', sessionId, executionTrace);
       }
     } catch (_) {}
     try {
@@ -2196,7 +1030,7 @@ export async function runAgentLoop(userPrompt, config, options) {
 
   try {
     if (!agentState.isTerminal(sessionId)) {
-      agentState.transition('max_iterations', sessionId);
+      agentState.transitionWithTrace('max_iterations', sessionId, executionTrace);
     }
   } catch (_) {}
 

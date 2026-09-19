@@ -88,3 +88,24 @@ export function reset(sessionId) {
     _stateBySession = {};
   }
 }
+
+export function transitionWithTrace(to, sessionId, traceModule) {
+  var sid = sessionId || 'default';
+  var fromState = getState(sid);
+  if (fromState === to) {
+    return fromState;
+  }
+  try {
+    transition(to, sid);
+  } catch (_) {
+    reset(sid);
+    transition(to, sid);
+  }
+  try {
+    if (traceModule && typeof traceModule.recordTransition === 'function') {
+      traceModule.recordTransition(sid, fromState, to);
+    }
+  } catch (_) {}
+  return fromState;
+}
+

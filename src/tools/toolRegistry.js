@@ -317,17 +317,26 @@ export function needsPermission(name) {
 
 export function getDefinitions(filterOptions) {
   if (_dirty) rebuildDefinitions();
-  if (filterOptions && filterOptions.agentType === 'subagent') {
-    var subDefs = [];
+  var isSubagent = filterOptions && filterOptions.agentType === 'subagent';
+  // Media tools (generate_image, generate_video) only make sense when the active
+  // model routes to /v1/images/generations or /v1/videos — not /v1/chat/completions.
+  // modelModality is derived from extractModelModality(config.model) in agentLoop.
+  var modality = (filterOptions && filterOptions.modelModality) || 'chat';
+  var excludeMedia = (modality !== 'image' && modality !== 'video');
+  if (isSubagent || excludeMedia) {
+    var filtered = [];
     for (var i = 0; i < _definitions.length; i++) {
       var dName = _definitions[i] && _definitions[i].function ? _definitions[i].function.name : '';
       var toolObj = get(dName);
-      if (toolObj && toolObj.metadata && toolObj.metadata.rootOnly) {
+      if (isSubagent && toolObj && toolObj.metadata && toolObj.metadata.rootOnly) {
         continue;
       }
-      subDefs.push(_definitions[i]);
+      if (excludeMedia && toolObj && toolObj.metadata && toolObj.metadata.category === 'media') {
+        continue;
+      }
+      filtered.push(_definitions[i]);
     }
-    return subDefs;
+    return filtered;
   }
   return _definitions;
 }
