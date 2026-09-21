@@ -196,6 +196,9 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 ### 🔌 Model Context Protocol (MCP) & Extensibility
 *   **Full MCP Client Integration:** Seamless stdio-based Model Context Protocol client with capability negotiation, automated tool schema extraction, and dynamic registration into the agent loop.
 *   **Built-in Server Catalog:** Pre-configured support for Web Fetcher (`web-fetch`), Memory Graph (`memory`), GitHub (`github`), and Puppeteer (`puppeteer`).
+*   **Multi-Runtime Execution (Node.js & Python):** First-class support for both Node.js (`npx` / `node`) and Python (`uvx` / `python`) MCP servers. Runtimes are treated as execution environments, enabling servers like GitHub, MySQL, PostgreSQL, or custom tools to run seamlessly in either Node or Python with real-time argument adaptation.
+*   **Environment Isolation & Unbuffered Stdio:** Python MCP servers run in an isolated environment with automatic `PYTHONUNBUFFERED=1` and `PYTHONIOENCODING=utf-8` injection, preventing stdio buffer stalls on Windows, macOS, and Linux.
+*   **Actionable Missing Module Guidance:** If a Python module is not installed, CodeRun intercepts stderr and surfaces an immediate, actionable tip (e.g. `pip install <package>`, `uvx <package>`, or path to local script) right in the UI.
 *   **Zero-Config Browser Automation:** Embedded system browser discovery automatically locates installed Google Chrome, Microsoft Edge, Brave, or Chromium binaries across Windows, macOS, and Linux — no manual browser installation needed.
 *   **Custom MCP Server Management:** Register arbitrary custom MCP servers directly from the Settings view with per-tool permissions and toggle controls.
 
@@ -465,6 +468,8 @@ src/
 ├── mcp/                          ← Model Context Protocol (MCP) subsystem
 │   ├── mcpClient.js              ← JSON-RPC stdio and HTTP client transport, handshake & dispatch
 │   ├── mcpManager.js             ← Server catalog, lifecycle management, auto-browser detection (Chrome/Edge/Brave)
+│   ├── pythonMcpManager.js       ← Python runtime detection, isolated virtualenv, unbuffered stdio & error tips
+│   ├── pythonMcpTemplate.js      ← Multi-runtime template definitions across Node.js and Python
 │   └── builtinServers/           ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
 │
 ├── providers/                    ← Multi-provider LLM integrations

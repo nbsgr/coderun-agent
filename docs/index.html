@@ -1443,6 +1443,46 @@
       color: #8b949e;
     }
 
+    /* Runtime Environment Switcher */
+    .cr-mcp-runtime-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      margin-bottom: 2px;
+    }
+
+    .cr-mcp-runtime-pill {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 7px 12px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .cr-mcp-runtime-pill:hover {
+      background: #161b22;
+      border-color: #58a6ff;
+      color: #f0f6fc;
+    }
+
+    .cr-mcp-runtime-pill.active {
+      background: rgba(56, 139, 253, 0.12);
+      border-color: #388bfd;
+      color: #58a6ff;
+      font-weight: 600;
+      box-shadow: 0 0 0 1px #388bfd;
+    }
+
     .cr-mcp-env-header-row {
       display: flex;
       align-items: center;
@@ -2538,7 +2578,18 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
           </div>
         </div>
 
-        
+        <div class="feature-card" style="margin-top: 16px; margin-bottom: 24px; border-left: 3px solid var(--accent-blue);">
+          <div style="font-weight: 700; color: var(--accent-blue); font-size: 15px; margin-bottom: 6px;">🐍 Multi-Runtime Architecture: Node.js (npx) &amp; Python (uvx / python)</div>
+          <p style="color: var(--text-secondary); margin-bottom: 8px;">
+            In CodeRun v1.5.9, Python and Node.js are treated as first-class <strong>execution runtimes</strong> rather than single static templates. When adding or editing any MCP server (GitHub, PostgreSQL, MySQL, Web Fetch, Memory, or Custom), you can freely toggle between Node.js and Python environments:
+          </p>
+          <ul style="color: var(--text-secondary); font-size: 13.5px; margin-left: 20px; line-height: 1.6;">
+            <li><strong>Node.js (npx / node):</strong> Spawns MCP packages directly via <code>npx -y &lt;package&gt;</code> or local scripts via <code>node script.js</code>.</li>
+            <li><strong>Python (uvx / python):</strong> Spawns isolated tools via <code>uvx &lt;package&gt;</code> or local modules via <code>python -u -m &lt;module&gt;</code> with automatic <code>PYTHONUNBUFFERED=1</code> stdio flushing.</li>
+            <li><strong>Actionable Missing Module Guidance:</strong> If a Python package is not found, CodeRun immediately detects the missing module in stderr and displays an exact, copy-pasteable pip install command in the modal.</li>
+          </ul>
+        </div>
+
         <!-- Live Interactive MCP Dashboard Simulator -->
         <div class="sim-window" id="simMcpWindow">
           <div class="sim-window-header">
@@ -2689,6 +2740,11 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                       <td><code>Local Command</code></td>
                     </tr>
                     <tr>
+                      <td><strong>Runtime Environment</strong></td>
+                      <td>Execution engine for local command</td>
+                      <td><code>Node.js (npx / node)</code> or <code>Python (uvx / python)</code></td>
+                    </tr>
+                    <tr>
                       <td><strong>Command</strong></td>
                       <td>Executable command on your system</td>
                       <td><code>npx</code>, <code>node</code>, <code>python</code>, <code>uvx</code></td>
@@ -2829,6 +2885,21 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
 
               <!-- Stdio Fields -->
               <div id="simMcpStdioFields">
+                <div class="cr-sim-form-group">
+                  <label>Runtime Environment <span style="color:#f85149;">*</span></label>
+                  <div class="cr-mcp-runtime-row">
+                    <button type="button" id="simMcpRuntimeNodeBtn" class="cr-mcp-runtime-pill active" data-runtime="node">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+                      Node.js (npx / node)
+                    </button>
+                    <button type="button" id="simMcpRuntimePythonBtn" class="cr-mcp-runtime-pill" data-runtime="python">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11.914 2C9.28 2 7.64 3.16 7.64 5.37v2.49h4.36v.62H5.56C3.35 8.48 2 10.12 2 12.75c0 2.64 1.54 4.14 4.04 4.14h1.56v-2.18c0-2.49 1.7-4.36 4.36-4.36h4.35V7.86c0-2.21-1.78-5.86-4.4-5.86zm-1.25 1.56a.93.93 0 1 1 0 1.87.93.93 0 0 1 0-1.87z" fill="#387eb8"/><path d="M12.086 22c2.634 0 4.274-1.16 4.274-3.37v-2.49H12v-.62h6.44c2.21 0 3.56-1.64 3.56-4.27 0-2.64-1.54-4.14-4.04-4.14h-1.56v2.18c0 2.49-1.7 4.36-4.36 4.36H7.74v2.49c0 2.21 1.78 5.86 4.346 5.86zm1.25-1.56a.93.93 0 1 1 0-1.87.93.93 0 0 1 0 1.87z" fill="#ffe052"/></svg>
+                      Python (uvx / python)
+                    </button>
+                  </div>
+                  <div style="font-size:11px;color:#8b949e;margin-top:3px;">Select runtime environment for executing this local MCP server.</div>
+                </div>
+
                 <div class="cr-sim-form-group">
                   <label>Command <span style="color:#f85149;">*</span></label>
                   <input type="text" id="simMcpCommand" class="cr-sim-input" value="npx">
@@ -4135,12 +4206,28 @@ node --check src/tools/toolExecutor.js</code></pre>
       }
     }
 
-    function selectSimMcpTemplate(name) {
-      var cards = document.querySelectorAll('.cr-mcp-template-card');
-      for (var i = 0; i < cards.length; i++) {
-        cards[i].classList.toggle('active', cards[i].getAttribute('data-template') === name);
-      }
+    var simMcpCurrentTemplate = 'github';
+    var simMcpCurrentRuntime = 'node';
 
+    function setSimMcpRuntime(rName) {
+      simMcpCurrentRuntime = (rName === 'python') ? 'python' : 'node';
+      var nodeBtn = document.getElementById('simMcpRuntimeNodeBtn');
+      var pyBtn = document.getElementById('simMcpRuntimePythonBtn');
+      if (nodeBtn) nodeBtn.classList.toggle('active', simMcpCurrentRuntime === 'node');
+      if (pyBtn) pyBtn.classList.toggle('active', simMcpCurrentRuntime === 'python');
+      applySimMcpTemplateFields(simMcpCurrentTemplate, simMcpCurrentRuntime);
+    }
+
+    function onRuntimeNodeClick() {
+      setSimMcpRuntime('node');
+    }
+
+    function onRuntimePythonClick() {
+      setSimMcpRuntime('python');
+    }
+
+    function applySimMcpTemplateFields(name, runtime) {
+      var isPy = (runtime === 'python');
       var nameInput = document.getElementById('simMcpServerName');
       var cmdInput = document.getElementById('simMcpCommand');
       var argsInput = document.getElementById('simMcpArgs');
@@ -4152,31 +4239,40 @@ node --check src/tools/toolExecutor.js</code></pre>
 
       if (name === 'github') {
         if (nameInput) nameInput.value = 'github';
-        if (cmdInput) cmdInput.value = 'npx';
-        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-github';
+        if (cmdInput) cmdInput.value = isPy ? 'uvx' : 'npx';
+        if (argsInput) argsInput.value = isPy ? 'mcp-server-github' : '-y @modelcontextprotocol/server-github';
         addSimEnvRow('GITHUB_PERSONAL_ACCESS_TOKEN', 'your_token_here');
       } else if (name === 'web-fetch') {
         if (nameInput) nameInput.value = 'web-fetch';
-        if (cmdInput) cmdInput.value = 'npx';
-        if (argsInput) argsInput.value = '-y @infoinlet/mcp-fetch';
+        if (cmdInput) cmdInput.value = isPy ? 'uvx' : 'npx';
+        if (argsInput) argsInput.value = isPy ? 'mcp-server-fetch' : '-y @infoinlet/mcp-fetch';
       } else if (name === 'memory') {
         if (nameInput) nameInput.value = 'memory';
-        if (cmdInput) cmdInput.value = 'npx';
-        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-memory';
+        if (cmdInput) cmdInput.value = isPy ? 'uvx' : 'npx';
+        if (argsInput) argsInput.value = isPy ? 'mcp-server-memory' : '-y @modelcontextprotocol/server-memory';
       } else if (name === 'postgres') {
         if (nameInput) nameInput.value = 'postgres';
-        if (cmdInput) cmdInput.value = 'npx';
-        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb';
+        if (cmdInput) cmdInput.value = isPy ? 'python' : 'npx';
+        if (argsInput) argsInput.value = isPy ? '-u -m mcp_server_postgres postgresql://localhost/mydb' : '-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb';
       } else if (name === 'mysql') {
         if (nameInput) nameInput.value = 'mysql';
-        if (cmdInput) cmdInput.value = 'npx';
-        if (argsInput) argsInput.value = '-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb';
+        if (cmdInput) cmdInput.value = isPy ? 'python' : 'npx';
+        if (argsInput) argsInput.value = isPy ? '-u -m mcp_server_mysql mysql://root:password@localhost:3306/mydb' : '-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb';
       } else {
         if (nameInput) nameInput.value = '';
-        if (cmdInput) cmdInput.value = '';
-        if (argsInput) argsInput.value = '';
+        if (cmdInput) cmdInput.value = isPy ? 'python' : 'npx';
+        if (argsInput) argsInput.value = isPy ? '-u server.py' : '';
         addSimEnvRow('', '');
       }
+    }
+
+    function selectSimMcpTemplate(name) {
+      simMcpCurrentTemplate = name || 'custom';
+      var cards = document.querySelectorAll('.cr-mcp-template-card');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].classList.toggle('active', cards[i].getAttribute('data-template') === simMcpCurrentTemplate);
+      }
+      applySimMcpTemplateFields(simMcpCurrentTemplate, simMcpCurrentRuntime);
     }
 
     function setSimMcpTransport(type) {
@@ -4350,6 +4446,7 @@ node --check src/tools/toolExecutor.js</code></pre>
     }
 
     function onResetModalClick() {
+      setSimMcpRuntime('node');
       selectSimMcpTemplate('github');
     }
 
@@ -4405,6 +4502,11 @@ node --check src/tools/toolExecutor.js</code></pre>
       for (var tc = 0; tc < tplCards.length; tc++) {
         tplCards[tc].onclick = onTplCardClick;
       }
+
+      var nodeBtn = document.getElementById('simMcpRuntimeNodeBtn');
+      var pyBtn = document.getElementById('simMcpRuntimePythonBtn');
+      if (nodeBtn) nodeBtn.onclick = onRuntimeNodeClick;
+      if (pyBtn) pyBtn.onclick = onRuntimePythonClick;
 
       var cardStdio = document.getElementById('simMcpCardStdio');
       var cardSse = document.getElementById('simMcpCardSse');
