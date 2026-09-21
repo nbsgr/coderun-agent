@@ -2923,14 +2923,40 @@ function initializeChatSpace() {
 
           if (termCard) {
             termCard.dataset.terminalId = termId;
+            var isEvBg = !!ev.background;
+            termCard.dataset.isBackground = isEvBg ? 'true' : 'false';
+            var termBadgeText = isEvBg ? 'CodeRun(BG)' : 'CodeRun(main)';
+            var titleGroup = termCard.querySelector('.cr-tool-card-title-group');
+            var termBadgeStyle = isEvBg
+              ? 'margin-left:6px;font-size:10px;padding:2px 6px;background:rgba(99,102,241,0.18);color:#818cf8;border:1px solid rgba(99,102,241,0.35);border-radius:3px;font-weight:600;'
+              : 'margin-left:6px;font-size:10px;padding:2px 6px;background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);border-radius:3px;font-weight:600;';
+            if (titleGroup) {
+              var existingBadge = titleGroup.querySelector('.cr-term-badge-tag');
+              if (!existingBadge) {
+                var badgeEl = mk('span', 'cr-tool-badge cr-term-badge-tag');
+                badgeEl.style.cssText = termBadgeStyle;
+                badgeEl.textContent = termBadgeText;
+                titleGroup.appendChild(badgeEl);
+              } else {
+                existingBadge.textContent = termBadgeText;
+                existingBadge.style.cssText = termBadgeStyle;
+              }
+            }
+            var headerTitle = termCard.querySelector('.cr-terminal-header-title');
+            if (headerTitle && !headerTitle.textContent.includes('CodeRun(')) {
+              headerTitle.textContent = '[' + termBadgeText + '] ' + headerTitle.textContent;
+            }
             setTerminalCardStatus(termCard, 'running');
             S._terminalCards[termId] = termCard;
           } else {
             var emergencyKey = 'run_terminal_term_' + (++S._toolIdCounter) + '_' + Date.now();
             termCard = appendTerminalCard(S, chatCtx.msgList, S.botBody, emergencyKey, 'run_terminal',
-              { command: ev.command || '', shell: ev.shell || '', platform: ev.platform || '' },
+              { command: ev.command || '', shell: ev.shell || '', platform: ev.platform || '', background: ev.background },
               'running', null);
             termCard.dataset.terminalId = termId;
+            if (ev.background) {
+              termCard.dataset.isBackground = 'true';
+            }
             S.toolCards[emergencyKey] = termCard;
             S._toolQueue.push({ key: emergencyKey, toolName: 'run_terminal', id: emergencyKey });
             S._terminalCards[termId] = termCard;
@@ -3825,11 +3851,23 @@ function initializeChatSpace() {
     var statusClass = 'cr-tool-card-status--' + (status === 'completed' ? 'success' : status);
     var iconClass = 'cr-tool-card-icon--' + (status === 'completed' ? 'success' : status);
 
+    var isBg = !!(args && (args.background === true || args.is_background === true));
+    if (isBg) {
+      card.dataset.isBackground = 'true';
+    } else {
+      card.dataset.isBackground = 'false';
+    }
+    var termTag = isBg ? 'CodeRun(BG)' : 'CodeRun(main)';
+    var termBadgeStyle = isBg
+      ? 'margin-left:6px;font-size:10px;padding:2px 6px;background:rgba(99,102,241,0.18);color:#818cf8;border:1px solid rgba(99,102,241,0.35);border-radius:3px;font-weight:600;'
+      : 'margin-left:6px;font-size:10px;padding:2px 6px;background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);border-radius:3px;font-weight:600;';
+    var termBadgeHtml = '<span class="cr-tool-badge cr-term-badge-tag" style="' + termBadgeStyle + '">' + esc(termTag) + '</span>';
+
     var head = mk('summary', 'cr-tool-card-head');
     head.innerHTML =
       '<span class="cr-tool-card-icon ' + iconClass + '">' + (status === 'running' ? I.spin : iconHtml) + '</span>' +
       '<span class="cr-tool-card-title-group">' +
-        '<span class="cr-tool-card-title">' + esc(displayName) + '</span>' +
+        '<span class="cr-tool-card-title">' + esc(displayName) + termBadgeHtml + '</span>' +
         (subtitle ? '<span class="cr-tool-card-subtitle">' + esc(subtitle) + '</span>' : '') +
       '</span>' +
       '<span class="cr-tool-card-status ' + statusClass + '">' + esc(statusLabel) + '</span>' +
@@ -3842,7 +3880,7 @@ function initializeChatSpace() {
     var headBar = mk('div', 'cr-terminal-header');
     headBar.innerHTML =
       '<span class="cr-terminal-status-dot"></span>' +
-      '<span class="cr-terminal-header-title">' + esc(command) + '</span>' +
+      '<span class="cr-terminal-header-title">[' + esc(termTag) + '] ' + esc(command) + '</span>' +
       '<span class="cr-terminal-header-icon">' + I.terminal + '</span>';
     container.appendChild(headBar);
 

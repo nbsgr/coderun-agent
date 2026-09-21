@@ -3338,7 +3338,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               <tr>
                 <td><strong>💻 Terminal</strong></td>
                 <td><code>run_terminal</code></td>
-                <td>Executes shell commands in VS Code terminal or background</td>
+                <td>Executes shell commands in direct <code>CodeRun(main)</code> or background <code>CodeRun(BG)</code> terminal</td>
                 <td>⚠️ Dangerous</td>
               </tr>
               <tr>
@@ -3350,7 +3350,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               <tr>
                 <td></td>
                 <td><code>stop_terminal</code></td>
-                <td>Sends <code>Ctrl+C</code> interrupt signal to active command</td>
+                <td>Sends <code>Ctrl+C</code> interrupt signal to active command (target: <code>foreground</code>, <code>background</code>, or <code>all</code>)</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -3475,14 +3475,27 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
 
       <!-- Terminal REPLs -->
       <section id="terminal-repl">
-        <h2 class="section-heading">💻 Interactive Terminal REPLs & Command Execution</h2>
+        <h2 class="section-heading">💻 Interactive Terminal REPLs & Dual Terminal Architecture</h2>
         <p>
-          Unlike basic assistants that fail when a command asks for user input, CodeRun has full <strong>interactive terminal lifecycle support</strong>:
+          Unlike basic assistants that fail when a command asks for user input or hide background dev servers in opaque processes, CodeRun features <strong>dual visible terminal sessions per chat</strong> with full interactive and background lifecycle support:
         </p>
         <ul>
+          <li><strong>Dual Dedicated Terminals:</strong> Every chat provisions two visible VS Code terminal sessions:
+            <ul>
+              <li><code>CodeRun(main)</code>: Runs direct CLI commands, tests, builds, and interactive REPLs with real-time output streaming.</li>
+              <li><code>CodeRun(BG)</code>: Runs background dev servers (<code>npm run dev</code>, <code>vite</code>, daemons) with continuous output streaming and automatic localhost URL/port sniffing.</li>
+            </ul>
+          </li>
           <li><strong>Interactive Flag:</strong> When running commands like <code>python -i</code>, <code>node</code>, <code>npm init</code>, or interactive CLI prompts, the agent passes <code>interactive: true</code>.</li>
           <li><strong>Live Keystroke Delivery:</strong> Using <code>terminal_input</code>, CodeRun sends stdin keystrokes directly into the active pseudo-terminal.</li>
-          <li><strong>Foreground Interrupts:</strong> <code>stop_terminal</code> sends clean <code>Ctrl+C</code> (<code></code>) signals to interrupt long-running commands without terminating your VS Code shell.</li>
+          <li><strong>Selective Terminal Interrupts:</strong> <code>stop_terminal</code> sends clean <code>Ctrl+C</code> signals with granular target selection:
+            <ul>
+              <li><code>foreground</code> (default): Interrupts hanging foreground commands in <code>CodeRun(main)</code> without killing background dev servers.</li>
+              <li><code>background</code>: Gracefully terminates dev servers in <code>CodeRun(BG)</code> without disturbing the foreground shell.</li>
+              <li><code>all</code>: Aborts running executions across both terminal sessions.</li>
+            </ul>
+          </li>
+          <li><strong>UI Transparency & Distinguishable Badging:</strong> Terminal cards in ChatSpace display real-time output streams badged with emerald <code>CodeRun(main)</code> or indigo <code>CodeRun(BG)</code> indicators.</li>
           <li><strong>ANSI Stripping:</strong> All terminal outputs are stripped of ANSI escapes and OSC codes before presentation.</li>
         </ul>
       </section>
@@ -3653,9 +3666,9 @@ node --check src/tools/toolExecutor.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 78 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 79 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against an exhaustive 78-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 79-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3665,7 +3678,7 @@ node --check src/tools/toolExecutor.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), and differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78), and dual terminal sessions (direct &amp; background) per chat with distinct CodeRun(main) / CodeRun(BG) naming, lifecycle isolation, and selective stopping (Vector 79).
         </p>
       </section>
 

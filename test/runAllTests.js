@@ -3128,6 +3128,51 @@ assert.ok(openAICode78.includes('timeout: getProviderTimeout(config)'), 'provide
 
 console.log('✓ Vector 78 Passed: Differentiated request timeouts (10m local vs 30s cloud) verified.');
 
+// --- TEST 79: Dual Terminal Sessions (Direct & Background) per Chat ---
+console.log('\n--- TEST 79: Dual Terminal Sessions (Direct & Background) per Chat ---');
+
+var testSid79 = 'sess_dual_79';
+var mainTerm79 = terminalManager.getTerminal(testSid79, testDir);
+var bgTerm79 = terminalManager.getBackgroundTerminal(testSid79, testDir);
+
+assert.ok(mainTerm79, 'Main terminal created');
+assert.ok(bgTerm79, 'Background terminal created');
+assert.strictEqual(mainTerm79.name, 'CodeRun(main) (' + testSid79 + ')', 'Main terminal named CodeRun(main) (sessionId)');
+assert.strictEqual(bgTerm79.name, 'CodeRun(BG) (' + testSid79 + ')', 'Background terminal named CodeRun(BG) (sessionId)');
+assert.notStrictEqual(mainTerm79, bgTerm79, 'Main terminal and background terminal are distinct instances');
+
+var sess79 = terminalManager.getSession(testSid79);
+assert.strictEqual(sess79.terminal, mainTerm79, 'Session state tracks main terminal');
+assert.strictEqual(sess79.backgroundTerminal, bgTerm79, 'Session state tracks background terminal');
+
+// Test selective stopping
+sess79.lastSessionActive = true;
+sess79.lastBackgroundActive = true;
+var stopFgRes79 = await terminalManager.stopTerminal(testSid79, 'foreground');
+assert.strictEqual(stopFgRes79.success, true, 'Stopped foreground terminal');
+assert.strictEqual(sess79.lastSessionActive, false, 'Foreground active flag cleared');
+assert.strictEqual(sess79.lastBackgroundActive, true, 'Background active flag remains intact');
+
+var stopBgRes79 = await terminalManager.stopTerminal(testSid79, 'background');
+assert.strictEqual(stopBgRes79.success, true, 'Stopped background terminal');
+assert.strictEqual(sess79.lastBackgroundActive, false, 'Background active flag cleared');
+
+// Test independent closure of background terminal
+terminalManager.onTerminalClosed(bgTerm79);
+assert.strictEqual(sess79.backgroundTerminal, null, 'Closing background terminal clears session backgroundTerminal');
+assert.strictEqual(sess79.terminal, mainTerm79, 'Closing background terminal keeps main terminal intact');
+
+// Re-obtain background terminal and verify resetTerminal disposes both
+var reBgTerm79 = terminalManager.getBackgroundTerminal(testSid79, testDir);
+assert.ok(reBgTerm79, 'Re-obtained background terminal');
+terminalManager.resetTerminal(testSid79);
+assert.strictEqual(sess79.terminal, null, 'resetTerminal clears main terminal');
+assert.strictEqual(sess79.backgroundTerminal, null, 'resetTerminal clears background terminal');
+assert.strictEqual(sess79.lastSessionOutput, '', 'resetTerminal clears main session output');
+assert.strictEqual(sess79.lastBackgroundOutput, '', 'resetTerminal clears background output');
+
+console.log('✓ Vector 79 Passed: Dual terminal sessions (direct & background) per chat, distinct naming, and lifecycle isolation verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3140,7 +3185,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 78 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 79 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

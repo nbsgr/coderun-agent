@@ -850,7 +850,8 @@ async function handleFrontendMessage(message, webview) {
         permissions.cancelSessionPending(stopSessionId);
         diffManager.cancelSession(stopSessionId);
         questionManager.cancelSessionQuestions(stopSessionId);
-        terminalManager.stopTerminal(stopSessionId);
+        var stopTarget = (message && message.target) || 'foreground';
+        terminalManager.stopTerminal(stopSessionId, stopTarget);
         subagentManager.stopSubagents(stopSessionId, 'Parent agent stopped');
       } else {
         for (var sidKey in abortControllers) {

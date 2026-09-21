@@ -49,7 +49,7 @@ The agent runtime decomposes responsibilities away from a monolithic loop into s
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 78-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 79-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -79,10 +79,19 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Cloudflare Workers AI Support:** Dynamically parses Cloudflare base URLs to extract your Account ID and retrieve model lists using Cloudflare's search API.
 *   **Google Gemini Protobuf & Schema Sanitization:** Automatic schema normalization recursively strips unsupported JSON Schema keywords (`additionalProperties`, `$schema`, `title`, `$defs`, `definitions`) before submitting to Gemini endpoints, preventing HTTP 400 rejection on complex schemas (such as Puppeteer browser tools). Automatically normalizes model names to prevent HTTP 404 lookup failures.
 
-### 💻 Interactive Terminal Execution & REPLs
+### 💻 Interactive Terminal Execution & Dual Terminal Architecture
+*   **Dual Dedicated Terminal Sessions per Chat:** Every chat maintains two isolated, visible VS Code terminal sessions:
+    *   **`CodeRun(main)`**: Dedicated direct/foreground terminal executing standard CLI commands, tests, builds, and interactive REPLs with real-time output streaming.
+    *   **`CodeRun(BG)`**: Dedicated background terminal running persistent dev servers (`npm run dev`, `vite`, `python -m http.server`, daemons) with real-time output streaming and automatic localhost URL/port sniffing.
 *   **Full Interactive Session Lifecycle:** Launch interactive REPLs (Node, Python, Ruby, MySQL, npm init, etc.) with `run_terminal` (`interactive: true`).
 *   **Live Keystroke Delivery:** Send commands and inputs dynamically to active sessions using `terminal_input`, with clean multi-line and escape character normalization.
-*   **Reliable Foreground Interrupts:** Send clean interrupt signals (`\u0003` / `Ctrl+C`) to active terminals using `stop_terminal` without killing your base shell.
+*   **Selective Terminal Interrupts (`stop_terminal`):** Send clean interrupt signals (`\u0003` / `Ctrl+C`) to active terminals with granular target selection:
+    *   `target: "foreground"` (default): Interrupts hanging foreground commands or tests in `CodeRun(main)` without terminating background dev servers.
+    *   `target: "background"`: Gracefully terminates dev servers and daemons in `CodeRun(BG)` without disturbing foreground shell state.
+    *   `target: "all"`: Aborts active executions across both terminals simultaneously.
+*   **UI Transparency & Distinguishable Badging:** Chat UI terminal cards display real-time output logs and feature clear visual badges:
+    *   Emerald badge and header prefix: `[CodeRun(main)]`
+    *   Indigo badge and header prefix: `[CodeRun(BG)]`
 *   **Smart Prompt Detection:** Accurately detects interactive question prompts (e.g. `(y/N)`, `Password:`, `>>>`) while filtering out standard idle shell prompts (`PS ...>`, `user@host:~$`).
 *   **ANSI Escape Cleaning:** All ANSI escape sequences, OSC markers, and VS Code shell integration codes are stripped before rendering.
 
@@ -257,7 +266,7 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/tools/tools.js` & `src/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
 | **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/ChatSpace.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **78 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, media routing & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **79 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals & tools |
 
 
 ---
@@ -283,9 +292,9 @@ CodeRun exposes a curated set of **33 active core tools** organized across 9 ope
 | | `find_references` | Native VS Code LSP: Find all references and call sites | No |
 | | `document_symbols` | Native VS Code LSP: Extract complete file symbol hierarchy | No |
 | | `list_directory` | List folder contents with recursive depth controls | No |
-| **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (auto CWD sync for sandbox) | ⚠️ Yes |
+| **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (`CodeRun(main)` or background `CodeRun(BG)` with auto CWD sync for sandbox) | ⚠️ Yes |
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
-| | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running terminal command | No |
+| | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running command (`target: 'foreground' \| 'background' \| 'all'`) | No |
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
@@ -365,7 +374,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **78 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **79 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -390,6 +399,8 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Compiler and LSP diagnostics integration.
 * Background dev server port sniffing and daemon process lifecycle management.
 * High-speed SQLite codebase search abstraction.
+* Differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78).
+* Dual dedicated terminal sessions (`CodeRun(main)` & `CodeRun(BG)`), distinct naming, lifecycle isolation, and selective stopping (Vector 79).
 
 Run all tests anytime:
 ```bash
@@ -473,9 +484,9 @@ src/
     ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
     ├── subagentTools.js          ← Subagent tool suite (spawn_subagent, status, list, stop, wait)
     ├── questionManager.js        ← Interactive user question lifecycle, option selection & write-in resolution
-    ├── terminalManager.js        ← VS Code Integrated Terminal API with shell integration,
+    ├── terminalManager.js        ← VS Code Integrated Terminal API with dual sessions (CodeRun(main) & CodeRun(BG)),
     │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
-    │                                ANSI escape stripping, interactive REPL support, and stop_terminal
+    │                                ANSI escape stripping, interactive REPL support, and selective stop_terminal
     ├── checkpointManager.js      ← SQLite-backed file backups, snapshot comparison, and rollback operations
     ├── diffManager.js            ← Staged diff patches with SHA-256 concurrency checks
     ├── fileLockManager.js        ← Hierarchical lock coordination for concurrent directory and file mutations

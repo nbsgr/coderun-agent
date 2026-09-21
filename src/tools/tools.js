@@ -939,10 +939,12 @@ async function* terminal_input(args, context) {
 
 async function* stop_terminal(args, context) {
   var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
-  yield { type: 'action', action: 'stop_terminal', message: 'Stopping terminal process (Ctrl+C)' };
+  var target = (args && args.target) || 'foreground';
+  var targetLabel = target === 'all' ? 'all terminals' : (target === 'background' || target === 'bg' ? 'CodeRun(BG)' : 'CodeRun(main)');
+  yield { type: 'action', action: 'stop_terminal', message: 'Stopping terminal process (Ctrl+C) on ' + targetLabel };
   try {
-    var result = await terminalManager.stopTerminal(sessionId);
-    yield { type: 'tool_result', tool: 'stop_terminal', success: true, message: result.message };
+    var result = await terminalManager.stopTerminal(sessionId, target);
+    yield { type: 'tool_result', tool: 'stop_terminal', success: result.success !== false, target: target, message: result.message };
   } catch (e) {
     yield { type: 'tool_result', tool: 'stop_terminal', success: false, message: e.message };
   }
@@ -2178,8 +2180,14 @@ export function registerAllTools() {
   });
   reg('stop_terminal', stop_terminal, {
     category: 'terminal',
-    description: 'Send Ctrl+C to stop the running terminal command.',
-    parameters: {},
+    description: 'Send Ctrl+C to stop a running terminal command. Specify target as "foreground" (default, stops active command in CodeRun(main) without killing background servers), "background" (stops background server in CodeRun(BG)), or "all" (stops both).',
+    parameters: {
+      target: {
+        type: 'string',
+        enum: ['foreground', 'background', 'all'],
+        description: 'Which terminal to stop: "foreground" (default, stops active command in CodeRun(main)), "background" (stops dev server in CodeRun(BG)), or "all" (stops both).'
+      }
+    },
     required: []
   });
 
