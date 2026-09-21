@@ -3713,6 +3713,46 @@ body.vscode-light .cr-rules-divider {
   margin-top: 1px;
 }
 
+/* MCP Runtime Environment Switcher */
+.cr-mcp-runtime-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.cr-mcp-runtime-pill {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.cr-mcp-runtime-pill:hover {
+  background: #161b22;
+  border-color: #58a6ff;
+  color: #f0f6fc;
+}
+
+.cr-mcp-runtime-pill.active {
+  background: rgba(56, 139, 253, 0.12);
+  border-color: #388bfd;
+  color: #58a6ff;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px #388bfd;
+}
+
 /* Environment Variables Table */
 .cr-mcp-env-header-row {
   display: flex;

@@ -3173,6 +3173,88 @@ assert.strictEqual(sess79.lastBackgroundOutput, '', 'resetTerminal clears backgr
 
 console.log('✓ Vector 79 Passed: Dual terminal sessions (direct & background) per chat, distinct naming, and lifecycle isolation verified.');
 
+// --- TEST 80: Pure JavaScript Python MCP Manager & Environment Isolation ---
+console.log('\n--- TEST 80: Pure JavaScript Python MCP Manager & Environment Isolation ---');
+
+var pythonMcpManager = await import('../src/mcp/pythonMcpManager.js');
+var pythonMcpTemplate = await import('../src/mcp/pythonMcpTemplate.js');
+
+// 1. Verify command detection
+assert.strictEqual(pythonMcpManager.isPythonCommand('python'), true, 'Detects python command');
+assert.strictEqual(pythonMcpManager.isPythonCommand('python3'), true, 'Detects python3 command');
+assert.strictEqual(pythonMcpManager.isPythonCommand('py'), true, 'Detects py command');
+assert.strictEqual(pythonMcpManager.isPythonCommand('uvx'), true, 'Detects uvx command');
+assert.strictEqual(pythonMcpManager.isPythonCommand('C:\\Python313\\python.exe'), true, 'Detects absolute python.exe');
+assert.strictEqual(pythonMcpManager.isPythonCommand('server.py'), true, 'Detects .py script');
+assert.strictEqual(pythonMcpManager.isPythonCommand('node'), false, 'Rejects node');
+assert.strictEqual(pythonMcpManager.isPythonCommand('npx'), false, 'Rejects npx');
+
+// 2. Verify isolated CodeRun environment path
+var pyEnvDir = pythonMcpManager.getCodeRunPythonEnvDir();
+assert.ok(pyEnvDir.includes('.coderun'), 'Isolated python-env is inside .coderun directory');
+assert.ok(pyEnvDir.includes('python-env'), 'Directory named python-env');
+
+var venvPy = pythonMcpManager.getVenvPythonPath(pyEnvDir);
+assert.ok(venvPy.includes('python'), 'Venv python path resolves executable');
+
+// 3. Verify package name extraction
+assert.strictEqual(pythonMcpManager.extractPackageName(['-u', '-m', 'mcp_server_sqlite']), 'mcp_server_sqlite', 'Extracts -m module name');
+assert.strictEqual(pythonMcpManager.extractPackageName(['mcp-server-git', '--repo', '.']), 'mcp-server-git', 'Extracts mcp-server package name');
+assert.strictEqual(pythonMcpManager.extractPackageName(['-u', 'server.py']), null, 'Returns null for plain script');
+
+// 4. Verify preparePythonSpawn builds unbuffered environment
+var mockPyConfig = {
+  command: 'python',
+  args: ['server.py'],
+  env: { CUSTOM_VAR: 'hello' }
+};
+var pySpawnRes = await pythonMcpManager.preparePythonSpawn(mockPyConfig, testDir);
+assert.ok(pySpawnRes, 'preparePythonSpawn returns config');
+assert.strictEqual(pySpawnRes.env.PYTHONUNBUFFERED, '1', 'Automatically injects PYTHONUNBUFFERED=1');
+assert.strictEqual(pySpawnRes.env.PYTHONIOENCODING, 'utf-8', 'Automatically injects UTF-8 encoding');
+assert.strictEqual(pySpawnRes.env.CUSTOM_VAR, 'hello', 'Preserves custom env vars');
+assert.ok(pySpawnRes.args.includes('-u'), 'Automatically adds -u unbuffered flag to python args');
+assert.strictEqual(pySpawnRes.cwd, testDir, 'Applies workspace directory as cwd');
+
+// 5. Verify UI template card and SVG asset
+var pyCardHtml = pythonMcpTemplate.getPythonTemplateCardHtml();
+assert.ok(pyCardHtml.includes('data-template="python"'), 'Template card has data-template="python"');
+assert.ok(pyCardHtml.includes('cr-mcp-template-name">Python<'), 'Template card displays Python label');
+var pySvg = pythonMcpTemplate.getPythonSvgIcon();
+assert.ok(pySvg.includes('#387eb8'), 'SVG includes Python blue brand color');
+assert.ok(pySvg.includes('#ffe052'), 'SVG includes Python yellow brand color');
+
+// 6. Verify missing module tip generator
+var sampleStderr = 'C:\\Users\\ganes\\AppData\\Local\\Programs\\Python\\Python313\\python.exe: No module named mcp_server_computer_use';
+var tip = pythonMcpManager.formatPythonMissingModuleTip(sampleStderr);
+assert.ok(tip.includes('pip install mcp-server-computer-use'), 'Tip provides exact pip install command');
+assert.ok(tip.includes('uvx mcp-server-computer-use'), 'Tip provides uvx alternative');
+assert.ok(tip.includes('-u server.py'), 'Tip mentions local script alternative');
+assert.strictEqual(pythonMcpManager.formatPythonMissingModuleTip('some generic syntax error'), '', 'Returns empty string if no missing module');
+
+// 7. Verify multi-runtime template configurations (getMcpTemplateConfig)
+var ghPy = pythonMcpTemplate.getMcpTemplateConfig('github', 'python');
+assert.strictEqual(ghPy.command, 'uvx', 'GitHub under Python runtime uses uvx');
+assert.strictEqual(ghPy.args, 'mcp-server-github', 'GitHub under Python runtime specifies mcp-server-github package');
+assert.strictEqual(ghPy.env.GITHUB_PERSONAL_ACCESS_TOKEN, 'your_token_here', 'GitHub env var preserved');
+
+var ghNode = pythonMcpTemplate.getMcpTemplateConfig('github', 'node');
+assert.strictEqual(ghNode.command, 'npx', 'GitHub under Node.js runtime uses npx');
+assert.strictEqual(ghNode.args, '-y @modelcontextprotocol/server-github', 'GitHub under Node.js specifies npm package');
+
+var pgPy = pythonMcpTemplate.getMcpTemplateConfig('postgres', 'python');
+assert.strictEqual(pgPy.command, 'python', 'Postgres under Python runtime uses python');
+assert.ok(pgPy.args.includes('-u -m mcp_server_postgres'), 'Postgres under Python uses -u -m module invocation');
+
+var customPy = pythonMcpTemplate.getMcpTemplateConfig('custom', 'python');
+assert.strictEqual(customPy.command, 'python', 'Custom under Python runtime uses python');
+assert.strictEqual(customPy.args, '-u server.py', 'Custom under Python runtime pre-fills -u server.py');
+
+var customNode = pythonMcpTemplate.getMcpTemplateConfig('custom', 'node');
+assert.strictEqual(customNode.command, 'npx', 'Custom under Node.js runtime uses npx');
+
+console.log('✓ Vector 80 Passed: Pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and multi-runtime template assets verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3185,7 +3267,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 79 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 80 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

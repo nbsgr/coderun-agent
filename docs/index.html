@@ -1648,7 +1648,7 @@
       <img src="logo.png" alt="CodeRun AI Agent" class="nav-logo-img">
       <div class="nav-title">
         CodeRun AI Agent
-        <span class="nav-badge">v1.5.7</span>
+        <span class="nav-badge">v1.5.9</span>
       </div>
     </a>
 
@@ -2015,7 +2015,7 @@
               <span>VSIX Installation</span>
               <button class="copy-btn" onclick="copyCode(this)">Copy</button>
             </div>
-            <pre><code>code --install-extension coderun-agent-1.5.7.vsix</code></pre>
+            <pre><code>code --install-extension coderun-agent-1.5.9.vsix</code></pre>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-top: 6px;">Or in VS Code: open the Extensions view &rarr; click the <strong>···</strong> (More Actions) menu &rarr; select <strong>Install from VSIX...</strong>.</p>
         </div>
@@ -3666,9 +3666,9 @@ node --check src/tools/toolExecutor.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 79 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 80 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against an exhaustive 79-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 80-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3678,7 +3678,7 @@ node --check src/tools/toolExecutor.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78), and dual terminal sessions (direct &amp; background) per chat with distinct CodeRun(main) / CodeRun(BG) naming, lifecycle isolation, and selective stopping (Vector 79).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78), dual terminal sessions (direct &amp; background) per chat with distinct CodeRun(main) / CodeRun(BG) naming, lifecycle isolation, and selective stopping (Vector 79), and pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and template assets (Vector 80).
         </p>
       </section>
 

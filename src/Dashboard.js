@@ -70,6 +70,9 @@ function initializeDashboard() {
     }
   };
 
+  var currentMcpTemplate = "github";
+  var currentMcpRuntime = "node";
+
   try {
     var storedPinned = localStorage.getItem("coderun_pinned_models");
     if (storedPinned) {
@@ -948,7 +951,7 @@ function initializeDashboard() {
                   '</div>' +
                   '<div class="cr-mcp-template-card" data-template="custom">' +
                     '<div class="cr-mcp-template-icon">' +
-                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
+                      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0 2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
                     '</div>' +
                     '<span class="cr-mcp-template-name">Custom</span>' +
                   '</div>' +
@@ -956,7 +959,7 @@ function initializeDashboard() {
               '</div>' +
               '<div class="cr-mcp-modal-section cr-mcp-server-config-section">' +
                 '<div class="cr-mcp-sec-title-left" style="margin-bottom:12px;">' +
-                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
+                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0 2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
                   '<span class="cr-mcp-sec-heading">Server Configuration</span>' +
                 '</div>' +
                 '<div class="cr-mcp-form-group">' +
@@ -986,6 +989,20 @@ function initializeDashboard() {
                   '</div>' +
                 '</div>' +
                 '<div id="mcpStdioFields">' +
+                  '<div class="cr-mcp-form-group">' +
+                    '<label class="cr-mcp-form-label">Runtime Environment <span class="cr-mcp-required">*</span></label>' +
+                    '<div class="cr-mcp-runtime-row">' +
+                      '<button type="button" id="mcpRuntimeNodeBtn" class="cr-mcp-runtime-pill active" data-runtime="node">' +
+                        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>' +
+                        'Node.js (npx / node)' +
+                      '</button>' +
+                      '<button type="button" id="mcpRuntimePythonBtn" class="cr-mcp-runtime-pill" data-runtime="python">' +
+                        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11.914 2C9.28 2 7.64 3.16 7.64 5.37v2.49h4.36v.62H5.56C3.35 8.48 2 10.12 2 12.75c0 2.64 1.54 4.14 4.04 4.14h1.56v-2.18c0-2.49 1.7-4.36 4.36-4.36h4.35V7.86c0-2.21-1.78-5.86-4.4-5.86zm-1.25 1.56a.93.93 0 1 1 0 1.87.93.93 0 0 1 0-1.87z" fill="#387eb8"/><path d="M12.086 22c2.634 0 4.274-1.16 4.274-3.37v-2.49H12v-.62h6.44c2.21 0 3.56-1.64 3.56-4.27 0-2.64-1.54-4.14-4.04-4.14h-1.56v2.18c0 2.49-1.7 4.36-4.36 4.36H7.74v2.49c0 2.21 1.78 5.86 4.346 5.86zm1.25-1.56a.93.93 0 1 1 0-1.87.93.93 0 0 1 0 1.87z" fill="#ffe052"/></svg>' +
+                        'Python (uvx / python)' +
+                      '</button>' +
+                    '</div>' +
+                    '<div class="cr-mcp-form-subtext">Select runtime environment for executing this local MCP server.</div>' +
+                  '</div>' +
                   '<div class="cr-mcp-form-group">' +
                     '<label class="cr-mcp-form-label">Command <span class="cr-mcp-required">*</span></label>' +
                     '<input type="text" id="mcpCommand" class="cr-mcp-form-input" value="npx" placeholder="npx">' +
@@ -1160,6 +1177,11 @@ function initializeDashboard() {
     var tCardSse = document.getElementById("mcpTransportCardSse");
     if (tCardStdio) tCardStdio.onclick = handleTransportCardStdioClick;
     if (tCardSse) tCardSse.onclick = handleTransportCardSseClick;
+
+    var runtimeNodeBtn = document.getElementById("mcpRuntimeNodeBtn");
+    var runtimePythonBtn = document.getElementById("mcpRuntimePythonBtn");
+    if (runtimeNodeBtn) runtimeNodeBtn.onclick = handleRuntimeNodeClick;
+    if (runtimePythonBtn) runtimePythonBtn.onclick = handleRuntimePythonClick;
 
     var globalToolsToggle = document.getElementById("mcpGlobalToolsToggle");
     if (globalToolsToggle) {
@@ -3649,16 +3671,45 @@ function initializeDashboard() {
     if (sseFields) sseFields.style.display = isStdio ? "none" : "block";
   }
 
-  function selectMcpTemplate(tName) {
-    var cards = document.querySelectorAll(".cr-mcp-template-card");
-    for (var i = 0; i < cards.length; i++) {
-      if (cards[i].getAttribute("data-template") === tName) {
-        cards[i].classList.add("active");
-      } else {
-        cards[i].classList.remove("active");
-      }
-    }
+  function isPythonCommandStr(cmd) {
+    if (!cmd || typeof cmd !== "string") return false;
+    var lower = cmd.toLowerCase().trim();
+    return (
+      lower === "python" ||
+      lower === "python3" ||
+      lower === "py" ||
+      lower === "uvx" ||
+      lower.endsWith(".py") ||
+      lower.includes("python.exe") ||
+      lower.includes("python3.exe")
+    );
+  }
 
+  function setMcpRuntime(rName) {
+    currentMcpRuntime = (rName === "python") ? "python" : "node";
+    var nodeBtn = document.getElementById("mcpRuntimeNodeBtn");
+    var pyBtn = document.getElementById("mcpRuntimePythonBtn");
+    if (nodeBtn) {
+      if (currentMcpRuntime === "node") nodeBtn.classList.add("active");
+      else nodeBtn.classList.remove("active");
+    }
+    if (pyBtn) {
+      if (currentMcpRuntime === "python") pyBtn.classList.add("active");
+      else pyBtn.classList.remove("active");
+    }
+    applyMcpTemplateFields(currentMcpTemplate, currentMcpRuntime);
+  }
+
+  function handleRuntimeNodeClick() {
+    setMcpRuntime("node");
+  }
+
+  function handleRuntimePythonClick() {
+    setMcpRuntime("python");
+  }
+
+  function applyMcpTemplateFields(tName, runtime) {
+    var isPy = (runtime === "python");
     var nameInput = document.getElementById("mcpServerName");
     var cmdInput = document.getElementById("mcpCommand");
     var argsInput = document.getElementById("mcpArgs");
@@ -3670,33 +3721,47 @@ function initializeDashboard() {
 
     if (tName === "github") {
       if (nameInput) nameInput.value = "github";
-      if (cmdInput) cmdInput.value = "npx";
-      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-github";
+      if (cmdInput) cmdInput.value = isPy ? "uvx" : "npx";
+      if (argsInput) argsInput.value = isPy ? "mcp-server-github" : "-y @modelcontextprotocol/server-github";
       addEnvVarRow("GITHUB_PERSONAL_ACCESS_TOKEN", "your_token_here");
     } else if (tName === "web-fetch") {
       if (nameInput) nameInput.value = "web-fetch";
-      if (cmdInput) cmdInput.value = "npx";
-      if (argsInput) argsInput.value = "-y @infoinlet/mcp-fetch";
+      if (cmdInput) cmdInput.value = isPy ? "uvx" : "npx";
+      if (argsInput) argsInput.value = isPy ? "mcp-server-fetch" : "-y @infoinlet/mcp-fetch";
     } else if (tName === "memory") {
       if (nameInput) nameInput.value = "memory";
-      if (cmdInput) cmdInput.value = "npx";
-      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-memory";
+      if (cmdInput) cmdInput.value = isPy ? "uvx" : "npx";
+      if (argsInput) argsInput.value = isPy ? "mcp-server-memory" : "-y @modelcontextprotocol/server-memory";
     } else if (tName === "postgres") {
       if (nameInput) nameInput.value = "postgres";
-      if (cmdInput) cmdInput.value = "npx";
-      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb";
+      if (cmdInput) cmdInput.value = isPy ? "python" : "npx";
+      if (argsInput) argsInput.value = isPy ? "-u -m mcp_server_postgres postgresql://localhost/mydb" : "-y @modelcontextprotocol/server-postgres postgresql://localhost/mydb";
     } else if (tName === "mysql") {
       if (nameInput) nameInput.value = "mysql";
-      if (cmdInput) cmdInput.value = "npx";
-      if (argsInput) argsInput.value = "-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb";
+      if (cmdInput) cmdInput.value = isPy ? "python" : "npx";
+      if (argsInput) argsInput.value = isPy ? "-u -m mcp_server_mysql mysql://root:password@localhost:3306/mydb" : "-y @modelcontextprotocol/server-mysql mysql://root:password@localhost:3306/mydb";
     } else {
       if (nameInput) nameInput.value = "";
-      if (cmdInput) cmdInput.value = "";
-      if (argsInput) argsInput.value = "";
+      if (cmdInput) cmdInput.value = isPy ? "python" : "npx";
+      if (argsInput) argsInput.value = isPy ? "-u server.py" : "";
       if (urlInput) urlInput.value = "";
       if (headersInput) headersInput.value = "";
       addEnvVarRow("", "");
     }
+  }
+
+  function selectMcpTemplate(tName) {
+    currentMcpTemplate = tName || "custom";
+    var cards = document.querySelectorAll(".cr-mcp-template-card");
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].getAttribute("data-template") === currentMcpTemplate) {
+        cards[i].classList.add("active");
+      } else {
+        cards[i].classList.remove("active");
+      }
+    }
+
+    applyMcpTemplateFields(currentMcpTemplate, currentMcpRuntime);
   }
 
   function handleMcpTransportChange() {
@@ -3718,6 +3783,12 @@ function initializeDashboard() {
     if (advDetails) advDetails.open = false;
     var toggleText = document.getElementById("mcpAdvToggleText");
     if (toggleText) toggleText.textContent = "Show";
+
+    currentMcpRuntime = "node";
+    var nodeBtn = document.getElementById("mcpRuntimeNodeBtn");
+    var pyBtn = document.getElementById("mcpRuntimePythonBtn");
+    if (nodeBtn) nodeBtn.classList.add("active");
+    if (pyBtn) pyBtn.classList.remove("active");
 
     selectMcpTemplate("github");
 
@@ -3748,6 +3819,19 @@ function initializeDashboard() {
     if (permInput) permInput.checked = !server.alwaysAllow;
     if (cwdInput) cwdInput.value = server.cwd || "";
     if (timeoutInput) timeoutInput.value = server.timeout || 15;
+
+    var isPy = isPythonCommandStr(server.command || "");
+    currentMcpRuntime = isPy ? "python" : "node";
+    var nodeBtn = document.getElementById("mcpRuntimeNodeBtn");
+    var pyBtn = document.getElementById("mcpRuntimePythonBtn");
+    if (nodeBtn) {
+      if (isPy) nodeBtn.classList.remove("active");
+      else nodeBtn.classList.add("active");
+    }
+    if (pyBtn) {
+      if (isPy) pyBtn.classList.add("active");
+      else pyBtn.classList.remove("active");
+    }
 
     setMcpTransportType(server.transport === "sse" ? "sse" : "stdio");
     clearEnvVarRows();

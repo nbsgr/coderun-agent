@@ -4,6 +4,7 @@
 import * as child_process from 'child_process';
 import * as readline from 'readline';
 import * as http from 'http';
+import { isPythonCommand, preparePythonSpawn, formatPythonMissingModuleTip } from './pythonMcpManager.js';
 
 function noopRequestCallback() {}
 import * as https from 'https';
@@ -75,6 +76,10 @@ export function createMcpClient(serverConfig) {
     var recentErrors = getRecentStderr();
     if (recentErrors) {
       exitReason += '\nProcess stderr:\n' + recentErrors;
+      var pyTip = formatPythonMissingModuleTip(recentErrors);
+      if (pyTip) {
+        exitReason += pyTip;
+      }
     }
 
     var keys = Object.keys(pendingRequests);
@@ -236,7 +241,7 @@ export function createMcpClient(serverConfig) {
   }
 
   function startStdio() {
-    function stdioPromise(resolve, reject) {
+    async function stdioPromise(resolve, reject) {
       try {
         var cmd = config.command;
         if (!cmd) {
@@ -255,11 +260,27 @@ export function createMcpClient(serverConfig) {
           useShell = true;
         }
 
-        proc = child_process.spawn(cmd, args, {
+        var spawnCwd = config.cwd || undefined;
+
+        if (isPythonCommand(cmd)) {
+          var pySpawn = await preparePythonSpawn(config, spawnCwd);
+          cmd = pySpawn.command;
+          args = pySpawn.args;
+          mergedEnv = pySpawn.env;
+          spawnCwd = pySpawn.cwd;
+          if (pySpawn.useShell) useShell = true;
+        }
+
+        var spawnOpts = {
           env: mergedEnv,
           shell: useShell,
           windowsHide: true
-        });
+        };
+        if (spawnCwd) {
+          spawnOpts.cwd = spawnCwd;
+        }
+
+        proc = child_process.spawn(cmd, args, spawnOpts);
 
         proc.stderr.on('data', recordStderr);
         proc.on('error', handleProcessError);
@@ -278,7 +299,7 @@ export function createMcpClient(serverConfig) {
           capabilities: {},
           clientInfo: {
             name: 'CodeRun-Agent',
-            version: '1.5.8'
+            version: '1.5.9'
           }
         }, 30000).then(function onInitSuccess(initResult) {
           isConnected = true;
@@ -293,6 +314,10 @@ export function createMcpClient(serverConfig) {
           var fullErr = 'Failed to initialize MCP server "' + serverName + '": ' + (err.message || String(err));
           if (stderrOutput) {
             fullErr += '\nStderr output:\n' + stderrOutput;
+            var pyTipInit = formatPythonMissingModuleTip(stderrOutput);
+            if (pyTipInit) {
+              fullErr += pyTipInit;
+            }
           }
           stop();
           reject(new Error(fullErr));
@@ -392,7 +417,7 @@ export function createMcpClient(serverConfig) {
           capabilities: {},
           clientInfo: {
             name: 'CodeRun-Agent',
-            version: '1.5.8'
+            version: '1.5.9'
           }
         }, 30000).then(function onSseInitSuccess(initResult) {
           serverCapabilities = initResult ? initResult.capabilities : null;
