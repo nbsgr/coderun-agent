@@ -3945,15 +3945,17 @@ node --check src/tools/toolExecutor.js</code></pre>
       {
         id: 'web-fetch',
         name: 'Web Fetcher',
+        builtin: true,
         type: 'Built-in (STDIO)',
         status: 'Connected',
-        cmd: 'npx -y @infoinlet/mcp-fetch',
+        cmd: 'node ./src/mcp/builtinServers/fetchServer.cjs',
         tools: ['fetch_html', 'fetch_markdown', 'search_web']
       },
       {
         id: 'memory',
         name: 'Memory Graph',
-        type: 'STDIO',
+        builtin: true,
+        type: 'Built-in (STDIO)',
         status: 'Connected',
         cmd: 'npx -y @modelcontextprotocol/server-memory',
         tools: ['read_graph', 'create_entities', 'create_relations', 'search_nodes']
@@ -4171,12 +4173,17 @@ node --check src/tools/toolExecutor.js</code></pre>
             '</div>';
         }
 
+        var isBuiltin = !!s.builtin;
+        var badgeHtml = isBuiltin
+          ? '<span class="cr-mcp-badge-builtin cr-mcp-badge-free">Built-in</span>'
+          : '<span class="cr-mcp-badge-local">CUSTOM</span>';
+
         card.innerHTML =
           '<div class="cr-mcp-card-top-row">' +
             '<div class="cr-mcp-card-left-group">' +
               '<span class="cr-mcp-status-dot"></span>' +
               '<strong class="cr-mcp-card-name">' + escHtml(s.name) + '</strong>' +
-              '<span class="cr-mcp-badge-free">CONNECTED</span>' +
+              badgeHtml +
             '</div>' +
             '<button type="button" class="cr-sim-remove-btn" data-mcp-index="' + i + '" title="Remove server">✕</button>' +
           '</div>' +
