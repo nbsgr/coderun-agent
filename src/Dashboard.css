@@ -3065,6 +3065,8 @@ body.vscode-light .cr-rules-divider {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .cr-mcp-status-dot {
@@ -3085,11 +3087,13 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-mcp-card-name {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #f0f6fc;
+  white-space: nowrap;
 }
 
+.cr-mcp-badge-builtin,
 .cr-mcp-badge-free {
   font-size: 10px;
   font-weight: 700;
@@ -3099,6 +3103,8 @@ body.vscode-light .cr-rules-divider {
   border: 1px solid #238636;
   color: #3fb950;
   letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .cr-mcp-badge-local {
@@ -3110,6 +3116,8 @@ body.vscode-light .cr-rules-divider {
   border: 1px solid #30363d;
   color: #8b949e;
   letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .cr-mcp-card-right-group {

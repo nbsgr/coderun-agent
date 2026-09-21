@@ -4166,7 +4166,7 @@ function initializeDashboard() {
         var isChecked = isEnabled ? "checked" : "";
         var detailLine = s.transport === "sse" ? (s.url || "") : ((s.command || "") + " " + ((s.args || []).join(" ")));
         var permBadge = s.alwaysAllow ? "ALWAYS ALLOWED" : "ASK PERMISSION";
-        var typeBadge = isBuiltin ? '<span class="cr-mcp-badge-free">100% FREE</span>' : '<span class="cr-mcp-badge-local">CUSTOM</span>';
+        var typeBadge = isBuiltin ? '<span class="cr-mcp-badge-builtin cr-mcp-badge-free">Built-in</span>' : '<span class="cr-mcp-badge-local">CUSTOM</span>';
 
         html += '<div class="cr-mcp-card' + (!isEnabled ? ' disabled-server' : '') + '" data-server-id="' + esc(s.id) + '" data-server-name="' + esc(s.name || s.id) + '" data-server-desc="' + esc(s.description || '') + '" data-server-cmd="' + esc(detailLine) + '">' +
           '<div class="cr-mcp-card-top-row">' +

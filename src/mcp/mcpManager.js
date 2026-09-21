@@ -21,7 +21,7 @@ var BUILTIN_SERVERS = {
   'web-fetch': {
     id: 'web-fetch',
     name: 'Web Fetcher',
-    description: 'Fetch web pages, convert HTML to markdown, and extract content (100% Free)',
+    description: 'Fetch web pages, convert HTML to markdown, and extract content',
     transport: 'stdio',
     command: 'node',
     args: [BUILTIN_FETCH_SERVER],
@@ -33,7 +33,7 @@ var BUILTIN_SERVERS = {
   'memory': {
     id: 'memory',
     name: 'Memory Graph',
-    description: 'Persistent knowledge graph memory across sessions and conversations (100% Free)',
+    description: 'Persistent knowledge graph memory across sessions and conversations',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-memory'],
@@ -45,7 +45,7 @@ var BUILTIN_SERVERS = {
   'puppeteer': {
     id: 'puppeteer',
     name: 'Puppeteer Browser',
-    description: 'Headless browser automation, website navigation, and screenshots (100% Free)',
+    description: 'Headless browser automation, website navigation, and screenshots',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-puppeteer'],
@@ -92,6 +92,10 @@ export async function loadConfig() {
       modified = true;
     } else {
       parsed.servers[bId].builtin = true;
+      if (parsed.servers[bId].description && /\(100%\s*Free\)/i.test(parsed.servers[bId].description)) {
+        parsed.servers[bId].description = parsed.servers[bId].description.replace(/\s*\(100%\s*Free\)/gi, '').trim();
+        modified = true;
+      }
       if (!parsed.servers[bId].description && BUILTIN_SERVERS[bId].description) {
         parsed.servers[bId].description = BUILTIN_SERVERS[bId].description;
       }
