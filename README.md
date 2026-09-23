@@ -135,6 +135,9 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
 *   **Deduplicated Error Pipeline:** Webview error handling unifies internal agent loop events and terminal stream failures, stripping redundant `"Error: "` prefixes and preventing duplicate stacked error cards.
 
 ### 🔍 Diff Management & Approval Pipeline
+*   **Granular Tool Permission Gating:** Sensitive filesystem and execution tools (`read_file`, `create_folder`, `write_file`, `edit_file`, `patch_file`, `delete_file`, `delete_folder`, `run_terminal`, `terminal_input`) require explicit user confirmation before executing.
+*   **Centralized Sticky Confirmation Bar:** Permission actions (`Allow`, `Deny`, `Always Allow`, `Always Deny`) are cleanly anchored in the sticky controls panel above the chat input, preventing layout jitter and keeping chat history focused.
+*   **Clean Dropdown Tool Cards:** Embedded tool cards display tool inputs and parameters cleanly with an active "Permission Required" status badge, automatically updating to `✓ Allowed` or `✗ Denied` once resolved without redundant nested buttons.
 *   **SHA-256 Optimistic Concurrency:** Stages proposed file changes in memory with baseline SHA-256 hashing to prevent overwriting external disk edits.
 *   **Auto-Open Inline Webview Diffs:** Diffs (`<details class="cr-diff-details">`) open by default during permission checks and tool executions so users immediately review file changes before approving/rejecting, automatically collapsing upon resolution.
 *   **Side-by-Side Editor:** Inspect additions (green) and deletions (red) directly inside chat cards or launch native side-by-side VS Code diff editors.
@@ -281,12 +284,12 @@ CodeRun exposes a curated set of **33 active core tools** organized across 9 ope
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
-| **📁 File Operations** | `read_file` | Read complete file contents at a relative path or inside sandbox | No |
+| **📁 File Operations** | `read_file` | Read complete file contents at a relative path or inside sandbox | ⚠️ Yes |
 | | `write_file` | Create or overwrite a file with full diff preview | ⚠️ Yes |
 | | `edit_file` | Find and replace a single exact string occurrence | ⚠️ Yes |
 | | `patch_file` | Apply multiple search-and-replace edit blocks | ⚠️ Yes |
 | | `delete_file` | Permanently delete a specified file | ⚠️ Yes |
-| | `create_folder` | Create directory structure including parents | No |
+| | `create_folder` | Create directory structure including parents | ⚠️ Yes |
 | | `delete_folder` | Recursively delete a directory and its contents | ⚠️ Yes |
 | | `get_file_info` | Get file metadata (size, lines, modified date, MIME) | No |
 | **🔍 Search & Navigation** | `search_files` | Find files matching glob patterns (e.g. `*.js`, `src/**`) | No |

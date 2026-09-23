@@ -3323,7 +3323,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td><strong>📁 Filesystem</strong></td>
                 <td><code>read_file</code></td>
                 <td>Reads file contents with line limits and offset controls</td>
-                <td>Safe</td>
+                <td>⚠️ Dangerous</td>
               </tr>
               <tr>
                 <td></td>
@@ -3353,7 +3353,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td></td>
                 <td><code>create_folder</code></td>
                 <td>Creates directory tree including parent folders</td>
-                <td>Safe</td>
+                <td>⚠️ Dangerous</td>
               </tr>
               <tr>
                 <td></td>
@@ -3914,12 +3914,12 @@ node --check src/tools/toolExecutor.js</code></pre>
     ];
 
     var SIM_BUILTIN_TOOLS = [
-      { name: 'read_file', cat: 'filesystem', perm: 'safe' },
+      { name: 'read_file', cat: 'filesystem', perm: 'danger' },
       { name: 'write_file', cat: 'filesystem', perm: 'danger' },
       { name: 'edit_file', cat: 'filesystem', perm: 'danger' },
       { name: 'patch_file', cat: 'filesystem', perm: 'danger' },
       { name: 'delete_file', cat: 'filesystem', perm: 'danger' },
-      { name: 'create_folder', cat: 'filesystem', perm: 'safe' },
+      { name: 'create_folder', cat: 'filesystem', perm: 'danger' },
       { name: 'delete_folder', cat: 'filesystem', perm: 'danger' },
       { name: 'get_file_info', cat: 'filesystem', perm: 'safe' },
       { name: 'search_files', cat: 'search', perm: 'safe' },
