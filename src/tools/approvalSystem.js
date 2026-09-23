@@ -70,6 +70,7 @@ export function requiresApproval(toolName, args, config) {
       canonicalName === 'delete_file' ||
       canonicalName === 'create_folder' ||
       canonicalName === 'delete_folder' ||
+      canonicalName === 'read_file' ||
       canonicalName === 'terminal_input' ||
       canonicalName === 'terminal_key' ||
       canonicalName === 'web_request') {

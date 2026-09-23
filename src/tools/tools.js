@@ -2026,7 +2026,8 @@ export function registerAllTools() {
     readOnly: true,
     description: 'Read the full contents of a file at the given relative path inside the workspace.',
     parameters: { file_path: { type: 'string', description: "Relative path e.g. 'src/main.py'" } },
-    required: ['file_path']
+    required: ['file_path'],
+    dangerous: true
   });
   reg('write_file', write_file, {
     aliases: ['write'],
@@ -2059,7 +2060,8 @@ export function registerAllTools() {
     mutation: true,
     description: 'Create a directory (and any parent directories) in the workspace.',
     parameters: { folder_path: { type: 'string', description: "Relative path e.g. 'src/components'" } },
-    required: ['folder_path']
+    required: ['folder_path'],
+    dangerous: true
   });
   reg('delete_folder', delete_folder, {
     category: 'filesystem',

@@ -652,7 +652,7 @@ function initializeChatSpace() {
     }
   }
 
-  function resolvePermissionItem(chatCtx, id, act) {
+  function resolvePermissionItem(chatCtx, id, act, toolFallback) {
     if (!chatCtx) return;
     var item = null;
     var qIndex = -1;
@@ -683,14 +683,17 @@ function initializeChatSpace() {
       actionsEl.innerHTML = '<span class="cr-permission-status ' + (isAllow ? 'allowed' : 'denied') + '">' + label + '</span>';
     }
 
-    if (window.VSCODE_API && item) {
+    if (window.VSCODE_API) {
+      var resolvedTool = (item && item.tool) || (actionsEl && actionsEl.dataset.tool) || toolFallback || '';
+      var resolvedOwner = (item && item.ownerSessionId) || (chatCtx && chatCtx.convId) || 'default';
+      var resolvedId = (item && item.id) || id;
       window.VSCODE_API.postMessage({
         type: 'permissionResponse',
         approved: isAllow,
-        toolCallId: item.id || id,
+        toolCallId: resolvedId,
         always: isAlways,
-        tool: item.tool,
-        sessionId: item.ownerSessionId || chatCtx.convId
+        tool: resolvedTool,
+        sessionId: resolvedOwner
       });
     }
 
@@ -3695,19 +3698,29 @@ function initializeChatSpace() {
       actions.dataset.tool = tool;
       actions.dataset.toolDisplayName = displayName;
     }
-    function onPermActionClick(ev) { handlePermissionActionClick(id, tool, chatCtx.msgList, chatCtx.controlsPanel, ownerSessionId || chatCtx.convId, ev); }
+    function onPermActionClick(ev) {
+      handlePermissionActionClick(chatCtx, id, tool, ownerSessionId || chatCtx.convId, ev);
+    }
     actions.addEventListener('click', onPermActionClick);
     scrollBottom(chatCtx.msgList);
     updateAgentControlsPanel(chatCtx);
     return d;
   }
 
-  function handlePermissionActionClick(id, tool, msgList, controlsPanel, sessionId, e) {
+  function handlePermissionActionClick(chatCtx, id, tool, sessionId, e) {
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var act = btn.dataset.action;
-    var chatCtx = { msgList: msgList, controlsPanel: controlsPanel, convId: sessionId };
-    resolvePermissionItem(chatCtx, id, act);
+    var effectiveChatCtx = chatCtx;
+    if (!effectiveChatCtx || !effectiveChatCtx.permissionQueue) {
+      effectiveChatCtx = {
+        msgList: (chatCtx && chatCtx.msgList) || null,
+        controlsPanel: (chatCtx && chatCtx.controlsPanel) || null,
+        convId: sessionId || (chatCtx && chatCtx.convId) || '',
+        permissionQueue: (chatCtx && chatCtx.permissionQueue) || []
+      };
+    }
+    resolvePermissionItem(effectiveChatCtx, id, act, tool);
   }
 
   function appendToolResultBlock(body, tool, ev) {

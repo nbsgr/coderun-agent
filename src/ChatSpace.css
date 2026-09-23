@@ -1324,6 +1324,19 @@ select {
   border-radius: 0 0 10px 10px;
 }
 
+.cr-permission-section .cr-permission-actions {
+  display: flex;
+  padding: 0 12px 6px;
+  min-height: 0;
+}
+
+.cr-permission-section .cr-permission-actions button,
+.cr-permission-section .cr-permission-actions .cr-permission-divider,
+.cr-tool-card .cr-permission-actions button,
+.cr-tool-card .cr-permission-actions .cr-permission-divider {
+  display: none !important;
+}
+
 .cr-permission-prompt-box {
   display: flex;
   flex-direction: column;

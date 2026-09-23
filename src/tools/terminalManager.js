@@ -844,7 +844,13 @@ export async function executeCommand(command, timeout, background, isInteractive
     } catch (_) {}
 
     if (bgProcess) {
-      await sleep(1500);
+      for (var sniffIter = 0; sniffIter < 30; sniffIter++) {
+        var rawCombinedCheck = (bgStdout + ' ' + bgStderr);
+        if (/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):[0-9]+/i.test(rawCombinedCheck)) {
+          break;
+        }
+        await sleep(100);
+      }
     }
 
     var rawCombined = (bgStdout + ' ' + bgStderr);
