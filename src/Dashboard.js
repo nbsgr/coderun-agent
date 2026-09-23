@@ -4185,6 +4185,9 @@ function initializeDashboard() {
         var transportLabel = (s.transport || "stdio").toUpperCase();
         var isChecked = isEnabled ? "checked" : "";
         var detailLine = s.transport === "sse" ? (s.url || "") : ((s.command || "") + " " + ((s.args || []).join(" ")));
+        if (detailLine.indexOf("fetchServer.cjs") !== -1) {
+          detailLine = "node ./src/mcp/builtinServers/fetchServer.cjs";
+        }
         var permBadge = s.alwaysAllow ? "ALWAYS ALLOWED" : "ASK PERMISSION";
         var typeBadge = isBuiltin ? '<span class="cr-mcp-badge-builtin cr-mcp-badge-free">Built-in</span>' : '<span class="cr-mcp-badge-local">CUSTOM</span>';
 

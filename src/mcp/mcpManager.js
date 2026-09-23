@@ -13,6 +13,7 @@ import { createMcpClient } from './mcpClient.js';
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
 var BUILTIN_FETCH_SERVER = path.join(__dirname, 'builtinServers', 'fetchServer.cjs');
+var PORTABLE_FETCH_SERVER_PATH = './src/mcp/builtinServers/fetchServer.cjs';
 
 var CONFIG_DIR = path.join(os.homedir(), '.coderun');
 var CONFIG_FILE = path.join(CONFIG_DIR, 'mcp_servers.json');
@@ -24,7 +25,7 @@ var BUILTIN_SERVERS = {
     description: 'Fetch web pages, convert HTML to markdown, and extract content',
     transport: 'stdio',
     command: 'node',
-    args: [BUILTIN_FETCH_SERVER],
+    args: [PORTABLE_FETCH_SERVER_PATH],
     enabled: false,
     builtin: true,
     alwaysAllow: false,
@@ -105,10 +106,16 @@ export async function loadConfig() {
     }
   }
 
-  if (parsed.servers['web-fetch'] && (parsed.servers['web-fetch'].command === 'uvx' || !parsed.servers['web-fetch'].args || parsed.servers['web-fetch'].args[0] === 'mcp-server-fetch')) {
-    parsed.servers['web-fetch'].command = 'node';
-    parsed.servers['web-fetch'].args = [BUILTIN_FETCH_SERVER];
-    modified = true;
+  if (parsed.servers['web-fetch']) {
+    var wf = parsed.servers['web-fetch'];
+    var firstArg = (wf.args && wf.args[0]) ? String(wf.args[0]) : '';
+    if (wf.command === 'uvx' || !wf.args || firstArg === 'mcp-server-fetch' || firstArg.indexOf('fetchServer.cjs') !== -1) {
+      if (firstArg !== PORTABLE_FETCH_SERVER_PATH || wf.command !== 'node') {
+        wf.command = 'node';
+        wf.args = [PORTABLE_FETCH_SERVER_PATH];
+        modified = true;
+      }
+    }
   }
 
   if (!parsed.disabledBuiltinTools) {
@@ -428,15 +435,21 @@ export function ensureLocalBrowserInstalled() {
 
 export async function startServer(serverConfig) {
   var serverId = serverConfig.id || serverConfig.name;
+  var clientConfig = Object.assign({}, serverConfig);
 
   if (serverId === 'puppeteer') {
-    serverConfig.env = serverConfig.env || {};
-    if (!serverConfig.env.PUPPETEER_EXECUTABLE_PATH && !process.env.PUPPETEER_EXECUTABLE_PATH) {
+    clientConfig.env = Object.assign({}, clientConfig.env || {});
+    if (!clientConfig.env.PUPPETEER_EXECUTABLE_PATH && !process.env.PUPPETEER_EXECUTABLE_PATH) {
       var detectedBrowser = detectSystemBrowser();
       if (detectedBrowser) {
-        serverConfig.env.PUPPETEER_EXECUTABLE_PATH = detectedBrowser;
+        clientConfig.env.PUPPETEER_EXECUTABLE_PATH = detectedBrowser;
       }
     }
+  }
+
+  if (serverId === 'web-fetch' || (clientConfig.args && clientConfig.args.length > 0 && typeof clientConfig.args[0] === 'string' && clientConfig.args[0].indexOf('fetchServer.cjs') !== -1)) {
+    clientConfig.command = clientConfig.command || 'node';
+    clientConfig.args = [BUILTIN_FETCH_SERVER].concat((clientConfig.args || []).slice(1));
   }
 
   if (activeClients[serverId]) {
@@ -446,7 +459,7 @@ export async function startServer(serverConfig) {
     delete activeClients[serverId];
   }
 
-  var client = createMcpClient(serverConfig);
+  var client = createMcpClient(clientConfig);
   activeClients[serverId] = client;
 
   try {
