@@ -26,6 +26,7 @@
     "onCommand:coderun.undoLastEdit"
   ],
   "scripts": {
+    "pretest": "node scripts/ensure-vscode-mock.js",
     "test": "node test/runAllTests.js"
   },
   "main": "./src/extension.js",
@@ -192,7 +193,8 @@
     }
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.9.2"
+    "@vscode/vsce": "^3.9.2",
+    "vscode": "file:./test/mocks/vscode"
   },
   "dependencies": {
     "openai": "^7.4.0",
