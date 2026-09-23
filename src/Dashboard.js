@@ -1694,6 +1694,15 @@ function initializeDashboard() {
       '</div>'
     );
 
+    var subModel = (trace && trace.model) || '';
+    var subProv = (trace && trace.provider) || '';
+    var modelBadgeHtml = '';
+    if (subModel) {
+      var provShort = subProv ? (subProv.startsWith('compatible:') ? subProv.substring(11) : subProv) : '';
+      var badgeText = provShort ? (provShort + '/' + subModel) : subModel;
+      modelBadgeHtml = '<span class="cr-subagent-model-badge" title="Model: ' + esc(subModel) + (subProv ? ' (' + esc(subProv) + ')' : '') + '">' + esc(badgeText) + '</span>';
+    }
+
     return (
       '<details class="cr-subagent-card cr-subagent-card--' + statusLower + focusedClass + '" id="subagent_trace_card_' + esc(agentId) + '" data-subagent-id="' + esc(agentId) + '"' + openAttr + '>' +
         '<summary class="cr-subagent-head cr-subagent-card-header">' +
@@ -1705,6 +1714,7 @@ function initializeDashboard() {
                 '<span class="cr-subagent-name font-bold" title="' + esc(name) + (agentId ? ' (ID: ' + esc(agentId) + ')' : '') + '">' + esc(name) + '</span>' +
                 idBadgeHtml +
                 '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
+                modelBadgeHtml +
               '</div>' +
               '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
             '</div>' +
@@ -2253,6 +2263,15 @@ function initializeDashboard() {
       '</div>'
     );
 
+    var subModel = subagent.model || (trace && trace.model) || (subagent.config && subagent.config.model) || '';
+    var subProv = subagent.provider || (trace && trace.provider) || (subagent.config && subagent.config.provider) || '';
+    var modelBadgeHtml = '';
+    if (subModel) {
+      var provShort = subProv ? (subProv.startsWith('compatible:') ? subProv.substring(11) : subProv) : '';
+      var badgeText = provShort ? (provShort + '/' + subModel) : subModel;
+      modelBadgeHtml = '<span class="cr-subagent-model-badge" title="Model: ' + esc(subModel) + (subProv ? ' (' + esc(subProv) + ')' : '') + '">' + esc(badgeText) + '</span>';
+    }
+
     return (
       '<details class="cr-subagent-card cr-subagent-card--' + statusLower + focusedClass + '" id="subagent_card_' + esc(agentId) + '" data-subagent-id="' + esc(agentId) + '"' + openAttr + '>' +
         '<summary class="cr-subagent-head cr-subagent-card-header">' +
@@ -2264,6 +2283,7 @@ function initializeDashboard() {
                 '<span class="cr-subagent-name font-bold" title="' + esc(name) + (agentId ? ' (ID: ' + esc(agentId) + ')' : '') + '">' + esc(name) + '</span>' +
                 idBadgeHtml +
                 '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + esc(role) + '</span>' +
+                modelBadgeHtml +
               '</div>' +
               '<div class="cr-subagent-task" title="' + esc(task) + '">Task: "' + esc(truncateStr(task, 60)) + '"</div>' +
             '</div>' +

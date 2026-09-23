@@ -300,6 +300,10 @@ export async function activate(context) {
     maxIterations: subagentConfig.subagentMaxIterations,
     timeoutMs: subagentConfig.subagentTimeoutMs
   });
+  subagentManager.configureSubagentDefaults({
+    provider: subagentConfig.subagentProvider || '',
+    model: subagentConfig.subagentModel || ''
+  });
 
   // Give the permission system access to extensionContext for "always" persistence
   permissions.setExtensionContext(context);
@@ -1396,42 +1400,45 @@ async function handleFrontendMessage(message, webview) {
           }
           console.log('[CODERUN] Settings saved successfully');
 
-          var savedProvider = message.settings.provider || config.getConfig().provider;
-          var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
+          if (message.settings.provider !== undefined || message.settings.baseUrl !== undefined || message.settings.model !== undefined || message.apiKey !== undefined) {
+            var savedProvider = message.settings.provider || config.getConfig().provider;
+            var savedBaseUrl = message.settings.baseUrl || config.getConfig().baseUrl;
 
-          var resolvedApiKey = '';
-          if (message.apiKey !== undefined && message.apiKey !== null) {
-            if (message.apiKey === '') {
-              console.log('[CODERUN] Deleting API key from secrets for provider:', savedProvider);
-              await config.deleteApiKey(extensionContext, savedProvider);
-            } else if (message.apiKey !== '••••••••') {
-              console.log('[CODERUN] Saving API key to secrets for provider:', savedProvider);
-              await config.setApiKey(extensionContext, message.apiKey, savedProvider);
-              resolvedApiKey = message.apiKey;
-            } else {
-              try {
-                resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || '';
-              } catch (_) {
-                // Intentionally ignore retrieval errors; fall back to empty string
+            var resolvedApiKey = '';
+            if (message.apiKey !== undefined && message.apiKey !== null) {
+              if (message.apiKey === '') {
+                console.log('[CODERUN] Deleting API key from secrets for provider:', savedProvider);
+                await config.deleteApiKey(extensionContext, savedProvider);
+              } else if (message.apiKey !== '••••••••') {
+                console.log('[CODERUN] Saving API key to secrets for provider:', savedProvider);
+                await config.setApiKey(extensionContext, message.apiKey, savedProvider);
+                resolvedApiKey = message.apiKey;
+              } else {
+                try {
+                  resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || '';
+                } catch (_) {
+                  // Intentionally ignore retrieval errors; fall back to empty string
+                }
               }
             }
+
+            await config.saveProviderConfig(extensionContext, savedProvider, {
+              baseUrl: savedBaseUrl,
+              apiKey: resolvedApiKey,
+              model: message.settings.model || '',
+              apiType: message.settings.apiType || 'openai'
+            });
+
+            var overrideCfg = await config.getProviderConfigWithKey(extensionContext);
+            if (message.settings.provider) overrideCfg.provider = message.settings.provider;
+            if (message.settings.baseUrl) overrideCfg.baseUrl = message.settings.baseUrl;
+            if (message.settings.model) overrideCfg.model = message.settings.model;
+
+            await checkProviderHealth(webview, overrideCfg);
+            await refreshAllProviderModels(webview);
           }
 
-          await config.saveProviderConfig(extensionContext, savedProvider, {
-            baseUrl: savedBaseUrl,
-            apiKey: resolvedApiKey,
-            model: message.settings.model || '',
-            apiType: message.settings.apiType || 'openai'
-          });
-
-          var overrideCfg = await config.getProviderConfigWithKey(extensionContext);
-          if (message.settings.provider) overrideCfg.provider = message.settings.provider;
-          if (message.settings.baseUrl) overrideCfg.baseUrl = message.settings.baseUrl;
-          if (message.settings.model) overrideCfg.model = message.settings.model;
-
           await sendCurrentSettings(webview);
-          await checkProviderHealth(webview, overrideCfg);
-          await refreshAllProviderModels(webview);
         } catch (e) {
           console.error('[CODERUN] Failed to save settings:', e);
           webview.postMessage({ type: 'showAlert', message: 'Failed to save settings: ' + e.message });

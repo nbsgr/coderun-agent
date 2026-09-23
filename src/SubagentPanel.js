@@ -531,6 +531,14 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
 
   // Extract thinking and tool calls from trace or subagent object
   var trace = subagent.trace || null;
+  var subModel = subagent.model || (trace && trace.model) || (subagent.config && subagent.config.model) || '';
+  var subProv = subagent.provider || (trace && trace.provider) || (subagent.config && subagent.config.provider) || '';
+  var modelBadgeHtml = '';
+  if (subModel) {
+    var provShort = subProv ? (subProv.startsWith('compatible:') ? subProv.substring(11) : subProv) : '';
+    var badgeText = provShort ? (provShort + '/' + subModel) : subModel;
+    modelBadgeHtml = '<span class="cr-subagent-model-badge" title="Model: ' + escHtml(subModel) + (subProv ? ' (' + escHtml(subProv) + ')' : '') + '">' + escHtml(badgeText) + '</span>';
+  }
   var allThinking = subagent.thinking || '';
   var allToolCalls = subagent.toolCalls || [];
   var totalTokens = { input: 0, output: 0, total: 0 };
@@ -655,6 +663,7 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
               '<span class="cr-subagent-name" title="' + escHtml(name) + (agentId ? ' (ID: ' + escHtml(agentId) + ')' : '') + '">' + escHtml(name) + '</span>' +
               idBadgeHtml +
               '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + role + '</span>' +
+              modelBadgeHtml +
             '</div>' +
             '<div class="cr-subagent-task" title="' + escHtml(task) + '">Task: "' + escHtml(truncateStr(task, 60)) + '"</div>' +
           '</div>' +

@@ -12,6 +12,7 @@ import * as events from './events.js';
 import * as permissions from '../tools/permissions.js';
 import * as diffManager from '../tools/diffManager.js';
 import * as questionManager from '../tools/questionManager.js';
+import * as config from './config.js';
 
 var _subagents = {};
 var _subagentsByParent = {};
@@ -63,7 +64,9 @@ function persistRecord(record) {
     result: record.result || null,
     error: record.error ? (record.error.message || String(record.error)) : null,
     trace: subTrace || record.trace || null,
-    diffs: record.diffs || []
+    diffs: record.diffs || [],
+    provider: record.provider || (subTrace && subTrace.provider) || (record.config && record.config.provider) || '',
+    model: record.model || (subTrace && subTrace.model) || (record.config && record.config.model) || ''
   };
   _persistedSubagents[key] = persisted[key];
   try {
@@ -178,7 +181,9 @@ export function listSubagents(parentSessionId) {
         result: rec.result || null,
         error: rec.error ? (rec.error.message || String(rec.error)) : ((rec.result && rec.result.failure) ? rec.result.failure.message : null),
         trace: subTrace || null,
-        diffs: rec.diffs || []
+        diffs: rec.diffs || [],
+        provider: rec.provider || (subTrace && subTrace.provider) || (rec.config && rec.config.provider) || '',
+        model: rec.model || (subTrace && subTrace.model) || (rec.config && rec.config.model) || ''
       });
     }
   }
@@ -210,6 +215,8 @@ export function listSubagents(parentSessionId) {
       error: persistedRecord.error || (persistedRecord.result && persistedRecord.result.failure) || null,
       trace: pTrace || null,
       diffs: persistedRecord.diffs || [],
+      provider: persistedRecord.provider || (pTrace && pTrace.provider) || '',
+      model: persistedRecord.model || (pTrace && pTrace.model) || '',
       canResume: false,
       canStop: false
     });
@@ -452,6 +459,10 @@ export function spawnSubagent(options, parentContext) {
     args: opt
   };
   record.limits = limits;
+  var initialSubProv = (opt && opt.provider) || (_subagentDefaults && _subagentDefaults.provider) || (record.config && record.config.provider) || '';
+  var initialSubModel = (opt && opt.model) || (_subagentDefaults && _subagentDefaults.model) || (record.config && record.config.model) || '';
+  record.provider = initialSubProv;
+  record.model = initialSubModel;
 
   _subagents[subKey] = record;
   delete _persistedSubagents[subKey];
@@ -477,7 +488,9 @@ export function spawnSubagent(options, parentContext) {
       role: identity.role,
       task: identity.task,
       execution: identity.execution,
-      status: 'running'
+      status: 'running',
+      provider: initialSubProv,
+      model: initialSubModel
     }
   });
 
@@ -568,12 +581,36 @@ export function spawnSubagent(options, parentContext) {
       var childConfig = Object.assign({}, record.config, { maxIterations: limits.maxIterations });
       // Apply user-configured subagent provider/model overrides
       var defaults = _subagentDefaults || {};
-      if (defaults.provider) {
-        childConfig.provider = defaults.provider;
+      var targetProvider = (opt && opt.provider) || (defaults && defaults.provider) || '';
+      var targetModel = (opt && opt.model) || (defaults && defaults.model) || '';
+
+      if (targetProvider) {
+        try {
+          var provCfg = await config.getProviderConfigByName(_storageContext, targetProvider);
+          if (provCfg) {
+            childConfig.provider = provCfg.provider;
+            childConfig.baseUrl = provCfg.baseUrl;
+            childConfig.apiKey = provCfg.apiKey;
+            childConfig.apiType = provCfg.apiType;
+            if (provCfg.needsKey !== undefined) childConfig.needsKey = provCfg.needsKey;
+            if (provCfg.model && !targetModel) {
+              targetModel = provCfg.model;
+            }
+          } else {
+            childConfig.provider = targetProvider;
+          }
+        } catch (provErr) {
+          console.error('[SUBAGENT MGR] Failed to resolve subagent provider config:', provErr);
+          childConfig.provider = targetProvider;
+        }
       }
-      if (defaults.model) {
-        childConfig.model = defaults.model;
+      if (targetModel) {
+        childConfig.model = targetModel;
       }
+      record.provider = childConfig.provider;
+      record.model = childConfig.model;
+      persistRecord(record);
+
       var loopResult = await effectiveRunner(identity.task, childConfig, loopOptions);
       if (record.timeoutTimer) clearTimeout(record.timeoutTimer);
       record.completedAt = Date.now();

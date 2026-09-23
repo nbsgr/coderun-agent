@@ -371,6 +371,24 @@
   border: 1px solid rgba(238, 99, 135, 0.3);
 }
 
+.cr-subagent-model-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 600;
+  background: rgba(56, 139, 253, 0.1);
+  color: #79c0ff;
+  border: 1px solid rgba(56, 139, 253, 0.25);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
 .cr-subagent-name {
   font-weight: 600;
   font-size: 12px;
