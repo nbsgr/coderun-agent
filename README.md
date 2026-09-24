@@ -50,7 +50,7 @@ The agent runtime decomposes responsibilities away from a monolithic loop into s
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 80-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 86-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -90,6 +90,9 @@ These rules apply to source, scripts, and tests. Generated artifacts and test fi
     *   `target: "foreground"` (default): Interrupts hanging foreground commands or tests in `CodeRun(main)` without terminating background dev servers.
     *   `target: "background"`: Gracefully terminates dev servers and daemons in `CodeRun(BG)` without disturbing foreground shell state.
     *   `target: "all"`: Aborts active executions across both terminals simultaneously.
+*   **Terminal State Introspection (`check_terminal_state` / `get_terminal_state`):** Inspect the full execution state of `CodeRun(main)` or `CodeRun(BG)` on demand. Retrieves the last executed command, exit code, whether it exited with exit code 0 (`exit_code_zero`), status (`idle`, `active`, `waiting_for_input`, `completed`), stdout/stderr, working directory, duration, shell, and platform. Includes cross-terminal history fallback so output is never lost if a command was run in the sibling terminal.
+*   **Model-Driven Interactivity & Background Execution:** The AI model dynamically decides whether a terminal command should run interactively or in the background based on real-time task context, rather than relying strictly on rigid command lists.
+*   **Automated Terminal Pager Suppression:** Transparently injects `$env:PAGER='cat'`, `GIT_PAGER=cat`, and `--no-pager` into terminal execution pipelines, completely eliminating infinite terminal hangs caused by command pagers (`git diff`, `git log`, `more`, `less`).
 *   **UI Transparency & Distinguishable Badging:** Chat UI terminal cards display real-time output logs and feature clear visual badges:
     *   Emerald badge and header prefix: `[CodeRun(main)]`
     *   Indigo badge and header prefix: `[CodeRun(BG)]`
@@ -273,14 +276,14 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/tools/tools.js` & `src/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
 | **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/ChatSpace.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **80 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **86 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
 
 
 ---
 
-## 🧰 Complete Tool Matrix (33 Core Tools)
+## 🧰 Complete Tool Matrix (34 Core Tools)
 
-CodeRun exposes a curated set of **33 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **34 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -302,6 +305,7 @@ CodeRun exposes a curated set of **33 active core tools** organized across 9 ope
 | **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (`CodeRun(main)` or background `CodeRun(BG)` with auto CWD sync for sandbox) | ⚠️ Yes |
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
 | | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running command (`target: 'foreground' \| 'background' \| 'all'`) | No |
+| | `check_terminal_state` | Inspect command execution state, exit code (`exit_code_zero`), output, and working directory of main or background terminal | No |
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
@@ -383,7 +387,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **80 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **86 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -411,6 +415,12 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78).
 * Dual dedicated terminal sessions (`CodeRun(main)` & `CodeRun(BG)`), distinct naming, lifecycle isolation, and selective stopping (Vector 79).
 * Pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and template assets (Vector 80).
+* Calling model API animation & unified reasoning tokens contract (Vector 81).
+* Universal provider reasoning deduplication, tool fallback & chronological DOM contract (Vector 82).
+* Terminal execution integrity, stream tool buffering & redundant thought prevention (Vector 83).
+* Model-driven interactivity & background decision contract (Vector 84).
+* Terminal pager hang prevention, git pager suppression & model selection sync (Vector 85).
+* check_terminal_state tool contract, main vs background introspection & exit code zero verification (Vector 86).
 
 Run all tests anytime:
 ```bash
