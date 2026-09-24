@@ -138,7 +138,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2563eb;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
@@ -157,10 +157,10 @@ textarea {
 .cr-model-badge {
   max-width: 220px;
   padding: 2px 8px;
-  border: 1px solid #1e293b;
+  border: 1px solid rgba(64, 118, 142, 0.35);
   border-radius: 10px;
-  background: rgba(56, 139, 253, 0.08);
-  color: #93c5fd;
+  background: rgba(64, 118, 142, 0.12);
+  color: #38bdf8;
   font-size: 11px;
   font-weight: 500;
   overflow: hidden;
@@ -224,8 +224,8 @@ textarea {
 }
 
 .cr-rail-btn.active {
-  background: rgba(56, 139, 253, 0.15);
-  color: #388bfd;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
 }
 
 .cr-body {
@@ -521,10 +521,15 @@ textarea {
 }
 
 .cr-view-nav-btn.active {
-  background: #2563eb;
-  color: #ffffff;
-  border-color: #2563eb;
+  background: var(--vscode-badge-background, #40768e);
+  color: var(--vscode-badge-foreground, #ffffff);
+  border-color: var(--vscode-badge-background, #40768e);
   font-weight: 600;
+  box-shadow: 0 1px 4px rgba(64, 118, 142, 0.35);
+}
+.cr-view-nav-btn.active:hover {
+  background: #4c8ca8;
+  border-color: #4c8ca8;
 }
 
 #chat-area-container {
@@ -614,8 +619,8 @@ textarea {
 }
 
 .cr-subagent-select-dropdown:focus {
-  border-color: #388bfd;
-  box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.2);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 .cr-subagents-chat-viewport {
@@ -664,8 +669,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: rgba(56, 139, 253, 0.15);
-  color: #58a6ff;
+  background: rgba(64, 118, 142, 0.2);
+  color: #38bdf8;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
@@ -737,9 +742,9 @@ textarea {
 }
 
 .cr-trace-run-tab.active {
-  background: #2563eb;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
-  border-color: #2563eb;
+  border-color: var(--vscode-badge-background, #40768e);
   font-weight: 600;
 }
 
@@ -1398,13 +1403,13 @@ textarea {
 }
 
 .cr-combobox-item.active {
-  background: #2563eb !important;
+  background: var(--vscode-badge-background, #40768e) !important;
   color: #ffffff !important;
   font-weight: 600;
 }
 
 .cr-combobox-item.active:hover {
-  background: #1d4ed8 !important;
+  background: #4c8ca8 !important;
   color: #ffffff !important;
 }
 
@@ -1655,7 +1660,7 @@ textarea {
 .cr-input-group.cr-checkbox input {
   width: 14px;
   height: 14px;
-  accent-color: #2563eb;
+  accent-color: var(--vscode-badge-background, #40768e);
 }
 
 .cr-workspace-display {
@@ -1685,16 +1690,16 @@ textarea {
 }
 
 .cr-save-btn {
-  border: 1px solid #2563eb;
-  color: #ffffff;
-  background: #2563eb;
+  border: 1px solid var(--vscode-badge-background, #40768e);
+  color: var(--vscode-badge-foreground, #ffffff);
+  background: var(--vscode-badge-background, #40768e);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .cr-save-btn:hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  background: #4c8ca8;
+  border-color: #4c8ca8;
+  box-shadow: 0 2px 8px rgba(64, 118, 142, 0.35);
 }
 
 .cr-danger-btn {
@@ -1833,7 +1838,7 @@ textarea {
 }
 
 .cr-order-global {
-  color: #58a6ff;
+  color: #38bdf8;
   font-weight: 600;
 }
 
@@ -1872,7 +1877,7 @@ textarea {
 }
 
 .cr-rules-card:hover {
-  border-color: #388bfd;
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .cr-rules-card-header {
@@ -1890,7 +1895,7 @@ textarea {
 }
 
 .cr-rules-title-text.global {
-  color: #58a6ff;
+  color: #38bdf8;
   font-weight: 700;
   font-size: 11.5px;
   letter-spacing: 0.5px;
@@ -1965,8 +1970,8 @@ textarea {
 }
 
 .cr-rules-editor-wrapper:focus-within {
-  border-color: #388bfd;
-  box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.2);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 .cr-rules-gutter {
@@ -2074,9 +2079,9 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2563eb;
-  color: #ffffff;
-  border: none;
+  background: var(--vscode-badge-background, #40768e);
+  color: var(--vscode-badge-foreground, #ffffff);
+  border: 1px solid var(--vscode-badge-background, #40768e);
   border-radius: 6px;
   padding: 5px 14px;
   font-size: 11.5px;
@@ -2086,7 +2091,8 @@ textarea {
 }
 
 .cr-rules-primary-save-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: #4c8ca8;
+  border-color: #4c8ca8;
 }
 
 .cr-rules-primary-save-btn:disabled {
@@ -2136,8 +2142,8 @@ textarea {
 }
 
 .cr-precedence-box.global {
-  border: 1px solid rgba(56, 139, 253, 0.35);
-  background: rgba(56, 139, 253, 0.06);
+  border: 1px solid rgba(64, 118, 142, 0.45);
+  background: rgba(64, 118, 142, 0.12);
 }
 
 .cr-precedence-box.workspace {
@@ -2162,7 +2168,7 @@ textarea {
 }
 
 .cr-precedence-box.global .cr-precedence-box-title {
-  color: #58a6ff;
+  color: #38bdf8;
 }
 
 .cr-precedence-box.workspace .cr-precedence-box-title {
@@ -2583,8 +2589,8 @@ body.vscode-light .cr-rules-divider {
   bottom: 2px;
 }
 .cr-switch-input:checked + .cr-switch-slider {
-  background-color: #0078d4;
-  border-color: #0078d4;
+  background-color: var(--vscode-badge-background, #40768e);
+  border-color: var(--vscode-badge-background, #40768e);
 }
 .cr-switch-input:checked + .cr-switch-slider:before {
   transform: translateX(16px);
@@ -2637,7 +2643,7 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-btn-add-mcp {
-  background: #2563eb;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
   border: none;
   border-radius: 6px;
@@ -2652,7 +2658,7 @@ body.vscode-light .cr-rules-divider {
   white-space: nowrap;
 }
 .cr-btn-add-mcp:hover {
-  background: #1d4ed8;
+  background: #4c8ca8;
 }
 
 .cr-mcp-header-divider {
@@ -2714,14 +2720,14 @@ body.vscode-light .cr-rules-divider {
 .cr-builtin-tools-card {
   background: #111827;
   border: 1px solid #1e293b;
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid #40768e;
   border-radius: 8px;
   margin-bottom: 20px;
   overflow: hidden;
   transition: border-color 0.15s ease;
 }
 .cr-builtin-tools-card:hover {
-  border-color: #388bfd;
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .cr-builtin-tools-dropdown > summary {
@@ -2770,9 +2776,9 @@ body.vscode-light .cr-rules-divider {
   font-weight: 600;
   padding: 3px 12px;
   border-radius: 16px;
-  background: #0d2847;
-  border: 1px solid #1a5fb4;
-  color: #58a6ff;
+  background: rgba(64, 118, 142, 0.25);
+  border: 1px solid rgba(64, 118, 142, 0.45);
+  color: #38bdf8;
   letter-spacing: 0.2px;
 }
 
@@ -2828,7 +2834,7 @@ body.vscode-light .cr-rules-divider {
   outline: none;
 }
 .cr-builtin-search-input:focus {
-  border-color: #0078d4;
+  border-color: #38bdf8;
 }
 
 .cr-builtin-bulk-btns {
@@ -3033,7 +3039,8 @@ body.vscode-light .cr-rules-divider {
   transition: border-color 0.15s ease;
 }
 .cr-mcp-search-input:focus {
-  border-color: #0078d4;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 /* ── Server Cards ── */
@@ -3180,7 +3187,7 @@ body.vscode-light .cr-rules-divider {
   gap: 6px;
 }
 .cr-mcp-menu-item:hover {
-  background: #0078d4;
+  background: #40768e;
   color: #ffffff;
 }
 
@@ -3196,9 +3203,9 @@ body.vscode-light .cr-rules-divider {
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 4px;
-  background: #0d2847;
-  border: 1px solid #1a5fb4;
-  color: #58a6ff;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
   letter-spacing: 0.3px;
 }
 
@@ -4022,7 +4029,7 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-btn-modal-primary {
-  background: #0078d4;
+  background: var(--vscode-badge-background, #40768e);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: #ffffff;
@@ -4035,7 +4042,7 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-btn-modal-primary:hover {
-  background: #106ebe;
+  background: #4c8ca8;
 }
 
 /* ==========================================
@@ -4181,7 +4188,7 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-subagent-badge-active {
-  color: #58a6ff !important;
+  color: #38bdf8 !important;
 }
 
 /* Subagent Form & Section Cards */
@@ -4283,8 +4290,8 @@ body.vscode-light .cr-rules-divider {
 .cr-subagent-form select:focus,
 .cr-subagent-form input[type="text"]:focus,
 .cr-subagent-form input[type="number"]:focus {
-  border-color: #388bfd !important;
-  box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.25) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
 }
 
 .cr-subagent-actions {
@@ -4299,21 +4306,21 @@ body.vscode-light .cr-rules-divider {
   font-size: 13px !important;
   font-weight: 600 !important;
   border-radius: 6px !important;
-  background: #2563eb !important;
-  border: 1px solid #2563eb !important;
+  background: var(--vscode-badge-background, #40768e) !important;
+  border: 1px solid var(--vscode-badge-background, #40768e) !important;
   color: #ffffff !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3) !important;
+  box-shadow: 0 2px 6px rgba(64, 118, 142, 0.3) !important;
 }
 
 .cr-subagent-save-btn:hover {
-  background: #1d4ed8 !important;
-  border-color: #1d4ed8 !important;
-  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.45) !important;
+  background: #4c8ca8 !important;
+  border-color: #4c8ca8 !important;
+  box-shadow: 0 3px 10px rgba(64, 118, 142, 0.45) !important;
 }
 
 .cr-subagent-combobox {

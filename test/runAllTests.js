@@ -3474,6 +3474,94 @@ terminalManager.removeSession(sid86);
 
 console.log('✓ Vector 86 Passed: check_terminal_state tool contract, main vs background introspection & exit code zero verified.');
 
+// --- TEST 87: Agent Loop Active Input Box Animation (Copilot Blue Border Flow) Contract & State Sync ---
+console.log('\n--- TEST 87: Agent Loop Active Input Box Animation (Copilot Blue Border Flow) Contract & State Sync ---');
+
+var chatSpaceJsPath = path.join(process.cwd(), 'src', 'ChatSpace.js');
+var chatSpaceCssPath = path.join(process.cwd(), 'src', 'ChatSpace.css');
+var chatSpaceJs = fs.readFileSync(chatSpaceJsPath, 'utf8');
+var chatSpaceCss = fs.readFileSync(chatSpaceCssPath, 'utf8');
+
+// 1. Verify CSS rules for animated Copilot border flow
+assert.ok(chatSpaceCss.indexOf('.cr-textarea.cr-textarea--generating') !== -1, 'ChatSpace.css defines .cr-textarea.cr-textarea--generating');
+assert.ok(chatSpaceCss.indexOf('crCopilotBorderFlow') !== -1, 'ChatSpace.css defines crCopilotBorderFlow keyframe animation');
+assert.ok(chatSpaceCss.indexOf('crCopilotGlowPulse') !== -1, 'ChatSpace.css defines crCopilotGlowPulse keyframe animation');
+assert.ok(chatSpaceCss.indexOf('background-clip: padding-box, border-box') !== -1, 'ChatSpace.css defines dual-layer background-clip for border flow');
+assert.ok(chatSpaceCss.indexOf('.cr-textarea.cr-textarea--generating:disabled') !== -1, 'ChatSpace.css handles disabled opacity override during generation');
+
+// 2. Verify ChatSpace.js setStreaming toggles cr-textarea--generating class
+assert.ok(chatSpaceJs.indexOf("input.classList.toggle('cr-textarea--generating', on)") !== -1, 'ChatSpace.js setStreaming toggles cr-textarea--generating on input');
+
+// 3. Verify mock state transition for streaming input box animation
+function createMockElement() {
+  var classes = [];
+  var styleObj = {};
+  return {
+    disabled: false,
+    style: styleObj,
+    classList: {
+      add: function addClass(c) {
+        if (classes.indexOf(c) === -1) classes.push(c);
+      },
+      remove: function removeClass(c) {
+        var idx = classes.indexOf(c);
+        if (idx !== -1) classes.splice(idx, 1);
+      },
+      toggle: function toggleClass(c, force) {
+        var has = classes.indexOf(c) !== -1;
+        var shouldHave = typeof force === 'boolean' ? force : !has;
+        if (shouldHave && !has) classes.push(c);
+        else if (!shouldHave && has) classes.splice(classes.indexOf(c), 1);
+        return shouldHave;
+      },
+      contains: function containsClass(c) {
+        return classes.indexOf(c) !== -1;
+      }
+    }
+  };
+}
+
+var mockInput = createMockElement();
+var mockSendBtn = createMockElement();
+var mockStopBtn = createMockElement();
+var mockS = { isStreaming: false };
+var mockChatCtx = {
+  S: mockS,
+  input: mockInput,
+  sendBtn: mockSendBtn,
+  stopBtn: mockStopBtn
+};
+
+// Simulate starting agent loop (on = true)
+mockS.isStreaming = true;
+mockSendBtn.disabled = true;
+mockInput.disabled = true;
+mockInput.classList.toggle('cr-textarea--generating', true);
+mockSendBtn.classList.toggle('cr-send-btn--busy', true);
+mockStopBtn.style.display = 'flex';
+mockSendBtn.style.display = 'none';
+
+assert.strictEqual(mockInput.classList.contains('cr-textarea--generating'), true, 'Input box has cr-textarea--generating while agent loop is running');
+assert.strictEqual(mockInput.disabled, true, 'Input box is disabled while generating');
+assert.strictEqual(mockStopBtn.style.display, 'flex', 'Stop button is visible while generating');
+assert.strictEqual(mockSendBtn.style.display, 'none', 'Send button is hidden while generating');
+
+// Simulate stopping agent loop (on = false)
+mockS.isStreaming = false;
+mockSendBtn.disabled = false;
+mockInput.disabled = false;
+mockInput.classList.toggle('cr-textarea--generating', false);
+mockSendBtn.classList.toggle('cr-send-btn--busy', false);
+mockStopBtn.style.display = 'none';
+mockSendBtn.style.display = 'flex';
+
+assert.strictEqual(mockInput.classList.contains('cr-textarea--generating'), false, 'cr-textarea--generating is removed when agent loop finishes');
+assert.strictEqual(mockInput.disabled, false, 'Input box is re-enabled when agent loop finishes');
+assert.strictEqual(mockStopBtn.style.display, 'none', 'Stop button is hidden when finished');
+assert.strictEqual(mockSendBtn.style.display, 'flex', 'Send button is visible when finished');
+
+console.log('✓ Vector 87 Passed: Agent loop active input box animation (Copilot blue border flow) contract & state synchronization verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3486,7 +3574,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 86 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 87 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

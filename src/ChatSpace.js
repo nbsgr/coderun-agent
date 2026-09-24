@@ -1444,7 +1444,10 @@ function initializeChatSpace() {
     var input = chatCtx.input;
     var stopBtn = chatCtx.stopBtn;
     if (sendBtn) sendBtn.disabled = on;
-    if (input) input.disabled = on;
+    if (input) {
+      input.disabled = on;
+      input.classList.toggle('cr-textarea--generating', on);
+    }
     if (sendBtn) sendBtn.classList.toggle('cr-send-btn--busy', on);
     if (stopBtn) stopBtn.style.display = on ? 'flex' : 'none';
     if (sendBtn) sendBtn.style.display = on ? 'none' : 'flex';
@@ -6050,6 +6053,10 @@ function initializeChatSpace() {
           }
         }
         compactBtn.addEventListener('click', handleCompactClick);
+      }
+
+      if (window.activeChatStreamCallback && window._activeChatCtx && window._activeChatCtx.convId === conversation.id && window._activeChatCtx.S && window._activeChatCtx.S.isStreaming) {
+        setStreaming(chatCtx, true);
       }
 
       window._activeChatCtx = chatCtx;

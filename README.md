@@ -50,7 +50,7 @@ The agent runtime decomposes responsibilities away from a monolithic loop into s
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
 * **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
 * **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 86-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+* **Focused validation is standard:** Run `npm test` for the 87-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
 
 These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
 
@@ -276,7 +276,7 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/tools/tools.js` & `src/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
 | **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/ChatSpace.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **86 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **87 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
 
 
 ---
@@ -387,7 +387,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **86 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **87 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -421,6 +421,7 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Model-driven interactivity & background decision contract (Vector 84).
 * Terminal pager hang prevention, git pager suppression & model selection sync (Vector 85).
 * check_terminal_state tool contract, main vs background introspection & exit code zero verification (Vector 86).
+* Agent loop active input box animation (Copilot blue border flow) contract & state synchronization (Vector 87).
 
 Run all tests anytime:
 ```bash
