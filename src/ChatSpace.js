@@ -153,6 +153,7 @@ function initializeChatSpace() {
     _renderTimer = null;
     if (S.contentDiv && S.contentText !== undefined) {
       S.contentDiv.innerHTML = md(S.contentText);
+      S.contentDiv.dataset.rawContent = S.contentText;
       // Scroll AFTER the DOM is updated so scrollHeight is current
       if (msgList) scrollBottomSmooth(msgList);
     }
@@ -171,6 +172,7 @@ function initializeChatSpace() {
     }
     if (S.contentDiv && S.contentText !== undefined) {
       S.contentDiv.innerHTML = md(S.contentText);
+      S.contentDiv.dataset.rawContent = S.contentText;
     }
   }
 
@@ -1258,11 +1260,12 @@ function initializeChatSpace() {
       var turn = turns[ti];
       if (turn.user) {
         msgIndexTracker++;
-        appendUserBubble(msgList, turn.user.content, turn.user.image || (turn.user.images ? turn.user.images[0] : null));
+        appendUserBubble(msgList, turn.user.content, turn.user.image || (turn.user.images ? turn.user.images[0] : null), turn.user.timestamp || turn.user.createdAt || turn.user.time);
       }
 
       if (turn.botMessages && turn.botMessages.length) {
         var body = appendBotWrapper(msgList);
+        var combinedBotResponse = '';
         for (var mi = 0; mi < turn.botMessages.length; mi++) {
           msgIndexTracker++;
           var m = turn.botMessages[mi];
@@ -1334,6 +1337,9 @@ function initializeChatSpace() {
             if (content) {
               var d = appendContentBlock(body);
               d.innerHTML = md(content);
+              d.dataset.rawContent = content;
+              if (combinedBotResponse) combinedBotResponse += '\n\n';
+              combinedBotResponse += content;
             } else if (m.error) {
               var errDiv = mk('div', 'cr-error-line');
               errDiv.innerHTML = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(m.error) + '</span>';
@@ -1400,6 +1406,11 @@ function initializeChatSpace() {
               }
             }
           }
+        }
+        if (combinedBotResponse || body.querySelector('.cr-content-block')) {
+          var lastBotMsg = turn.botMessages[turn.botMessages.length - 1];
+          var botTimestamp = (lastBotMsg && (lastBotMsg.timestamp || lastBotMsg.createdAt || lastBotMsg.time)) || (turn.user && (turn.user.timestamp || turn.user.createdAt || turn.user.time)) || Date.now();
+          appendBotCopyButton(body, combinedBotResponse, botTimestamp);
         }
       }
 
@@ -1602,6 +1613,9 @@ function initializeChatSpace() {
       var errorLine = mk('div', 'cr-error-line');
       errorLine.innerHTML = errorHtml;
       if (S.botBody) S.botBody.appendChild(errorLine);
+    }
+    if (S && S.botBody) {
+      appendBotCopyButton(S.botBody, S.fullResponse || cleanMsg, Date.now());
     }
     setStreaming(chatCtx, false);
 
@@ -2763,6 +2777,7 @@ function initializeChatSpace() {
           if (finalContent && (!S.botBody || !S.botBody.querySelector('.cr-content-block'))) {
             var finalBlock = appendContentBlock(S.botBody);
             finalBlock.innerHTML = md(finalContent);
+            finalBlock.dataset.rawContent = finalContent;
             S.fullResponse = finalContent;
           }
           if (ev.sources && ev.sources.length) {
@@ -2774,6 +2789,9 @@ function initializeChatSpace() {
           }
           S.thinkBlock = null; S.thinkPre = null;
           clearStatusLines(S);
+          if (S && S.botBody) {
+            appendBotCopyButton(S.botBody, S.fullResponse || finalContent);
+          }
           break;
         }
         case 'sources': {
@@ -3087,6 +3105,9 @@ function initializeChatSpace() {
         context_tokens: S.sessionUsage.context_tokens || 0
       };
       S.currentTurnUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    }
+    if (S && S.botBody) {
+      appendBotCopyButton(S.botBody, S.fullResponse);
     }
   }
 
@@ -3511,7 +3532,103 @@ function initializeChatSpace() {
     this.parentNode.textContent = 'U';
   }
 
-  function appendUserBubble(msgList, text, imgB64) {
+  function copyToClipboardFallback(text, onSuccess, onError) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var successful = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (successful) {
+        if (typeof onSuccess === 'function') onSuccess();
+      } else {
+        if (typeof onError === 'function') onError(new Error('execCommand copy failed'));
+      }
+    } catch (err) {
+      if (typeof onError === 'function') onError(err);
+    }
+  }
+
+  function getCopyTextForButton(btn) {
+    if (!btn) return '';
+    var explicitText = btn.getAttribute('data-copy-text');
+    if (explicitText != null && explicitText !== '') {
+      return explicitText;
+    }
+
+    if (btn.classList.contains('cr-user-copy-btn')) {
+      var userBubble = btn.closest ? btn.closest('.cr-user-bubble') : null;
+      if (userBubble) {
+        var userTextEl = userBubble.querySelector('.cr-user-text');
+        if (userTextEl) {
+          return userTextEl.textContent || '';
+        }
+      }
+    }
+
+    if (btn.classList.contains('cr-bot-copy-btn')) {
+      var botBody = btn.closest ? btn.closest('.cr-bot-body') : null;
+      if (botBody) {
+        var blocks = botBody.querySelectorAll('.cr-content-block');
+        if (blocks && blocks.length > 0) {
+          var collected = [];
+          for (var bi = 0; bi < blocks.length; bi++) {
+            var b = blocks[bi];
+            var raw = b.dataset.rawContent || b.innerText || b.textContent || '';
+            if (raw && raw.trim()) {
+              collected.push(raw.trim());
+            }
+          }
+          if (collected.length > 0) {
+            return collected.join('\n\n');
+          }
+        }
+      }
+    }
+
+    return '';
+  }
+
+  function handleCopyButtonClick(evt) {
+    if (evt) {
+      if (typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    }
+    var copyBtn = (evt && evt.target && evt.target.closest) ? evt.target.closest('.cr-msg-copy-btn') : this;
+    if (!copyBtn) return;
+    if (copyBtn.classList.contains('cr-copied')) return;
+
+    var textToCopy = getCopyTextForButton(copyBtn);
+    if (!textToCopy) return;
+
+    function onCopyDone() {
+      copyBtn.classList.add('cr-copied');
+      copyBtn.innerHTML = I.check + '<span class="cr-copy-btn-label">Copied!</span>';
+      function onRestoreCopyBtn() {
+        copyBtn.classList.remove('cr-copied');
+        copyBtn.innerHTML = I.copy + '<span class="cr-copy-btn-label">Copy</span>';
+      }
+      setTimeout(onRestoreCopyBtn, 1800);
+    }
+
+    function onCopyFail() {
+      copyToClipboardFallback(textToCopy, onCopyDone);
+    }
+
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(textToCopy).then(onCopyDone).catch(onCopyFail);
+    } else {
+      copyToClipboardFallback(textToCopy, onCopyDone);
+    }
+  }
+
+  function appendUserBubble(msgList, text, imgB64, timestamp) {
     if (!msgList) return null;
     var welcome = msgList.querySelector('.cr-welcome-screen');
     if (welcome) welcome.remove();
@@ -3528,9 +3645,24 @@ function initializeChatSpace() {
       sp.textContent = text;
       bub.appendChild(sp);
     }
+    var footer = mk('div', 'cr-user-footer');
+
+    if (text) {
+      var copyBtn = mk('button', 'cr-msg-copy-btn cr-user-copy-btn');
+      copyBtn.type = 'button';
+      copyBtn.title = 'Copy message';
+      copyBtn.setAttribute('aria-label', 'Copy message');
+      copyBtn.setAttribute('data-copy-text', text);
+      copyBtn.innerHTML = I.copy + '<span class="cr-copy-btn-label">Copy</span>';
+      copyBtn.addEventListener('click', handleCopyButtonClick);
+      footer.appendChild(copyBtn);
+    }
+
     var ts = mk('span', 'cr-msg-time');
-    ts.textContent = formatTime(Date.now());
-    bub.appendChild(ts);
+    ts.textContent = formatTime(timestamp || Date.now());
+    footer.appendChild(ts);
+
+    bub.appendChild(footer);
     row.appendChild(bub);
     var uAv = mk('div', 'cr-user-avatar');
     var userAvatar = document.createElement('img');
@@ -3542,6 +3674,53 @@ function initializeChatSpace() {
     row.appendChild(uAv);
     msgList.appendChild(row);
     return row;
+  }
+
+  function appendBotCopyButton(body, text, timestamp) {
+    if (!body) return null;
+    var existingFooter = body.querySelector('.cr-bot-footer');
+    var existingBtn = existingFooter ? existingFooter.querySelector('.cr-bot-copy-btn') : null;
+    var existingTime = existingFooter ? existingFooter.querySelector('.cr-msg-time') : null;
+    if (existingBtn) {
+      if (text) {
+        existingBtn.setAttribute('data-copy-text', text);
+      }
+      if (existingTime) {
+        if (timestamp) {
+          existingTime.textContent = formatTime(timestamp);
+        } else if (!existingTime.textContent) {
+          existingTime.textContent = formatTime(Date.now());
+        }
+      }
+      if (body.lastElementChild !== existingFooter) {
+        body.appendChild(existingFooter);
+      }
+      return existingFooter;
+    }
+
+    var hasContent = (text && String(text).trim().length > 0) || (body.querySelector('.cr-content-block') !== null);
+    if (!hasContent) {
+      return null;
+    }
+
+    var footer = mk('div', 'cr-bot-footer');
+    var copyBtn = mk('button', 'cr-msg-copy-btn cr-bot-copy-btn');
+    copyBtn.type = 'button';
+    copyBtn.title = 'Copy response';
+    copyBtn.setAttribute('aria-label', 'Copy response');
+    if (text) {
+      copyBtn.setAttribute('data-copy-text', text);
+    }
+    copyBtn.innerHTML = I.copy + '<span class="cr-copy-btn-label">Copy</span>';
+    copyBtn.addEventListener('click', handleCopyButtonClick);
+    footer.appendChild(copyBtn);
+
+    var ts = mk('span', 'cr-msg-time cr-bot-time');
+    ts.textContent = formatTime(timestamp || Date.now());
+    footer.appendChild(ts);
+
+    body.appendChild(footer);
+    return footer;
   }
 
   function appendBotWrapper(msgList) {
@@ -5957,6 +6136,15 @@ function initializeChatSpace() {
         }
       }
       msgList.addEventListener('click', handleMsgListCodeCopy);
+
+      function handleMsgListMessageCopy(evt) {
+        if (!evt || !evt.target) return;
+        var copyBtn = evt.target.closest ? evt.target.closest('.cr-msg-copy-btn') : null;
+        if (copyBtn) {
+          handleCopyButtonClick(evt);
+        }
+      }
+      msgList.addEventListener('click', handleMsgListMessageCopy);
 
       function handleMsgListSummaryClick(evt) {
         if (!evt || !evt.target) return;
