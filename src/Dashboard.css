@@ -28,21 +28,24 @@ body {
 
 /* Theme Variables */
 :root {
+  color-scheme: dark;
   --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(148, 163, 184, 0.15));
   --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(148, 163, 184, 0.28));
-  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%2394a3b8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 body.vscode-light {
+  color-scheme: light;
   --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(0, 0, 0, 0.18));
   --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(0, 0, 0, 0.35));
-  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23333333' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%2364748b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 body.vscode-high-contrast {
+  color-scheme: dark;
   --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.3));
   --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(255, 255, 255, 0.5));
-  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23ffffff' d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* Custom Select Dropdowns */
@@ -52,9 +55,19 @@ select {
   background-image: var(--cr-select-arrow);
   background-repeat: no-repeat;
   background-position: right 8px center;
-  background-size: 10px;
-  padding-right: 24px !important;
+  background-size: 14px 14px;
+  padding-right: 28px !important;
   cursor: pointer;
+}
+
+/* Number Inputs - Suppress jarring native OS white spin buttons */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 /* Global Custom Scrollbars */
@@ -1225,11 +1238,29 @@ textarea {
   font-size: 12px;
 }
 
+.cr-input-group select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-color: #111827 !important;
+  background-image: var(--cr-select-arrow) !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px 14px !important;
+  padding-right: 30px !important;
+  cursor: pointer;
+}
+
 #modelInput:focus,
-.cr-input-group input:focus,
+.cr-input-group input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
 .cr-input-group select:focus {
-  border-color: #388bfd;
-  box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.2);
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
+  background-color: #111827 !important;
+  background-image: var(--cr-select-arrow) !important;
 }
 
 #modelInput {
@@ -2461,14 +2492,16 @@ body.vscode-light .cr-rules-divider {
 
 .cr-mcp-tools-summary {
   font-size: 11.5px;
-  font-weight: 500;
-  color: var(--vscode-textLink-foreground, #58a6ff);
+  font-weight: 600;
+  color: var(--vscode-badge-background, #40768e);
   cursor: pointer;
   outline: none;
   user-select: none;
+  transition: color 0.15s ease;
 }
 
 .cr-mcp-tools-summary:hover {
+  color: #4c8ca8;
   text-decoration: underline;
 }
 
@@ -2482,7 +2515,7 @@ body.vscode-light .cr-rules-divider {
 
 .cr-mcp-tool-item {
   background: rgba(255, 255, 255, 0.02);
-  border-left: 2px solid #58a6ff;
+  border-left: 2px solid var(--vscode-badge-background, #40768e);
   padding: 6px 10px;
   border-radius: 0 4px 4px 0;
   transition: opacity 0.15s ease;
@@ -3279,14 +3312,16 @@ body.vscode-light .cr-rules-divider {
 .cr-mcp-tools-summary {
   font-size: 12px;
   font-weight: 600;
-  color: #58a6ff;
+  color: var(--vscode-badge-background, #40768e);
   cursor: pointer;
   user-select: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  transition: color 0.15s ease;
 }
 .cr-mcp-tools-summary:hover {
+  color: #4c8ca8;
   text-decoration: underline;
 }
 
@@ -3309,7 +3344,7 @@ body.vscode-light .cr-rules-divider {
 
 .cr-mcp-tool-item {
   background: rgba(255, 255, 255, 0.02);
-  border-left: 2px solid #58a6ff;
+  border-left: 2px solid var(--vscode-badge-background, #40768e);
   padding: 6px 10px;
   border-radius: 0 4px 4px 0;
   transition: opacity 0.15s ease;
@@ -4282,7 +4317,7 @@ body.vscode-light .cr-rules-divider {
   background-image: var(--cr-select-arrow) !important;
   background-repeat: no-repeat !important;
   background-position: right 12px center !important;
-  background-size: 10px !important;
+  background-size: 14px 14px !important;
   padding-right: 32px !important;
   cursor: pointer !important;
 }

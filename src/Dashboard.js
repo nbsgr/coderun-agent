@@ -1124,7 +1124,11 @@ function initializeDashboard() {
 
     document.addEventListener("click", handleDocumentClickCloseDropdown);
 
-    document.getElementById("cfgProvider").onchange = handleCfgProviderChange;
+    var cfgProviderEl = document.getElementById("cfgProvider");
+    if (cfgProviderEl) {
+      cfgProviderEl.onchange = handleCfgProviderChange;
+      cfgProviderEl.onfocus = handleCfgProviderFocus;
+    }
 
     document.getElementById("saveSettingsBtn").onclick = handleSaveSettingsClick;
 
@@ -3157,6 +3161,10 @@ function initializeDashboard() {
 
   function handleRailSettingsClick() {
     switchPanel("panel-settings", this);
+    updateSettingsUI();
+    if (state.isVsCode && window.VSCODE_API) {
+      window.VSCODE_API.postMessage({ type: "getSettings" });
+    }
   }
 
   function handleRailRulesClick() {
@@ -4676,6 +4684,10 @@ function initializeDashboard() {
     renderModelOptions();
   }
 
+  function handleCfgProviderFocus() {
+    updateSettingsUI();
+  }
+
   function handleCfgProviderChange() {
     var providerEl = document.getElementById("cfgProvider");
     var provider = providerEl ? providerEl.value : '';
@@ -6003,7 +6015,6 @@ function initializeDashboard() {
       createNewChat();
     }
     if (message.type === "currentSettings") {
-      window.applyVscodeSettings(message.settings);
       if (message.providerHasKeyMap) {
         state.providerHasKeyMap = message.providerHasKeyMap;
       }
@@ -6027,6 +6038,8 @@ function initializeDashboard() {
         }
         renderModelOptions();
       }
+      window.applyVscodeSettings(message.settings);
+      updateSettingsUI();
     }
     if (message.type === "healthStatus") {
       var dot = document.getElementById("status-dot");

@@ -1572,25 +1572,31 @@ select {
 }
 
 .cr-btn-allow {
-  background: var(--vscode-badge-background, #40768e);
-  color: #ffffff;
-  border: 1px solid var(--vscode-badge-background, #40768e);
+  background: rgba(64, 118, 142, 0.22);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-allow:hover {
-  background: #4c8ca8;
-  border-color: #4c8ca8;
+  background: rgba(64, 118, 142, 0.42);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
 }
 
 .cr-btn-deny {
-  background: #1e293b;
-  color: #f85149;
+  background: rgba(248, 81, 73, 0.08);
+  color: #f87171;
   border: 1px solid rgba(248, 81, 73, 0.35);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-deny:hover {
-  background: rgba(248, 81, 73, 0.15);
-  border-color: #f85149;
+  background: rgba(248, 81, 73, 0.2);
+  border-color: #f87171;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25);
 }
 
 .cr-permission-status {
@@ -1640,24 +1646,30 @@ select {
 
 .cr-btn-always-allow {
   background: rgba(34, 197, 94, 0.08);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-always-allow:hover {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.2);
+  border-color: #4ade80;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.25);
 }
 
 .cr-btn-always-deny {
   background: rgba(239, 68, 68, 0.08);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-always-deny:hover {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #f87171;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25);
 }
 
 /* ── Auto-resolved permission line (Always * decisions) ── */
@@ -2311,11 +2323,31 @@ select {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.cr-diff-accept { background: var(--vscode-badge-background, #40768e); color: #fff; }
-.cr-diff-accept:hover { background: #4c8ca8; }
+.cr-diff-accept {
+  background: rgba(64, 118, 142, 0.22);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cr-diff-accept:hover {
+  background: rgba(64, 118, 142, 0.42);
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
 
-.cr-diff-reject { background: transparent; color: #f48771; border-color: rgba(244, 135, 113, 0.35); }
-.cr-diff-reject:hover { background: rgba(244, 135, 113, 0.12); }
+.cr-diff-reject {
+  background: rgba(248, 81, 73, 0.08);
+  color: #f87171;
+  border: 1px solid rgba(248, 81, 73, 0.35);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cr-diff-reject:hover {
+  background: rgba(248, 81, 73, 0.2);
+  border-color: #f87171;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25);
+}
 
 .cr-diff-full-btn {
   margin-left: auto;
@@ -2605,12 +2637,13 @@ select {
 .cr-agent-controls-panel {
   background: #111827;
   border: 1px solid #1e293b;
-  border-left: 3px solid #eab308;
+  border-left: 3px solid rgba(234, 179, 8, 0.75);
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
   font-size: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
   animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2691,9 +2724,9 @@ select {
 .cr-controls-buttons > .cr-btn {
   flex: 1 1 0;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
@@ -2701,84 +2734,106 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   box-sizing: border-box;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.cr-controls-btn-row .cr-btn:active,
+.cr-controls-buttons > .cr-btn:active {
+  transform: translateY(1px);
 }
 
 .cr-btn-continue-all,
 .cr-controls-buttons .cr-btn-allow {
-  background: var(--vscode-badge-background, #40768e) !important;
-  color: #ffffff !important;
-  border: 1px solid var(--vscode-badge-background, #40768e) !important;
+  background: rgba(64, 118, 142, 0.22) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
 }
 
 .cr-btn-continue-all:hover,
 .cr-controls-buttons .cr-btn-allow:hover {
-  background: #4c8ca8 !important;
-  border-color: #4c8ca8 !important;
+  background: rgba(64, 118, 142, 0.42) !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25) !important;
 }
 
 .cr-btn-quit-all,
 .cr-controls-buttons .cr-btn-deny {
-  background: #1e293b !important;
-  color: #f85149 !important;
+  background: rgba(248, 81, 73, 0.08) !important;
+  color: #f87171 !important;
   border: 1px solid rgba(248, 81, 73, 0.35) !important;
 }
 
 .cr-btn-quit-all:hover,
 .cr-controls-buttons .cr-btn-deny:hover {
-  background: rgba(248, 81, 73, 0.15) !important;
-  border-color: #f85149 !important;
+  background: rgba(248, 81, 73, 0.2) !important;
+  border-color: #f87171 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-allow {
-  background: rgba(34, 197, 94, 0.1) !important;
+  background: rgba(34, 197, 94, 0.08) !important;
   color: #4ade80 !important;
   border: 1px solid rgba(74, 222, 128, 0.35) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-allow:hover {
   background: rgba(34, 197, 94, 0.2) !important;
-  border-color: rgba(74, 222, 128, 0.55) !important;
+  border-color: #4ade80 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.25) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-deny {
-  background: rgba(239, 68, 68, 0.1) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
   color: #f87171 !important;
   border: 1px solid rgba(248, 113, 113, 0.35) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-deny:hover {
   background: rgba(239, 68, 68, 0.2) !important;
-  border-color: rgba(248, 113, 113, 0.55) !important;
+  border-color: #f87171 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25) !important;
 }
 
 .cr-btn-accept-all-diffs {
-  background: var(--vscode-badge-background, #40768e) !important;
-  color: #ffffff !important;
-  border: 1px solid var(--vscode-badge-background, #40768e) !important;
-  padding: 5px 12px !important;
+  background: rgba(64, 118, 142, 0.22) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  padding: 6px 12px !important;
   border-radius: 6px !important;
   font-size: 11.5px !important;
   cursor: pointer !important;
   font-weight: 600 !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .cr-btn-accept-all-diffs:hover {
-  background: #4c8ca8 !important;
+  background: rgba(64, 118, 142, 0.42) !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25) !important;
 }
 
 .cr-btn-reject-all-diffs {
-  background: #1e293b !important;
-  color: #f85149 !important;
+  background: rgba(248, 81, 73, 0.08) !important;
+  color: #f87171 !important;
   border: 1px solid rgba(248, 81, 73, 0.35) !important;
-  padding: 5px 12px !important;
+  padding: 6px 12px !important;
   border-radius: 6px !important;
   font-size: 11.5px !important;
   cursor: pointer !important;
   font-weight: 600 !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .cr-btn-reject-all-diffs:hover {
-  background: rgba(248, 81, 73, 0.15) !important;
+  background: rgba(248, 81, 73, 0.2) !important;
+  border-color: #f87171 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25) !important;
 }
 
 /* ── Interactive Question Banner (above input bar) ────────── */
@@ -2808,15 +2863,15 @@ select {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #1877f2;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(24, 119, 242, 0.4);
+  box-shadow: 0 2px 8px rgba(64, 118, 142, 0.35);
 }
 
 .cr-question-header-text {
@@ -2830,7 +2885,7 @@ select {
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #1877f2;
+  color: #38bdf8;
 }
 
 .cr-question-text {
@@ -2866,9 +2921,9 @@ select {
 }
 
 .cr-question-option-item.selected {
-  background: rgba(24, 119, 242, 0.12);
-  border-color: #1877f2;
-  box-shadow: 0 0 0 1px #1877f2;
+  background: rgba(64, 118, 142, 0.15);
+  border-color: var(--vscode-badge-background, #40768e);
+  box-shadow: 0 0 0 1px var(--vscode-badge-background, #40768e);
 }
 
 .cr-question-radio-circle {
@@ -2889,7 +2944,7 @@ select {
 }
 
 .cr-question-option-item.selected .cr-question-radio-circle {
-  border-color: #1877f2;
+  border-color: #38bdf8;
 }
 
 .cr-question-radio-dot {
@@ -2901,7 +2956,7 @@ select {
 }
 
 .cr-question-option-item.selected .cr-question-radio-dot {
-  background: #1877f2;
+  background: #38bdf8;
 }
 
 .cr-question-opt-content {
@@ -2939,17 +2994,18 @@ select {
   font-size: 12.5px;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .cr-question-custom-input:focus {
-  border-color: #1877f2;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
 }
 
 .cr-question-submit-btn {
-  background: #1877f2;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
-  border: none;
+  border: 1px solid var(--vscode-badge-background, #40768e);
   border-radius: 8px;
   padding: 8px 16px;
   font-size: 12.5px;
@@ -2958,11 +3014,14 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 2px 6px rgba(64, 118, 142, 0.3);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 .cr-question-submit-btn:hover {
-  background: #166fe5;
+  background: #4c8ca8;
+  border-color: #4c8ca8;
+  box-shadow: 0 4px 12px rgba(64, 118, 142, 0.4);
 }
 
 .cr-question-submit-btn:active {
@@ -2975,8 +3034,8 @@ select {
 }
 
 .cr-question-resolved-chip {
-  background: rgba(24, 119, 242, 0.08);
-  border: 1px solid rgba(24, 119, 242, 0.25);
+  background: rgba(64, 118, 142, 0.12);
+  border: 1px solid rgba(64, 118, 142, 0.3);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
@@ -2987,7 +3046,7 @@ select {
 }
 
 .cr-question-resolved-chip strong {
-  color: #58a6ff;
+  color: #38bdf8;
 }
 
 .cr-question-resolved-chip em {
@@ -3916,13 +3975,13 @@ body.vscode-light .cr-question-banner {
 }
 
 body.vscode-light .cr-question-badge-icon {
-  background: #0969da;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(9, 105, 218, 0.3);
+  box-shadow: 0 2px 8px rgba(64, 118, 142, 0.25);
 }
 
 body.vscode-light .cr-question-badge-title {
-  color: #0969da;
+  color: var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-text {
@@ -3936,13 +3995,13 @@ body.vscode-light .cr-question-option-item {
 
 body.vscode-light .cr-question-option-item:hover {
   background: #f3f4f6;
-  border-color: #0969da;
+  border-color: var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-option-item.selected {
-  background: rgba(9, 105, 218, 0.08);
-  border-color: #0969da;
-  box-shadow: 0 0 0 1px #0969da;
+  background: rgba(64, 118, 142, 0.1);
+  border-color: var(--vscode-badge-background, #40768e);
+  box-shadow: 0 0 0 1px var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-radio-circle {
@@ -3950,11 +4009,11 @@ body.vscode-light .cr-question-radio-circle {
 }
 
 body.vscode-light .cr-question-option-item.selected .cr-question-radio-circle {
-  border-color: #0969da;
+  border-color: var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-option-item.selected .cr-question-radio-dot {
-  background: #0969da;
+  background: var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-opt-label {
@@ -3972,21 +4031,21 @@ body.vscode-light .cr-question-custom-input {
 }
 
 body.vscode-light .cr-question-custom-input:focus {
-  border-color: #0969da;
+  border-color: var(--vscode-badge-background, #40768e);
 }
 
 body.vscode-light .cr-question-submit-btn {
-  background: #0969da;
+  background: var(--vscode-badge-background, #40768e);
   color: #ffffff;
 }
 
 body.vscode-light .cr-question-submit-btn:hover {
-  background: #0860ca;
+  background: #4c8ca8;
 }
 
 body.vscode-light .cr-question-resolved-chip {
-  background: rgba(9, 105, 218, 0.06);
-  border-color: rgba(9, 105, 218, 0.2);
+  background: rgba(64, 118, 142, 0.08);
+  border-color: rgba(64, 118, 142, 0.25);
   color: #24292f;
 }
 

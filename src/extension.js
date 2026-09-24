@@ -671,15 +671,22 @@ async function sendCurrentSettings(webview) {
 
   var hasKeyMap = {};
   var providerKeys = Object.keys(providerConfigs);
-  for (var pi = 0; pi < providerKeys.length; pi++) {
-    var pk = providerKeys[pi];
-    try {
-      var pkKey = await config.getApiKey(extensionContext, pk);
+  function checkOneKey(pk) {
+    function resolveOneKey(pkKey) {
       hasKeyMap[pk] = !!pkKey && pkKey.length > 0;
-    } catch (_) {
+    }
+    function catchOneKey() {
       hasKeyMap[pk] = false;
     }
+    return config.getApiKey(extensionContext, pk)
+      .then(resolveOneKey)
+      .catch(catchOneKey);
   }
+  var keyPromises = [];
+  for (var pi = 0; pi < providerKeys.length; pi++) {
+    keyPromises.push(checkOneKey(providerKeys[pi]));
+  }
+  await Promise.all(keyPromises);
 
   webview.postMessage({
     type: 'currentSettings',
@@ -715,6 +722,7 @@ async function handleFrontendMessage(message, webview) {
     case 'webviewReady': {
       var wsFolder = getWorkspaceFolder();
       webview.postMessage({ type: 'workspaceFolder', path: wsFolder });
+      await sendCurrentSettings(webview);
       try {
         var stored = extensionContext?.globalState.get('coderun_conversations', '[]') || '[]';
         var selectedModel = extensionContext?.globalState.get('coderun_selected_model', '') || '';
@@ -737,8 +745,13 @@ async function handleFrontendMessage(message, webview) {
       } catch (e) {
         console.error('[CODERUN] Failed to send initial data:', e);
       }
-      await sendCurrentSettings(webview);
       await refreshAllProviderModels(webview);
+      break;
+    }
+
+    case 'getSettings':
+    case 'loadSettings': {
+      await sendCurrentSettings(webview);
       break;
     }
 
