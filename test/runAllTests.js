@@ -3255,6 +3255,225 @@ assert.strictEqual(customNode.command, 'npx', 'Custom under Node.js runtime uses
 
 console.log('✓ Vector 80 Passed: Pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and multi-runtime template assets verified.');
 
+// --- TEST 81: Calling Model API Animation & Unified Reasoning Tokens Contract ---
+console.log('\n--- TEST 81: Calling Model API Animation & Unified Reasoning Tokens Contract ---');
+
+var compCode81 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
+var openAiCode81 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
+var agentLoopCode81 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode81 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCss81 = fs.readFileSync(path.resolve('src/ChatSpace.css'), 'utf-8');
+
+// 1. Verify providerCompatible & providerOpenAI do not force redundant reasoning_summary
+assert.ok(!compCode81.includes('body.reasoning_summary = true;'), 'providerCompatible does not force body.reasoning_summary');
+assert.ok(!compCode81.includes('body.reasoning_summary_wait = true;'), 'providerCompatible does not force body.reasoning_summary_wait');
+assert.ok(!openAiCode81.includes('body.reasoning_summary = true;'), 'providerOpenAI does not force body.reasoning_summary');
+assert.ok(!openAiCode81.includes('body.reasoning_summary_wait = true;'), 'providerOpenAI does not force body.reasoning_summary_wait');
+
+// 2. Verify providers prioritize delta reasoning_content over summaries
+assert.ok(compCode81.includes('hasStreamedThinking'), 'providerCompatible tracks streamed thinking');
+assert.ok(openAiCode81.includes('hasStreamedThinking'), 'providerOpenAI tracks streamed thinking');
+
+// 3. Verify agentLoop emits calling_api status on iteration start
+assert.ok(agentLoopCode81.includes("status: 'calling_api'"), 'agentLoop emits calling_api status');
+assert.ok(agentLoopCode81.includes("model: (config && config.model) || ''"), 'agentLoop includes model in calling_api status');
+
+// 4. Verify ChatSpace.js implements calling indicator & unified think block helpers
+assert.ok(chatSpaceCode81.includes('function showCallingIndicator('), 'ChatSpace defines showCallingIndicator');
+assert.ok(chatSpaceCode81.includes('function removeCallingIndicator('), 'ChatSpace defines removeCallingIndicator');
+assert.ok(chatSpaceCode81.includes('function ensureThinkBlock('), 'ChatSpace defines ensureThinkBlock');
+assert.ok(chatSpaceCode81.includes('function closeThinkBlock('), 'ChatSpace defines closeThinkBlock');
+assert.ok(chatSpaceCode81.includes("rawStatus === 'calling_api'"), 'ChatSpace handles calling_api status');
+
+// 5. Verify ChatSpace.css styles the animated calling indicator
+assert.ok(chatSpaceCss81.includes('.cr-calling-indicator'), 'ChatSpace.css defines .cr-calling-indicator');
+assert.ok(chatSpaceCss81.includes('.cr-calling-spinner'), 'ChatSpace.css defines .cr-calling-spinner');
+assert.ok(chatSpaceCss81.includes('.cr-calling-dots'), 'ChatSpace.css defines .cr-calling-dots');
+
+console.log('✓ Vector 81 Passed: Calling model API animation & unified reasoning tokens contract verified.');
+
+// --- TEST 82: Universal Provider Reasoning Deduplication, Tool Fallback & Chronological DOM Contract ---
+console.log('\n--- TEST 82: Universal Provider Reasoning Deduplication, Tool Fallback & Chronological DOM Contract ---');
+
+var groqCode82 = fs.readFileSync(path.resolve('src/providers/providerGroq.js'), 'utf-8');
+var ollamaCode82 = fs.readFileSync(path.resolve('src/providers/providerOllama.js'), 'utf-8');
+var openRouterCode82 = fs.readFileSync(path.resolve('src/providers/providerOpenRouter.js'), 'utf-8');
+var anthropicCode82 = fs.readFileSync(path.resolve('src/providers/providerAnthropic.js'), 'utf-8');
+var agentLoopCode82 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode82 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+
+// 1. Verify all providers track hasStreamedThinking and deduplicate reasoning summaries
+assert.ok(groqCode82.includes('hasStreamedThinking'), 'providerGroq tracks streamed thinking');
+assert.ok(ollamaCode82.includes('hasStreamedThinking'), 'providerOllama tracks streamed thinking');
+assert.ok(openRouterCode82.includes('hasStreamedThinking'), 'providerOpenRouter tracks streamed thinking');
+assert.ok(anthropicCode82.includes('hasStreamedThinking'), 'providerAnthropic tracks streamed thinking');
+
+// 2. Verify agentLoop defines and executes extractFallbackToolCalls
+assert.ok(agentLoopCode82.includes('function extractFallbackToolCalls('), 'agentLoop defines extractFallbackToolCalls');
+assert.ok(agentLoopCode82.includes('Recovered'), 'agentLoop logs recovery of tool call(s) from JSON content fallback');
+
+// 3. Verify tool_use blocks in providerAnthropic convertMessages
+assert.ok(anthropicCode82.includes("type: 'tool_use'"), 'providerAnthropic formats assistant tool_use blocks');
+
+// 4. Verify ChatSpace.js appendThinkBlock uses body.appendChild to maintain chronological ordering
+assert.ok(chatSpaceCode82.includes('function appendThinkBlock(body)'), 'ChatSpace defines appendThinkBlock');
+assert.ok(chatSpaceCode82.includes('body.appendChild(det);'), 'ChatSpace appendThinkBlock appends to body to avoid stacking');
+
+// 5. Verify loadConversation validates non-empty thinking strings
+assert.ok(chatSpaceCode82.includes('thinking && typeof thinking === \'string\' && thinking.trim().length > 0'), 'loadConversation checks non-empty trimmed thinking');
+
+console.log('✓ Vector 82 Passed: Universal provider reasoning deduplication, tool fallback & chronological DOM contract verified.');
+
+// --- TEST 83: Terminal Execution Integrity, Stream Tool Buffering & Redundant Thought Prevention ---
+console.log('\n--- TEST 83: Terminal Execution Integrity, Stream Tool Buffering & Redundant Thought Prevention ---');
+
+var termMgrCode83 = fs.readFileSync(path.resolve('src/tools/terminalManager.js'), 'utf-8');
+var agentLoopCode83 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode83 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+
+// 1. Verify terminalManager has isBatchCommand and doesn't treat batch flags as interactive
+assert.ok(termMgrCode83.includes('function isBatchCommand(command)'), 'terminalManager defines isBatchCommand');
+assert.ok(termMgrCode83.includes('if (isBatchCommand(trimmed)) return false;'), 'checkInteractiveCommand excludes batch commands');
+assert.strictEqual(terminalManager.isInteractiveCommand('npm init -y'), false, 'npm init -y is recognized as non-interactive batch');
+assert.strictEqual(terminalManager.isInteractiveCommand('powershell -Command "Write-Output hello"'), false, 'powershell -Command is recognized as non-interactive batch');
+assert.strictEqual(terminalManager.isInteractiveCommand('node -e "console.log(1)"'), false, 'node -e is recognized as non-interactive batch');
+assert.strictEqual(terminalManager.isInteractiveCommand('python -i'), true, 'python -i is recognized as interactive');
+
+// 2. Verify INTERACTIVE_PATTERNS does not contain generic colon or greater-than line endings
+assert.ok(!termMgrCode83.includes('/:\\s*$/,'), 'INTERACTIVE_PATTERNS does not contain generic colon regex');
+assert.ok(!termMgrCode83.includes('/>\\s*$/,'), 'INTERACTIVE_PATTERNS does not contain generic greater-than regex');
+
+// 3. Verify checkPromptSilence requires both interactive command context and prompt detection with safe 1500ms debounce
+assert.ok(termMgrCode83.includes('if (!effectiveInteractive)'), 'checkPromptSilence guards against non-interactive commands');
+assert.ok(termMgrCode83.includes('}, 1500);'), 'checkPromptSilence uses safe 1500ms debounce');
+
+// 4. Verify agentLoop guards forceConclusion against duplicate thinking
+assert.ok(agentLoopCode83.includes('(!iterationThinking || !iterationThinking.trim())'), 'agentLoop guards forceConclusion when thinking is already present');
+
+// 5. Verify agentLoop buffers potential raw JSON tool calls during stream
+assert.ok(agentLoopCode83.includes('isBufferingPotentialToolCall'), 'agentLoop defines isBufferingPotentialToolCall');
+assert.ok(agentLoopCode83.includes('bufferedJsonContent'), 'agentLoop defines bufferedJsonContent');
+
+// 6. Verify ChatSpace loadHistory recovers or cleans raw JSON tool calls
+assert.ok(chatSpaceCode83.includes('cleanJson.indexOf(\'"tool_calls"\') !== -1'), 'ChatSpace loadHistory cleans raw JSON tool calls from markdown content');
+
+console.log('✓ Vector 83 Passed: Terminal execution integrity, stream tool buffering & redundant thought prevention verified.');
+
+// --- TEST 84: Model-Driven Interactivity & Background Decision Contract ---
+console.log('\n--- TEST 84: Model-Driven Interactivity & Background Decision Contract ---');
+
+var toolsCode84 = fs.readFileSync(path.resolve('src/tools/tools.js'), 'utf-8');
+
+// 1. Verify isBlockingTtyCommand is defined and accurately identifies blocking TTY editors
+assert.ok(termMgrCode83.includes('function isBlockingTtyCommand(command)'), 'terminalManager defines isBlockingTtyCommand');
+assert.strictEqual(terminalManager.isBlockingTtyCommand('vim test.txt'), true, 'vim is recognized as blocking TTY command');
+assert.strictEqual(terminalManager.isBlockingTtyCommand('nano /etc/hosts'), true, 'nano is recognized as blocking TTY command');
+assert.strictEqual(terminalManager.isBlockingTtyCommand('top'), true, 'top is recognized as blocking TTY command');
+assert.strictEqual(terminalManager.isBlockingTtyCommand('npm test'), false, 'npm test is not a blocking TTY command');
+
+// 2. Verify executeCommand prioritizes model decisions for isInteractive and background
+assert.ok(termMgrCode83.includes('var effectiveInteractive = false;'), 'executeCommand computes effectiveInteractive');
+assert.ok(termMgrCode83.includes('if (typeof isInteractive === \'boolean\')'), 'executeCommand respects model-specified isInteractive');
+assert.ok(termMgrCode83.includes('var effectiveBackground = false;'), 'executeCommand computes effectiveBackground');
+assert.ok(termMgrCode83.includes('if (typeof background === \'boolean\')'), 'executeCommand respects model-specified background');
+
+// 3. Verify tools.js passes model-specified arguments to terminalManager
+assert.ok(toolsCode84.includes('args.background != null'), 'run_terminal extracts background as explicit boolean if provided');
+assert.ok(toolsCode84.includes('args.is_interactive != null'), 'run_terminal extracts is_interactive as explicit boolean if provided');
+
+console.log('✓ Vector 84 Passed: Model-driven interactivity & background decision contract verified.');
+
+// --- TEST 85: Terminal Pager Hang Prevention, Git Pager Suppression & Model Selection Sync ---
+console.log('\n--- TEST 85: Terminal Pager Hang Prevention, Git Pager Suppression & Model Selection Sync ---');
+
+var termMgrCode85 = fs.readFileSync(path.resolve('src/tools/terminalManager.js'), 'utf-8');
+var toolsCode85 = fs.readFileSync(path.resolve('src/tools/tools.js'), 'utf-8');
+var chatSpaceCode85 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var dashboardCode85 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var agentLoopCode85 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+
+// 1. Verify terminalManager has pager patterns in INTERACTIVE_PATTERNS
+assert.ok(termMgrCode85.includes('/\\(END\\)\\s*$/i'), 'INTERACTIVE_PATTERNS contains (END) pager pattern');
+assert.ok(termMgrCode85.includes('/SUMMARY OF LESS COMMANDS/i'), 'INTERACTIVE_PATTERNS contains SUMMARY OF LESS COMMANDS pattern');
+assert.ok(termMgrCode85.includes('/HELP -- Press RETURN/i'), 'INTERACTIVE_PATTERNS contains HELP -- Press RETURN pattern');
+assert.ok(termMgrCode85.includes('/\\(press q to quit\\)/i'), 'INTERACTIVE_PATTERNS contains (press q to quit) pattern');
+
+// 2. Verify git pager suppression in terminalManager
+assert.ok(termMgrCode85.includes("GIT_PAGER: 'cat'"), 'terminalManager sets GIT_PAGER=cat in termOptions.env');
+assert.ok(termMgrCode85.includes("PAGER: 'cat'"), 'terminalManager sets PAGER=cat in termOptions.env');
+assert.ok(termMgrCode85.includes('$env:GIT_PAGER = "cat"; $env:PAGER = "cat";'), 'terminalManager prefixes git commands with PowerShell pager suppression');
+assert.ok(termMgrCode85.includes('GIT_PAGER=cat PAGER=cat'), 'terminalManager prefixes git commands with POSIX pager suppression');
+
+// 3. Verify Model Selection Synchronization across UI & Agent Loop
+assert.ok(chatSpaceCode85.includes('function resolveCurrentModel(chatCtx, ev)'), 'ChatSpace defines resolveCurrentModel');
+assert.ok(chatSpaceCode85.includes('showCallingIndicator(S, resolveCurrentModel(chatCtx, ev))'), 'ChatSpace calls showCallingIndicator with resolveCurrentModel');
+assert.ok(dashboardCode85.includes('window.currentModel = model;'), 'Dashboard syncs window.currentModel on model select');
+assert.ok(dashboardCode85.includes('window.activeChatCtx.model = model;'), 'Dashboard syncs window.activeChatCtx.model on model select');
+assert.ok(agentLoopCode85.includes("model: (config && config.model) || ''"), 'agentLoop includes model in AGENT_ITERATION event');
+
+// 4. Verify run_terminal inspection guidance for pager and interactive prompts
+assert.ok(toolsCode85.includes('waiting_for_input: checkResult.waitingForInput === true'), 'run_terminal empty command reports waiting_for_input');
+assert.ok(toolsCode85.includes('"q" to exit a pager'), 'run_terminal provides guidance to use terminal_input "q" to exit a pager');
+
+console.log('✓ Vector 85 Passed: Terminal pager hang prevention, git pager suppression & model selection sync verified.');
+
+// --- TEST 86: check_terminal_state Tool Contract, Main vs Background Introspection & Exit Code Zero ---
+console.log('\n--- TEST 86: check_terminal_state Tool Contract, Main vs Background Introspection & Exit Code Zero ---');
+
+var sid86 = 'sess_term_state_test_' + Date.now();
+
+// 1. Initially idle state for both main and background
+var idleMainState86 = await terminalManager.getTerminalState(sid86, { background: false });
+assert.strictEqual(idleMainState86.terminal, 'main', 'Reports main terminal when background is false');
+assert.strictEqual(idleMainState86.has_executed_command, false, 'has_executed_command is false when idle');
+assert.strictEqual(idleMainState86.status, 'idle', 'Status is idle initially');
+assert.strictEqual(idleMainState86.exit_code, null, 'Exit code is null initially');
+assert.strictEqual(idleMainState86.exit_code_zero, false, 'exit_code_zero is false when idle');
+
+var idleBgState86 = await terminalManager.getTerminalState(sid86, { background: true });
+assert.strictEqual(idleBgState86.terminal, 'background', 'Reports background terminal when background is true');
+assert.strictEqual(idleBgState86.has_executed_command, false, 'Background has_executed_command is false initially');
+assert.strictEqual(idleBgState86.status, 'idle', 'Background status is idle initially');
+
+// 2. Execute a command on main terminal and verify getTerminalState tracks command, output, and exit_code_zero === true
+var testWs86 = path.resolve('scratch');
+var cmdResult86 = await terminalManager.executeCommand('node -e "console.log(\'STATE_OK_86\')"', 10, false, false, sid86, testWs86);
+assert.strictEqual(cmdResult86.success, true, 'Command executed successfully');
+
+var activeMainState86 = await terminalManager.getTerminalState(sid86, { background: false });
+assert.strictEqual(activeMainState86.terminal, 'main', 'Reports main terminal');
+assert.strictEqual(activeMainState86.has_executed_command, true, 'has_executed_command is true after command execution');
+assert.ok(activeMainState86.command.includes('STATE_OK_86'), 'Last command recorded properly');
+assert.ok(activeMainState86.stdout.includes('STATE_OK_86'), 'stdout output recorded properly');
+assert.strictEqual(activeMainState86.exit_code, 0, 'Exit code is 0');
+assert.strictEqual(activeMainState86.exit_code_zero, true, 'exit_code_zero is true for exit code 0');
+assert.strictEqual(activeMainState86.status, 'completed', 'Status is completed');
+
+// 3. Verify Background terminal remains isolated and idle, while cross-referencing session history
+var isolatedBgState86 = await terminalManager.getTerminalState(sid86, { background: true });
+assert.strictEqual(isolatedBgState86.terminal, 'background', 'Background terminal query is isolated');
+assert.strictEqual(isolatedBgState86.has_executed_command, false, 'Background terminal remains unexecuted');
+assert.strictEqual(isolatedBgState86.status, 'idle', 'Background terminal remains idle');
+assert.strictEqual(isolatedBgState86.cross_referenced, true, 'Cross-referenced main terminal execution when background is idle');
+assert.ok(isolatedBgState86.command.includes('STATE_OK_86'), 'Command from main terminal is preserved');
+assert.ok(isolatedBgState86.stdout.includes('STATE_OK_86'), 'Stdout from main terminal is preserved');
+
+// 4. Verify check_terminal_state registration in toolRegistry
+assert.ok(toolRegistry.has('check_terminal_state'), 'check_terminal_state is registered in toolRegistry');
+assert.ok(toolRegistry.has('get_terminal_state'), 'get_terminal_state alias is registered in toolRegistry');
+var checkStateTool86 = toolRegistry.get('check_terminal_state');
+assert.ok(checkStateTool86, 'check_terminal_state descriptor exists');
+assert.ok(checkStateTool86.parameters && checkStateTool86.parameters.background, 'check_terminal_state defines background parameter');
+assert.ok(checkStateTool86.parameters && checkStateTool86.parameters.terminal, 'check_terminal_state defines terminal parameter');
+var checkStateDef86 = toolRegistry.getDefinition('check_terminal_state');
+assert.ok(checkStateDef86 && checkStateDef86.function && checkStateDef86.function.parameters.properties.background, 'check_terminal_state schema defines background in definition');
+assert.strictEqual(toolRegistry.isReadOnly('check_terminal_state'), true, 'check_terminal_state is marked readOnly');
+
+// Clean up session
+terminalManager.removeSession(sid86);
+
+console.log('✓ Vector 86 Passed: check_terminal_state tool contract, main vs background introspection & exit code zero verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3267,7 +3486,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 80 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 86 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

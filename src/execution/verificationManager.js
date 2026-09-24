@@ -33,6 +33,8 @@ export async function verifyStep(stepResult, stepArgs, workspace) {
     case 'run_terminal':
     case 'terminal_input':
     case 'stop_terminal':
+    case 'check_terminal_state':
+    case 'get_terminal_state':
     case 'terminal':
     case 'bash':
     case 'execute_command':

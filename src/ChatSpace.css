@@ -19,6 +19,7 @@ body,
 .cr-root {
   width: 100% !important;
   height: 100% !important;
+  flex: 1;
   margin: 0 !important;
   padding: 0 !important;
   min-width: 0;
@@ -158,15 +159,23 @@ select {
 
 /* ── Message list ──────────────────────────────────────── */
 .cr-msg-list {
-  flex: 1;
+  flex: 1 1 0%;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 16px 12px;
-  overflow-anchor: auto;
+  padding: 16px 16px 40px;
+  overflow-anchor: none !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: 12px;
   background: #0b0f17 !important;
+}
+
+.cr-row,
+.cr-row * {
+  overflow-anchor: none;
 }
 
 .cr-msg-list::-webkit-scrollbar        { width: 5px; }
@@ -328,6 +337,59 @@ select {
 }
 
 @keyframes cs-rotate { to { transform: rotate(360deg); } }
+
+/* ── Calling Model API Animation ───────────────────────── */
+.cr-calling-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  margin: 6px 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(99, 102, 241, 0.12));
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.15);
+  animation: cs-fadeIn 0.2s ease-in-out;
+  user-select: none;
+}
+
+.cr-calling-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #38bdf8;
+  border-right-color: #818cf8;
+  border-radius: 50%;
+  animation: cs-rotate 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+.cr-calling-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #93c5fd;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  letter-spacing: 0.2px;
+}
+
+.cr-calling-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.cr-calling-dots span {
+  width: 3.5px;
+  height: 3.5px;
+  background: #38bdf8;
+  border-radius: 50%;
+  display: inline-block;
+  animation: cs-bounce 1.2s ease-in-out infinite;
+}
+
+.cr-calling-dots span:nth-child(2) { animation-delay: 0.2s; }
+.cr-calling-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 /* ── Thinking block ──────────────────────────────────── */
 .cr-think-block {

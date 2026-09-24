@@ -224,6 +224,7 @@ function initializeChatSpace() {
       'run_terminal': 'Run Terminal',
       'terminal_input': 'Terminal Input',
       'stop_terminal': 'Stop Terminal',
+      'check_terminal_state': 'Check Terminal State',
       'create_plan': 'Create Plan',
       'update_plan': 'Update Plan',
       'get_current_datetime': 'Get Datetime',
@@ -271,7 +272,11 @@ function initializeChatSpace() {
       return args.path || args.file_path || args.target_file || '';
     }
     if (toolName === 'run_terminal') {
-      return args.command || '';
+      return args.command || args.cmd || args.commandLine || '';
+    }
+    if (toolName === 'check_terminal_state') {
+      var isBg = (args && (args.background === true || args.terminal === 'background' || args.terminal === 'bg'));
+      return isBg ? 'Background Terminal (CodeRun(BG))' : 'Main Terminal (CodeRun(main))';
     }
     if (toolName === 'ask_question') {
       return args.question || '';
@@ -316,6 +321,7 @@ function initializeChatSpace() {
       'run_terminal': '💻',
       'terminal_input': '⌨️',
       'stop_terminal': '🛑',
+      'check_terminal_state': '📊',
       'create_plan': '📋',
       'update_plan': '📋',
       'get_current_datetime': '🕒',
@@ -360,7 +366,8 @@ function initializeChatSpace() {
     var S = chatCtx.S;
     if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
     if (_scrollRAF) { cancelAnimationFrame(_scrollRAF); _scrollRAF = null; }
-    S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+    removeCallingIndicator(S);
+    S.thinkBlock = null; S.iterationThinkBlock = null; S.thinkPre = null; S.thinkText = '';
     S.fullThinking = ''; S.iterationThinking = '';
     S.contentDiv = null; S.contentText = '';
     S.actionList = null; S.actionMap = {};
@@ -1288,7 +1295,35 @@ function initializeChatSpace() {
             }
             console.log('[LOAD_HISTORY] final thinking resolved:', !!thinking, thinking ? thinking.substring(0, 80) : '(none)');
 
-            if (thinking) {
+            if ((!m.tool_calls || !m.tool_calls.length) && content && (content.indexOf('"tool_calls"') !== -1 || content.indexOf('"name":') !== -1)) {
+              var cleanJson = content.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+              try {
+                var parsedObj = JSON.parse(cleanJson);
+                var extractedCalls = null;
+                if (parsedObj.tool_calls && Array.isArray(parsedObj.tool_calls)) {
+                  extractedCalls = parsedObj.tool_calls;
+                } else if (parsedObj.name && (parsedObj.arguments || parsedObj.parameters)) {
+                  extractedCalls = [{
+                    id: parsedObj.id || ('call_' + Date.now()),
+                    type: 'function',
+                    function: {
+                      name: parsedObj.name,
+                      arguments: typeof (parsedObj.arguments || parsedObj.parameters) === 'string' ? (parsedObj.arguments || parsedObj.parameters) : JSON.stringify(parsedObj.arguments || parsedObj.parameters)
+                    }
+                  }];
+                }
+                if (extractedCalls && extractedCalls.length) {
+                  m.tool_calls = extractedCalls;
+                  content = '';
+                }
+              } catch (_) {
+                if (cleanJson.indexOf('"tool_calls"') !== -1) {
+                  content = '';
+                }
+              }
+            }
+
+            if (thinking && typeof thinking === 'string' && thinking.trim().length > 0) {
               var det = appendThinkBlock(body);
               var pre = det.querySelector('.cr-think-pre');
               if (pre) pre.textContent = thinking;
@@ -1402,6 +1437,9 @@ function initializeChatSpace() {
   function setStreaming(chatCtx, on) {
     var S = chatCtx.S;
     S.isStreaming = on;
+    if (!on) {
+      removeCallingIndicator(S);
+    }
     var sendBtn = chatCtx.sendBtn;
     var input = chatCtx.input;
     var stopBtn = chatCtx.stopBtn;
@@ -1485,12 +1523,24 @@ function initializeChatSpace() {
     if (S.fullResponse || S.fullThinking || S.media || (S._toolCalls && S._toolCalls.length)) {
       var extra = {};
       if (S.sources && S.sources.length) extra.sources = S.sources;
-      if (S.fullThinking) extra.thinking = S.fullThinking;
+      if (S.fullThinking) {
+        extra.thinking = S.fullThinking;
+        if (S.thinkingKey) {
+          extra.thinkingKey = S.thinkingKey;
+          extra[S.thinkingKey] = S.fullThinking;
+        }
+      }
       if (S.media) extra.media = S.media;
       if (S._toolCalls && S._toolCalls.length) extra.tool_calls = S._toolCalls;
       var lastMsg = chatCtx.conversation.messages[chatCtx.conversation.messages.length - 1];
       if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === (S.fullResponse || '')) {
-        if (S.fullThinking && !lastMsg.thinking) lastMsg.thinking = S.fullThinking;
+        if (S.fullThinking && !lastMsg.thinking) {
+          lastMsg.thinking = S.fullThinking;
+          if (S.thinkingKey) {
+            lastMsg.thinkingKey = S.thinkingKey;
+            lastMsg[S.thinkingKey] = S.fullThinking;
+          }
+        }
         if (S.media && !lastMsg.media) lastMsg.media = S.media;
         if (S._toolCalls && S._toolCalls.length && !lastMsg.tool_calls) lastMsg.tool_calls = S._toolCalls;
         return;
@@ -1498,13 +1548,18 @@ function initializeChatSpace() {
       if (window.saveConversationMessage) {
         window.saveConversationMessage(chatCtx.convId, 'assistant', S.fullResponse || '', extra);
       } else {
-        chatCtx.conversation.messages.push({
+        var newAssistantMsg = {
           role: 'assistant',
           content: S.fullResponse || '',
           thinking: S.fullThinking,
           tool_calls: S._toolCalls,
           timestamp: Date.now()
-        });
+        };
+        if (S.thinkingKey) {
+          newAssistantMsg.thinkingKey = S.thinkingKey;
+          if (S.fullThinking) newAssistantMsg[S.thinkingKey] = S.fullThinking;
+        }
+        chatCtx.conversation.messages.push(newAssistantMsg);
       }
     }
   }
@@ -1604,6 +1659,11 @@ function initializeChatSpace() {
     }
     var S = chatCtx.S;
     var msgList = chatCtx.msgList;
+    if (ev && ev.model) {
+      chatCtx.model = ev.model;
+      window.currentModel = ev.model;
+      if (chatCtx.conversation) chatCtx.conversation.model = ev.model;
+    }
     if (ev && ev.message && ev.message.content) {
       console.log('[CHATSPACE] Received content event:', ev.message.content.substring(0, 100));
     }
@@ -1748,6 +1808,10 @@ function initializeChatSpace() {
       var currentWorkspace = (window.getDashboardWorkspace ? window.getDashboardWorkspace() : '') || workspace;
       var currentBaseUrl = (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : '') || baseUrl;
 
+      chatCtx.model = currentModel;
+      window.currentModel = currentModel;
+      if (conversation) conversation.model = currentModel;
+
       if (!currentModel) {
         if (window.webviewAlert) {
           window.webviewAlert('Please select a model from the dropdown before sending a message.');
@@ -1788,7 +1852,7 @@ function initializeChatSpace() {
       clearStreamTurn(chatCtx);
       S.fullResponse = '';
       S.botBody = appendBotWrapper(msgList);
-      appendTyping(S.botBody);
+      showCallingIndicator(S, currentModel);
       setStreaming(chatCtx, true);
       scrollBottom(msgList);
 
@@ -1880,6 +1944,10 @@ function initializeChatSpace() {
       var currentWorkspace = (window.getDashboardWorkspace ? window.getDashboardWorkspace() : '') || workspace;
       var currentBaseUrl = (window.getDashboardBaseUrl ? window.getDashboardBaseUrl() : '') || baseUrl;
 
+      chatCtx.model = currentModel;
+      window.currentModel = currentModel;
+      if (conversation) conversation.model = currentModel;
+
       if (!currentModel) {
         if (window.webviewAlert) {
           window.webviewAlert('Please select a model from the dropdown before resuming.');
@@ -1896,7 +1964,7 @@ function initializeChatSpace() {
       if (!S.botBody || !S.botBody.parentNode) {
         S.botBody = appendBotWrapper(msgList);
       }
-      appendTyping(S.botBody);
+      showCallingIndicator(S, currentModel);
       setStreaming(chatCtx, true);
       scrollBottom(msgList);
 
@@ -1976,19 +2044,10 @@ function initializeChatSpace() {
     if (ev.message && typeof ev.message === 'object' && !Array.isArray(ev.message)) {
       var msg = ev.message;
       if (msg.thinking) {
-        removeTyping(S.botBody);
-        if (!S.thinkBlock) {
-          closeAllOpenCards(S);
-          S.thinkBlock = appendThinkBlock(S.botBody);
-          S.thinkBlock.open = true;
-          S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
-          S.thinkText = '';
-          S.iterationThinking = '';
-          if (S.fullResponse) {
-            var trailingLbl = S.thinkBlock.querySelector('.cr-think-label');
-            if (trailingLbl) trailingLbl.textContent = 'Thought process';
-          }
+        if (msg.thinkingKey && !S.thinkingKey) {
+          S.thinkingKey = msg.thinkingKey;
         }
+        ensureThinkBlock(S);
         var chunk = msg.thinking;
         S.thinkText += chunk;
         S.iterationThinking += chunk;
@@ -1999,36 +2058,25 @@ function initializeChatSpace() {
         }
       }
       if (msg.content) {
-        if (S.thinkBlock && S.thinkBlock.open) {
-          var lbl = S.thinkBlock.querySelector('.cr-think-label');
-          if (lbl) lbl.textContent = 'Thought process';
-          if (S.thinkBlock.dataset.userOpened !== 'true') {
-            S.thinkBlock.open = false;
-          }
+        removeCallingIndicator(S);
+        var hasVisibleContent = typeof msg.content === 'string' && msg.content.trim().length > 0;
+        if (hasVisibleContent) {
+          closeThinkBlock(S);
         }
-        S.thinkBlock = null;
-        S.thinkPre = null;
-        S.thinkText = '';
         removeTyping(S.botBody);
         if (!S.contentDiv) { S.contentDiv = appendContentBlock(S.botBody); S.contentText = ''; }
         S.contentText += msg.content;
-        S.fullResponse = S.contentText;
+        S.fullResponse += msg.content;
         scheduleContentRender(S, chatCtx.msgList);
       }
       if (msg.media && !S.media) {
         S.media = msg.media;
       }
       if (msg.tool_calls && msg.tool_calls.length) {
+        removeCallingIndicator(S);
         removeTyping(S.botBody);
+        closeThinkBlock(S);
         closeCurrentContentBlock(S);
-        if (S.thinkBlock && S.thinkBlock.open && S.thinkBlock.dataset.userOpened !== 'true') {
-          S.thinkBlock.open = false;
-          var thinkLbl = S.thinkBlock.querySelector('.cr-think-label');
-          if (thinkLbl) thinkLbl.textContent = 'Thought process';
-        }
-        S.thinkBlock = null;
-        S.thinkPre = null;
-        S.thinkText = '';
         for (var tci = 0; tci < msg.tool_calls.length; tci++) {
           var tc = msg.tool_calls[tci];
           var fnName = (tc.function && tc.function.name) || tc.name || '';
@@ -2110,19 +2158,10 @@ function initializeChatSpace() {
           break;
         }
         case 'thinking': {
-          removeTyping(S.botBody);
-          if (!S.thinkBlock) {
-            closeAllOpenCards(S);
-            S.thinkBlock = appendThinkBlock(S.botBody);
-            S.thinkBlock.open = true;
-            S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
-            S.thinkText = '';
-            S.iterationThinking = '';
-            if (S.fullResponse) {
-              var trailingLbl2 = S.thinkBlock.querySelector('.cr-think-label');
-              if (trailingLbl2) trailingLbl2.textContent = 'Thought process';
-            }
+          if (ev.thinkingKey && !S.thinkingKey) {
+            S.thinkingKey = ev.thinkingKey;
           }
+          ensureThinkBlock(S);
           var chunk = ev.content || '';
           S.thinkText += chunk;
           S.iterationThinking += chunk;
@@ -2136,50 +2175,35 @@ function initializeChatSpace() {
         case 'thinking_complete': {
           if (S.thinkBlock) {
             var fullThink = ev.thinking || ev.full_thinking || ev.content || ev.full_content || S.thinkText;
-            if (fullThink) {
-              if (S.iterationThinking && S.fullThinking.endsWith(S.iterationThinking)) {
-                S.fullThinking = S.fullThinking.slice(0, -S.iterationThinking.length) + fullThink;
-              } else {
-                S.fullThinking = fullThink;
-              }
+            if (fullThink && S.thinkPre) {
+              S.thinkPre.textContent = fullThink;
             }
-            if (S.thinkPre) S.thinkPre.textContent = S.thinkText;
-            var lbl = S.thinkBlock.querySelector('.cr-think-label');
-            if (lbl) lbl.textContent = 'Thought process';
-            if (S.thinkBlock.dataset.userOpened !== 'true') {
-              S.thinkBlock.open = false;
-            }
-            S.thinkBlock = null;
-            S.thinkPre = null;
-            S.thinkText = '';
+            closeThinkBlock(S);
           }
           break;
         }
         case 'content': {
-          if (S.thinkBlock && S.thinkBlock.open) {
-            var lbl2 = S.thinkBlock.querySelector('.cr-think-label');
-            if (lbl2) lbl2.textContent = 'Thought process';
-            if (S.thinkBlock.dataset.userOpened !== 'true') {
-              S.thinkBlock.open = false;
-            }
+          removeCallingIndicator(S);
+          var hasVisibleContent2 = typeof ev.content === 'string' && ev.content.trim().length > 0;
+          if (hasVisibleContent2) {
+            closeThinkBlock(S);
           }
-          S.thinkBlock = null;
-          S.thinkPre = null;
-          S.thinkText = '';
           removeTyping(S.botBody);
           if (!S.contentDiv) { S.contentDiv = appendContentBlock(S.botBody); S.contentText = ''; }
           S.contentText += (ev.content || '');
-          S.fullResponse = S.contentText;
+          S.fullResponse += (ev.content || '');
           scheduleContentRender(S, chatCtx.msgList);
           break;
         }
         case 'ask_question': {
+          removeCallingIndicator(S);
           removeTyping(S.botBody);
           renderQuestionBanner(chatCtx, ev);
           closeCurrentContentBlock(S);
           break;
         }
         case 'requestPermission': {
+          removeCallingIndicator(S);
           removeTyping(S.botBody);
           if (ev.autoResolved) {
             var autoLine = mk('div', 'cr-permission-auto');
@@ -2209,7 +2233,9 @@ function initializeChatSpace() {
           break;
         }
         case 'tool_call': {
+          removeCallingIndicator(S);
           removeTyping(S.botBody);
+          closeThinkBlock(S);
           var toolId = ev.id || 'tool_' + (++S._toolIdCounter);
           var toolName = ev.tool || '';
           var toolArgs = ev.args || {};
@@ -2217,14 +2243,14 @@ function initializeChatSpace() {
 
           if (toolName === 'run_terminal') {
             reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
-            S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+            closeThinkBlock(S);
             closeCurrentContentBlock(S);
           } else {
             var card = reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
             if (card) {
               S.toolCallBlocks[ev.id || card.dataset.cardKey || ('tool_' + S._toolIdCounter)] = card;
             }
-            S.thinkBlock = null; S.thinkPre = null; S.thinkText = '';
+            closeThinkBlock(S);
             closeCurrentContentBlock(S);
           }
           break;
@@ -2700,15 +2726,23 @@ function initializeChatSpace() {
           if (rawStatus === 'waiting' || (typeof rawStatus === 'string' && rawStatus.toLowerCase().indexOf('waiting') !== -1)) {
             break;
           }
+          if (rawStatus === 'calling_api' || rawStatus === 'thinking') {
+            showCallingIndicator(S, resolveCurrentModel(chatCtx, ev));
+            break;
+          }
+          removeCallingIndicator(S);
           var statusMsg = ev.status === 'executing_tools' ? 'Executing ' + ev.count + ' tool call(s)...' : ev.status || '';
           if (statusMsg) appendStatusLine(S, S.botBody, statusMsg);
           break;
         }
         case 'agent_iteration': {
           S.iterationCount = ev.iteration;
+          closeThinkBlock(S);
+          S.iterationThinkBlock = null;
           S.thinkBlock = null; S.thinkPre = null; S.thinkText = ''; S.iterationThinking = '';
           closeCurrentContentBlock(S);
           clearStatusLines(S);
+          showCallingIndicator(S, resolveCurrentModel(chatCtx, ev));
           S.toolCards = {};
           S._seenToolIds = {};
           S._toolCalls = [];
@@ -2718,7 +2752,9 @@ function initializeChatSpace() {
         }
         case 'agent_done':
         case 'done': {
+          removeCallingIndicator(S);
           removeTyping(S.botBody);
+          closeThinkBlock(S);
           closeCurrentContentBlock(S);
           var finalContent = ev.content || ev.full_content;
           if (finalContent && (!S.botBody || !S.botBody.querySelector('.cr-content-block'))) {
@@ -2746,6 +2782,7 @@ function initializeChatSpace() {
         }
         case 'agent_error':
         case 'error': {
+          removeCallingIndicator(S);
           removeTyping(S.botBody);
           var agentErrMsg = formatErrorMessage(ev.message || ev.error || 'Error from agent');
           var existingLine = S.botBody ? S.botBody.querySelector('.cr-error-line') : null;
@@ -2946,15 +2983,21 @@ function initializeChatSpace() {
               }
             }
             var headerTitle = termCard.querySelector('.cr-terminal-header-title');
-            if (headerTitle && !headerTitle.textContent.includes('CodeRun(')) {
-              headerTitle.textContent = '[' + termBadgeText + '] ' + headerTitle.textContent;
+            var commandText = ev.command || ev.cmd || ev.commandLine || '';
+            if (headerTitle) {
+              if (commandText && !headerTitle.textContent.includes(commandText)) {
+                headerTitle.textContent = '[' + termBadgeText + '] ' + commandText;
+              } else if (!headerTitle.textContent.includes('CodeRun(')) {
+                headerTitle.textContent = '[' + termBadgeText + '] ' + headerTitle.textContent;
+              }
             }
             setTerminalCardStatus(termCard, 'running');
             S._terminalCards[termId] = termCard;
           } else {
             var emergencyKey = 'run_terminal_term_' + (++S._toolIdCounter) + '_' + Date.now();
+            var emergencyCmd = ev.command || ev.cmd || ev.commandLine || '';
             termCard = appendTerminalCard(S, chatCtx.msgList, S.botBody, emergencyKey, 'run_terminal',
-              { command: ev.command || '', shell: ev.shell || '', platform: ev.platform || '', background: ev.background },
+              { command: emergencyCmd, shell: ev.shell || '', platform: ev.platform || '', background: ev.background },
               'running', null);
             termCard.dataset.terminalId = termId;
             if (ev.background) {
@@ -3525,6 +3568,93 @@ function initializeChatSpace() {
     if (t && t.parentNode) t.parentNode.removeChild(t);
   }
 
+  function resolveCurrentModel(chatCtx, ev) {
+    if (ev && ev.model) return ev.model;
+    if (window.getDashboardModel) {
+      var dm = window.getDashboardModel();
+      if (dm) return dm;
+    }
+    if (window.currentModel) return window.currentModel;
+    if (chatCtx) {
+      if (chatCtx.model) return chatCtx.model;
+      if (chatCtx.conversation && chatCtx.conversation.model) return chatCtx.conversation.model;
+    }
+    return 'model';
+  }
+
+  function showCallingIndicator(S, modelName) {
+    if (!S || !S.botBody) return;
+    removeTyping(S.botBody);
+    if (S.callingIndicator && S.botBody.contains(S.callingIndicator)) return;
+    var d = mk('div', 'cr-calling-indicator');
+    var displayName = modelName || 'model';
+    d.innerHTML =
+      '<div class="cr-calling-spinner"></div>' +
+      '<span class="cr-calling-text">Calling ' + esc(displayName) + ' API...</span>' +
+      '<span class="cr-calling-dots"><span></span><span></span><span></span></span>';
+    S.botBody.appendChild(d);
+    S.callingIndicator = d;
+  }
+
+  function removeCallingIndicator(S) {
+    if (!S) return;
+    if (S.callingIndicator) {
+      if (S.callingIndicator.parentNode) {
+        S.callingIndicator.parentNode.removeChild(S.callingIndicator);
+      }
+      S.callingIndicator = null;
+    }
+    if (S.botBody) {
+      var indicators = S.botBody.querySelectorAll('.cr-calling-indicator');
+      for (var i = 0; i < indicators.length; i++) {
+        var el = indicators[i];
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }
+    }
+  }
+
+  function ensureThinkBlock(S) {
+    removeCallingIndicator(S);
+    removeTyping(S.botBody);
+    closeCurrentContentBlock(S);
+    if (!S.thinkBlock) {
+      if (S.iterationThinkBlock && S.botBody && S.botBody.contains(S.iterationThinkBlock) && (!S._toolCalls || S._toolCalls.length === 0)) {
+        S.thinkBlock = S.iterationThinkBlock;
+        S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
+      } else {
+        closeAllOpenCards(S);
+        var det = appendThinkBlock(S.botBody);
+        if (S.contentDiv && S.contentDiv.parentNode === S.botBody) {
+          S.botBody.insertBefore(det, S.contentDiv);
+        }
+        S.thinkBlock = det;
+        S.iterationThinkBlock = S.thinkBlock;
+        S.thinkBlock.open = true;
+        S.thinkPre = S.thinkBlock.querySelector('.cr-think-pre');
+        S.thinkText = '';
+        S.iterationThinking = '';
+        if (S.fullResponse) {
+          var trailingLbl = S.thinkBlock.querySelector('.cr-think-label');
+          if (trailingLbl) trailingLbl.textContent = 'Thought process';
+        }
+      }
+    }
+    return S.thinkBlock;
+  }
+
+  function closeThinkBlock(S) {
+    if (S && S.thinkBlock) {
+      var lbl = S.thinkBlock.querySelector('.cr-think-label');
+      if (lbl) lbl.textContent = 'Thought process';
+      if (S.thinkBlock.open && S.thinkBlock.dataset.userOpened !== 'true') {
+        S.thinkBlock.open = false;
+      }
+      S.thinkBlock = null;
+      S.thinkPre = null;
+      S.thinkText = '';
+    }
+  }
+
   function appendThinkBlock(body) {
     if (!body) return null;
     var det = mk('details', 'cr-think-block');
@@ -3864,7 +3994,7 @@ function initializeChatSpace() {
     var statusClass = 'cr-tool-card-status--' + (status === 'completed' ? 'success' : status);
     var iconClass = 'cr-tool-card-icon--' + (status === 'completed' ? 'success' : status);
 
-    var isBg = !!(args && (args.background === true || args.is_background === true));
+    var isBg = !!(args && (args.background === true || args.is_background === true || args.isDaemon === true));
     if (isBg) {
       card.dataset.isBackground = 'true';
     } else {
@@ -3889,7 +4019,7 @@ function initializeChatSpace() {
 
     var container = mk('div', 'cr-terminal-container cr-terminal-container--' + status);
     
-    var command = (args && args.command) || '';
+    var command = (args && (args.command || args.cmd || args.commandLine)) || '';
     var headBar = mk('div', 'cr-terminal-header');
     headBar.innerHTML =
       '<span class="cr-terminal-status-dot"></span>' +
@@ -3921,14 +4051,16 @@ function initializeChatSpace() {
   }
 
   function appendTerminalCardOutput(msgList, card, cleanChunk) {
-    if (!card) return;
+    if (!card || !cleanChunk) return;
     var bodyEl = card.querySelector('.cr-terminal-body');
     if (!bodyEl) return;
 
-    var lines = cleanChunk.split('\n');
+    var buffer = (card._termBuffer || '') + cleanChunk;
+    var lines = buffer.split('\n');
+    card._termBuffer = lines.pop();
+
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
-      if (li === lines.length - 1 && line === '') break;
       var lineEl = mk('div', 'cr-terminal-line cr-terminal-line--out');
       if (line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')) {
         lineEl.className = 'cr-terminal-line cr-terminal-line--err';
@@ -3947,6 +4079,17 @@ function initializeChatSpace() {
     var normStatus = (execStatus === 'completed' || execStatus === 'success') ? 'success' : (execStatus === 'failed' || execStatus === 'error') ? 'error' : (execStatus || 'success');
     card.dataset.status = normStatus;
     
+    var bodyEl = card.querySelector('.cr-terminal-body');
+    if (bodyEl && card._termBuffer) {
+      var remEl = mk('div', 'cr-terminal-line cr-terminal-line--out');
+      if (card._termBuffer.toLowerCase().includes('error') || card._termBuffer.toLowerCase().includes('fail')) {
+        remEl.className = 'cr-terminal-line cr-terminal-line--err';
+      }
+      remEl.textContent = card._termBuffer;
+      bodyEl.appendChild(remEl);
+      card._termBuffer = '';
+    }
+
     card.className = 'cr-tool-card cr-tool-card--' + normStatus + ' cr-terminal-details';
 
     var container = card.querySelector('.cr-terminal-container');
@@ -5020,6 +5163,45 @@ function initializeChatSpace() {
       if (stderr) parts.push('\n--- stderr ---\n' + stderr);
       return parts.join('\n');
     }
+    if (toolName === 'check_terminal_state' || toolName === 'get_terminal_state') {
+      var tParts = [];
+      var termLabel = (result.terminal === 'background' ? 'Background Terminal' : 'Main Terminal') +
+        (result.terminalName ? ' (' + result.terminalName + ')' : (result.terminal_name ? ' (' + result.terminal_name + ')' : ''));
+      var statusStr = String(result.status || 'idle').toUpperCase();
+      tParts.push('Terminal: ' + termLabel + ' [' + statusStr + ']');
+      if (result.command) {
+        tParts.push('Command: ' + result.command);
+      }
+      if (result.exit_code != null) {
+        var exitIcon = result.exit_code_zero ? '✓' : '❌';
+        tParts.push('Exit status: ' + exitIcon + ' Exit code ' + result.exit_code + (result.exit_code_zero ? ' (Success)' : ' (Failed)'));
+      } else if (result.waiting_for_input) {
+        tParts.push('Exit status: ⏳ Waiting for input');
+      } else if (result.status === 'active' || result.status === 'running') {
+        tParts.push('Exit status: ⏳ Still running');
+      } else if (result.has_executed_command === false && !result.command) {
+        tParts.push('Exit status: No command executed');
+      }
+      if (result.working_directory || result.cwd) {
+        tParts.push('Working directory: ' + (result.working_directory || result.cwd));
+      }
+      if (result.shell) {
+        tParts.push('Shell: ' + result.shell);
+      }
+      if (result.url) {
+        tParts.push('URL: ' + result.url);
+      }
+      var outText = result.stdout || result.output || '';
+      if (outText && outText.trim()) {
+        tParts.push('\n--- Output ---\n' + outText);
+      } else if (result.message) {
+        tParts.push('\n' + result.message);
+      }
+      if (result.stderr && result.stderr.trim()) {
+        tParts.push('\n--- Stderr ---\n' + result.stderr);
+      }
+      return tParts.join('\n');
+    }
     var text = '';
     if (result.content != null) text = result.content;
     else if (result.output != null) text = result.output;
@@ -5065,7 +5247,11 @@ function initializeChatSpace() {
     status = status || 'running';
     var card = mk('details', 'cr-tool-card cr-tool-card--' + status);
     var _isFinished = (status === 'success' || status === 'completed' || status === 'error' || status === 'failed');
-    card.open = !_isFinished;
+    if (toolName === 'check_terminal_state' || toolName === 'get_terminal_state') {
+      card.open = true;
+    } else {
+      card.open = !_isFinished;
+    }
     card.dataset.cardKey = cardKey;
     card.dataset.toolName = toolName;
     card.dataset.status = status;
@@ -5137,6 +5323,12 @@ function initializeChatSpace() {
         resultContainer.innerHTML =
           '<div class="cr-tool-card-block-label">Tool Output</div>' +
           '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+      } else if (result && (result.message || result.output || result.stdout || result.content)) {
+        var initialFallback = result.message || result.output || result.stdout || result.content;
+        resultContainer.style.display = 'block';
+        resultContainer.innerHTML =
+          '<div class="cr-tool-card-block-label">Tool Output</div>' +
+          '<pre class="cr-tool-card-result-pre">' + esc(typeof initialFallback === 'string' ? initialFallback : JSON.stringify(initialFallback, null, 2)) + '</pre>';
       }
       if (toolName === 'spawn_subagent' || toolName === 'wait_for_subagent' || toolName === 'subagent_response') {
         var subagentId = (result && (result.agentId || result.subagent_id || result.id)) || (args && (args.agentId || args.subagent_id || args.id)) || '';
@@ -5189,7 +5381,11 @@ function initializeChatSpace() {
     card.dataset.status = normStatus;
     var toolName = card.dataset.toolName;
     if (card.dataset.userOpened !== 'true') {
-      card.open = false;
+      if (toolName === 'check_terminal_state' || toolName === 'get_terminal_state') {
+        card.open = true;
+      } else {
+        card.open = false;
+      }
     }
 
     var iconEl = card.querySelector('.cr-tool-card-icon');
@@ -5203,6 +5399,15 @@ function initializeChatSpace() {
     if (statusEl) {
       statusEl.className = 'cr-tool-card-status cr-tool-card-status--' + normStatus;
       statusEl.textContent = isComplete ? 'Completed' : isFailed ? 'Failed' : 'Pending';
+    }
+
+    var subtitleEl = card.querySelector('.cr-tool-card-subtitle');
+    if ((toolName === 'check_terminal_state' || toolName === 'get_terminal_state') && subtitleEl && result) {
+      if (result.terminal === 'background' || (result.terminalName && result.terminalName.indexOf('BG') !== -1) || (result.terminal_name && result.terminal_name.indexOf('BG') !== -1)) {
+        subtitleEl.textContent = 'Background Terminal (' + (result.terminalName || result.terminal_name || 'CodeRun(BG)') + ')';
+      } else if (result.terminal === 'main' || (result.terminalName && result.terminalName.indexOf('main') !== -1) || (result.terminal_name && result.terminal_name.indexOf('main') !== -1)) {
+        subtitleEl.textContent = 'Main Terminal (' + (result.terminalName || result.terminal_name || 'CodeRun(main)') + ')';
+      }
     }
 
     if (result) {
@@ -5235,6 +5440,13 @@ function initializeChatSpace() {
           resultContainer.innerHTML =
             '<div class="cr-tool-card-block-label">Tool Output</div>' +
             '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        } else {
+          var fallbackVal = (result && (result.message || result.output || result.stdout || result.content)) || '';
+          if (fallbackVal) {
+            resultContainer.innerHTML =
+              '<div class="cr-tool-card-block-label">Tool Output</div>' +
+              '<pre class="cr-tool-card-result-pre">' + esc(typeof fallbackVal === 'string' ? fallbackVal : JSON.stringify(fallbackVal, null, 2)) + '</pre>';
+          }
         }
 
         if (toolName === 'spawn_subagent' || toolName === 'wait_for_subagent' || toolName === 'subagent_response') {
@@ -5274,6 +5486,17 @@ function initializeChatSpace() {
 
   function appendToolAction(chatCtx, card, action, message, actionStatus) {
     if (!card) return;
+    var cardTool = card.dataset.toolName;
+    if (cardTool === 'check_terminal_state' || cardTool === 'get_terminal_state') {
+      var subEl = card.querySelector('.cr-tool-card-subtitle');
+      if (subEl && message) {
+        if (message.indexOf('background terminal') !== -1 || message.indexOf('CodeRun(BG)') !== -1) {
+          subEl.textContent = 'Background Terminal (CodeRun(BG))';
+        } else if (message.indexOf('main terminal') !== -1 || message.indexOf('CodeRun(main)') !== -1) {
+          subEl.textContent = 'Main Terminal (CodeRun(main))';
+        }
+      }
+    }
     var cardBody = card.querySelector('.cr-tool-card-body');
     if (!cardBody) return;
 
@@ -5601,6 +5824,7 @@ function initializeChatSpace() {
         thinkText: '',
         fullThinking: '',
         iterationThinking: '',
+        thinkingKey: 'reasoning_content',
         contentDiv: null,
         contentText: '',
         actionList: null,

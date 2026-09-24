@@ -74,6 +74,18 @@ function getEffectiveSessionUsage(sessionUsage, activeTrace) {
   return res;
 }
 
+function hasPriorThinkingInTurn(msgList) {
+  if (!msgList || !msgList.length) return false;
+  for (var i = msgList.length - 1; i >= 0; i--) {
+    var m = msgList[i];
+    if (m && m.role === 'user') break;
+    if (m && m.role === 'assistant' && (m.thinking || m.reasoning_content || m.thought || m.reasoning)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
   var currentState = agentState.getState(sessionId);
   if (agentState.isTerminal(sessionId)) {
@@ -164,6 +176,82 @@ function advancePlanChecklist(rawPlanStr, markAllComplete) {
   }
 
   return updated ? lines.join('\n') : null;
+}
+
+function extractFallbackToolCalls(content, activeDefs, iteration) {
+  if (!content || typeof content !== 'string') return null;
+  var trimmed = content.trim();
+  if (trimmed.indexOf('{') === -1) return null;
+
+  var validNames = {};
+  if (activeDefs && activeDefs.length) {
+    for (var d = 0; d < activeDefs.length; d++) {
+      var def = activeDefs[d];
+      var name = (def.function && def.function.name) || def.name;
+      if (name) validNames[name] = true;
+    }
+  }
+
+  var targetStr = trimmed;
+  var fenceMatch = targetStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    targetStr = fenceMatch[1].trim();
+  }
+
+  var parsedObj = null;
+  try {
+    parsedObj = JSON.parse(targetStr);
+  } catch (_) {
+    var firstBrace = targetStr.indexOf('{');
+    var lastBrace = targetStr.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        parsedObj = JSON.parse(targetStr.substring(firstBrace, lastBrace + 1));
+      } catch (_) {}
+    }
+  }
+
+  if (!parsedObj || typeof parsedObj !== 'object') return null;
+
+  var extracted = [];
+  if (Array.isArray(parsedObj.tool_calls) && parsedObj.tool_calls.length) {
+    for (var i = 0; i < parsedObj.tool_calls.length; i++) {
+      var tc = parsedObj.tool_calls[i];
+      var tcName = (tc.function && tc.function.name) || tc.name;
+      if (tcName && (!validNames || Object.keys(validNames).length === 0 || validNames[tcName])) {
+        var tcArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
+        extracted.push({
+          id: tc.id || ('call_' + iteration + '_' + i),
+          type: 'function',
+          function: {
+            name: tcName,
+            arguments: typeof tcArgs === 'string' ? tcArgs : JSON.stringify(tcArgs)
+          }
+        });
+      }
+    }
+  } else if (parsedObj.name && (parsedObj.arguments || parsedObj.parameters)) {
+    var singleName = parsedObj.name;
+    if (!validNames || Object.keys(validNames).length === 0 || validNames[singleName]) {
+      var sArgs = parsedObj.arguments || parsedObj.parameters || {};
+      extracted.push({
+        id: parsedObj.id || ('call_' + iteration + '_0'),
+        type: 'function',
+        function: {
+          name: singleName,
+          arguments: typeof sArgs === 'string' ? sArgs : JSON.stringify(sArgs)
+        }
+      });
+    }
+  }
+
+  if (extracted.length > 0) {
+    return {
+      toolCalls: extracted,
+      cleanedContent: fenceMatch ? content.replace(fenceMatch[0], '').trim() : ''
+    };
+  }
+  return null;
 }
 
 function syncPlanStringWithRuntime(newPlanStr, sessionId, markAllComplete) {
@@ -454,21 +542,26 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       iteration++;
-      console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
-      sendEvent({ type: EVENT_TYPES.AGENT_ITERATION, iteration: iteration });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_ITERATION,
+        iteration: iteration,
+        model: (config && config.model) || ''
+      });
 
-      var currentState = agentState.getState(sessionId);
-      var targetState = (currentState === 'idle' || agentState.isTerminal(sessionId)) ? 'thinking' : currentState;
-
-      agentState.transitionWithTrace(targetState, sessionId, executionTrace);
-      events.emit('state_changed', { state: targetState, sessionId: sessionId });
-
+      agentState.transitionWithTrace('thinking', sessionId, executionTrace);
+      events.emit('state_changed', { state: 'thinking', sessionId: sessionId });
 
       // ── Refresh iteration context (role, plan, goals, git, memory) ──
-      await contextEngine.refreshIterationContext(messages, targetState, sessionCtx, sessionId, workspace);
+      await contextEngine.refreshIterationContext(messages, 'thinking', sessionCtx, sessionId, workspace);
 
-
-      sendEvent({ type: EVENT_TYPES.AGENT_STATUS, status: targetState, iteration: iteration });
+      sendEvent({
+        type: EVENT_TYPES.AGENT_STATUS,
+        status: 'calling_api',
+        model: (config && config.model) || '',
+        provider: (config && config.provider) || '',
+        sessionId: sessionId,
+        iteration: iteration
+      });
 
       var iterationStartInput = sessionUsage.prompt_tokens;
       var iterationStartOutput = sessionUsage.completion_tokens;
@@ -478,6 +571,8 @@ export async function runAgentLoop(userPrompt, config, options) {
       var iterationThinking = '';
       var iterationContent = '';
       var toolCalls = [];
+      var bufferedJsonContent = '';
+      var isBufferingPotentialToolCall = false;
 
       var iterationThinkingKey = null;
 
@@ -513,7 +608,7 @@ export async function runAgentLoop(userPrompt, config, options) {
             }
             iterationThinking += chunk.thinking;
             fullThinking += chunk.thinking;
-            sendEvent({ message: { role: 'assistant', thinking: chunk.thinking } });
+            sendEvent({ message: { role: 'assistant', thinking: chunk.thinking, thinkingKey: chunk.thinkingKey || iterationThinkingKey || 'reasoning_content' } });
           }
           // Handle content with inline think tags (DeepSeek style)
           if (chunk.content) {
@@ -523,13 +618,21 @@ export async function runAgentLoop(userPrompt, config, options) {
             if (parsed.thinking) {
               iterationThinking += parsed.thinking;
               fullThinking += parsed.thinking;
-              sendEvent({ message: { role: 'assistant', thinking: parsed.thinking } });
+              sendEvent({ message: { role: 'assistant', thinking: parsed.thinking, thinkingKey: iterationThinkingKey || 'reasoning_content' } });
             }
             if (parsed.content) {
               iterationContent += parsed.content;
               fullContent += parsed.content;
               dbg('[AGENT LOOP] sendEvent content:', parsed.content.substring(0, 100));
-              sendEvent({ message: { role: 'assistant', content: parsed.content } });
+              var trimmedCurrent = iterationContent.trimStart();
+              if (!isBufferingPotentialToolCall && (trimmedCurrent.startsWith('{') || trimmedCurrent.startsWith('```json') || trimmedCurrent.startsWith('```\n{'))) {
+                isBufferingPotentialToolCall = true;
+              }
+              if (isBufferingPotentialToolCall) {
+                bufferedJsonContent += parsed.content;
+              } else {
+                sendEvent({ message: { role: 'assistant', content: parsed.content } });
+              }
             }
           }
 
@@ -661,7 +764,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         if (inThinkTag) {
           iterationThinking += streamBuffer;
           fullThinking += streamBuffer;
-          sendEvent({ message: { role: 'assistant', thinking: streamBuffer } });
+          sendEvent({ message: { role: 'assistant', thinking: streamBuffer, thinkingKey: iterationThinkingKey || 'reasoning_content' } });
         } else {
           iterationContent += streamBuffer;
           fullContent += streamBuffer;
@@ -697,6 +800,37 @@ export async function runAgentLoop(userPrompt, config, options) {
           });
         }
       }
+
+      if (completedToolCalls.length === 0 && iterationContent) {
+        var fallbackTools = extractFallbackToolCalls(iterationContent, activeToolDefinitions, iteration);
+        if (fallbackTools && fallbackTools.toolCalls && fallbackTools.toolCalls.length) {
+          console.log('[AGENT LOOP] Recovered ' + fallbackTools.toolCalls.length + ' tool call(s) from JSON content fallback');
+          iterationContent = fallbackTools.cleanedContent;
+          for (var fbIdx = 0; fbIdx < fallbackTools.toolCalls.length; fbIdx++) {
+            var fbT = fallbackTools.toolCalls[fbIdx];
+            var fbArgsRes = robustParseToolArguments(fbT.function.arguments, fbT.function.name);
+            for (var fbP = 0; fbP < fbArgsRes.argsList.length; fbP++) {
+              completedToolCalls.push({
+                id: fbT.id + (fbArgsRes.argsList.length > 1 ? ('_' + fbP) : ''),
+                type: 'function',
+                function: {
+                  name: fbT.function.name,
+                  arguments: fbArgsRes.argsList[fbP]
+                }
+              });
+            }
+          }
+          if (fallbackTools.cleanedContent && fallbackTools.cleanedContent.trim()) {
+            sendEvent({ message: { role: 'assistant', content: fallbackTools.cleanedContent } });
+          }
+        } else if (isBufferingPotentialToolCall && bufferedJsonContent) {
+          sendEvent({ message: { role: 'assistant', content: bufferedJsonContent } });
+        }
+      } else if (isBufferingPotentialToolCall && bufferedJsonContent) {
+        sendEvent({ message: { role: 'assistant', content: bufferedJsonContent } });
+      }
+      bufferedJsonContent = '';
+      isBufferingPotentialToolCall = false;
 
       try {
         var sysMsg = '';
@@ -750,7 +884,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
 
         // ── Force a concluding response from LLM if last message was a tool ──
-        if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim())) {
+        if (messages.length > 0 && messages[messages.length - 1].role === 'tool' && (!iterationContent || !iterationContent.trim()) && (!iterationThinking || !iterationThinking.trim())) {
           var conclusion = await decisionEngine.forceConclusion(
             provider, config, messages, activeToolDefinitions, signal, sendEvent
           );
@@ -818,8 +952,10 @@ export async function runAgentLoop(userPrompt, config, options) {
         events.emit('state_changed', { state: 'completed', sessionId: sessionId });
 
         var assistantMsg = { role: 'assistant', content: iterationContent || '' };
-        if (iterationThinking || fullThinking) {
-          assistantMsg.thinking = iterationThinking || fullThinking;
+        if (iterationThinking) {
+          assistantMsg.thinking = iterationThinking;
+        } else if (fullThinking && !hasPriorThinkingInTurn(messages)) {
+          assistantMsg.thinking = fullThinking;
         }
         if (iterationThinkingKey) {
           assistantMsg.thinkingKey = iterationThinkingKey;
@@ -879,6 +1015,7 @@ export async function runAgentLoop(userPrompt, config, options) {
           reason: 'completed',
           content: fullContent,
           thinking: fullThinking,
+          thinkingKey: iterationThinkingKey || 'reasoning_content',
           report: executionReportText,
           completionEvidence: completionEvidence
         });

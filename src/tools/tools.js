@@ -757,10 +757,15 @@ async function* sandbox(args, context) {
 async function* run_terminal(args, context) {
   var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
   var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
-  var command = args.command || '';
+  var command = (args.command || args.cmd || args.commandLine || '').trim();
   var timeout = args.timeout || 30;
-  var background = args.background || false;
-  var isInteractive = args.is_interactive === true || args.interactive === true;
+  var background = (args.background != null) ? Boolean(args.background) :
+                   (args.is_background != null ? Boolean(args.is_background) :
+                   (args.isDaemon != null ? Boolean(args.isDaemon) :
+                   (args.daemon != null ? Boolean(args.daemon) : undefined)));
+  var isInteractive = (args.is_interactive != null) ? Boolean(args.is_interactive) :
+                      (args.interactive != null ? Boolean(args.interactive) :
+                      (args.isInteractive != null ? Boolean(args.isInteractive) : undefined));
 
   if (!command) {
     yield { type: 'action', action: 'run_terminal', message: 'Checking terminal output...' };
@@ -780,8 +785,13 @@ async function* run_terminal(args, context) {
       platform: checkResult.platform || terminalManager.getPlatformName(),
       working_directory: workspace,
       exit_code: checkResult.exitCode,
-      duration_ms: checkResult.durationMs || 0,
-      message: 'Terminal session is active. Current output:\n' + (checkResult.stdout || '(no new output)')
+      message: (checkResult.waitingForInput || checkResult.promptDetected)
+        ? ('Terminal is waiting for user/prompt input:\n' + (checkResult.stdout || '(no new output)') +
+           '\n\nStatus: ' + (checkResult.status || 'waiting_for_input') +
+           '\n\nUse `terminal_input` with text to respond (e.g. "q" to exit a pager, or "y" to confirm), or `stop_terminal` to interrupt.')
+        : (checkResult.status === 'active'
+            ? ('Terminal command is still actively running. Current output:\n' + (checkResult.stdout || '(no new output)'))
+            : ('Terminal session is active. Current output:\n' + (checkResult.stdout || '(no new output)')))
     };
     return;
   }
@@ -947,6 +957,56 @@ async function* stop_terminal(args, context) {
     yield { type: 'tool_result', tool: 'stop_terminal', success: result.success !== false, target: target, message: result.message };
   } catch (e) {
     yield { type: 'tool_result', tool: 'stop_terminal', success: false, message: e.message };
+  }
+}
+
+async function* check_terminal_state(args, context) {
+  var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
+  var isBackground = false;
+  if (args) {
+    if (args.background === true || args.terminal === 'background' || args.terminal === 'bg') {
+      isBackground = true;
+    }
+  }
+  var termType = isBackground ? 'background' : 'main';
+  yield {
+    type: 'action',
+    action: 'check_terminal_state',
+    message: 'Checking state of ' + (isBackground ? 'background terminal (CodeRun(BG))' : 'main terminal (CodeRun(main))')
+  };
+  try {
+    var state = await terminalManager.getTerminalState(sessionId, { background: isBackground });
+    yield {
+      type: 'tool_result',
+      tool: 'check_terminal_state',
+      success: true,
+      terminal: state.terminal || termType,
+      terminal_name: state.terminalName || (isBackground ? 'CodeRun(BG)' : 'CodeRun(main)'),
+      command: state.command || '',
+      last_command: state.command || '',
+      has_executed_command: state.has_executed_command === true,
+      stdout: state.stdout || '',
+      stderr: state.stderr || '',
+      output: state.output || state.stdout || '',
+      exit_code: state.exit_code,
+      exit_code_zero: state.exit_code_zero === true,
+      status: state.status || 'idle',
+      waiting_for_input: state.waiting_for_input === true,
+      duration_ms: state.duration_ms || 0,
+      working_directory: state.working_directory || '',
+      cwd: state.working_directory || '',
+      shell: state.shell || '',
+      platform: state.platform || '',
+      message: state.message || ''
+    };
+  } catch (e) {
+    yield {
+      type: 'tool_result',
+      tool: 'check_terminal_state',
+      success: false,
+      terminal: termType,
+      message: 'Failed to retrieve terminal state: ' + e.message
+    };
   }
 }
 
@@ -2159,13 +2219,13 @@ export function registerAllTools() {
   reg('run_terminal', run_terminal, {
     aliases: ['bash', 'execute_command'],
     category: 'terminal',
-    description: 'Execute a shell command. Pass empty command to check terminal output.',
+    description: 'Execute a shell command. Pass empty command (command: "") to check current terminal state (waiting_for_input, active, completed) and latest output without executing a new command.',
     parameters: {
       command: { type: 'string', description: 'The command to execute' },
       cwd: { type: 'string', description: 'Optional working directory. Defaults to workspace root, or can be set to sandbox ~/.coderun/sandbox' },
-      is_interactive: { type: 'boolean', description: 'Set true ONLY if the command is interactive and expects prompt/user input (e.g. Read-Host, npm init, prompts). Set false (default) for self-executing commands (e.g. builds, tests, scripts, git commands) that run to completion.' },
-      timeout: { type: 'integer', description: 'Max seconds (default 30)' },
-      background: { type: 'boolean', description: 'Run without waiting' }
+      is_interactive: { type: 'boolean', description: 'Explicitly specify whether the command is interactive and expects user prompt/input (e.g. Read-Host, prompts, interactive CLI questionnaires). Set false for commands that run to completion and return output.' },
+      timeout: { type: 'integer', description: 'Max seconds before timeout (default 30)' },
+      background: { type: 'boolean', description: 'Explicitly specify whether the command should run in the background without waiting for it to finish (e.g. dev servers, watchers, long-running services). Set false for normal commands that finish.' }
     },
     required: [],
     dangerous: true,
@@ -2188,6 +2248,24 @@ export function registerAllTools() {
         type: 'string',
         enum: ['foreground', 'background', 'all'],
         description: 'Which terminal to stop: "foreground" (default, stops active command in CodeRun(main)), "background" (stops dev server in CodeRun(BG)), or "all" (stops both).'
+      }
+    },
+    required: []
+  });
+  reg('check_terminal_state', check_terminal_state, {
+    aliases: ['get_terminal_state'],
+    category: 'terminal',
+    readOnly: true,
+    description: 'Check the current state and execution details of the terminal session. Returns the last executed terminal command, its stdout/stderr output, whether it exited with exit code 0 or not, execution status (active, completed, waiting_for_input, failed, idle), working directory, and whether the terminal is currently waiting for input. The model decides whether to check the main/direct terminal or the background (BG) terminal.',
+    parameters: {
+      background: {
+        type: 'boolean',
+        description: 'Set to true to check the background terminal (CodeRun(BG), e.g. dev servers, background processes). Set to false (default) to check the direct/main foreground terminal (CodeRun(main)).'
+      },
+      terminal: {
+        type: 'string',
+        enum: ['main', 'background'],
+        description: 'Alternative selector: "main" (default) for foreground terminal or "background" for background terminal.'
       }
     },
     required: []

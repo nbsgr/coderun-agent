@@ -91,6 +91,10 @@ function compactToolResult(toolName, toolMsg) {
     case 'stop_terminal':
       return (success ? '✅' : '❌') + ' Stopped terminal ' + statusWord;
 
+    case 'check_terminal_state':
+    case 'get_terminal_state':
+      return (success ? '✅' : '❌') + ' Checked terminal state ' + statusWord;
+
     case 'create_plan':
       return (success ? '✅' : '❌') + ' Created plan successfully';
 

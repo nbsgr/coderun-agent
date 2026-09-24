@@ -30,9 +30,9 @@ export async function* chat(config, messages, tools, reqOpts) {
   var isInception = !!((config.baseUrl && config.baseUrl.toLowerCase().indexOf('inceptionlabs') !== -1) ||
                        (config.model && config.model.toLowerCase().indexOf('mercury') !== -1));
   if (isInception) {
-    body.reasoning_summary = true;
-    body.reasoning_summary_wait = true;
-    body.reasoning_effort = 'high';
+    if (!body.reasoning_effort) {
+      body.reasoning_effort = config.reasoning_effort || 'medium';
+    }
   }
 
   if (tools && tools.length) body.tools = tools;
@@ -40,10 +40,19 @@ export async function* chat(config, messages, tools, reqOpts) {
   var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
   var stream = await client.chat.completions.create(body, requestOptions);
 
+  var hasStreamedThinking = false;
   for await (var chunk of stream) {
     var parsed = parseChunk(chunk);
     if (parsed.error) {
       throw new Error(parsed.error);
+    }
+    if (parsed.thinking) {
+      if (parsed._isSummary && hasStreamedThinking) {
+        delete parsed.thinking;
+        delete parsed.thinkingKey;
+      } else {
+        hasStreamedThinking = true;
+      }
     }
     if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
       yield parsed;
@@ -407,54 +416,60 @@ function parseChunk(data) {
 
   var delta = choice ? (choice.delta || choice.message) : null;
 
-  var topSummary = (data && data.reasoning_summary) || (choice && choice.reasoning_summary) || (delta && delta.reasoning_summary);
-  if (topSummary) {
-    var summaryText = extractThinkingValue(topSummary);
-    if (summaryText) {
-      result.thinking = summaryText;
-      result.thinkingKey = 'reasoning_content';
-    }
-  } else if (data && (data.reasoning_content || data.reasoning || data.thinking || data.thought)) {
-    var topVal = data.reasoning_content || data.reasoning || data.thinking || data.thought;
-    var topText = extractThinkingValue(topVal);
-    if (topText) {
-      result.thinking = topText;
-      result.thinkingKey = data.reasoning_content ? 'reasoning_content' : (data.reasoning ? 'reasoning' : (data.thinking ? 'thinking' : 'thought'));
-    }
-  }
-
   if (delta) {
     if (delta.content) {
       result.content = delta.content;
     }
 
-    if (!result.thinking) {
-      if (delta.reasoning_content) {
-        result.thinking = extractThinkingValue(delta.reasoning_content);
-        result.thinkingKey = 'reasoning_content';
-      } else if (delta.reasoning) {
-        result.thinking = extractThinkingValue(delta.reasoning);
-        result.thinkingKey = 'reasoning';
-      } else if (delta.thinking) {
-        result.thinking = extractThinkingValue(delta.thinking);
-        result.thinkingKey = 'thinking';
-      } else if (delta.thought) {
-        result.thinking = extractThinkingValue(delta.thought);
-        result.thinkingKey = 'thought';
-      } else if (delta.thoughts) {
-        result.thinking = extractThinkingValue(delta.thoughts);
-        result.thinkingKey = 'thought';
-      } else if (delta.thinking_content) {
-        result.thinking = extractThinkingValue(delta.thinking_content);
-        result.thinkingKey = 'reasoning_content';
-      } else if (delta.reasoning_text) {
-        result.thinking = extractThinkingValue(delta.reasoning_text);
-        result.thinkingKey = 'reasoning_content';
-      }
+    if (delta.reasoning_content) {
+      result.thinking = extractThinkingValue(delta.reasoning_content);
+      result.thinkingKey = 'reasoning_content';
+    } else if (delta.reasoning) {
+      result.thinking = extractThinkingValue(delta.reasoning);
+      result.thinkingKey = 'reasoning';
+    } else if (delta.thinking) {
+      result.thinking = extractThinkingValue(delta.thinking);
+      result.thinkingKey = 'thinking';
+    } else if (delta.thought) {
+      result.thinking = extractThinkingValue(delta.thought);
+      result.thinkingKey = 'thought';
+    } else if (delta.thoughts) {
+      result.thinking = extractThinkingValue(delta.thoughts);
+      result.thinkingKey = 'thought';
+    } else if (delta.thinking_content) {
+      result.thinking = extractThinkingValue(delta.thinking_content);
+      result.thinkingKey = 'reasoning_content';
+    } else if (delta.reasoning_text) {
+      result.thinking = extractThinkingValue(delta.reasoning_text);
+      result.thinkingKey = 'reasoning_content';
     }
 
     if (delta.tool_calls) {
       result.tool_calls = delta.tool_calls;
+    }
+  }
+
+  if (!result.thinking) {
+    var topVal = (data && (data.reasoning_content || data.reasoning || data.thinking || data.thought)) ||
+                 (choice && (choice.reasoning_content || choice.reasoning || choice.thinking || choice.thought));
+    if (topVal) {
+      var topText = extractThinkingValue(topVal);
+      if (topText) {
+        result.thinking = topText;
+        result.thinkingKey = (data && data.reasoning_content) ? 'reasoning_content' :
+                             ((data && data.reasoning) ? 'reasoning' :
+                             ((data && data.thinking) ? 'thinking' : 'thought'));
+      }
+    } else {
+      var topSummary = (data && data.reasoning_summary) || (choice && choice.reasoning_summary) || (delta && delta.reasoning_summary);
+      if (topSummary) {
+        var summaryText = extractThinkingValue(topSummary);
+        if (summaryText) {
+          result.thinking = summaryText;
+          result.thinkingKey = 'reasoning_content';
+          result._isSummary = true;
+        }
+      }
     }
   }
 

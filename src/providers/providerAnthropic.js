@@ -57,6 +57,7 @@ export async function* chat(config, messages, tools, reqOpts) {
   var decoder = new TextDecoder('utf-8');
   var buffer = '';
 
+  var hasStreamedThinking = false;
   while (true) {
     var chunk = await reader.read();
     if (chunk.done) break;
@@ -69,6 +70,14 @@ export async function* chat(config, messages, tools, reqOpts) {
       try {
         var data = JSON.parse(line.slice(6));
         var parsed = parseChunk(data);
+        if (parsed.thinking) {
+          if (parsed._isSummary && hasStreamedThinking) {
+            delete parsed.thinking;
+            delete parsed.thinkingKey;
+          } else {
+            hasStreamedThinking = true;
+          }
+        }
         if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
           yield parsed;
         }
@@ -82,6 +91,14 @@ export async function* chat(config, messages, tools, reqOpts) {
       try {
         var remainingData = JSON.parse(remainingLine.slice(6));
         var remainingParsed = parseChunk(remainingData);
+        if (remainingParsed.thinking) {
+          if (remainingParsed._isSummary && hasStreamedThinking) {
+            delete remainingParsed.thinking;
+            delete remainingParsed.thinkingKey;
+          } else {
+            hasStreamedThinking = true;
+          }
+        }
         if (remainingParsed.content || remainingParsed.thinking || remainingParsed.tool_calls || remainingParsed.usage) {
           yield remainingParsed;
         }
@@ -171,6 +188,32 @@ function convertMessages(messages) {
       continue;
     }
 
+    if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length) {
+      var assistantBlocks = [];
+      if (m.content) {
+        assistantBlocks.push({ type: 'text', text: m.content });
+      }
+      for (var tcI = 0; tcI < m.tool_calls.length; tcI++) {
+        var tcItem = m.tool_calls[tcI];
+        var tcName = (tcItem.function && tcItem.function.name) || tcItem.name || '';
+        var rawArgs = (tcItem.function && tcItem.function.arguments) || tcItem.arguments || {};
+        var parsedArgs = {};
+        if (typeof rawArgs === 'string') {
+          try { parsedArgs = JSON.parse(rawArgs); } catch (_) { parsedArgs = { raw: rawArgs }; }
+        } else if (rawArgs && typeof rawArgs === 'object') {
+          parsedArgs = rawArgs;
+        }
+        assistantBlocks.push({
+          type: 'tool_use',
+          id: tcItem.id || ('call_' + tcI),
+          name: tcName,
+          input: parsedArgs
+        });
+      }
+      converted.push({ role: 'assistant', content: assistantBlocks });
+      continue;
+    }
+
     converted.push({ role: role, content: m.content || '' });
   }
   return converted;
@@ -193,6 +236,9 @@ function parseChunk(data) {
   }
   if (data.type === 'content_block_delta') {
     if (data.delta.thinking) {
+      result.thinking = data.delta.thinking;
+      result.thinkingKey = 'thinking';
+    } else if (data.delta.type === 'thinking_delta' && data.delta.thinking) {
       result.thinking = data.delta.thinking;
       result.thinkingKey = 'thinking';
     }

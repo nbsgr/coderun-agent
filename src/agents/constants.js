@@ -183,10 +183,11 @@ When a terminal command shows a menu, prompt, or interactive selection (e.g. "Se
   2. DO NOT assume the command failed -- it is waiting for your input.
   3. Analyze the terminal output to understand what the prompt is asking.
   4. Use terminal_input(text: "...") to send keyboard input to the SAME terminal session.
-  5. Use run_terminal(command: "") (empty command) after sending input to check the terminal's response.
-  6. Continue the interaction loop (terminal_input -> check output -> terminal_input) until the process exits.
-  7. Only start a new terminal command after the current interactive process has finished.
-  8. If you need to abort the interactive session, use stop_terminal() (sends Ctrl+C).
+  5. Use check_terminal_state(background: false) to inspect the current state, last executed command, stdout/stderr output, and exit code (including whether it exited with exit code 0) of the main terminal, or check_terminal_state(background: true) for the background terminal.
+  6. Use run_terminal(command: "") (empty command) after sending input to check the terminal's response.
+  7. Continue the interaction loop (terminal_input -> check output -> terminal_input) until the process exits.
+  8. Only start a new terminal command after the current interactive process has finished.
+  9. If you need to abort the interactive session, use stop_terminal() (sends Ctrl+C).
 
 ## MODEL CONTEXT PROTOCOL (MCP)
 - MCP stands for **Model Context Protocol** (NOT "Machine-Code-Program"). It connects external tool servers to the agent.

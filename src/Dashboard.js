@@ -4655,6 +4655,10 @@ function initializeDashboard() {
     state.selectedModel = model;
     state.selectedProvider = provider;
     state.settings.model = model;
+    window.currentModel = model;
+    if (window.activeChatCtx) {
+      window.activeChatCtx.model = model;
+    }
 
     var modelInput = document.getElementById("modelInput");
     if (modelInput) modelInput.value = model;
@@ -5777,6 +5781,10 @@ function initializeDashboard() {
       provider: extra.provider || state.selectedProvider || ''
     };
     if (extra.thinking) message.thinking = extra.thinking;
+    if (extra.thinkingKey) message.thinkingKey = extra.thinkingKey;
+    if (extra.reasoning_content) message.reasoning_content = extra.reasoning_content;
+    if (extra.thought) message.thought = extra.thought;
+    if (extra.reasoning) message.reasoning = extra.reasoning;
     if (extra.sources) message.sources = extra.sources;
     if (extra.image) message.image = extra.image;
     if (extra.images) message.images = extra.images;
@@ -5791,6 +5799,10 @@ function initializeDashboard() {
     if (last && last.role === role) {
       if (content) last.content = content;
       if (message.thinking) last.thinking = message.thinking;
+      if (message.thinkingKey) last.thinkingKey = message.thinkingKey;
+      if (message.reasoning_content) last.reasoning_content = message.reasoning_content;
+      if (message.thought) last.thought = message.thought;
+      if (message.reasoning) last.reasoning = message.reasoning;
       if (message.sources) last.sources = message.sources;
       if (message.media) last.media = message.media;
       if (message.tool_calls) last.tool_calls = message.tool_calls;
@@ -5852,6 +5864,21 @@ function initializeDashboard() {
           if (!nMsg.thinking && oldMsg && oldMsg.thinking) {
             nMsg.thinking = oldMsg.thinking;
           }
+          if (!nMsg.thinkingKey && oldMsg && oldMsg.thinkingKey) {
+            nMsg.thinkingKey = oldMsg.thinkingKey;
+          }
+          if (!nMsg.reasoning_content && oldMsg && oldMsg.reasoning_content) {
+            nMsg.reasoning_content = oldMsg.reasoning_content;
+          }
+          if (!nMsg.thought && oldMsg && oldMsg.thought) {
+            nMsg.thought = oldMsg.thought;
+          }
+          if (!nMsg.reasoning && oldMsg && oldMsg.reasoning) {
+            nMsg.reasoning = oldMsg.reasoning;
+          }
+          if (nMsg.thinkingKey && nMsg.thinking && !nMsg[nMsg.thinkingKey]) {
+            nMsg[nMsg.thinkingKey] = nMsg.thinking;
+          }
           if (!nMsg.media && oldMsg && oldMsg.media) {
             nMsg.media = oldMsg.media;
           }
@@ -5873,6 +5900,9 @@ function initializeDashboard() {
             var item = Object.assign({}, newMessages[k]);
             if (!item.model) item.model = state.selectedModel || '';
             if (!item.provider) item.provider = state.selectedProvider || '';
+            if (item.thinkingKey && item.thinking && !item[item.thinkingKey]) {
+              item[item.thinkingKey] = item.thinking;
+            }
             msgsToAppend.push(item);
           }
         }

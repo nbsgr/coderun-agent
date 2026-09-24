@@ -28,10 +28,19 @@ export async function* chat(config, messages, tools, reqOpts) {
   if (tools && tools.length) body.tools = tools;
 
   var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
+  var hasStreamedThinking = false;
   try {
     var stream = await client.chat.completions.create(body, requestOptions);
     for await (var chunk of stream) {
       var parsed = parseChunk(chunk);
+      if (parsed.thinking) {
+        if (parsed._isSummary && hasStreamedThinking) {
+          delete parsed.thinking;
+          delete parsed.thinkingKey;
+        } else {
+          hasStreamedThinking = true;
+        }
+      }
       if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
         yield parsed;
       }
@@ -84,6 +93,25 @@ export async function images(config, prompt) {
   throw new Error('Image generation not supported by Groq');
 }
 
+function extractThinkingValue(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    if (typeof val.content === 'string') return val.content;
+    if (typeof val.text === 'string') return val.text;
+    if (Array.isArray(val)) {
+      var parts = [];
+      for (var i = 0; i < val.length; i++) {
+        var part = val[i];
+        if (typeof part === 'string') parts.push(part);
+        else if (part && typeof part.text === 'string') parts.push(part.text);
+      }
+      return parts.join('');
+    }
+  }
+  return '';
+}
+
 function parseChunk(data) {
   var result = {};
   if (data && data.usage) {
@@ -93,26 +121,52 @@ function parseChunk(data) {
       total_tokens: data.usage.total_tokens || 0
     };
   }
-  var delta = data.choices && data.choices[0] ? data.choices[0].delta : null;
+  var choice = data && data.choices && data.choices[0];
+  var delta = choice ? (choice.delta || choice.message) : null;
   if (!delta) return result;
 
   if (delta.content) result.content = delta.content;
 
   if (delta.reasoning) {
-    result.thinking = delta.reasoning;
+    result.thinking = extractThinkingValue(delta.reasoning);
     result.thinkingKey = 'reasoning';
   } else if (delta.reasoning_content) {
-    result.thinking = delta.reasoning_content;
+    result.thinking = extractThinkingValue(delta.reasoning_content);
     result.thinkingKey = 'reasoning_content';
   } else if (delta.thinking) {
-    result.thinking = delta.thinking;
+    result.thinking = extractThinkingValue(delta.thinking);
     result.thinkingKey = 'thinking';
   } else if (delta.thought) {
-    result.thinking = delta.thought;
+    result.thinking = extractThinkingValue(delta.thought);
     result.thinkingKey = 'thought';
   }
 
   if (delta.tool_calls) result.tool_calls = delta.tool_calls;
+
+  if (!result.thinking) {
+    var topVal = (data && (data.reasoning_content || data.reasoning || data.thinking || data.thought)) ||
+                 (choice && (choice.reasoning_content || choice.reasoning || choice.thinking || choice.thought));
+    if (topVal) {
+      var topText = extractThinkingValue(topVal);
+      if (topText) {
+        result.thinking = topText;
+        result.thinkingKey = (data && data.reasoning_content) ? 'reasoning_content' :
+                             ((data && data.reasoning) ? 'reasoning' :
+                             ((data && data.thinking) ? 'thinking' : 'thought'));
+      }
+    } else {
+      var topSummary = (data && data.reasoning_summary) || (choice && choice.reasoning_summary) || (delta && delta.reasoning_summary);
+      if (topSummary) {
+        var summaryText = extractThinkingValue(topSummary);
+        if (summaryText) {
+          result.thinking = summaryText;
+          result.thinkingKey = 'reasoning_content';
+          result._isSummary = true;
+        }
+      }
+    }
+  }
+
   return result;
 }
 

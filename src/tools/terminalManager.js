@@ -31,7 +31,9 @@ function createSessionState(sessionId) {
     backgroundTasks: {},
     pendingInteractiveReader: null,
     pendingInteractiveExecution: null,
-    sendEventCallback: null
+    sendEventCallback: null,
+    lastMainExecution: null,
+    lastBackgroundExecution: null
   };
 }
 
@@ -229,10 +231,13 @@ var INTERACTIVE_PATTERNS = [
   /choose\s*\[/i,
   /\? \[.*\]/,
   /(?:enter|input|type|provide|what|which|how|confirm|specify)\b.*[:?]\s*$/i,
-  /:\s*$/,
   /\?\s*$/,
-  />\s*$/,
-  /\$\s*$/
+  /\$\s*$/,
+  /\(END\)\s*$/i,
+  /HELP -- Press RETURN/i,
+  /SUMMARY OF LESS COMMANDS/i,
+  /\(press q to quit\)/i,
+  /\.\.\.skipping\.\.\./i
 ];
 
 function isShellPromptLine(line) {
@@ -292,7 +297,11 @@ export function getTerminal(sessionId, workspace) {
 
   var termOptions = {
     name: termName,
-    cwd: cwd
+    cwd: cwd,
+    env: {
+      GIT_PAGER: 'cat',
+      PAGER: 'cat'
+    }
   };
 
   if (vscode.TerminalLocation && vscode.TerminalLocation.Panel) {
@@ -349,7 +358,11 @@ export function getBackgroundTerminal(sessionId, workspace) {
 
   var termOptions = {
     name: termName,
-    cwd: cwd
+    cwd: cwd,
+    env: {
+      GIT_PAGER: 'cat',
+      PAGER: 'cat'
+    }
   };
 
   if (vscode.TerminalLocation && vscode.TerminalLocation.Panel) {
@@ -386,14 +399,25 @@ var INTERACTIVE_COMMANDS = [
   'nano', 'vim', 'vi', 'emacs', 'less', 'more',
   'top', 'htop', 'glances',
   'powershell -noexit', 'cmd /k',
-  'read-host', 'read', 'set /p', 'input', 'prompt',
-  'npm init', 'yarn init', 'pnpm init', 'npx create-',
-  'gh auth', 'git commit', 'git add -p', 'git rebase -i'
+  'read-host', 'set /p ',
+  'gh auth', 'git add -p', 'git rebase -i'
 ];
+
+function isBatchCommand(command) {
+  var trimmed = (command || '').trim().toLowerCase();
+  if (!trimmed) return false;
+  if (trimmed.includes(' -y') || trimmed.includes(' --yes') || trimmed.includes(' -c ') ||
+      trimmed.includes(' -command ') || trimmed.includes(' --non-interactive') ||
+      trimmed.includes(' --batch') || trimmed.includes(' --template') || trimmed.includes(' -f ')) {
+    return true;
+  }
+  return false;
+}
 
 function checkInteractiveCommand(command) {
   var trimmed = (command || '').trim().toLowerCase();
   if (!trimmed) return false;
+  if (isBatchCommand(trimmed)) return false;
   if (trimmed.includes('read-host') || trimmed.includes('set /p ') || trimmed.includes('input(')) {
     return true;
   }
@@ -406,10 +430,26 @@ function checkInteractiveCommand(command) {
     var exeWithArg = words.length > 1 ? (words[0] + ' ' + words[1]) : '';
     for (var i = 0; i < INTERACTIVE_COMMANDS.length; i++) {
       var ic = INTERACTIVE_COMMANDS[i];
-      if (exe === ic || exeWithArg === ic || seg === ic || seg.startsWith(ic + ' ') || seg.indexOf(ic) === 0) {
+      if (exe === ic || exeWithArg === ic || seg === ic || seg.startsWith(ic + ' ')) {
         return true;
       }
     }
+  }
+  return false;
+}
+
+var BLOCKING_TTY_COMMANDS = [
+  'nano', 'vim', 'vi', 'emacs', 'less', 'more',
+  'top', 'htop', 'glances'
+];
+
+export function isBlockingTtyCommand(command) {
+  var trimmed = (command || '').trim().toLowerCase();
+  if (!trimmed) return false;
+  var words = trimmed.split(/\s+/);
+  var exe = words[0];
+  for (var i = 0; i < BLOCKING_TTY_COMMANDS.length; i++) {
+    if (exe === BLOCKING_TTY_COMMANDS[i]) return true;
   }
   return false;
 }
@@ -422,13 +462,14 @@ export function isPrompt(output) {
   return detectPrompt(output).interactive;
 }
 
-function createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess) {
+function createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess, onChunk) {
   function executeFilePromise(resolve) {
     var options = {
       cwd: cwd || undefined,
       timeout: (timeout || 30) * 1000,
       maxBuffer: 2 * 1024 * 1024,
-      windowsHide: true
+      windowsHide: true,
+      env: Object.assign({}, process.env, { GIT_PAGER: 'cat', PAGER: 'cat' })
     };
     function onResult(error, cpStdout, cpStderr) {
       if (sess && sess.activeChildProcess === childProc) {
@@ -449,6 +490,18 @@ function createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess) {
       }
     }
     var childProc = execFile(shellExe, fullArgs, options, onResult);
+    if (onChunk && childProc.stdout) {
+      function onStdoutData(data) {
+        onChunk(data.toString(), false);
+      }
+      childProc.stdout.on('data', onStdoutData);
+    }
+    if (onChunk && childProc.stderr) {
+      function onStderrData(data) {
+        onChunk(data.toString(), true);
+      }
+      childProc.stderr.on('data', onStderrData);
+    }
     if (sess) {
       sess.activeChildProcess = childProc;
     }
@@ -461,7 +514,7 @@ function waitForShellIntegration(terminal, timeoutMs) {
   if (terminal.shellIntegration) {
     return Promise.resolve(terminal.shellIntegration);
   }
-  timeoutMs = timeoutMs || 1200;
+  timeoutMs = timeoutMs || 150;
   var disposable = null;
 
   function executor(resolve) {
@@ -541,10 +594,30 @@ export function setCurrentCwd(sessionId, newCwd) {
 export async function executeCommand(command, timeout, background, isInteractive, sessionId, workspace, requestedCwd) {
   timeout = timeout || 30;
   var sess = getSession(sessionId);
+
+  // Model decision takes precedence. Hardcoded checks are only secondary
+  // fallbacks when undefined, or for checking special conditions (blocking TTY programs).
+  var effectiveInteractive = false;
+  if (typeof isInteractive === 'boolean') {
+    effectiveInteractive = isInteractive;
+    if (!effectiveInteractive && isBlockingTtyCommand(command)) {
+      effectiveInteractive = true;
+    }
+  } else {
+    effectiveInteractive = checkInteractiveCommand(command);
+  }
+
+  var effectiveBackground = false;
+  if (typeof background === 'boolean') {
+    effectiveBackground = background;
+  } else {
+    effectiveBackground = false;
+  }
+
   var terminal = null;
   var bgTerminal = null;
 
-  if (background) {
+  if (effectiveBackground) {
     bgTerminal = getBackgroundTerminal(sessionId, workspace);
     if (bgTerminal && typeof bgTerminal.show === 'function') {
       bgTerminal.show(true);
@@ -562,7 +635,7 @@ export async function executeCommand(command, timeout, background, isInteractive
   }
   var canonicalSandbox = pathSecurity.getCanonicalSandboxRoot();
 
-  if (background) {
+  if (effectiveBackground) {
     if (!sess.backgroundCwd) {
       sess.backgroundCwd = canonicalWs || (workspace || undefined);
     }
@@ -596,14 +669,26 @@ export async function executeCommand(command, timeout, background, isInteractive
     }
   }
 
-  var activeTermForShell = background ? (bgTerminal || terminal) : terminal;
+  var activeTermForShell = effectiveBackground ? (bgTerminal || terminal) : terminal;
   var shellName = detectShellName(activeTermForShell);
   var platformName = getPlatform();
 
   // Normalize sandbox paths in command so external executables don't fail on raw ~ or .coderun
   command = expandSandboxPathInCommand(command, canonicalSandbox);
 
-  var currentTermCwd = background ? sess.backgroundCwd : sess.currentCwd;
+  // Disable git pager to prevent git diff, git log, etc. from hanging on interactive less pager
+  if (/^\s*git\s+/i.test(command) || /\b(?:git\s+(?:diff|log|show|branch))\b/i.test(command)) {
+    var lowerSh2 = shellName.toLowerCase();
+    if (lowerSh2.includes('powershell') || lowerSh2.includes('pwsh')) {
+      command = '$env:GIT_PAGER = "cat"; $env:PAGER = "cat"; ' + command;
+    } else if (lowerSh2.includes('cmd')) {
+      command = 'set GIT_PAGER=cat && set PAGER=cat && ' + command;
+    } else {
+      command = 'GIT_PAGER=cat PAGER=cat ' + command;
+    }
+  }
+
+  var currentTermCwd = effectiveBackground ? sess.backgroundCwd : sess.currentCwd;
   var isSameCwd = false;
   if (targetCwd && currentTermCwd) {
     isSameCwd = isSameDirectoryPath(targetCwd, currentTermCwd);
@@ -623,7 +708,7 @@ export async function executeCommand(command, timeout, background, isInteractive
         command = cdCmd + ' && ' + command;
       }
     }
-    if (background) {
+    if (effectiveBackground) {
       sess.backgroundCwd = targetCwd;
     } else {
       sess.currentCwd = targetCwd;
@@ -632,12 +717,12 @@ export async function executeCommand(command, timeout, background, isInteractive
     command = getCdCommand(targetCwd, shellName);
   }
 
-  var cwd = targetCwd || (background ? sess.backgroundCwd : sess.currentCwd) || workspace || undefined;
+  var cwd = targetCwd || (effectiveBackground ? sess.backgroundCwd : sess.currentCwd) || workspace || undefined;
   var startedAt = Date.now();
   var sendEvent = sess.sendEventCallback;
 
   // Background execution: Track explicit task handle and lifecycle
-  if (background) {
+  if (effectiveBackground) {
     var bgExecId = 'term_bg_' + (++executionCounter);
     sess.activeBackgroundExecId = bgExecId;
     sess.lastBackgroundActive = true;
@@ -683,7 +768,7 @@ export async function executeCommand(command, timeout, background, isInteractive
       bgShellIntegration = bgTerminal.shellIntegration;
       if (!bgShellIntegration && typeof vscode.window.onDidChangeTerminalShellIntegration === 'function') {
         try {
-          bgShellIntegration = await waitForShellIntegration(bgTerminal, 1000);
+          bgShellIntegration = await waitForShellIntegration(bgTerminal, 150);
         } catch (_) {}
       }
     }
@@ -721,6 +806,12 @@ export async function executeCommand(command, timeout, background, isInteractive
                     }
                   }
                 }
+                if (sess.lastBackgroundExecution && sess.lastBackgroundExecution.taskId === bgExecId) {
+                  sess.lastBackgroundExecution.stdout = bgStdout;
+                  if (detectedUrl) {
+                    sess.lastBackgroundExecution.url = detectedUrl;
+                  }
+                }
                 if (sendEvent) {
                   sendEvent({
                     type: 'terminal_output',
@@ -735,6 +826,12 @@ export async function executeCommand(command, timeout, background, isInteractive
             if (taskObj && taskObj.status !== 'cancelled') {
               taskObj.status = 'completed';
               taskObj.endedAt = Date.now();
+              if (sess.lastBackgroundExecution && sess.lastBackgroundExecution.taskId === bgExecId) {
+                sess.lastBackgroundExecution.status = 'completed';
+                sess.lastBackgroundExecution.exitCode = 0;
+                sess.lastBackgroundExecution.endedAt = Date.now();
+                sess.lastBackgroundExecution.durationMs = Date.now() - startedAt;
+              }
               if (sendEvent) {
                 sendEvent({
                   type: 'terminal_exit',
@@ -758,7 +855,7 @@ export async function executeCommand(command, timeout, background, isInteractive
         var taskRecord = sess.backgroundTasks[bgExecId];
         var finalUrl = detectedUrl || (taskRecord ? taskRecord.url : null);
 
-        return {
+        var bgSiResult = {
           shell: shellName,
           platform: platformName,
           command: command,
@@ -777,6 +874,24 @@ export async function executeCommand(command, timeout, background, isInteractive
             ? ('Background server started and listening on ' + finalUrl + ' (taskId: ' + bgExecId + ').')
             : ('Background command started in terminal ' + bgTerminal.name + ' (taskId: ' + bgExecId + ').')
         };
+        sess.lastBackgroundExecution = {
+          command: command,
+          stdout: bgStdout,
+          stderr: bgStderr,
+          exitCode: null,
+          durationMs: Date.now() - startedAt,
+          success: true,
+          status: 'running',
+          startedAt: startedAt,
+          endedAt: null,
+          cwd: cwd,
+          shell: shellName,
+          platform: platformName,
+          taskId: bgExecId,
+          url: finalUrl,
+          background: true
+        };
+        return bgSiResult;
       } catch (bgSiErr) {
         console.warn('[TERMINAL] Background shell integration failed, falling back:', bgSiErr.message);
       }
@@ -784,6 +899,14 @@ export async function executeCommand(command, timeout, background, isInteractive
 
     // 2. Headless / Non-shell-integration fallback (executes process and sniffs output)
     try {
+      if (bgTerminal) {
+        try {
+          if (cwd) {
+            bgTerminal.sendText(getCdCommand(cwd, shellName), true);
+          }
+          bgTerminal.sendText(command, true);
+        } catch (_) {}
+      }
       var spawnOptions = {
         cwd: cwd || undefined,
         windowsHide: true,
@@ -795,6 +918,13 @@ export async function executeCommand(command, timeout, background, isInteractive
           t.status = error ? 'failed' : 'completed';
           t.exitCode = error ? (error.code != null ? error.code : 1) : 0;
           t.endedAt = Date.now();
+          if (sess.lastBackgroundExecution && sess.lastBackgroundExecution.taskId === bgExecId) {
+            sess.lastBackgroundExecution.status = t.status;
+            sess.lastBackgroundExecution.exitCode = t.exitCode;
+            sess.lastBackgroundExecution.endedAt = t.endedAt;
+            sess.lastBackgroundExecution.durationMs = Date.now() - startedAt;
+            sess.lastBackgroundExecution.success = !error;
+          }
           if (sendEvent) {
             sendEvent({
               type: 'terminal_exit',
@@ -815,6 +945,9 @@ export async function executeCommand(command, timeout, background, isInteractive
         function onBgStdoutData(chunk) {
           var cleanChunk = stripAnsi(chunk.toString());
           bgStdout += cleanChunk;
+          if (sess.lastBackgroundExecution && sess.lastBackgroundExecution.taskId === bgExecId) {
+            sess.lastBackgroundExecution.stdout = bgStdout;
+          }
           if (sendEvent && cleanChunk) {
             sendEvent({
               type: 'terminal_output',
@@ -830,6 +963,9 @@ export async function executeCommand(command, timeout, background, isInteractive
         function onBgStderrData(chunk) {
           var cleanChunk = stripAnsi(chunk.toString());
           bgStderr += cleanChunk;
+          if (sess.lastBackgroundExecution && sess.lastBackgroundExecution.taskId === bgExecId) {
+            sess.lastBackgroundExecution.stderr = bgStderr;
+          }
           if (sendEvent && cleanChunk) {
             sendEvent({
               type: 'terminal_output',
@@ -868,7 +1004,7 @@ export async function executeCommand(command, timeout, background, isInteractive
       url: detectedUrl
     };
 
-    return {
+    var bgResult2 = {
       shell: shellName,
       platform: platformName,
       command: command,
@@ -886,13 +1022,31 @@ export async function executeCommand(command, timeout, background, isInteractive
         ? ('Background server started and listening on ' + detectedUrl + ' (taskId: ' + bgExecId + ').')
         : ('Background command started successfully (taskId: ' + bgExecId + ').')
     };
+    sess.lastBackgroundExecution = {
+      command: command,
+      stdout: bgStdout,
+      stderr: bgStderr,
+      exitCode: null,
+      durationMs: Date.now() - startedAt,
+      success: true,
+      status: bgProcess ? 'running' : 'submitted_to_terminal',
+      startedAt: startedAt,
+      endedAt: null,
+      cwd: cwd,
+      shell: shellName,
+      platform: platformName,
+      taskId: bgExecId,
+      url: detectedUrl,
+      background: true
+    };
+    return bgResult2;
   }
 
   // 1. Try Shell Integration execution (wait briefly for integration if terminal was just created)
   var shellIntegration = terminal ? terminal.shellIntegration : null;
   if (!shellIntegration && terminal && typeof vscode.window.onDidChangeTerminalShellIntegration === 'function') {
     try {
-      shellIntegration = await waitForShellIntegration(terminal, 1200);
+      shellIntegration = await waitForShellIntegration(terminal, 150);
     } catch (_) {}
   }
 
@@ -945,14 +1099,16 @@ export async function executeCommand(command, timeout, background, isInteractive
         if (promptSilenceTimer) {
           clearTimeout(promptSilenceTimer);
         }
+        if (!effectiveInteractive) {
+          return;
+        }
         var pCheck = detectPrompt(stdout);
-        var isRealPrompt = pCheck.interactive || checkInteractiveCommand(command);
-        if (isRealPrompt) {
+        if (pCheck.interactive) {
           promptSilenceTimer = setTimeout(function onPromptDetected() {
             isWaitingForPrompt = true;
             sess.lastSessionActive = true;
             resolveStream(0);
-          }, 300);
+          }, 1500);
         }
       }
 
@@ -1036,7 +1192,7 @@ export async function executeCommand(command, timeout, background, isInteractive
       var isSuccess = !isTimedOut && (exitCode === 0 || exitCode == null);
       var finalStatus = isWaitingForPrompt ? 'waiting_for_input' : (isSuccess ? 'completed' : 'failed');
 
-      return {
+      var siResult = {
         shell: shellName,
         platform: platformName,
         command: command,
@@ -1052,6 +1208,26 @@ export async function executeCommand(command, timeout, background, isInteractive
         waitingForInput: isWaitingForPrompt,
         status: finalStatus
       };
+      sess.lastMainExecution = {
+        command: command,
+        stdout: stdout,
+        stderr: stderr,
+        exitCode: isWaitingForPrompt ? null : exitCode,
+        durationMs: durationMs,
+        success: isSuccess,
+        status: finalStatus,
+        startedAt: startedAt,
+        endedAt: isWaitingForPrompt ? null : Date.now(),
+        cwd: cwd,
+        shell: shellName,
+        platform: platformName,
+        method: 'shell_integration',
+        interactive: promptCheck.interactive || isWaitingForPrompt,
+        waitingForInput: isWaitingForPrompt,
+        promptDetected: promptCheck.promptDetected || isWaitingForPrompt,
+        background: false
+      };
+      return siResult;
     } catch (siErr) {
       console.warn('[TERMINAL] Shell integration execution error:', siErr.message);
       sess.activeExecId = null;
@@ -1073,7 +1249,7 @@ export async function executeCommand(command, timeout, background, isInteractive
         var fallbackExitCode = isTimedOut ? -1 : (typeof execution.exitCode === 'number' ? execution.exitCode : -1);
         var isRealSuccess = fallbackExitCode === 0;
 
-        return {
+        var siFailResult = {
           shell: shellName,
           platform: platformName,
           command: command,
@@ -1088,6 +1264,23 @@ export async function executeCommand(command, timeout, background, isInteractive
           status: isTimedOut ? 'timed_out' : (isRealSuccess ? 'completed' : 'failed'),
           observationError: !isTimedOut && !isRealSuccess
         };
+        sess.lastMainExecution = {
+          command: command,
+          stdout: stdout,
+          stderr: siErr.message,
+          exitCode: fallbackExitCode,
+          durationMs: failDurationMs,
+          success: isRealSuccess,
+          status: isTimedOut ? 'timed_out' : (isRealSuccess ? 'completed' : 'failed'),
+          startedAt: startedAt,
+          endedAt: Date.now(),
+          cwd: cwd,
+          shell: shellName,
+          platform: platformName,
+          method: 'shell_integration',
+          background: false
+        };
+        return siFailResult;
       }
     }
   }
@@ -1095,8 +1288,8 @@ export async function executeCommand(command, timeout, background, isInteractive
   // 2. Child Process Fallback (Executes strictly ONCE only if Shell Integration was not started)
   console.log('[TERMINAL] Using isolated child_process fallback for session', sess.id, ':', command);
 
-  // If interactive, send to VS Code terminal directly without child_process duplicate
-  if (checkInteractiveCommand(command) || isInteractive) {
+  // If interactive (as decided by the model or blocking TTY check), send to VS Code terminal directly without child_process duplicate
+  if (effectiveInteractive && !isBatchCommand(command)) {
     if (targetCwd && !isSameCwd) {
       terminal.sendText(getCdCommand(targetCwd, shellName), true);
     }
@@ -1115,7 +1308,7 @@ export async function executeCommand(command, timeout, background, isInteractive
         interactive: true
       });
     }
-    return {
+    var interactiveResult = {
       shell: shellName,
       platform: platformName,
       command: command,
@@ -1130,14 +1323,37 @@ export async function executeCommand(command, timeout, background, isInteractive
       submitted: true,
       message: 'Interactive command submitted to VS Code terminal.'
     };
+    sess.lastMainExecution = {
+      command: command,
+      stdout: 'Interactive command running in VS Code terminal.',
+      stderr: '',
+      exitCode: null,
+      durationMs: Date.now() - startedAt,
+      success: true,
+      status: 'waiting_for_input',
+      startedAt: startedAt,
+      endedAt: null,
+      cwd: cwd,
+      shell: shellName,
+      platform: platformName,
+      method: 'interactive_direct',
+      interactive: true,
+      waitingForInput: true,
+      promptDetected: true,
+      background: false
+    };
+    return interactiveResult;
   }
 
   // Non-interactive: Execute strictly via execFile
-  if (targetCwd && !isSameCwd) {
-    try {
-      terminal.sendText(getCdCommand(targetCwd, shellName), true);
-    } catch (_) {}
-  }
+  try {
+    if (terminal) {
+      if (targetCwd && !isSameCwd) {
+        terminal.sendText(getCdCommand(targetCwd, shellName), true);
+      }
+      terminal.sendText(command, true);
+    }
+  } catch (_) {}
   var fallbackExecId = 'term_fallback_' + (++executionCounter);
   sess.activeExecId = fallbackExecId;
   if (sendEvent) {
@@ -1172,7 +1388,16 @@ export async function executeCommand(command, timeout, background, isInteractive
 
   try {
     var fullArgs = shellArg.split(' ').concat([command]);
-    var cpResult = await createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess);
+    var chunksSent = 0;
+    function onFallbackChunk(chunk, isStderr) {
+      if (!chunk) return;
+      var clean = stripAnsi(chunk);
+      if (clean && sendEvent) {
+        chunksSent++;
+        sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: clean });
+      }
+    }
+    var cpResult = await createExecFilePromise(shellExe, fullArgs, cwd, timeout, sess, onFallbackChunk);
 
     var fbStdout = stripAnsi(cpResult.stdout || '');
     var fbStderr = stripAnsi(cpResult.stderr || '');
@@ -1181,11 +1406,13 @@ export async function executeCommand(command, timeout, background, isInteractive
 
     sess.lastSessionOutput += fbStdout;
 
-    if (sendEvent && fbStdout) {
-      sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStdout });
-    }
-    if (sendEvent && fbStderr) {
-      sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStderr });
+    if (sendEvent && chunksSent === 0) {
+      if (fbStdout) {
+        sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStdout });
+      }
+      if (fbStderr) {
+        sendEvent({ type: 'terminal_output', terminalId: fallbackExecId, chunk: fbStderr });
+      }
     }
     if (sendEvent) {
       sendEvent({
@@ -1202,7 +1429,7 @@ export async function executeCommand(command, timeout, background, isInteractive
     }
 
     sess.activeExecId = null;
-    return {
+    var fbResult = {
       shell: shellName,
       platform: platformName,
       command: command,
@@ -1215,6 +1442,23 @@ export async function executeCommand(command, timeout, background, isInteractive
       method: 'execFile_fallback',
       status: fbExitCode === 0 ? 'completed' : 'failed'
     };
+    sess.lastMainExecution = {
+      command: command,
+      stdout: fbStdout,
+      stderr: fbStderr,
+      exitCode: fbExitCode,
+      durationMs: fbDurationMs,
+      success: fbExitCode === 0,
+      status: fbExitCode === 0 ? 'completed' : 'failed',
+      startedAt: startedAt,
+      endedAt: Date.now(),
+      cwd: cwd,
+      shell: shellName,
+      platform: platformName,
+      method: 'execFile_fallback',
+      background: false
+    };
+    return fbResult;
   } catch (cpErr) {
     sess.activeExecId = null;
     var errDuration = Date.now() - startedAt;
@@ -1227,7 +1471,7 @@ export async function executeCommand(command, timeout, background, isInteractive
         platform: platformName
       });
     }
-    return {
+    var cpFailResult = {
       shell: shellName,
       platform: platformName,
       command: command,
@@ -1238,8 +1482,26 @@ export async function executeCommand(command, timeout, background, isInteractive
       success: false,
       workingDirectory: cwd,
       method: 'execFile_fallback',
-      error: cpErr.message
+      error: cpErr.message,
+      status: 'failed'
     };
+    sess.lastMainExecution = {
+      command: command,
+      stdout: '',
+      stderr: cpErr.message,
+      exitCode: -1,
+      durationMs: errDuration,
+      success: false,
+      status: 'failed',
+      startedAt: startedAt,
+      endedAt: Date.now(),
+      cwd: cwd,
+      shell: shellName,
+      platform: platformName,
+      method: 'execFile_fallback',
+      background: false
+    };
+    return cpFailResult;
   }
 }
 
@@ -1278,6 +1540,19 @@ export async function sendTerminalInput(text, sessionId, addNewLine) {
   if (isExitCommand) {
     sess.lastSessionActive = false;
     sess.activeExecId = null;
+  }
+
+  if (sess.lastMainExecution) {
+    sess.lastMainExecution.lastInput = cleanText;
+    if (responseOutput) {
+      sess.lastMainExecution.stdout = (sess.lastMainExecution.stdout ? (sess.lastMainExecution.stdout + '\n') : '') + responseOutput;
+    }
+    if (isExitCommand) {
+      sess.lastMainExecution.status = 'completed';
+      sess.lastMainExecution.exitCode = 0;
+      sess.lastMainExecution.success = true;
+      sess.lastMainExecution.endedAt = Date.now();
+    }
   }
 
   return {
@@ -1332,6 +1607,185 @@ export async function checkTerminalOutput(sessionId) {
   };
 }
 
+export async function getTerminalState(sessionId, options) {
+  var sess = getSession(sessionId);
+  var isBackground = false;
+  if (options) {
+    if (options.background === true || options.terminal === 'background' || options.terminal === 'bg') {
+      isBackground = true;
+    }
+  }
+
+  function waitTick(resolve) {
+    setTimeout(resolve, 200);
+  }
+  await new Promise(waitTick);
+
+  if (isBackground) {
+    var bgTerm = sess.backgroundTerminal;
+    var bgTermName = bgTerm ? bgTerm.name : ((sessionId && sessionId !== 'default') ? ('CodeRun(BG) (' + sessionId + ')') : 'CodeRun(BG)');
+    var shellNameBg = bgTerm ? detectShellName(bgTerm) : getShellName(sessionId);
+    var platformNameBg = getPlatform();
+    var lastBgExec = sess.lastBackgroundExecution;
+
+    var runningBgTask = null;
+    for (var bId in sess.backgroundTasks) {
+      var task = sess.backgroundTasks[bId];
+      if (task && (task.status === 'running' || task.status === 'submitted_to_terminal')) {
+        runningBgTask = task;
+        break;
+      }
+    }
+
+    var bgStatus = runningBgTask ? 'running' : (lastBgExec ? lastBgExec.status : 'idle');
+    var bgExitCode = runningBgTask ? null : (lastBgExec ? lastBgExec.exitCode : null);
+    var bgExitCodeZero = bgExitCode === 0;
+    var bgStdout = (lastBgExec && lastBgExec.stdout) || sess.lastBackgroundOutput || '';
+    var bgStderr = (lastBgExec && lastBgExec.stderr) || '';
+    var bgCommand = (lastBgExec && lastBgExec.command) || (runningBgTask && runningBgTask.command) || '';
+    var bgCwd = sess.backgroundCwd || (lastBgExec && lastBgExec.cwd) || '';
+
+    var crossReferencedFromMain = false;
+    if (!bgCommand && !lastBgExec && !runningBgTask && (sess.lastMainExecution || sess.lastSessionOutput)) {
+      var lastMain = sess.lastMainExecution;
+      var mainCmd = (lastMain && lastMain.command) || '';
+      var mainOut = (lastMain && lastMain.stdout) || sess.lastSessionOutput || '';
+      var mainCode = lastMain ? lastMain.exitCode : null;
+      var mainZero = mainCode === 0;
+      var mainStat = lastMain ? lastMain.status : 'completed';
+
+      bgCommand = mainCmd ? (mainCmd + ' (ran in Main Terminal)') : '';
+      bgStdout = mainOut;
+      bgStderr = (lastMain && lastMain.stderr) || '';
+      bgExitCode = mainCode;
+      bgExitCodeZero = mainZero;
+      bgStatus = 'idle';
+      bgCwd = (lastMain && lastMain.cwd) || sess.currentCwd || bgCwd;
+      crossReferencedFromMain = true;
+    }
+
+    var bgMessage = '';
+    if (!bgCommand && !lastBgExec && !runningBgTask) {
+      bgMessage = 'Background terminal (' + bgTermName + ') is idle. No commands have been executed yet in this session.';
+    } else if (runningBgTask) {
+      bgMessage = 'Background terminal has an active running task (' + runningBgTask.id + '): `' + bgCommand + '`.' +
+        (runningBgTask.url ? (' Listening on ' + runningBgTask.url + '.') : '');
+    } else if (crossReferencedFromMain) {
+      bgMessage = 'Background terminal (' + bgTermName + ') is idle (no background commands executed).\n' +
+        'Note: Recent command ran in Main Terminal (' + (sess.terminal ? sess.terminal.name : 'CodeRun(main)') + '): `' + bgCommand + '`. Status: ' + (sess.lastMainExecution ? sess.lastMainExecution.status : 'completed') +
+        (bgExitCode != null ? (' (exit code: ' + bgExitCode + ', exited with zero: ' + bgExitCodeZero + ')') : '') +
+        (bgStdout ? ('\nOutput:\n' + bgStdout.substring(Math.max(0, bgStdout.length - 1000))) : '');
+    } else {
+      bgMessage = 'Background terminal last command: `' + bgCommand + '`. Status: ' + bgStatus +
+        (bgExitCode != null ? (' (exit code: ' + bgExitCode + ', exited with zero: ' + bgExitCodeZero + ')') : ' (running)') +
+        (bgStdout ? ('\nOutput:\n' + bgStdout.substring(Math.max(0, bgStdout.length - 1000))) : '');
+    }
+
+    return {
+      terminal: 'background',
+      terminalName: bgTermName,
+      has_executed_command: !!((lastBgExec && lastBgExec.command) || (runningBgTask && runningBgTask.command)),
+      cross_referenced: crossReferencedFromMain,
+      command: bgCommand,
+      stdout: bgStdout,
+      stderr: bgStderr,
+      output: bgStdout,
+      exit_code: bgExitCode,
+      exit_code_zero: bgExitCodeZero,
+      status: bgStatus,
+      waiting_for_input: false,
+      duration_ms: (lastBgExec && lastBgExec.durationMs) || (crossReferencedFromMain && sess.lastMainExecution ? sess.lastMainExecution.durationMs : 0),
+      working_directory: bgCwd,
+      cwd: bgCwd,
+      shell: shellNameBg,
+      platform: platformNameBg,
+      url: (runningBgTask && runningBgTask.url) || (lastBgExec && lastBgExec.url) || null,
+      message: bgMessage
+    };
+  }
+
+  var mainTerm = sess.terminal;
+  var mainTermName = mainTerm ? mainTerm.name : ((sessionId && sessionId !== 'default') ? ('CodeRun(main) (' + sessionId + ')') : 'CodeRun(main)');
+  var shellNameMain = mainTerm ? detectShellName(mainTerm) : getShellName(sessionId);
+  var platformNameMain = getPlatform();
+  var lastMainExec = sess.lastMainExecution;
+
+  var mainOutput = sess.lastSessionOutput || (lastMainExec ? lastMainExec.stdout : '');
+  var mainStderr = (lastMainExec && lastMainExec.stderr) || '';
+  var mainCommand = (lastMainExec && lastMainExec.command) || '';
+  var mainCwd = sess.currentCwd || (lastMainExec && lastMainExec.cwd) || '';
+
+  var isWaiting = sess.lastSessionActive;
+  var hasActiveExecution = !!sess.activeExecId || !!sess.activeChildProcess;
+  var promptCheck = detectPrompt(mainOutput);
+  var isWaitingForInput = isWaiting || promptCheck.interactive || (lastMainExec && lastMainExec.waitingForInput);
+
+  var mainStatus = isWaitingForInput ? 'waiting_for_input' : (hasActiveExecution ? 'active' : (lastMainExec ? lastMainExec.status : 'idle'));
+  var mainExitCode = (hasActiveExecution || isWaitingForInput) ? null : (lastMainExec ? lastMainExec.exitCode : null);
+  var mainExitCodeZero = mainExitCode === 0;
+
+  var crossReferencedFromBg = false;
+  if (!mainCommand && !lastMainExec && !hasActiveExecution && (sess.lastBackgroundExecution || sess.lastBackgroundOutput)) {
+    var lastBg = sess.lastBackgroundExecution;
+    var bgCmd = (lastBg && lastBg.command) || '';
+    var bgOut = (lastBg && lastBg.stdout) || sess.lastBackgroundOutput || '';
+    var bgCode = lastBg ? lastBg.exitCode : null;
+    var bgZero = bgCode === 0;
+    var bgStat = lastBg ? lastBg.status : 'completed';
+
+    mainCommand = bgCmd ? (bgCmd + ' (ran in Background Terminal)') : '';
+    mainOutput = bgOut;
+    mainStderr = (lastBg && lastBg.stderr) || '';
+    mainExitCode = bgCode;
+    mainExitCodeZero = bgZero;
+    mainStatus = 'idle';
+    mainCwd = (lastBg && lastBg.cwd) || sess.backgroundCwd || mainCwd;
+    crossReferencedFromBg = true;
+  }
+
+  var mainMessage = '';
+  if (!mainCommand && !lastMainExec && !hasActiveExecution) {
+    mainMessage = 'Main terminal (' + mainTermName + ') is idle. No commands have been executed yet in this session.';
+  } else if (isWaitingForInput) {
+    mainMessage = 'Main terminal is waiting for user/prompt input for command: `' + mainCommand + '`.' +
+      '\nUse `terminal_input` with text to respond, or `stop_terminal` to cancel.' +
+      (mainOutput ? ('\nLatest terminal output:\n' + mainOutput.substring(Math.max(0, mainOutput.length - 1000))) : '');
+  } else if (hasActiveExecution) {
+    mainMessage = 'Main terminal is actively executing command: `' + mainCommand + '`.' +
+      (mainOutput ? ('\nLatest terminal output:\n' + mainOutput.substring(Math.max(0, mainOutput.length - 1000))) : '');
+  } else if (crossReferencedFromBg) {
+    mainMessage = 'Main terminal (' + mainTermName + ') is idle (no main commands executed).\n' +
+      'Note: Recent command ran in Background Terminal (' + (sess.backgroundTerminal ? sess.backgroundTerminal.name : 'CodeRun(BG)') + '): `' + mainCommand + '`. Status: ' + (sess.lastBackgroundExecution ? sess.lastBackgroundExecution.status : 'completed') +
+      (mainExitCode != null ? (' (exit code: ' + mainExitCode + ', exited with zero: ' + mainExitCodeZero + ')') : '') +
+      (mainOutput ? ('\nOutput:\n' + mainOutput.substring(Math.max(0, mainOutput.length - 1000))) : '');
+  } else {
+    mainMessage = 'Main terminal last command: `' + mainCommand + '`. Status: ' + mainStatus +
+      (mainExitCode != null ? (' (exit code: ' + mainExitCode + ', exited with zero: ' + mainExitCodeZero + ')') : '') +
+      (mainOutput ? ('\nOutput:\n' + mainOutput.substring(Math.max(0, mainOutput.length - 1000))) : '');
+  }
+
+  return {
+    terminal: 'main',
+    terminalName: mainTermName,
+    has_executed_command: !!((lastMainExec && lastMainExec.command) || (sess.activeExecId && mainCommand)),
+    cross_referenced: crossReferencedFromBg,
+    command: mainCommand,
+    stdout: mainOutput,
+    stderr: mainStderr,
+    output: mainOutput,
+    exit_code: mainExitCode,
+    exit_code_zero: mainExitCodeZero,
+    status: mainStatus,
+    waiting_for_input: isWaitingForInput,
+    duration_ms: (lastMainExec && lastMainExec.durationMs) || (crossReferencedFromBg && sess.lastBackgroundExecution ? sess.lastBackgroundExecution.durationMs : 0),
+    working_directory: mainCwd,
+    cwd: mainCwd,
+    shell: shellNameMain,
+    platform: platformNameMain,
+    message: mainMessage
+  };
+}
+
 export async function stopTerminal(sessionId, target) {
   var sess = getSession(sessionId);
   var normTarget = String(target || 'all').toLowerCase();
@@ -1360,6 +1814,12 @@ export async function stopTerminal(sessionId, target) {
         bgTask.status = 'cancelled';
         hadActiveProcess = true;
       }
+    }
+    if (sess.lastBackgroundExecution && (sess.lastBackgroundExecution.status === 'running' || sess.lastBackgroundExecution.status === 'active')) {
+      sess.lastBackgroundExecution.status = 'stopped';
+      sess.lastBackgroundExecution.exitCode = 130;
+      sess.lastBackgroundExecution.success = false;
+      sess.lastBackgroundExecution.endedAt = Date.now();
     }
   }
 
@@ -1397,6 +1857,13 @@ export async function stopTerminal(sessionId, target) {
     sess.pendingInteractiveExecution = null;
     sess.lastCheckedPosition = (sess.lastSessionOutput || '').length;
 
+    if (sess.lastMainExecution && (sess.lastMainExecution.status === 'running' || sess.lastMainExecution.status === 'active' || sess.lastMainExecution.status === 'waiting_for_input')) {
+      sess.lastMainExecution.status = 'stopped';
+      sess.lastMainExecution.exitCode = 130;
+      sess.lastMainExecution.success = false;
+      sess.lastMainExecution.endedAt = Date.now();
+    }
+
     return {
       success: true,
       status: 'stopped',
@@ -1409,6 +1876,12 @@ export async function stopTerminal(sessionId, target) {
     if (stopMain) {
       sess.lastSessionActive = false;
       sess.activeExecId = null;
+      if (sess.lastMainExecution && (sess.lastMainExecution.status === 'running' || sess.lastMainExecution.status === 'active' || sess.lastMainExecution.status === 'waiting_for_input')) {
+        sess.lastMainExecution.status = 'stopped';
+        sess.lastMainExecution.exitCode = 130;
+        sess.lastMainExecution.success = false;
+        sess.lastMainExecution.endedAt = Date.now();
+      }
     }
     return {
       success: true,
@@ -1459,6 +1932,8 @@ export function resetTerminal(sessionId) {
   sess.activeExecId = null;
   sess.activeBackgroundExecId = null;
   sess.backgroundTasks = {};
+  sess.lastMainExecution = null;
+  sess.lastBackgroundExecution = null;
 }
 
 export function getBackgroundTaskStatus(taskId, sessionId) {
