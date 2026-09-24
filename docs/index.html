@@ -1765,6 +1765,7 @@
           <li><a href="#lsp-intelligence" class="sidebar-link">Native LSP &amp; Diagnostics</a></li>
           <li><a href="#tools-matrix" class="sidebar-link">Complete 33-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
+          <li><a href="#copy-actions" class="sidebar-link">Message Copy Buttons</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
           <li><a href="#planning-todos" class="sidebar-link">Real-Time Checklist & Todos</a></li>
           <li><a href="#error-containment" class="sidebar-link">Dynamic Error Boundary</a></li>
@@ -1961,6 +1962,11 @@
                 <td><strong>Interactive User Questions</strong></td>
                 <td>Session-isolated question lifecycle manager (<code>src/tools/questionManager.js</code>)</td>
                 <td><span class="pill-badge green">✅ ask_question</span> Interactive option chips + custom write-in directly in chat</td>
+              </tr>
+              <tr>
+                <td><strong>Message Copy Buttons &amp; Fidelity</strong></td>
+                <td>Raw markdown &amp; input text extraction with clipboard fallback in <code>src/ChatSpace.js</code></td>
+                <td><span class="pill-badge green">✅ Full Fidelity</span> Prompt &amp; assistant response copy with ending timestamps and zero UI noise</td>
               </tr>
               <tr>
                 <td><strong>Native VS Code LSP &amp; Diagnostics</strong></td>
@@ -3549,6 +3555,40 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
             <div class="card-icon">🔒</div>
             <div class="card-title">Session-Isolated Lifecycle</div>
             <div class="card-text">Managed by <code>questionManager.js</code> with strict session isolation, preventing cross-session interference and providing single-source resolution.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Message Copy Buttons & Clipboard Fidelity -->
+      <section id="copy-actions">
+        <h2 class="section-heading">📋 Message Copy Buttons &amp; Clipboard Fidelity</h2>
+        <p>
+          CodeRun provides dedicated one-click copy buttons across all conversational turns and code blocks, ensuring exact text fidelity without UI contamination, markdown corruption, or metadata leakage:
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">💬</div>
+            <div class="card-title">User Query Copy</div>
+            <div class="card-text">
+              <strong>Location:</strong> Inside the user chat bubble footer on the left, next to the submission timestamp.<br>
+              <strong>What is copied:</strong> Copies the exact, unformatted raw prompt text as originally entered by the user. Preserves all explicit line breaks, code snippets, and CLI commands. Excludes image thumbnails, base64 payloads, timestamps, and DOM container artifacts.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🤖</div>
+            <div class="card-title">Agent Response Copy</div>
+            <div class="card-text">
+              <strong>Location:</strong> Bottom footer of the assistant response card on the far left, accompanied by the completion timestamp on the far right.<br>
+              <strong>What is copied:</strong> Copies the complete, pristine Markdown source of the model's final response (including headers, markdown tables, bullet points, and fenced code blocks). Excludes internal <code>&lt;think&gt;</code> reasoning logs, tool call invocation cards, interactive UI widgets (such as <code>ask_question</code>), and error notification wrappers.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📦</div>
+            <div class="card-title">Fenced Code Block Copy</div>
+            <div class="card-text">
+              <strong>Location:</strong> Top-right header of every rendered syntax-highlighted code block.<br>
+              <strong>What is copied:</strong> Copies strictly the executable source code content. Strips enclosing markdown backtick delimiters (<code>```</code>), language tags (e.g., <code>js</code>, <code>python</code>), line numbers, and header button labels.
+            </div>
           </div>
         </div>
       </section>
