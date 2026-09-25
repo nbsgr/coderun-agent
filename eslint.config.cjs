@@ -1,3 +1,14 @@
+var util = require('node:util');
+if (typeof util.styleText !== 'function') {
+  function polyfillStyleText(format, text) {
+    return text;
+  }
+  polyfillStyleText.validateStream = function() {
+    return true;
+  };
+  util.styleText = polyfillStyleText;
+}
+
 module.exports = [
   {
     files: ["src/**/*.js", "test/**/*.js", "scripts/**/*.js"],
