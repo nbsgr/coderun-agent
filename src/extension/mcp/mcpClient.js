@@ -299,7 +299,7 @@ export function createMcpClient(serverConfig) {
           capabilities: {},
           clientInfo: {
             name: 'CodeRun-Agent',
-            version: '1.6.5'
+            version: '1.6.6'
           }
         }, 30000).then(function onInitSuccess(initResult) {
           isConnected = true;
@@ -417,7 +417,7 @@ export function createMcpClient(serverConfig) {
           capabilities: {},
           clientInfo: {
             name: 'CodeRun-Agent',
-            version: '1.6.5'
+            version: '1.6.6'
           }
         }, 30000).then(function onSseInitSuccess(initResult) {
           serverCapabilities = initResult ? initResult.capabilities : null;
