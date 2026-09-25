@@ -20,41 +20,109 @@ Whether you are running completely offline with local models via **Ollama**, lev
 
 ---
 
-## 🧭 Current Engineering Contract & Coding Standards
+## 🧭 Comprehensive Engineering Standards & Coding Style Contract
 
-The repository follows a deliberately small, modular JavaScript architecture designed for maximum reliability and failure containment:
+The CodeRun AI Agent repository strictly follows a unified, beginner-friendly, modular JavaScript architecture designed for maximum reliability, failure containment, and maintainability. This contract combines core software craftsmanship principles with our production 3-tier extension architecture.
 
-### 📐 Coding Style Rules
-* **Plain ES JavaScript only:** Application, webview, script, and test implementations use `.js` or `.cjs`; there is no TypeScript, JSX, or transpilation build layer.
-* **Strict Traditional Function Declarations:** All functions use named `function name() {}` declarations. 
-* **Disallowed Syntax Patterns:**
-  * **No Arrow Functions:** Arrow functions (`=>`) are strictly prohibited in runtime code, utilities, and tests.
-  * **No IIFEs:** Immediately Invoked Function Expressions (`(function() {})()`) are not used.
-  * **No Assigned Function Expressions:** Variable-assigned function expressions (`var foo = function() {}`) are prohibited; use named function declarations instead.
-  * **No `.bind()`:** JavaScript function `.bind()` is not permitted. *(Intentional SQL.js exception: `projectKnowledge.js` calls SQL.js prepared-statement `.bind(params)` to bind query parameters. This is a database API call, not JavaScript function binding).*
-  * **No `class` Keyword:** Object factories, prototypes, and plain object literals are used instead of ES classes.
-  * **No JSDoc `@param` tags:** Function contracts are self-documenting through clean parameters and inline commentary rather than JSDoc tags.
+### 📐 1. Core Coding Philosophy & Readability First
+Write code to solve the requirement, not to demonstrate language features. Always think in this order:
+1. **What is the requirement?**
+2. **What is the simplest solution?**
+3. **What is the most readable implementation?**
+4. **Which language feature naturally fits the solution?**
 
-### 🏗️ 3-Tier Modular Pattern & Engine Architecture
-The extension decomposes responsibilities into a strict **Controller → Handler → Manager** 3-tier architecture:
-* **Frontend Webview (`src/UI/`):** All DOM rendering, CSS styling, UI controllers (`host-controller.js`), and managers (`chats.js`, `dashboard.js`, `settings.js`).
-* **Backend Extension Host (`src/extension/`):** All host commands, IPC routers (`UI-controller.js`), domain handlers (`manager/*handler.js`), and engine managers.
-* **`src/extension/agents/agentLoop.js` (Orchestrator):** Lightweight loop driver coordinating model stream responses, tool execution, and session state transitions.
-* **`src/extension/tools/toolExecutor.js` (Execution Engine):** Manages `executeSingleToolCall`, robust argument parsing with markdown fence stripping and concatenated JSON recovery, permission gating, step verification, and automated recovery actions.
-* **`src/extension/agents/contextEngine.js` (Context Engine):** Encapsulates startup context assembly (project knowledge, active plans, timeline, and MCP contexts) and dynamic per-iteration system prompt rebuilds.
-* **`src/extension/agents/delegationEngine.js` (Delegation Engine):** Manages background subagent tracking, completion harvesting, blocking wait loops, and natural-language delegation rationale text.
-* **`src/extension/agents/mediaRuntime.js` (Media Runtime):** Handles direct image and video model generation pre-flight, routing non-chat models directly to `/v1/images/generations` and `/v1/videos` with isolated disk persistence.
-* **`src/extension/agents/decisionEngine.js` (Decision Engine):** Forces a concluding LLM response when tool execution completes as the last message in conversation history.
-* **`src/extension/agents/toolContextBuilder.js` (Tool Context & Hygiene):** Pure utility library constructing tool context objects and detecting loop hygiene issues (repetitive tool calls, consecutive failures).
-* **`src/extension/agents/agentState.js` (State Machine):** Formal finite state machine with atomic `transitionWithTrace` to enforce valid state progressions and record transition telemetry.
+Never use a language feature simply because it exists. Prioritize:
+* **Readability, Simplicity, Maintainability, Debuggability, and Consistency**
+* Over shorter syntax, clever one-liners, or modern-looking functional abstractions.
+* Write code that another engineer or beginner can easily understand, trace, and debug.
 
-### 🔒 Operational Boundaries
-* **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
-* **Terminal states are authoritative:** A completed run cannot be changed to stopped or failed by late cleanup. A genuine stop is finalized as `stopped` and receives a terminal trace update.
-* **Trace fidelity is preserved:** Execution traces record LLM calls, tool calls, decisions, transitions, observations, final responses, status, duration, and persisted history. The UI does not infer successful completion from an incomplete tool-call history.
-* **Focused validation is standard:** Run `npm test` for the 87-group regression suite and use `node --check <file>` when changing JavaScript syntax or webview code.
+### 📜 2. Language & Environment Constraints
+* **Plain ES JavaScript only:** All application, webview, script, and test implementations use `.js` or `.cjs`.
+* **Zero TypeScript:** Never use TypeScript (`.ts` / `.tsx`). There is no transpilation or build step.
+* **Zero JSX:** No JSX or template compilation layers.
+* **Native ES Modules:** Always use `import` / `export` for clean organization, maintainability, and code reuse across runtime, webview, and test modules.
+* **CommonJS (`.cjs`):** Reserved strictly for configuration (`.eslintrc.cjs`, `eslint.config.cjs`) or isolated standalone child-process worker scripts (`builtinServers/fetchServer.cjs`).
 
-These rules apply to source, scripts, and tests. Generated artifacts and test fixtures may contain other languages or literal syntax used to test parsing and file-handling behavior.
+### ⚙️ 3. Function Declaration Rules
+
+#### ✅ Strict Traditional Named Function Declarations
+Always use normal, named function declarations:
+```javascript
+// PREFERRED:
+function saveConversation(conversationId, messages) {
+  // clear, readable implementation
+}
+
+function calculateDiffStats(originalText, modifiedText) {
+  // predictable stack traces in debuggers
+}
+```
+
+#### 🚫 Disallowed Syntax Patterns
+* **No Arrow Functions (`=>`):** Arrow functions are strictly prohibited in runtime code, webview scripts, utilities, and tests.
+  ```javascript
+  // FORBIDDEN:
+  const saveConversation = (conversationId) => {};
+  items.map((item) => item.id);
+
+  // PREFERRED:
+  function saveConversation(conversationId) {}
+  function getItemId(item) { return item.id; }
+  items.map(getItemId);
+  ```
+  *Reason:* Traditional named functions provide readable stack traces in crash dumps and developer tools, have clear hoisting semantics, avoid lexical `this` confusion, and maintain structural consistency with enterprise languages like Java.
+* **No Immediately Invoked Function Expressions (IIFEs):** `(function() {})()` is not permitted. Declare a named function and invoke it explicitly.
+* **No Function Expressions Assigned to Variables:** Variable-assigned function expressions (`var foo = function() {}` or `const bar = function() {}`) are prohibited; use named function declarations instead.
+* **No `.bind()`:** Never use `Function.prototype.bind()`. Pass context or parameters explicitly. *(Intentional SQL.js driver exception: `stmt.bind(params)` in `projectKnowledge.js` is an external database driver parameter binding method, not JavaScript function binding).*
+* **No `class` Keyword:** Object factories, prototypes, and plain object literals are used instead of ES classes.
+* **No JSDoc `@param` tags:** Function contracts are self-documenting through clean parameters and inline commentary explaining *why*, not *what*.
+
+### 🏷️ 4. Variables, Loops, and Comments
+* **Descriptive Variables:** Always use meaningful variable names (`conversation`, `selectedModel`, `providerConfig`, `workspaceFolder`) instead of opaque identifiers (`a`, `b`, `tmp`, `obj`).
+* **Focused Functions:** Keep functions small and focused on a single responsibility. Prefer multiple small functions over one giant monolithic function.
+* **Readable Loops:** Prefer standard `for` loops whenever readability is clearer. Do not replace straightforward procedural loops with convoluted functional chains without reason.
+* **Intentional Comments:** Write comments only when they explain **WHY**, not **WHAT**. Avoid stating the obvious.
+
+### 🌐 5. Asynchronous Programming & Browser Standards
+* **Promises & Async/Await:** Use Promises and `async`/`await` when asynchronous operations exist to avoid callback hell. Do not mark functions `async` unless asynchronous operations actually occur within them.
+* **`Promise.all` Execution:** Use `Promise.all()` exclusively when independent asynchronous operations can safely execute concurrently (such as parallel file reads, loading settings, and discovering models).
+* **Standard Browser APIs:** When writing webview code (`src/UI/`), always prefer standard browser JavaScript (`fetch()`, `localStorage`, `sessionStorage`, `requestAnimationFrame()`, `setTimeout()`, Canvas, DOM APIs, `Map`, `Set`) rather than external frameworks or heavy libraries.
+
+### 🛡️ 6. Zero Swallowed Errors Policy
+* **No Empty Catch Blocks:** Empty `catch (_) {}` or `catch (err) {}` blocks that silently swallow exceptions are strictly forbidden.
+* **Contextual Subsystem Logging:** Every catch block must record diagnostic context using standardized subsystem tags:
+  * `[EXTENSION]`: Extension lifecycle, activation, and HTML rendering errors.
+  * `[AGENT_LOOP]`: Model streaming, iteration limits, and loop failures.
+  * `[TOOL_EXEC]`: Tool parameter parsing, execution, or file system errors.
+  * `[TERMINAL]`: Shell process spawns, streams, and interrupt errors.
+  * `[MCP]`: JSON-RPC protocol, client transport, and Python venv errors.
+  * `[MEDIA]`: Image/video endpoint routing and extraction errors.
+  * `[TRACE]`: Trace recording and disk persistence errors.
+
+### 🏗️ 7. 3-Tier Modular Architecture (Controller → Handler → Manager)
+The repository enforces strict physical and logical separation between the Backend Extension Host (`src/extension/`) and Frontend Webview (`src/UI/`):
+
+1. **Strict Separation of Concerns:**
+   * `src/UI/`: All Frontend Webview DOM rendering, styling, and UI controllers/managers. Zero VS Code API imports.
+   * `src/extension/`: All Backend Extension Host logic, commands, and host controllers/handlers/managers. Zero DOM / browser API usage.
+2. **Controller Tier (Pure Routers):**
+   * Backend: `src/extension/controller/UI-controller.js` routes `webview.onDidReceiveMessage`.
+   * Frontend: `src/UI/controller/host-controller.js` routes `window.addEventListener("message")`.
+   * **Strictly zero business logic in controllers.**
+3. **Handler Tier (Payload Coordinators):**
+   * Located in `src/extension/manager/*handler.js` (backend) and `src/UI/chats/chats-*-manager.js` (frontend).
+   * Validate incoming payloads, coordinate domain managers, and return formatted responses via IPC.
+4. **Manager Tier (Business Logic & Core Engines):**
+   * `src/extension/tools/tools.js` (36 tool implementations), `agentLoop.js` (orchestration), `projectKnowledge.js` (SQLite AST indexer via `SQL.js`), `checkpointManager.js` (snapshots & rollbacks), `diffManager.js` (staged diffs), `terminalManager.js` (dual terminal lifecycle).
+5. **Anti-Collision Namespacing:**
+   * Isolate command names (`coderun.*`), view container IDs, terminal session names (`CodeRun(main)` and `CodeRun(BG)`), and storage under `context.globalStorageUri`.
+
+### 🔒 8. Operational Boundaries & Quality Gates
+* **Session Ownership:** Agent state, permissions, terminals, diffs, checkpoints, and traces are strictly isolated per conversation/session ID.
+* **Quality Gates:** Every commit must pass:
+  1. `node --check <file>`: Strict JavaScript syntax verification.
+  2. `npm run lint`: ESLint with custom AST rules enforcing **0 errors**.
+  3. `npm test`: Full adversarial regression suite with **all 87 test groups passing cleanly**.
 
 ---
 
