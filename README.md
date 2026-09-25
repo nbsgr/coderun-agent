@@ -122,7 +122,7 @@ The repository enforces strict physical and logical separation between the Backe
 * **Quality Gates:** Every commit must pass:
   1. `node --check <file>`: Strict JavaScript syntax verification.
   2. `npm run lint`: ESLint with custom AST rules enforcing **0 errors**.
-  3. `npm test`: Full adversarial regression suite with **all 87 test groups passing cleanly**.
+  3. `npm test`: Full adversarial regression suite with **all 88 test groups passing cleanly**.
 
 ---
 
@@ -365,14 +365,14 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/extension/tools/tools.js` & `src/extension/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
 | **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/UI/chats/chats.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/extension/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **87 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **88 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
 
 
 ---
 
-## 🧰 Complete Tool Matrix (34 Core Tools)
+## 🧰 Complete Tool Matrix (36 Core Tools)
 
-CodeRun exposes a curated set of **34 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **36 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -383,6 +383,7 @@ CodeRun exposes a curated set of **34 active core tools** organized across 9 ope
 | | `delete_file` | Permanently delete a specified file | ⚠️ Yes |
 | | `create_folder` | Create directory structure including parents | ⚠️ Yes |
 | | `delete_folder` | Recursively delete a directory and its contents | ⚠️ Yes |
+| | `list_directory` | List folder contents with recursive depth controls | No |
 | | `get_file_info` | Get file metadata (size, lines, modified date, MIME) | No |
 | **🔍 Search & Navigation** | `search_files` | Find files matching glob patterns (e.g. `*.js`, `src/**`) | No |
 | | `find_in_files` | Search workspace file contents for text queries | No |
@@ -390,7 +391,6 @@ CodeRun exposes a curated set of **34 active core tools** organized across 9 ope
 | | `get_definition` | Native VS Code LSP: Jump directly to symbol definition | No |
 | | `find_references` | Native VS Code LSP: Find all references and call sites | No |
 | | `document_symbols` | Native VS Code LSP: Extract complete file symbol hierarchy | No |
-| | `list_directory` | List folder contents with recursive depth controls | No |
 | **💻 Terminal Execution** | `run_terminal` | Execute shell commands in VS Code terminal (`CodeRun(main)` or background `CodeRun(BG)` with auto CWD sync for sandbox) | ⚠️ Yes |
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
 | | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running command (`target: 'foreground' \| 'background' \| 'all'`) | No |
@@ -398,14 +398,16 @@ CodeRun exposes a curated set of **34 active core tools** organized across 9 ope
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
-| **🎨 Media Generation** | `generate_image` | Generate images via `/v1/images/generations` and save to persistent storage | No |
-| | `generate_video` | Generate videos via `/v1/videos` and save to persistent storage | No |
 | **🤖 Subagents** | `spawn_subagent` | Launch an autonomous child agent in `sync` (background) or `wait` mode | ⚠️ Yes |
 | | `subagent_status` | Inspect a child subagent's state, progress, and files read/modified | No |
 | | `subagents_list` | List all active and completed child subagents in the session | No |
 | | `stop_subagent` | Terminate a running or paused child subagent cleanly | ⚠️ Yes |
 | | `wait_for_subagent` | Await an async background subagent until terminal completion | No |
+| | `pause_subagent` | Temporarily suspend a running child subagent at the next iteration boundary | No |
+| | `resume_subagent` | Resume execution of a suspended child subagent | No |
 | | `subagent_response` | Received subagent execution response and results | No |
+| **🎨 Media Generation** | `generate_image` | Generate images via `/v1/images/generations` and save to persistent storage | No |
+| | `generate_video` | Generate videos via `/v1/videos` and save to persistent storage | No |
 | **🌐 Utilities & Web** | `web_request` | Perform HTTP requests (GET, POST, PUT, DELETE) | No |
 | | `get_current_datetime` | Retrieve current date and time in ISO format | No |
 | **📦 Utilities & Sandbox** | `sandbox` | Inspect, list, or clean the transparent user sandbox directory (`~/.coderun/sandbox/`) | No |
@@ -476,7 +478,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **87 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **88 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -511,6 +513,7 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * Terminal pager hang prevention, git pager suppression & model selection sync (Vector 85).
 * check_terminal_state tool contract, main vs background introspection & exit code zero verification (Vector 86).
 * Agent loop active input box animation (Copilot blue border flow) contract & state synchronization (Vector 87).
+* Prompt builder orphan tool call sanitization, executionTrace path binding & message sequence integrity (Vector 88).
 
 Run all tests anytime:
 ```bash
