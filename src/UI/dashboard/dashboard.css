@@ -1734,14 +1734,17 @@ textarea {
 }
 
 .cr-danger-btn {
-  border: 1px solid rgba(248, 81, 73, 0.3);
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.06);
+  border: 1px solid #f85149;
+  color: #ffffff;
+  background: #f85149;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .cr-danger-btn:hover {
-  background: rgba(248, 81, 73, 0.15);
-  border-color: #f85149;
+  background: #d43d36;
+  border-color: #d43d36;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(248, 81, 73, 0.35);
 }
 
 /* Duplicate terminal styles removed — primary definitions are above */
