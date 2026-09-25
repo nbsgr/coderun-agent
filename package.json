@@ -4,7 +4,7 @@
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
   "version": "1.6.4",
   "publisher": "Bala-Siva-Ganesh",
-  "icon": "logo.png",
+  "icon": "icons/logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/nbsgr/coderun-agent.git"
