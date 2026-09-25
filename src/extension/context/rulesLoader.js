@@ -24,8 +24,9 @@ async function safeRead(filePath) {
 }
 
 export async function loadRules(workspace) {
+  var ws = typeof workspace === 'string' ? workspace : (workspace && (workspace.fsPath || workspace.workspace || workspace.path || '')) || '';
   var now = Date.now();
-  if (_cache.workspace === workspace && (now - _cache.timestamp) < CACHE_TTL) {
+  if (_cache.workspace === ws && (now - _cache.timestamp) < CACHE_TTL) {
     return _cache.content;
   }
 
@@ -39,8 +40,8 @@ export async function loadRules(workspace) {
   }
 
   // 2. Workspace rules: workspace/.coderunrules
-  if (workspace) {
-    var wsPath = path.join(workspace, RULES_FILENAME);
+  if (ws) {
+    var wsPath = path.join(ws, RULES_FILENAME);
     var wsContent = await safeRead(wsPath);
     if (wsContent && wsContent.trim()) {
       sections.push('## PROJECT RULES\n' + wsContent.trim());
@@ -48,7 +49,7 @@ export async function loadRules(workspace) {
   }
 
   var result = sections.length ? sections.join('\n\n') : '';
-  _cache = { workspace: workspace, content: result, timestamp: now };
+  _cache = { workspace: ws, content: result, timestamp: now };
   return result;
 }
 

@@ -23,7 +23,7 @@ export async function* chat(config, messages, tools, reqOpts) {
   var client = createClient(config);
   var body = {
     model: config.model,
-    messages: convertMessages(messages),
+    messages: convertMessages(messages, config),
     stream: true,
     stream_options: { include_usage: true }
   };
@@ -476,27 +476,34 @@ function parseChunk(data) {
   return result;
 }
 
-function convertMessages(messages) {
+function convertMessages(messages, config) {
+  var isDeepSeek = !!((config && config.model && config.model.toLowerCase().indexOf('deepseek') !== -1) ||
+                      (config && config.baseUrl && config.baseUrl.toLowerCase().indexOf('deepseek') !== -1));
   var converted = [];
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
-    var msg = { role: m.role, content: m.content || '' };
+    var msg = { role: m.role, content: (m.content !== undefined && m.content !== null) ? m.content : '' };
 
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
 
-    if (m.thinking) {
-      var tKey = m.thinkingKey || 'reasoning_content';
-      msg[tKey] = m.thinking;
+    if (isDeepSeek) {
+      if (m.thinking) {
+        var tKey = m.thinkingKey || 'reasoning_content';
+        msg[tKey] = m.thinking;
+      }
+      if (m.reasoning) msg.reasoning = m.reasoning;
+      if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
+      if (m.thought) msg.thought = m.thought;
     }
-    if (m.reasoning) msg.reasoning = m.reasoning;
-    if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
-    if (m.thought) msg.thought = m.thought;
 
-    if (m.tool_calls) {
+    if (m.tool_calls && m.tool_calls.length) {
+      if (!msg.content) {
+        msg.content = null;
+      }
       var convertedToolCalls = [];
       for (var tcIndex = 0; tcIndex < m.tool_calls.length; tcIndex++) {
         var tc = m.tool_calls[tcIndex];
-        var args = tc.function?.arguments || tc.arguments || {};
+        var args = (tc.function && tc.function.arguments) || tc.arguments || {};
         if (typeof args !== 'string') {
           try {
             args = JSON.stringify(args);
@@ -508,7 +515,7 @@ function convertMessages(messages) {
           id: tc.id,
           type: tc.type || 'function',
           function: {
-            name: tc.function?.name || tc.name,
+            name: (tc.function && tc.function.name) || tc.name,
             arguments: args
           }
         });

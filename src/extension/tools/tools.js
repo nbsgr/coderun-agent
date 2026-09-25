@@ -142,8 +142,19 @@ export function findFuzzyLineMatch(content, targetSnippet, minThreshold) {
 // =====================================================
 // HELPER: SAFE PATH
 // =====================================================
+function extractWorkspace(context) {
+  if (typeof context === 'string') return context;
+  if (!context) return '';
+  var ws = context.workspace !== undefined ? context.workspace : context;
+  if (typeof ws === 'string') return ws;
+  if (ws && typeof ws === 'object') {
+    return ws.fsPath || ws.workspace || ws.path || '';
+  }
+  return '';
+}
+
 function _safePath(workspace, relOrAbsPath) {
-  var ws = (typeof workspace === 'string') ? workspace : (workspace && workspace.workspace) || '';
+  var ws = extractWorkspace(workspace);
   return pathSecurity.assertSafePath(relOrAbsPath, ws);
 }
 
@@ -152,7 +163,7 @@ function _safePath(workspace, relOrAbsPath) {
 // =====================================================
 
 async function* read_file(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'read_file', message: 'Reading file: ' + filePath };
   try {
@@ -169,7 +180,7 @@ async function* read_file(args, context) {
 }
 
 async function* write_file(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var content = args.content || '';
@@ -264,7 +275,7 @@ async function* write_file(args, context) {
 }
 
 async function* edit_file(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var oldString = args.old_string || '';
@@ -437,7 +448,7 @@ async function _safeRmDir(target) {
 }
 
 async function* delete_file(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'delete_file', message: 'Deleting file: ' + filePath };
@@ -486,7 +497,7 @@ async function* delete_file(args, context) {
 // =====================================================
 
 async function* create_folder(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var folderPath = args.folder_path || '';
   yield { type: 'action', action: 'create_folder', message: 'Creating folder: ' + folderPath };
@@ -522,7 +533,7 @@ async function* create_folder(args, context) {
 }
 
 async function* delete_folder(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var folderPath = args.folder_path || '';
   yield { type: 'action', action: 'delete_folder', message: 'Deleting folder: ' + folderPath };
@@ -558,7 +569,7 @@ async function* delete_folder(args, context) {
 }
 
 async function* list_directory(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var folderPath = args.folder_path || '.';
   yield { type: 'action', action: 'list_directory', message: 'Listing directory: ' + folderPath };
   try {
@@ -576,7 +587,7 @@ async function* list_directory(args, context) {
 }
 
 async function* search_files(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var pattern = args.glob_pattern || args.pattern || '*';
   var folderPath = args.folder_path || '.';
   yield { type: 'action', action: 'search_files', message: "Searching files: pattern='" + pattern + "' in '" + folderPath + "'" };
@@ -603,7 +614,7 @@ async function* search_files(args, context) {
 }
 
 async function* get_file_info(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'get_file_info', message: 'Getting file info: ' + filePath };
   try {
@@ -755,7 +766,7 @@ async function* sandbox(args, context) {
 // =====================================================
 
 async function* run_terminal(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || (args && args._sessionId) || 'default';
   var command = (args.command || args.cmd || args.commandLine || '').trim();
   var timeout = args.timeout || 30;
@@ -901,7 +912,7 @@ async function* get_current_datetime(args, workspace) {
 // =====================================================
 
 async function* find_in_files(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var query = args.query || '';
   yield { type: 'action', action: 'find_in_files', message: "Searching file contents for: '" + query + "'" };
   if (!query) {
@@ -1073,7 +1084,7 @@ function flattenDocumentSymbols(docSymbols, targetFilePath) {
 }
 
 async function* get_definition(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
   var lineNum = Number(args.line) || 1;
   var charNum = Number(args.character) || 1;
@@ -1180,7 +1191,7 @@ async function* get_definition(args, context) {
 }
 
 async function* find_references(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
   var lineNum = Number(args.line) || 1;
   var charNum = Number(args.character) || 1;
@@ -1255,7 +1266,7 @@ async function* find_references(args, context) {
 }
 
 async function* document_symbols(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
 
   yield {
@@ -1313,7 +1324,7 @@ async function* document_symbols(args, context) {
 }
 
 async function* list_symbols(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var filePath = args.file_path || '';
   yield { type: 'action', action: 'list_symbols', message: 'Getting code outline for: ' + filePath };
   try {
@@ -1331,7 +1342,7 @@ async function* list_symbols(args, context) {
 }
 
 async function* patch_file(args, context) {
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
   var filePath = args.file_path || '';
   var patches = args.patches || [];
@@ -1822,7 +1833,7 @@ async function* update_plan(args, context) {
     return;
   }
 
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
 
   try {
@@ -1904,7 +1915,7 @@ async function* create_plan(args, context) {
     return;
   }
 
-  var workspace = (typeof context === 'string') ? context : (context && context.workspace) || '';
+  var workspace = extractWorkspace(context);
   var sessionId = (context && context.sessionId) || 'default';
 
   try {

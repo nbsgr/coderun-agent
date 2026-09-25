@@ -27,7 +27,8 @@ function normalizePathSlashes(p) {
 }
 
 export async function searchFiles(pattern, rootDir, subDir) {
-  if (!pattern || !rootDir) return [];
+  var safeRoot = typeof rootDir === 'string' ? rootDir : (rootDir && (rootDir.fsPath || rootDir.workspace || rootDir.path || '')) || '';
+  if (!pattern || !safeRoot) return [];
 
   var likePattern = pattern.replace(/\*\*/g, '*').replace(/\?/g, '_');
 
@@ -41,7 +42,7 @@ export async function searchFiles(pattern, rootDir, subDir) {
         var seen = {};
         for (var ri = 0; ri < results.length; ri++) {
           var norm = normalizePathSlashes(results[ri]);
-          var checkFull = path.resolve(rootDir, results[ri]);
+          var checkFull = path.resolve(safeRoot, results[ri]);
           if (!seen[norm] && existsSync(checkFull)) {
             seen[norm] = true;
             existing.push(norm);
@@ -78,7 +79,8 @@ export async function searchFiles(pattern, rootDir, subDir) {
  * @returns {Promise<Array<{path: string, matches: number, snippet: string}>>}
  */
 export async function searchContent(query, rootDir) {
-  if (!query || !rootDir) return [];
+  var safeRoot = typeof rootDir === 'string' ? rootDir : (rootDir && (rootDir.fsPath || rootDir.workspace || rootDir.path || '')) || '';
+  if (!query || !safeRoot) return [];
 
   var status = projectKnowledge.getIndexStatus();
   if (status.ready && status.indexed) {
@@ -87,7 +89,7 @@ export async function searchContent(query, rootDir) {
       if (results && results.length) {
         var existingChunks = [];
         for (var ci = 0; ci < results.length; ci++) {
-          var checkFullChunk = path.resolve(rootDir, results[ci].path);
+          var checkFullChunk = path.resolve(safeRoot, results[ci].path);
           if (existsSync(checkFullChunk)) {
             existingChunks.push(results[ci]);
           }
@@ -192,7 +194,8 @@ async function runTouchFile(relPath) {
 }
 
 async function fallbackWalk(pattern, rootDir, subDir) {
-  var searchDir = subDir ? path.join(rootDir, subDir) : rootDir;
+  var safeRoot = typeof rootDir === 'string' ? rootDir : (rootDir && (rootDir.fsPath || rootDir.workspace || rootDir.path || '')) || '';
+  var searchDir = subDir ? path.join(safeRoot, subDir) : safeRoot;
   var rawMatches = [];
   var regex = globToRegex(pattern);
 

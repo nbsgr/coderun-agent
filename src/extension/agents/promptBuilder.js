@@ -360,12 +360,27 @@ export async function buildSystemPromptOnly(workspace, skills, memory, mcpContex
   return { role: 'system', content: content };
 }
 
+function getSubagentSystemPrompt() {
+  var prompt = SYSTEM_PROMPT;
+  var subIdx = prompt.indexOf('## SUBAGENTS AND DELEGATION RULES');
+  if (subIdx !== -1) {
+    var nextSecIdx = prompt.indexOf('\n## ', subIdx + 10);
+    if (nextSecIdx !== -1) {
+      prompt = prompt.slice(0, subIdx) + prompt.slice(nextSecIdx + 1);
+    } else {
+      prompt = prompt.slice(0, subIdx);
+    }
+  }
+  return prompt;
+}
+
 export async function buildSubagentMessages(task, subContext, workspace, agentIdentity) {
   var ident = agentIdentity || {};
-  var content = SYSTEM_PROMPT;
+  var content = getSubagentSystemPrompt();
 
-  if (workspace) {
-    content += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
+  var wsStr = typeof workspace === 'string' ? workspace : (workspace && (workspace.fsPath || workspace.workspace || workspace.path || '')) || '';
+  if (wsStr) {
+    content += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + wsStr;
     content += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
   }
 
@@ -374,7 +389,7 @@ export async function buildSubagentMessages(task, subContext, workspace, agentId
     content += '\n\n## USER SANDBOX DIRECTORY\nThe dedicated user sandbox directory is: ' + sandboxDir;
   }
 
-  var rulesContent = await loadRules(workspace);
+  var rulesContent = await loadRules(wsStr);
   if (rulesContent) {
     content += '\n\n## USER RULES\nThe following rules MUST be followed without exception:\n\n' + rulesContent;
   }
@@ -383,7 +398,7 @@ export async function buildSubagentMessages(task, subContext, workspace, agentId
     'You are a specialized subagent running as: ' + (ident.name || ident.role || 'Subagent') + ' (ID: ' + (ident.id || '') + ').\n' +
     'You were created and delegated this objective by the main agent.\n' +
     'Focus strictly and thoroughly on your assigned task. Once your objective is achieved, provide a comprehensive final response summarizing your findings and any modifications made.\n' +
-    'Do not attempt to spawn subagents — you have direct access to reading, writing, editing, searching, and terminal tools to complete your work.';
+    'You do not have access to subagent tools and cannot spawn or control other subagents. You have direct access to reading, writing, editing, searching, and terminal tools to complete your work.';
 
   var userContent = '## ASSIGNED TASK\n' + (task || '');
   if (subContext) {

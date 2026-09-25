@@ -219,7 +219,7 @@ function convertMessages(messages) {
   var converted = [];
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
-    var msg = { role: m.role, content: m.content || '' };
+    var msg = { role: m.role, content: (m.content !== undefined && m.content !== null) ? m.content : '' };
 
     if (m.role === 'tool') {
       msg.name = m.tool_name || m.name || '';
@@ -235,11 +235,14 @@ function convertMessages(messages) {
     if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
     if (m.thought) msg.thought = m.thought;
 
-    if (m.tool_calls) {
+    if (m.tool_calls && m.tool_calls.length) {
+      if (!msg.content) {
+        msg.content = null;
+      }
       var convertedToolCalls = [];
       for (var tcIndex = 0; tcIndex < m.tool_calls.length; tcIndex++) {
         var tc = m.tool_calls[tcIndex];
-        var args = tc.function?.arguments || tc.arguments || {};
+        var args = (tc.function && tc.function.arguments) || tc.arguments || {};
         if (typeof args !== 'string') {
           try {
             args = JSON.stringify(args);
@@ -251,7 +254,7 @@ function convertMessages(messages) {
           id: tc.id,
           type: tc.type || 'function',
           function: {
-            name: tc.function?.name || tc.name,
+            name: (tc.function && tc.function.name) || tc.name,
             arguments: args
           }
         });

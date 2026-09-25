@@ -279,6 +279,7 @@ function initializeDashboard() {
     if (vscodeSettings.subagentMaxConcurrent !== undefined) state.settings.subagentMaxConcurrent = vscodeSettings.subagentMaxConcurrent;
     if (vscodeSettings.subagentMaxIterations !== undefined) state.settings.subagentMaxIterations = vscodeSettings.subagentMaxIterations;
     if (vscodeSettings.subagentMaxDepth !== undefined) state.settings.subagentMaxDepth = vscodeSettings.subagentMaxDepth;
+    if (vscodeSettings.apiType !== undefined) state.settings.apiType = vscodeSettings.apiType;
 
     updateSettingsUI();
     updateModelBadge();
@@ -1130,6 +1131,11 @@ function initializeDashboard() {
       cfgProviderEl.onfocus = handleCfgProviderFocus;
     }
 
+    var cfgCompApiTypeEl = document.getElementById("cfgCompatibleApiType");
+    if (cfgCompApiTypeEl) {
+      cfgCompApiTypeEl.onchange = handleCompApiTypeChange;
+    }
+
     document.getElementById("saveSettingsBtn").onclick = handleSaveSettingsClick;
 
     document.getElementById("clearAllConvBtn").onclick = handleClearAllConvClick;
@@ -1691,8 +1697,9 @@ function initializeDashboard() {
     var tokenGaugeHtml = (
       '<div class="cr-subagent-tokens-row cr-subagent-token-row" style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">' +
         '<span class="cr-subagent-tokens-badge cr-subagent-token-item">' +
-          '📊 Tokens: <strong>' + totalTokensCount.toLocaleString() + '</strong> (In: ' + inTokens.toLocaleString() + ' • Out: ' + outTokens.toLocaleString() + ')' +
-          (durationSec ? ' • ⏱ ' + durationSec + 's' : '') +
+          '<span class="cr-token-icon-label">📊 Tokens:</span> <strong>' + totalTokensCount.toLocaleString() + '</strong> ' +
+          '<span class="cr-subagent-token-sub">(In: ' + inTokens.toLocaleString() + ' • Out: ' + outTokens.toLocaleString() + ')' +
+          (durationSec ? ' • ⏱ ' + durationSec + 's' : '') + '</span>' +
         '</span>' +
         '<button type="button" class="cr-trace-copy-full-btn" data-full-copy="' + esc(rawTraceJson) + '">📋 Copy Trace</button>' +
       '</div>'
@@ -2185,7 +2192,7 @@ function initializeDashboard() {
                 '<span class="cr-think-label cr-thinking-label">Thought process</span>' +
                 '<span class="cr-think-chevron cr-thinking-chevron"></span>' +
               '</summary>' +
-              '<div class="cr-thinking-body"><pre class="cr-think-pre"><code>' + esc(step.llmCall.thinking) + '</code></pre></div>' +
+              '<div class="cr-thinking-body"><pre class="cr-think-pre">' + esc(step.llmCall.thinking) + '</pre></div>' +
             '</details>'
           );
         }
@@ -2260,8 +2267,9 @@ function initializeDashboard() {
     var tokenGaugeHtml = (
       '<div class="cr-subagent-tokens-row cr-subagent-token-row">' +
         '<span class="cr-subagent-tokens-badge cr-subagent-token-item">' +
-          '📊 Tokens: <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output) || 0).toLocaleString() + '</strong> (In: ' + (totalTokens.input || 0).toLocaleString() + ' • Out: ' + (totalTokens.output || 0).toLocaleString() + ')' +
-          (durationSec ? ' • ⏱ ' + durationSec + 's' : '') +
+          '<span class="cr-token-icon-label">📊 Tokens:</span> <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output) || 0).toLocaleString() + '</strong> ' +
+          '<span class="cr-subagent-token-sub">(In: ' + (totalTokens.input || 0).toLocaleString() + ' • Out: ' + (totalTokens.output || 0).toLocaleString() + ')</span>' +
+          (durationSec ? '<span class="cr-token-duration-val"> • ⏱ ' + durationSec + 's</span>' : '') +
         '</span>' +
         '<button type="button" class="cr-subagent-view-trace-link" data-subagent-id="' + esc(agentId) + '">View Subagent Traces ↗</button>' +
       '</div>'
@@ -2423,7 +2431,7 @@ function initializeDashboard() {
     if (totalTokens && (totalTokens.total > 0 || totalTokens.input > 0)) {
       tokenGaugeHtml = (
         '<div class="cr-subagent-token-row">' +
-          '<span class="cr-subagent-token-item">📊 Tokens: <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output)) + '</strong></span>' +
+          '<span class="cr-subagent-token-item"><span class="cr-token-icon-label">📊 Tokens:</span> <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output)) + '</strong></span> ' +
           '<span class="cr-subagent-token-sub">(In: ' + (totalTokens.input || 0) + ' • Out: ' + (totalTokens.output || 0) + ')</span>' +
         '</div>'
       );
@@ -4714,6 +4722,23 @@ function initializeDashboard() {
     }
 
     updateSettingsUI();
+  }
+
+  function handleCompApiTypeChange() {
+    var compApiTypeEl = document.getElementById("cfgCompatibleApiType");
+    if (!compApiTypeEl) return;
+    var newApiType = compApiTypeEl.value || 'openai';
+    state.settings.apiType = newApiType;
+    var baseUrlEl = document.getElementById("cfgBaseUrl");
+    if (baseUrlEl) {
+      if (newApiType === 'anthropic') {
+        baseUrlEl.placeholder = 'https://api.anthropic.com/v1';
+      } else if (newApiType === 'gemini') {
+        baseUrlEl.placeholder = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrlEl.placeholder = 'https://api.openai.com/v1';
+      }
+    }
   }
 
   function handleSaveSettingsClick() {

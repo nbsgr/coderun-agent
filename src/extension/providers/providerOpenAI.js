@@ -455,8 +455,36 @@ function convertMessages(messages, config) {
   var converted = [];
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
-    var msg = { role: m.role, content: m.content || '' };
-    if (m.tool_calls) msg.tool_calls = m.tool_calls;
+    var msg = { role: m.role, content: (m.content !== undefined && m.content !== null) ? m.content : '' };
+    if (m.role === 'tool' && typeof msg.content !== 'string') {
+      try { msg.content = JSON.stringify(msg.content); } catch (_) { msg.content = String(msg.content); }
+    }
+    if (m.tool_calls && m.tool_calls.length) {
+      if (!msg.content) {
+        msg.content = null;
+      }
+      var convertedToolCalls = [];
+      for (var tcIndex = 0; tcIndex < m.tool_calls.length; tcIndex++) {
+        var tc = m.tool_calls[tcIndex];
+        var args = (tc.function && tc.function.arguments) || tc.arguments || {};
+        if (typeof args !== 'string') {
+          try {
+            args = JSON.stringify(args);
+          } catch (_) {
+            args = '{}';
+          }
+        }
+        convertedToolCalls.push({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: {
+            name: (tc.function && tc.function.name) || tc.name,
+            arguments: args
+          }
+        });
+      }
+      msg.tool_calls = convertedToolCalls;
+    }
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
 
     if (!isStrictOpenAI) {

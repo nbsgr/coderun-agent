@@ -99,6 +99,16 @@
           ],
           "description": "AI provider to use"
         },
+        "coderun.apiType": {
+          "type": "string",
+          "default": "openai",
+          "enum": [
+            "openai",
+            "anthropic",
+            "gemini"
+          ],
+          "description": "API type for compatible provider (openai, anthropic, or gemini)"
+        },
         "coderun.baseUrl": {
           "type": "string",
           "default": "http://localhost:11434/v1",

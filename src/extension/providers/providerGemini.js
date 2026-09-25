@@ -141,9 +141,15 @@ export async function* chat(config, messages, tools, reqOpts) {
     nativeBody.tools = [{ function_declarations: functionDeclarations }];
   }
 
+  var geminiHeaders = { 'Content-Type': 'application/json' };
+  if (config.apiKey) {
+    geminiHeaders['x-goog-api-key'] = config.apiKey;
+    geminiHeaders['Authorization'] = 'Bearer ' + config.apiKey;
+  }
+
   var response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: geminiHeaders,
     body: JSON.stringify(nativeBody),
     signal: reqOpts && reqOpts.signal
   });
@@ -238,28 +244,48 @@ export async function listModels(config) {
     // Fallback to native REST API
   }
 
-  var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta';
-  if (baseUrl.endsWith('/openai')) {
-    baseUrl = baseUrl.substring(0, baseUrl.length - 7);
-  }
-  var url = baseUrl + '/models?key=' + config.apiKey;
-  var res = await fetch(url);
-  if (!res.ok) throw await handleApiResponseError(res, 'Gemini');
-  var data = await safeReadJson(res, 'Gemini');
-  var nativeModels = [];
-  if (data.models) {
-    for (var j = 0; j < data.models.length; j++) {
-      var name = data.models[j].name || '';
-      var cleanName = name.replace(/^models\//, '');
-      var ctx = data.models[j].inputTokenLimit || 0;
-      if (ctx) {
-        nativeModels.push({ id: cleanName, context_window: ctx });
-      } else {
-        nativeModels.push(cleanName);
+  var defaultGeminiModels = [
+    'gemini-2.0-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b'
+  ];
+
+  try {
+    var baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta';
+    if (baseUrl.endsWith('/openai')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 7);
+    }
+    var url = baseUrl + '/models?key=' + (config.apiKey || '');
+    var headers = {};
+    if (config.apiKey) {
+      headers['x-goog-api-key'] = config.apiKey;
+      headers['Authorization'] = 'Bearer ' + config.apiKey;
+    }
+    var res = await fetch(url, { headers: headers });
+    if (!res.ok) {
+      console.warn('[CODERUN] Gemini REST /models returned ' + res.status + ', using standard model list');
+      return defaultGeminiModels;
+    }
+    var data = await safeReadJson(res, 'Gemini');
+    var nativeModels = [];
+    if (data.models) {
+      for (var j = 0; j < data.models.length; j++) {
+        var name = data.models[j].name || '';
+        var cleanName = name.replace(/^models\//, '');
+        var ctx = data.models[j].inputTokenLimit || 0;
+        if (ctx) {
+          nativeModels.push({ id: cleanName, context_window: ctx });
+        } else {
+          nativeModels.push(cleanName);
+        }
       }
     }
+    return nativeModels.length ? nativeModels : defaultGeminiModels;
+  } catch (err) {
+    console.warn('[CODERUN] Failed to fetch models from Gemini endpoint, falling back to defaults:', err.message);
+    return defaultGeminiModels;
   }
-  return nativeModels;
 }
 
 export async function embeddings(config, texts) {
@@ -344,9 +370,11 @@ function parseChunkOpenAI(data) {
 function convertMessagesOpenAI(messages) {
   var converted = [];
   for (var i = 0; i < messages.length; i++) {
-    var m = messages[i];
-    var msg = { role: m.role, content: m.content || '' };
+    var msg = { role: m.role, content: (m.content !== undefined && m.content !== null) ? m.content : '' };
     if (m.tool_calls && m.tool_calls.length) {
+      if (!msg.content) {
+        msg.content = null;
+      }
       var safeToolCalls = [];
       for (var tcI = 0; tcI < m.tool_calls.length; tcI++) {
         var tcItem = m.tool_calls[tcI];
@@ -439,7 +467,11 @@ function convertMessagesNative(messages) {
     }
 
     if (!parts.length) parts.push({ text: '' });
-    contents.push({ role: role, parts: parts });
+    if (contents.length > 0 && contents[contents.length - 1].role === role) {
+      contents[contents.length - 1].parts = contents[contents.length - 1].parts.concat(parts);
+    } else {
+      contents.push({ role: role, parts: parts });
+    }
   }
   return contents;
 }

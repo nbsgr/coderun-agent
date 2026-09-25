@@ -21,6 +21,7 @@ export async function sendCurrentSettings(webview, extensionContext) {
       provider: activeProvider,
       baseUrl: saved.baseUrl || defaults.baseUrl,
       model: modelToUse,
+      apiType: saved.apiType || config.getConfig().apiType || 'openai',
       maxIterations: config.getConfig().maxIterations,
       streaming: config.getConfig().streaming,
       showThinking: config.getConfig().showThinking,
@@ -74,6 +75,7 @@ export async function sendCurrentSettings(webview, extensionContext) {
         provider: cfg.provider,
         baseUrl: cfg.baseUrl,
         model: cfg.model,
+        apiType: cfg.apiType || 'openai',
         maxIterations: cfg.maxIterations,
         streaming: cfg.streaming,
         showThinking: cfg.showThinking,
@@ -110,6 +112,7 @@ export async function handleSaveSettings(message, webview, extensionContext, sta
     if (message.settings.subagentMaxConcurrent !== undefined) settingsToUpdate.subagentMaxConcurrent = message.settings.subagentMaxConcurrent;
     if (message.settings.subagentMaxIterations !== undefined) settingsToUpdate.subagentMaxIterations = message.settings.subagentMaxIterations;
     if (message.settings.subagentMaxDepth !== undefined) settingsToUpdate.subagentMaxDepth = message.settings.subagentMaxDepth;
+    if (message.settings.apiType !== undefined) settingsToUpdate.apiType = message.settings.apiType;
 
     await config.updateSettings(settingsToUpdate, vscode.ConfigurationTarget.Global);
 
@@ -159,6 +162,7 @@ export async function handleSaveSettings(message, webview, extensionContext, sta
       if (message.settings.provider) overrideCfg.provider = message.settings.provider;
       if (message.settings.baseUrl) overrideCfg.baseUrl = message.settings.baseUrl;
       if (message.settings.model) overrideCfg.model = message.settings.model;
+      if (message.settings.apiType) overrideCfg.apiType = message.settings.apiType;
 
       await checkProviderHealth(webview, overrideCfg, extensionContext, statusBarItem);
       await refreshAllProviderModels(webview, extensionContext, statusBarItem);

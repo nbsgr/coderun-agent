@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as config from '../agents/config.js';
 import { runAgent } from '../agents/agent.js';
+import { runAgentLoop } from '../agents/agentLoop.js';
 import * as terminalManager from '../tools/terminalManager.js';
 import * as permissions from '../tools/permissions.js';
 import * as executionTrace from '../execution/executionTrace.js';
@@ -55,9 +56,13 @@ export function activate(context) {
 
   registerAllTools();
 
-  subagentManager.setAgentRunner(function runChildSubagent(taskPrompt, model, wsFolder, subHist, subCfg, onEv, onAsk, opts) {
-    return runAgent(taskPrompt, model, wsFolder, subHist, subCfg, onEv, onAsk, opts);
-  });
+  function runChildSubagent(taskPrompt, configOrModel, optionsOrWs, subHist, subCfg, onEv, onAsk, opts) {
+    if (configOrModel && typeof configOrModel === 'object' && optionsOrWs && typeof optionsOrWs === 'object' && optionsOrWs.workspace !== undefined) {
+      return runAgentLoop(taskPrompt, configOrModel, optionsOrWs);
+    }
+    return runAgent(taskPrompt, configOrModel, optionsOrWs, subHist, subCfg, onEv, onAsk, opts);
+  }
+  subagentManager.setAgentRunner(runChildSubagent);
 
   try {
     subagentManager.initializePersistence(context);

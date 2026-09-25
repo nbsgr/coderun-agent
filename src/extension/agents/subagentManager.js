@@ -636,6 +636,13 @@ export function spawnSubagent(options, parentContext) {
         finalSubTrace.name = identity.name;
         finalSubTrace.task = identity.task;
         record.trace = finalSubTrace;
+        subagentSendEvent({
+          type: 'trace_updated',
+          sessionId: subagentSessionId,
+          parentSessionId: parentSessionId,
+          trace: finalSubTrace
+        });
+        persistRecord(record);
       }
       try {
         await executionTrace.saveTraceToDisk(null, subagentSessionId);

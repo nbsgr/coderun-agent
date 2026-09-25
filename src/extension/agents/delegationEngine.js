@@ -243,7 +243,7 @@ export async function waitForPendingSubagents(
 
       messages.push({
         role: 'assistant',
-        content: '',
+        content: null,
         tool_calls: [{
           id: wsCallId,
           type: 'function',
@@ -255,6 +255,12 @@ export async function waitForPendingSubagents(
         tool_name: 'subagent_response',
         tool_call_id: wsCallId,
         content: wsFormatted
+      });
+      messages.push({
+        role: 'user',
+        source: 'subagent_result',
+        isSystemFeedback: true,
+        content: '[SUBAGENT NOTIFICATION: TASK COMPLETED]\n' + wsFormatted + '\n\nThe subagent has completed its task. Please review the result above and provide a clear, comprehensive final response to the user confirming the outcome.'
       });
 
     } catch (wErr) {
@@ -299,7 +305,7 @@ export async function waitForPendingSubagents(
 
       messages.push({
         role: 'assistant',
-        content: '',
+        content: null,
         tool_calls: [{
           id: failCallId,
           type: 'function',
@@ -311,6 +317,12 @@ export async function waitForPendingSubagents(
         tool_name: 'subagent_response',
         tool_call_id: failCallId,
         content: failFormatted
+      });
+      messages.push({
+        role: 'user',
+        source: 'subagent_result',
+        isSystemFeedback: true,
+        content: '[SUBAGENT NOTIFICATION: TASK FAILED]\n' + failFormatted + '\n\nThe subagent failed to complete the task. Please inform the user about what happened and how to proceed.'
       });
     }
   }

@@ -386,7 +386,8 @@ function isVerificationToolOrCommand(toolName, args) {
 }
 
 export async function runAgentLoop(userPrompt, config, options) {
-  var workspace = options.workspace || '';
+  var rawWs = options.workspace || '';
+  var workspace = typeof rawWs === 'string' ? rawWs : (rawWs && (rawWs.fsPath || rawWs.workspace || rawWs.path || '')) || '';
   var history = options.history || [];
   var sessionId = options.sessionId || (history.length > 0 ? String(history[0].session_id || '') : '') || ('session_' + Date.now());
 
@@ -880,6 +881,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         if (subagentConsumed) {
           iterationContent = '';
           fullContent = '';
+          maxIterations = Math.max(maxIterations, iteration + 2);
           continue;
         }
 
@@ -1141,7 +1143,7 @@ export async function runAgentLoop(userPrompt, config, options) {
         }
       }
 
-      var assistantMsg = { role: 'assistant', content: iterationContent || '' };
+      var assistantMsg = { role: 'assistant', content: iterationContent || (assistantToolCalls.length ? null : '') };
       if (iterationThinking) assistantMsg.thinking = iterationThinking;
       if (iterationThinkingKey) assistantMsg.thinkingKey = iterationThinkingKey;
       if (assistantToolCalls.length) assistantMsg.tool_calls = assistantToolCalls;

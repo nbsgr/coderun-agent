@@ -579,7 +579,7 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
           '<span class="cr-think-label">Thought process</span>' +
           '<span class="cr-think-chevron"></span>' +
         '</summary>' +
-        '<pre class="cr-think-pre"><code>' + escHtml(allThinking) + '</code></pre>' +
+        '<pre class="cr-think-pre">' + escHtml(allThinking) + '</pre>' +
       '</details>'
     );
   }
@@ -686,10 +686,11 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
           errorBannerHtml +
           finalResponseHtml +
           emptyStateHtml +
-          '<div class="cr-subagent-tokens-row">' +
-            '<span class="cr-subagent-tokens-badge">' +
-              '📊 Tokens: ' + (totalTokens.total || (totalTokens.input + totalTokens.output) || 0).toLocaleString() + ' (Input: ' + (totalTokens.input || 0).toLocaleString() + ', Output: ' + (totalTokens.output || 0).toLocaleString() + ')' +
-              (durationSec ? ' • ⏱ ' + durationSec + 's' : '') +
+          '<div class="cr-subagent-tokens-row cr-subagent-token-row">' +
+            '<span class="cr-subagent-tokens-badge cr-subagent-token-item">' +
+              '<span class="cr-token-icon-label">📊 Tokens:</span> <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output) || 0).toLocaleString() + '</strong> ' +
+              '<span class="cr-subagent-token-sub">(Input: ' + (totalTokens.input || 0).toLocaleString() + ', Output: ' + (totalTokens.output || 0).toLocaleString() + ')' +
+              (durationSec ? ' • ⏱ ' + durationSec + 's' : '') + '</span>' +
             '</span>' +
             '<button type="button" class="cr-subagent-view-trace-link" data-subagent-id="' + escHtml(agentId) + '">View Subagent Traces ↗</button>' +
           '</div>' +
@@ -825,7 +826,7 @@ export function buildSubagentExecutionChatHtml(subagent) {
   if (totalTokens && (totalTokens.total > 0 || totalTokens.input > 0)) {
     tokenGaugeHtml = (
       '<div class="cr-subagent-token-row">' +
-        '<span class="cr-subagent-token-item">📊 Tokens: <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output)) + '</strong></span>' +
+        '<span class="cr-subagent-token-item"><span class="cr-token-icon-label">📊 Tokens:</span> <strong>' + (totalTokens.total || (totalTokens.input + totalTokens.output)) + '</strong></span> ' +
         '<span class="cr-subagent-token-sub">(In: ' + (totalTokens.input || 0) + ' • Out: ' + (totalTokens.output || 0) + ')</span>' +
       '</div>'
     );

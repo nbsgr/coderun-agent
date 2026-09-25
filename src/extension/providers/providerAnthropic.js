@@ -5,9 +5,12 @@ export async function* chat(config, messages, tools, reqOpts) {
   var url = baseUrl + '/messages';
   var headers = {
     'Content-Type': 'application/json',
-    'x-api-key': config.apiKey,
     'anthropic-version': '2023-06-01'
   };
+  if (config.apiKey) {
+    headers['x-api-key'] = config.apiKey;
+    headers['Authorization'] = 'Bearer ' + config.apiKey;
+  }
 
   var systemMsg = null;
   var chatMessages = [];
@@ -108,15 +111,29 @@ export async function* chat(config, messages, tools, reqOpts) {
 }
 
 export async function listModels(config) {
+  var defaultModels = [
+    'claude-3-5-sonnet-20241022',
+    'claude-3-5-haiku-20241022',
+    'claude-3-opus-20240229',
+    'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307'
+  ];
+
   if (config.provider && config.provider.startsWith('compatible')) {
     var baseUrl = (config.baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
     var url = baseUrl + '/models';
-    var headers = {};
-    if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;
+    var headers = {
+      'anthropic-version': '2023-06-01'
+    };
+    if (config.apiKey) {
+      headers['x-api-key'] = config.apiKey;
+      headers['Authorization'] = 'Bearer ' + config.apiKey;
+    }
     try {
       var res = await fetch(url, { headers: headers });
       if (!res.ok) {
-        throw await handleApiResponseError(res, 'Anthropic');
+        console.warn('[CODERUN] Anthropic-Compatible /models returned ' + res.status + ', using standard Claude model list');
+        return defaultModels;
       }
       var data = await safeReadJson(res, 'Anthropic');
       var models = [];
@@ -125,19 +142,13 @@ export async function listModels(config) {
           models.push(data.data[i].id || data.data[i].name);
         }
       }
-      return models;
+      return models.length ? models : defaultModels;
     } catch (e) {
-      console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint:', e.message);
-      throw e;
+      console.warn('[CODERUN] Failed to fetch models from Anthropic-Compatible endpoint, falling back to defaults:', e.message);
+      return defaultModels;
     }
   }
-  return [
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-haiku-20241022',
-    'claude-3-opus-20240229',
-    'claude-3-sonnet-20240229',
-    'claude-3-haiku-20240307'
-  ];
+  return defaultModels;
 }
 
 export async function embeddings(config, texts) {
@@ -146,6 +157,25 @@ export async function embeddings(config, texts) {
 
 export async function images(config, prompt) {
   throw new Error('Image generation not supported by Anthropic');
+}
+
+function mergeAnthropicContent(existingContent, newContent) {
+  var blocksA = Array.isArray(existingContent) ? existingContent : [{ type: 'text', text: String(existingContent || '') }];
+  var blocksB = Array.isArray(newContent) ? newContent : [{ type: 'text', text: String(newContent || '') }];
+  return blocksA.concat(blocksB);
+}
+
+function mergeAlternatingTurns(items) {
+  var merged = [];
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    if (merged.length > 0 && merged[merged.length - 1].role === item.role) {
+      merged[merged.length - 1].content = mergeAnthropicContent(merged[merged.length - 1].content, item.content);
+    } else {
+      merged.push(item);
+    }
+  }
+  return merged;
 }
 
 function convertMessages(messages) {
@@ -216,7 +246,11 @@ function convertMessages(messages) {
 
     converted.push({ role: role, content: m.content || '' });
   }
-  return converted;
+  var alternating = mergeAlternatingTurns(converted);
+  if (alternating.length === 0 || alternating[0].role !== 'user') {
+    alternating.unshift({ role: 'user', content: 'Continue' });
+  }
+  return alternating;
 }
 
 function parseChunk(data) {

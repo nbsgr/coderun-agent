@@ -3,6 +3,7 @@
 // Strict traditional function declarations only
 
 import * as executionTrace from '../execution/executionTrace.js';
+import * as subagentManager from '../agents/subagentManager.js';
 
 export async function handleSaveTrace(message, extensionContext) {
   if (message.sessionId && extensionContext && extensionContext.globalStorageUri) {
@@ -67,7 +68,20 @@ export async function handleGetTraces(message, webview, extensionContext) {
 export async function handleGetSubagentTraces(message, webview, extensionContext) {
   if (!message.sessionId) return;
   try {
-    var subTraces = executionTrace.getSubagentTraces(message.sessionId);
+    var subTraces = executionTrace.getSubagentTraces(message.sessionId) || [];
+    var subs = subagentManager.listSubagents ? subagentManager.listSubagents(message.sessionId) : [];
+    for (var r = 0; r < subs.length; r++) {
+      if (subs[r] && subs[r].trace) {
+        var found = false;
+        for (var s = 0; s < subTraces.length; s++) {
+          if (subTraces[s].id === subs[r].trace.id || (subs[r].agentId && subTraces[s].agentId === subs[r].agentId)) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) subTraces.push(subs[r].trace);
+      }
+    }
     if (extensionContext && extensionContext.globalStorageUri) {
       var diskSubTraces = await executionTrace.loadSubagentTracesFromDisk(extensionContext.globalStorageUri.fsPath, message.sessionId);
       for (var dti = 0; dti < diskSubTraces.length; dti++) {

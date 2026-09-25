@@ -184,7 +184,7 @@ export function execute(name, args, context) {
     }
   }
 
-  if (tool.metadata && tool.metadata.rootOnly) {
+  if ((tool.metadata && (tool.metadata.rootOnly || tool.metadata.category === 'subagent')) || canonicalName.indexOf('subagent') !== -1) {
     if (context.agentType === 'subagent') {
       return validationErrorGenerator(canonicalName, ['Subagents cannot spawn or control other subagents.']);
     }
@@ -384,7 +384,7 @@ export function getDefinitions(filterOptions) {
     for (var i = 0; i < _definitions.length; i++) {
       var dName = _definitions[i] && _definitions[i].function ? _definitions[i].function.name : '';
       var toolObj = get(dName);
-      if (isSubagent && toolObj && toolObj.metadata && toolObj.metadata.rootOnly) {
+      if (isSubagent && toolObj && ((toolObj.metadata && (toolObj.metadata.rootOnly || toolObj.metadata.category === 'subagent')) || toolObj.name.indexOf('subagent') !== -1)) {
         continue;
       }
       if (excludeMedia && toolObj && toolObj.metadata && toolObj.metadata.category === 'media') {

@@ -28,7 +28,8 @@ export function getConfig() {
     subagentTimeoutMs: cfg.get('subagentTimeoutMs', 0),
     organization: cfg.get('organization', null),
     project: cfg.get('project', null),
-    enableTools: cfg.get('enableTools', true)
+    enableTools: cfg.get('enableTools', true),
+    apiType: cfg.get('apiType', 'openai')
   };
   return _cached;
 }
@@ -49,7 +50,8 @@ export function getProviderConfig() {
     needsKey: defaults.needsKey,
     organization: cfg.organization,
     project: cfg.project,
-    enableTools: cfg.enableTools !== false
+    enableTools: cfg.enableTools !== false,
+    apiType: cfg.apiType || 'openai'
   };
 }
 
@@ -222,6 +224,6 @@ export async function getProviderConfigByName(context, providerName) {
     maxIterations: cfg.maxIterations,
     apiKey: apiKey,
     needsKey: defaults.needsKey,
-    apiType: saved.apiType || 'openai'
+    apiType: saved.apiType || cfg.apiType || 'openai'
   };
 }

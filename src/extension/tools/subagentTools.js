@@ -72,9 +72,48 @@ export async function* spawn_subagent(args, context) {
       if (!subSummary && waitResult && waitResult.finalResponse) {
         subSummary = typeof waitResult.finalResponse === 'string' ? waitResult.finalResponse : (waitResult.finalResponse.text || '');
       }
+      var wsStatus = (waitResult && waitResult.status) || (waitResult && waitResult.success !== false ? 'completed' : 'failed');
       var finalOutputText = subSummary || (waitResult && waitResult.success !== false
         ? "Subagent '" + name + "' completed task."
-        : "Subagent '" + name + "' ended with status " + ((waitResult && waitResult.status) || 'failed') + ".");
+        : "Subagent '" + name + "' ended with status " + wsStatus + ".");
+
+      var wsFormatted = (wsStatus === 'completed' ? '✓' : '✗') + ' Subagent [' + String(role).toUpperCase() + '] ' +
+        name + ' finished (' + wsStatus + ').\n\n' + finalOutputText;
+
+      var wsCallId = 'call_resp_' + id;
+      var wsRespArgs = {
+        id: id,
+        name: name,
+        role: role,
+        task: task,
+        execution: 'wait'
+      };
+
+      if (parentCtx && typeof parentCtx.sendEvent === 'function') {
+        parentCtx.sendEvent({ type: 'tool_call', tool: 'subagent_response', id: wsCallId, args: wsRespArgs });
+        parentCtx.sendEvent({
+          type: 'tool_result',
+          tool: 'subagent_response',
+          tool_name: 'subagent_response',
+          tool_call_id: wsCallId,
+          args: wsRespArgs,
+          status: wsStatus === 'completed' ? 'success' : 'error',
+          output: finalOutputText,
+          summary: subSummary,
+          formattedResult: wsFormatted,
+          result: {
+            agentId: id,
+            subagent_id: id,
+            name: name,
+            role: role,
+            status: wsStatus,
+            output: finalOutputText,
+            summary: subSummary,
+            result: waitResult,
+            args: wsRespArgs
+          }
+        });
+      }
 
       yield {
         type: 'tool_result',
@@ -89,13 +128,13 @@ export async function* spawn_subagent(args, context) {
         name: name,
         task: task,
         execution: execution,
-        status: (waitResult && waitResult.status) || 'completed',
+        status: wsStatus,
         result: waitResult,
         output: finalOutputText,
         summary: subSummary,
         message: waitResult && waitResult.success !== false
           ? "Subagent '" + name + "' completed task."
-          : "Subagent '" + name + "' ended with status " + ((waitResult && waitResult.status) || 'failed') + "."
+          : "Subagent '" + name + "' ended with status " + wsStatus + "."
       };
       return;
     }
@@ -337,13 +376,56 @@ export async function* wait_for_subagent(args, context) {
 
   try {
     var result = await subagentManager.waitForSubagent(agentId, parentSessionId);
+    var sub = subagentManager.getSubagent(agentId, parentSessionId);
+    var subName = (sub && sub.identity && sub.identity.name) || agentId;
+    var subRole = (sub && (sub.role || (sub.identity && sub.identity.role))) || 'coder';
+    var subTask = (sub && sub.identity && sub.identity.task) || '';
     var subSummary = (result && (result.summary || result.output || result.content)) || '';
     if (!subSummary && result && result.finalResponse) {
       subSummary = typeof result.finalResponse === 'string' ? result.finalResponse : (result.finalResponse.text || '');
     }
+    var wsStatus = (result && result.status) || 'completed';
     var finalOutputText = subSummary || (result && result.success !== false
       ? "Subagent '" + agentId + "' completed task."
-      : "Subagent '" + agentId + "' ended with status " + ((result && result.status) || 'failed') + ".");
+      : "Subagent '" + agentId + "' ended with status " + wsStatus + ".");
+
+    var wsFormatted = (wsStatus === 'completed' ? '✓' : '✗') + ' Subagent [' + String(subRole).toUpperCase() + '] ' +
+      subName + ' finished (' + wsStatus + ').\n\n' + finalOutputText;
+
+    var wsCallId = 'call_resp_' + agentId;
+    var wsRespArgs = {
+      id: agentId,
+      name: subName,
+      role: subRole,
+      task: subTask,
+      execution: 'wait'
+    };
+
+    if (context && typeof context.sendEvent === 'function') {
+      context.sendEvent({ type: 'tool_call', tool: 'subagent_response', id: wsCallId, args: wsRespArgs });
+      context.sendEvent({
+        type: 'tool_result',
+        tool: 'subagent_response',
+        tool_name: 'subagent_response',
+        tool_call_id: wsCallId,
+        args: wsRespArgs,
+        status: wsStatus === 'completed' ? 'success' : 'error',
+        output: finalOutputText,
+        summary: subSummary,
+        formattedResult: wsFormatted,
+        result: {
+          agentId: agentId,
+          subagent_id: agentId,
+          name: subName,
+          role: subRole,
+          status: wsStatus,
+          output: finalOutputText,
+          summary: subSummary,
+          result: result,
+          args: wsRespArgs
+        }
+      });
+    }
 
     yield {
       type: 'tool_result',
@@ -353,10 +435,10 @@ export async function* wait_for_subagent(args, context) {
       success: result && result.success !== false,
       agentId: agentId,
       subagent_id: agentId,
-      status: (result && result.status) || 'completed',
+      status: wsStatus,
       output: finalOutputText,
       summary: subSummary,
-      message: "Subagent '" + agentId + "' completed with status: " + ((result && result.status) || 'completed'),
+      message: "Subagent '" + agentId + "' completed with status: " + wsStatus,
       result: result
     };
   } catch (err) {
