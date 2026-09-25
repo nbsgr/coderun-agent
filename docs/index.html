@@ -1764,7 +1764,7 @@
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
           <li><a href="#lsp-intelligence" class="sidebar-link">Native LSP &amp; Diagnostics</a></li>
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 33-Tool Matrix</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 36-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#copy-actions" class="sidebar-link">Message Copy Buttons</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
@@ -1782,7 +1782,7 @@
           <li><a href="#diff-concurrency" class="sidebar-link">Diffs & SHA-256 Locking</a></li>
           <li><a href="#rules-engine" class="sidebar-link">Global & Workspace Rules</a></li>
           <li><a href="#engineering-contract" class="sidebar-link">Engineering Contract</a></li>
-          <li><a href="#test-suite" class="sidebar-link">78 Adversarial Tests</a></li>
+          <li><a href="#test-suite" class="sidebar-link">88 Adversarial Tests</a></li>
           <li><a href="#troubleshooting" class="sidebar-link">Troubleshooting & FAQ</a></li>
         </ul>
       </div>
@@ -2048,7 +2048,7 @@
               <tr>
                 <td><strong>Adversarial Regression Test Suite</strong></td>
                 <td>Standalone test harness (<code>test/runAllTests.js</code>) with zero external test dependencies</td>
-                <td><span class="pill-badge green">✅ 87 Test Groups</span> Comprehensive regression suite for reliability</td>
+                <td><span class="pill-badge green">✅ 88 Test Groups</span> Comprehensive regression suite for reliability</td>
               </tr>
             </tbody>
           </table>
@@ -2712,9 +2712,9 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                   <summary class="cr-builtin-summary">
                     <div class="cr-builtin-summary-left">
                       <span>⚡ Core Agent Built-in Tools</span>
-                      <span class="cr-builtin-badge">Built-in (25 active)</span>
+                      <span class="cr-builtin-badge" id="simBuiltinBadge">Built-in (36 active)</span>
                     </div>
-                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning, Interaction</span>
+                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning, Interaction, Utility, Sandbox, Database, Subagent, Media</span>
                   </summary>
                   <div class="cr-builtin-body">
                     <div class="cr-builtin-toolbar">
@@ -3236,7 +3236,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
       <section id="subagent-tools">
         <h2 class="section-heading">🛠️ Subagent Tools Suite</h2>
         <p>
-          The agent orchestration engine exposes 6 dedicated subagent tools:
+          The agent orchestration engine exposes 8 dedicated subagent tools:
         </p>
         <div class="table-wrap">
           <table>
@@ -3277,6 +3277,18 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td><code>wait_for_subagent</code></td>
                 <td>Synchronize</td>
                 <td>Blocks until an asynchronous background subagent reaches a terminal state and returns its result.</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><code>pause_subagent</code></td>
+                <td>Control</td>
+                <td>Temporarily suspends an active child subagent at the next iteration boundary.</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td><code>resume_subagent</code></td>
+                <td>Control</td>
+                <td>Resumes a suspended child subagent execution from where it was paused.</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -3369,11 +3381,11 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         </div>
       </section>
 
-      <!-- 34 Tools Matrix -->
+      <!-- 36 Tools Matrix -->
       <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 34-Tool Matrix</h2>
+        <h2 class="section-heading">🧰 The Complete 36-Tool Matrix</h2>
         <p>
-          CodeRun comes equipped with 34 built-in core tools across 9 operational categories:
+          CodeRun comes equipped with 36 built-in core tools across 9 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -3431,6 +3443,12 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               </tr>
               <tr>
                 <td></td>
+                <td><code>list_directory</code></td>
+                <td>Lists folder contents with recursive depth controls</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
                 <td><code>get_file_info</code></td>
                 <td>Retrieves file metadata (size, lines, modified date, MIME)</td>
                 <td>Safe</td>
@@ -3469,12 +3487,6 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td></td>
                 <td><code>document_symbols</code></td>
                 <td>Native VS Code LSP: Extract complete file symbol hierarchy</td>
-                <td>Safe</td>
-              </tr>
-              <tr>
-                <td></td>
-                <td><code>list_directory</code></td>
-                <td>Lists folder contents with recursive depth controls</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -3547,6 +3559,18 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td></td>
                 <td><code>wait_for_subagent</code></td>
                 <td>Block until an async background subagent finishes execution</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>pause_subagent</code></td>
+                <td>Temporarily suspend a running child subagent at next iteration boundary</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>resume_subagent</code></td>
+                <td>Continue execution of a suspended child subagent</td>
                 <td>Safe</td>
               </tr>
               <tr>
@@ -3848,9 +3872,9 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
 
       <!-- Adversarial Test Suite -->
       <section id="test-suite">
-        <h2 class="section-heading">🧪 87 Adversarial Regression Test Suite</h2>
+        <h2 class="section-heading">🧪 88 Adversarial Regression Test Suite</h2>
         <p>
-          Every build of CodeRun is verified against an exhaustive 87-group adversarial test suite with 0 external dependencies:
+          Every build of CodeRun is verified against an exhaustive 88-group adversarial test suite with 0 external dependencies:
         </p>
         <div class="code-container">
           <div class="code-header">
@@ -3860,7 +3884,7 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
           <pre><code>node test/runAllTests.js</code></pre>
         </div>
         <p>
-          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78), dual terminal sessions (direct &amp; background) per chat with distinct CodeRun(main) / CodeRun(BG) naming, lifecycle isolation, and selective stopping (Vector 79), pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and template assets (Vector 80), calling model API animation &amp; unified reasoning tokens contract (Vector 81), universal provider reasoning deduplication, tool fallback &amp; chronological DOM contract (Vector 82), terminal execution integrity, stream tool buffering &amp; redundant thought prevention (Vector 83), model-driven interactivity &amp; background decision contract (Vector 84), terminal pager hang prevention, git pager suppression &amp; model selection sync (Vector 85), check_terminal_state tool contract, main vs background introspection &amp; exit code zero verification (Vector 86), and agent loop active input box animation (Copilot blue border flow) contract &amp; state synchronization (Vector 87).
+          Tests verify multi-session isolation, optimistic concurrency SHA-256 locking, SSRF protection filters, secret token redaction, checkpoint rollbacks, signal cancellation, interactive command detection, MCP dynamic registration, dedicated sandbox tools &amp; terminal CWD synchronization, multi-turn historical tool result optimization, complete response summary preservation, interactive user question lifecycle, subagent identity hierarchy &amp; recursion blocking (Vector 51), subagent lifecycle state machine transitions (Vector 52), subagent manager operations (Vector 53), checkpoint &amp; diff attribution per agentId (Vector 54), execution trace subagent isolation (Vector 55), subagent tools suite execution (Vector 56), subagent UI panel contracts (Vector 57), subagent wait/async execution modes (Vector 58), subagent trace persistence (Vector 59), UI scrollability (Vector 60), parallel non-blocking execution with live dropdown updates (Vector 61), multi-step subagent execution chaining (Vector 62), subagent background polling &amp; wait_for_subagent timeout handling (Vector 63), subagent error boundaries &amp; tool failure containment (Vector 64), model inheritance fallback &amp; dedicated provider resolution (Vector 65), subagent token usage attribution (Vector 66), staged diff isolation across concurrent subagents (Vector 67), multi-agent message bus synchronization (Vector 68), subagent abort signal propagation &amp; process cleanup (Vector 69), subagent UI panel state retention across tab switches (Vector 70), live dropdown synchronization during background agent runs (Vector 71), subagent checkpoint undo reflection across diff cards, tool cards, and chat traces (Vector 72), model modality classification, UI badging, media endpoint routing, and globalStorage persistence (Vector 73), webview media display, dynamic URI rewriting, and chat persistence (Vector 74), Save to Project direct workspace download &amp; stored conversation loading (Vector 75), custom interactive HTML5 video player controls &amp; progress scrubber (Vector 76), universal OpenAI-compatible image &amp; video extraction, polling &amp; adaptive retry (Vector 77), differentiated request timeouts for 10m local LLMs vs 30s cloud endpoints (Vector 78), dual terminal sessions (direct &amp; background) per chat with distinct CodeRun(main) / CodeRun(BG) naming, lifecycle isolation, and selective stopping (Vector 79), pure JavaScript Python MCP Manager, environment isolation, unbuffered stdio, and template assets (Vector 80), calling model API animation &amp; unified reasoning tokens contract (Vector 81), universal provider reasoning deduplication, tool fallback &amp; chronological DOM contract (Vector 82), terminal execution integrity, stream tool buffering &amp; redundant thought prevention (Vector 83), model-driven interactivity &amp; background decision contract (Vector 84), terminal pager hang prevention, git pager suppression &amp; model selection sync (Vector 85), check_terminal_state tool contract, main vs background introspection &amp; exit code zero verification (Vector 86), agent loop active input box animation (Copilot blue border flow) contract &amp; state synchronization (Vector 87), and prompt builder orphan tool call sanitization, executionTrace path binding &amp; stream watchdog message sequence integrity (Vector 88).
         </p>
       </section>
 
@@ -3909,7 +3933,7 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
         <li class="toc-item"><a href="#subagent-tools" class="toc-link">Subagent Tools</a></li>
         <li class="toc-item"><a href="#subagent-traces" class="toc-link">Subagent Traces</a></li>
         <li class="toc-item"><a href="#lsp-intelligence" class="toc-link">LSP &amp; Diagnostics</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">34-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">36-Tool Matrix</a></li>
         <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
@@ -3918,7 +3942,7 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
         <li class="toc-item"><a href="#context-optimization" class="toc-link">Context Optimization</a></li>
         <li class="toc-item"><a href="#rules-engine" class="toc-link">Rules Engine</a></li>
         <li class="toc-item"><a href="#engineering-contract" class="toc-link">Engineering Contract</a></li>
-        <li class="toc-item"><a href="#test-suite" class="toc-link">87 Test Suite</a></li>
+        <li class="toc-item"><a href="#test-suite" class="toc-link">88 Test Suite</a></li>
         <li class="toc-item"><a href="#troubleshooting" class="toc-link">Troubleshooting &amp; FAQ</a></li>
       </ul>
     </aside>
@@ -4029,6 +4053,7 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
       { name: 'delete_file', cat: 'filesystem', perm: 'danger' },
       { name: 'create_folder', cat: 'filesystem', perm: 'danger' },
       { name: 'delete_folder', cat: 'filesystem', perm: 'danger' },
+      { name: 'list_directory', cat: 'filesystem', perm: 'safe' },
       { name: 'get_file_info', cat: 'filesystem', perm: 'safe' },
       { name: 'search_files', cat: 'search', perm: 'safe' },
       { name: 'find_in_files', cat: 'search', perm: 'safe' },
@@ -4036,7 +4061,6 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
       { name: 'get_definition', cat: 'search', perm: 'safe' },
       { name: 'find_references', cat: 'search', perm: 'safe' },
       { name: 'document_symbols', cat: 'search', perm: 'safe' },
-      { name: 'list_directory', cat: 'search', perm: 'safe' },
       { name: 'run_terminal', cat: 'terminal', perm: 'danger' },
       { name: 'terminal_input', cat: 'terminal', perm: 'danger' },
       { name: 'stop_terminal', cat: 'terminal', perm: 'safe' },
@@ -4044,10 +4068,20 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
       { name: 'ask_question', cat: 'interaction', perm: 'safe' },
       { name: 'create_plan', cat: 'planning', perm: 'safe' },
       { name: 'update_plan', cat: 'planning', perm: 'safe' },
+      { name: 'spawn_subagent', cat: 'subagent', perm: 'danger' },
+      { name: 'subagent_status', cat: 'subagent', perm: 'safe' },
+      { name: 'subagents_list', cat: 'subagent', perm: 'safe' },
+      { name: 'stop_subagent', cat: 'subagent', perm: 'danger' },
+      { name: 'wait_for_subagent', cat: 'subagent', perm: 'safe' },
+      { name: 'pause_subagent', cat: 'subagent', perm: 'safe' },
+      { name: 'resume_subagent', cat: 'subagent', perm: 'safe' },
+      { name: 'subagent_response', cat: 'subagent', perm: 'safe' },
       { name: 'web_request', cat: 'utility', perm: 'safe' },
       { name: 'get_current_datetime', cat: 'utility', perm: 'safe' },
       { name: 'sandbox', cat: 'utility', perm: 'safe' },
-      { name: 'query_project_db', cat: 'database', perm: 'safe' }
+      { name: 'query_project_db', cat: 'database', perm: 'safe' },
+      { name: 'generate_image', cat: 'media', perm: 'safe' },
+      { name: 'generate_video', cat: 'media', perm: 'safe' }
     ];
 
     var SIM_MCP_SERVERS = [
@@ -4240,21 +4274,27 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
 
     function renderSimBuiltinTools(filter) {
       var grid = document.getElementById('simBuiltinToolsGrid');
+      var badge = document.getElementById('simBuiltinBadge');
       if (!grid) return;
       grid.innerHTML = '';
       var query = (filter || '').toLowerCase();
+      var count = 0;
 
       for (var i = 0; i < SIM_BUILTIN_TOOLS.length; i++) {
         var t = SIM_BUILTIN_TOOLS[i];
         if (query && t.name.indexOf(query) === -1 && t.cat.indexOf(query) === -1) {
           continue;
         }
+        count++;
         var pill = document.createElement('div');
         pill.className = 'cr-builtin-tool-pill';
         pill.innerHTML =
           '<span class="name">' + escHtml(t.name) + '</span>' +
           '<span class="perm ' + t.perm + '">' + (t.perm === 'safe' ? 'Safe' : '⚠️ Danger') + '</span>';
         grid.appendChild(pill);
+      }
+      if (badge && !query) {
+        badge.textContent = 'Built-in (' + count + ' active)';
       }
     }
 
@@ -4523,7 +4563,9 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
 
     function onDisableAllToolsClick() {
       var grid = document.getElementById('simBuiltinToolsGrid');
+      var badge = document.getElementById('simBuiltinBadge');
       if (grid) grid.innerHTML = '<div style="padding:12px;color:#8b949e;font-size:12px;">All tools disabled.</div>';
+      if (badge) badge.textContent = 'Built-in (0 active)';
     }
 
     function onTabMcpLiveClick() {
