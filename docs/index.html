@@ -1721,6 +1721,7 @@
         <ul class="sidebar-menu">
           <li><a href="#introduction" class="sidebar-link active">Overview & Core Concept</a></li>
           <li><a href="#architecture" class="sidebar-link">Agentic Loop & Engine</a></li>
+          <li><a href="#three-tier" class="sidebar-link">3-Tier Architecture</a></li>
           <li><a href="#features" class="sidebar-link">Architecture and Features</a></li>
           <li><a href="#installation" class="sidebar-link">Installation & Setup</a></li>
         </ul>
@@ -1880,6 +1881,67 @@
         </div>
       </section>
 
+      <!-- 3-Tier Architecture -->
+      <section id="three-tier">
+        <h2 class="section-heading">🏛️ 3-Tier Modular Architecture</h2>
+        <p>
+          CodeRun strictly enforces the <strong>3-Tier Modular Pattern (Controller → Handler → Manager)</strong> with complete physical and logical separation between the Backend Extension Host (<code>src/extension/</code>) and Frontend Webview (<code>src/UI/</code>):
+        </p>
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🔀</div>
+            <div class="card-title">Tier 1: Controllers (Pure Routers)</div>
+            <div class="card-text">
+              <code>UI-controller.js</code> (backend) &amp; <code>host-controller.js</code> (frontend) listen to IPC events (<code>onDidReceiveMessage</code>, <code>window.addEventListener("message")</code>) and immediately delegate to handlers. <strong>Zero business logic</strong> resides in controllers.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📦</div>
+            <div class="card-title">Tier 2: Handlers (Payload Coordinators)</div>
+            <div class="card-text">
+              <code>src/extension/manager/*handler.js</code> &amp; <code>src/UI/chats/chats-*-manager.js</code> parse, validate, and coordinate incoming request payloads, invoke manager functions, and dispatch structured response messages back over the IPC channel.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚙️</div>
+            <div class="card-title">Tier 3: Managers (Core Business Logic)</div>
+            <div class="card-text">
+              <code>tools.js</code> (36 tools), <code>agentLoop.js</code>, <code>projectKnowledge.js</code> (SQLite AST indexing via SQL.js), <code>checkpointManager.js</code>, <code>diffManager.js</code>, and <code>terminalManager.js</code> implement pure business logic, state mutations, and storage.
+            </div>
+          </div>
+        </div>
+
+        <div class="code-container" style="margin-top: 24px;">
+          <div class="code-header">
+            <span>Repository Directory Structure</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>D:\cline-ollama/
+├── icons/                            ← Brand, logo, and avatar media assets
+├── src/
+│   ├── extension/                    ← 100% Backend Extension Host Logic
+│   │   ├── main/                     ← Extension lifecycle &amp; activation (extension.js, html-manager.js)
+│   │   ├── controller/               ← Pure message router (UI-controller.js)
+│   │   ├── manager/                  ← Domain request handlers (chatshandler.js, diffshandler.js, etc.)
+│   │   ├── permission-manager/       ← Unified permission storage (permission-store.js)
+│   │   ├── agents/                   ← Core agent loop, state machine &amp; subagents
+│   │   ├── context/                  ← Context engine &amp; SQLite knowledge base (index.db via SQL.js)
+│   │   ├── execution/                ← Diagnostics, review, verification &amp; trace engines
+│   │   ├── mcp/                      ← MCP clients &amp; Python virtualenv manager
+│   │   ├── media/                    ← Media extraction, formatting &amp; disk persistence
+│   │   ├── providers/                ← 8 native LLM providers &amp; model classifier
+│   │   └── tools/                    ← 36 async tool implementations &amp; security guards
+│   │
+│   └── UI/                           ← 100% Frontend Webview DOM &amp; Styling
+│       ├── index.html                ← Single entry point loading dashboard/dashboard.js
+│       ├── controller/               ← Pure Webview message routing (host-controller.js, vscode-api.js)
+│       ├── dashboard/                ← Shell layout, header status, navigation &amp; logo
+│       ├── chats/                    ← Chat rendering, timeline, diffs, checkpoints &amp; subagents
+│       ├── permission-manager/       ← Reusable permission prompt dialogs (permission-card.js)
+│       └── settings/                 ← Provider, model, MCP, rules &amp; trace panels</code></pre>
+        </div>
+      </section>
+
       <!-- Architecture & Features -->
       <section id="features">
         <span id="comparison"></span>
@@ -1905,7 +1967,7 @@
               </tr>
               <tr>
                 <td><strong>Multi-Provider Engine</strong></td>
-                <td>Modular provider adapters in <code>src/providers/</code> with unified streaming &amp; normalization</td>
+                <td>Modular provider adapters in <code>src/extension/providers/</code> with unified streaming &amp; normalization</td>
                 <td><span class="pill-badge green">8 Providers</span> (Ollama, Gemini, Claude, OpenAI, Groq, OpenRouter, xAI, Custom)</td>
               </tr>
               <tr>
@@ -1920,7 +1982,7 @@
               </tr>
               <tr>
                 <td><strong>On-Install Browser Automation</strong></td>
-                <td>Embedded browser discovery in <code>src/mcp/mcpManager.js</code> + Puppeteer MCP server</td>
+                <td>Embedded browser discovery in <code>src/extension/mcp/mcpManager.js</code> + Puppeteer MCP server</td>
                 <td><span class="pill-badge green">✅ Automatic</span> Auto-locates Chrome/Edge/Brave or installs Chromium</td>
               </tr>
               <tr>
@@ -1930,17 +1992,17 @@
               </tr>
               <tr>
                 <td><strong>Deterministic Context Compaction</strong></td>
-                <td>Pure local 0ms checkpoint generator in <code>src/context/compactionManager.js</code></td>
+                <td>Pure local 0ms checkpoint generator in <code>src/extension/context/compactionManager.js</code></td>
                 <td><span class="pill-badge green">✅ 0ms Instant</span> Local chronological summaries, 0 external API cost</td>
               </tr>
               <tr>
                 <td><strong>Historical Tool Compaction</strong></td>
-                <td>Wire-protocol optimizer in <code>src/context/contextManager.js</code></td>
+                <td>Wire-protocol optimizer in <code>src/extension/context/contextManager.js</code></td>
                 <td><span class="pill-badge green">✅ Automatic</span> Compact old turns up to 90%, preserve failures &amp; mutation diffs</td>
               </tr>
               <tr>
                 <td><strong>Local SQLite Codebase Index</strong></td>
-                <td>Embedded SQL.js database (<code>src/context/projectKnowledge.js</code>) with serialized disk writes</td>
+                <td>Embedded SQL.js database (<code>src/extension/context/projectKnowledge.js</code>) with serialized disk writes</td>
                 <td><span class="pill-badge green">✅ Embedded SQL.js</span> Fast symbol &amp; file indexing, 0 cloud leakage</td>
               </tr>
               <tr>
@@ -1960,33 +2022,33 @@
               </tr>
               <tr>
                 <td><strong>Interactive User Questions</strong></td>
-                <td>Session-isolated question lifecycle manager (<code>src/tools/questionManager.js</code>)</td>
+                <td>Session-isolated question lifecycle manager (<code>src/extension/tools/questionManager.js</code>)</td>
                 <td><span class="pill-badge green">✅ ask_question</span> Interactive option chips + custom write-in directly in chat</td>
               </tr>
               <tr>
                 <td><strong>Message Copy Buttons &amp; Fidelity</strong></td>
-                <td>Raw markdown &amp; input text extraction with clipboard fallback in <code>src/ChatSpace.js</code></td>
+                <td>Raw markdown &amp; input text extraction with clipboard fallback in <code>src/UI/chats/chats.js</code></td>
                 <td><span class="pill-badge green">✅ Full Fidelity</span> Prompt &amp; assistant response copy with ending timestamps and zero UI noise</td>
               </tr>
               <tr>
                 <td><strong>Native VS Code LSP &amp; Diagnostics</strong></td>
-                <td>Language Server Protocol integration in <code>src/tools/tools.js</code> &amp; <code>src/execution/reviewEngine.js</code></td>
+                <td>Language Server Protocol integration in <code>src/extension/tools/tools.js</code> &amp; <code>src/extension/execution/reviewEngine.js</code></td>
                 <td><span class="pill-badge green">✅ Native LSP</span> Live definition, reference &amp; symbol discovery + compiler diagnostic self-healing</td>
               </tr>
               <tr>
                 <td><strong>Zero-Latency Reasoning &amp; UI State</strong></td>
-                <td>Synchronous thinking stream &amp; persistent user toggles in <code>src/ChatSpace.js</code></td>
+                <td>Synchronous thinking stream &amp; persistent user toggles in <code>src/UI/chats/chats.js</code></td>
                 <td><span class="pill-badge green">✅ Instant auto-scroll</span> Direct reasoning token rendering + dropdown retention across agent loops</td>
               </tr>
               <tr>
                 <td><strong>Autonomous Subagent Workers</strong></td>
-                <td>Hierarchical subagent runner in <code>src/agents/subagentManager.js</code> with dedicated tools</td>
+                <td>Hierarchical subagent runner in <code>src/extension/agents/subagentManager.js</code> with dedicated tools</td>
                 <td><span class="pill-badge green">✅ Dual-Mode</span> Background (<code>sync</code>) &amp; Synchronous (<code>wait</code>) delegation with undo reflection</td>
               </tr>
               <tr>
                 <td><strong>Adversarial Regression Test Suite</strong></td>
                 <td>Standalone test harness (<code>test/runAllTests.js</code>) with zero external test dependencies</td>
-                <td><span class="pill-badge green">✅ 78 Test Groups</span> Comprehensive regression suite for reliability</td>
+                <td><span class="pill-badge green">✅ 87 Test Groups</span> Comprehensive regression suite for reliability</td>
               </tr>
             </tbody>
           </table>
@@ -3615,7 +3677,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               <li><code>all</code>: Aborts running executions across both terminal sessions.</li>
             </ul>
           </li>
-          <li><strong>UI Transparency & Distinguishable Badging:</strong> Terminal cards in ChatSpace display real-time output streams badged with emerald <code>CodeRun(main)</code> or indigo <code>CodeRun(BG)</code> indicators.</li>
+          <li><strong>UI Transparency & Distinguishable Badging:</strong> Terminal cards in the chat view (<code>src/UI/chats/</code>) display real-time output streams badged with emerald <code>CodeRun(main)</code> or indigo <code>CodeRun(BG)</code> indicators.</li>
           <li><strong>ANSI Stripping:</strong> All terminal outputs are stripped of ANSI escapes and OSC codes before presentation.</li>
         </ul>
       </section>
@@ -3624,7 +3686,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
       <section id="error-containment">
         <h2 class="section-heading">🛡️ Dynamic Error Boundary & Card Containment</h2>
         <p>
-          In CodeRun v1.4.5, error notifications are encapsulated in responsive, auto-expanding cards:
+          In CodeRun, error notifications are encapsulated in responsive, auto-expanding cards:
         </p>
         <ul>
           <li><strong>Zero Boundary Spill:</strong> Long uninterrupted URLs (such as Google Gemini API rate limits or stack traces) break cleanly onto new lines using <code>overflow-wrap: anywhere</code> and <code>word-break: break-word</code>.</li>
@@ -3779,8 +3841,8 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
             <button class="copy-btn" onclick="copyCode(this)">Copy</button>
           </div>
           <pre><code>npm test
-node --check src/agents/agentLoop.js
-node --check src/tools/toolExecutor.js</code></pre>
+node --check src/extension/agents/agentLoop.js
+node --check src/extension/tools/toolExecutor.js</code></pre>
         </div>
       </section>
 
@@ -3995,7 +4057,7 @@ node --check src/tools/toolExecutor.js</code></pre>
         builtin: true,
         type: 'Built-in (STDIO)',
         status: 'Connected',
-        cmd: 'node ./src/mcp/builtinServers/fetchServer.cjs',
+        cmd: 'node ./src/extension/mcp/builtinServers/fetchServer.cjs',
         tools: ['fetch_html', 'fetch_markdown', 'search_web']
       },
       {
