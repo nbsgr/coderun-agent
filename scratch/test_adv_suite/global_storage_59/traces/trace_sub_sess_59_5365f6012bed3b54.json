@@ -1,6 +1,6 @@
 [
   {
-    "id": "run_1790335577852_q53p67",
+    "id": "run_1790337440454_fwklo5",
     "sessionId": "sub_sess_59",
     "agentId": "subagent_tester_59",
     "name": "Security Tester",
@@ -10,8 +10,8 @@
     "depth": 0,
     "role": "debugger",
     "agentType": "subagent",
-    "startedAt": 1790335577852,
-    "completedAt": 1790335577852,
+    "startedAt": 1790337440454,
+    "completedAt": 1790337440454,
     "durationMs": 0,
     "status": "completed",
     "provider": "ollama",
@@ -47,7 +47,7 @@
         },
         "toolCalls": [
           {
-            "id": "tool_1790335577852",
+            "id": "tool_1790337440454",
             "toolName": "run_command",
             "command": "npm test -- --grep \"security\"",
             "input": {
@@ -58,7 +58,7 @@
             "durationMs": 95,
             "checkpointId": null,
             "filePath": "",
-            "timestamp": 1790335577852
+            "timestamp": 1790337440454
           }
         ]
       }

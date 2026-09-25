@@ -21,6 +21,57 @@ function createClient(config) {
   return new OpenAI(options);
 }
 
+async function* withStreamTimeout(stream, initialTimeoutMs, idleTimeoutMs, signal) {
+  var iterator = stream[Symbol.asyncIterator]();
+  var isFirst = true;
+
+  while (true) {
+    if (signal && (signal.aborted || signal.stopped)) {
+      break;
+    }
+
+    var timeoutLimit = isFirst ? initialTimeoutMs : idleTimeoutMs;
+    var timerId = null;
+
+    function timerPromiseExecutor(resolve, reject) {
+      function onTimeout() {
+        var timeoutErr = new Error(isFirst ?
+          ('Connection timed out: No initial response received from model within ' + Math.round(initialTimeoutMs / 1000) + 's.') :
+          ('Stream stalled: Connection remained idle with no data for ' + Math.round(idleTimeoutMs / 1000) + 's.'));
+        timeoutErr.code = 'ETIMEDOUT';
+        reject(timeoutErr);
+      }
+      timerId = setTimeout(onTimeout, timeoutLimit);
+    }
+
+    var timeoutPromise = new Promise(timerPromiseExecutor);
+
+    try {
+      var nextResult = await Promise.race([
+        iterator.next(),
+        timeoutPromise
+      ]);
+      clearTimeout(timerId);
+
+      if (nextResult.done) {
+        break;
+      }
+      isFirst = false;
+      yield nextResult.value;
+    } catch (raceErr) {
+      clearTimeout(timerId);
+      if (typeof iterator.return === 'function') {
+        try {
+          await iterator.return();
+        } catch (_) {
+          /* ignore return error */
+        }
+      }
+      throw raceErr;
+    }
+  }
+}
+
 export async function* chat(config, messages, tools, reqOpts) {
   var client = createClient(config);
   var body = {
@@ -52,9 +103,15 @@ export async function* chat(config, messages, tools, reqOpts) {
     throw createErr;
   }
 
+  var initialTimeoutMs = getProviderTimeout(config);
+  var isLocal = initialTimeoutMs >= 300000;
+  var idleTimeoutMs = isLocal ? 120000 : 45000;
+  var streamSignal = (reqOpts && reqOpts.signal) ? reqOpts.signal : null;
+  var monitoredStream = withStreamTimeout(stream, initialTimeoutMs, idleTimeoutMs, streamSignal);
+
   var hasStreamedThinking = false;
   try {
-    for await (var chunk of stream) {
+    for await (var chunk of monitoredStream) {
       var parsed = parseChunk(chunk);
       if (parsed.thinking) {
         if (parsed._isSummary && hasStreamedThinking) {

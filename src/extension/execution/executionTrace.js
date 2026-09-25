@@ -16,6 +16,10 @@ export function setDefaultStoragePath(storagePath) {
   _defaultStoragePath = storagePath || null;
 }
 
+export function setStoragePath(storagePath) {
+  _defaultStoragePath = storagePath || null;
+}
+
 export function getDefaultStoragePath() {
   return _defaultStoragePath;
 }
@@ -522,8 +526,9 @@ export async function saveTraceToDisk(globalStoragePath, sessionId) {
       if (existsSync(filePath)) {
         try {
           var diskContent = await fs.readFile(filePath, 'utf-8');
-          var diskParsed = JSON.parse(diskContent);
-          if (Array.isArray(diskParsed) && diskParsed.length > 0) {
+          if (diskContent && diskContent.trim()) {
+            var diskParsed = JSON.parse(diskContent);
+            if (Array.isArray(diskParsed) && diskParsed.length > 0) {
             var merged = diskParsed.slice();
             for (var ti = 0; ti < traces.length; ti++) {
               var currT = traces[ti];
@@ -542,7 +547,8 @@ export async function saveTraceToDisk(globalStoragePath, sessionId) {
             }
             effectiveTraces = merged;
           }
-        } catch (catchErr) { console.debug('[TRACE] Non-fatal fallback:', catchErr ? catchErr.message : catchErr); }
+        }
+      } catch (catchErr) { console.debug('[TRACE] Non-fatal fallback:', catchErr ? catchErr.message : catchErr); }
       }
       var sanitized = redactSensitiveData(effectiveTraces);
       var jsonStr = JSON.stringify(sanitized, null, 2);

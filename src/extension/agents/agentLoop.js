@@ -614,6 +614,7 @@ export async function runAgentLoop(userPrompt, config, options) {
       }
 
       iteration++;
+      console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
       sendEvent({
         type: EVENT_TYPES.AGENT_ITERATION,
         iteration: iteration,
@@ -657,7 +658,6 @@ export async function runAgentLoop(userPrompt, config, options) {
           if (signal && (signal.stopped || signal.aborted)) {
             break;
           }
-          console.log('[AGENT LOOP] Iteration ' + iteration + '/' + maxIterations);
           dbg('[AGENT LOOP] AGENT RECEIVED =', JSON.stringify(chunk).substring(0, 500));
           // Handle usage stats
           if (chunk.usage) {

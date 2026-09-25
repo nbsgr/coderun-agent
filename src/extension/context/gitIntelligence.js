@@ -2,6 +2,7 @@
 // Queries background Git processes to gather repository intelligence and prevent accidental overwrites.
 
 import { exec } from 'child_process';
+import { existsSync } from 'fs';
 import * as path from 'path';
 
 function runGit(args, cwd) {
@@ -89,6 +90,11 @@ export async function isDirty(cwd, filePath) {
 // Expose formatted Git context string for LLM prompt context injection.
 export async function getGitPromptFragment(cwd) {
   try {
+    if (!cwd || typeof cwd !== 'string') return '';
+    var gitDir = path.join(cwd, '.git');
+    if (!existsSync(gitDir)) {
+      return '';
+    }
     var branch = await getGitBranch(cwd);
     var status = await getGitStatus(cwd);
     var conflicts = await checkMergeConflicts(cwd);

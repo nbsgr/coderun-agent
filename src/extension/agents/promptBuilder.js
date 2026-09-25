@@ -72,6 +72,75 @@ function optimizeHistoricalToolMessage(msg, toolCallMap) {
   return optimized;
 }
 
+function sanitizeMessageSequence(messages) {
+  if (!messages || !messages.length) return messages;
+
+  var answeredToolCallIds = {};
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    if (m && m.role === 'tool' && m.tool_call_id) {
+      answeredToolCallIds[m.tool_call_id] = true;
+    }
+  }
+
+  var sanitized = [];
+  for (var j = 0; j < messages.length; j++) {
+    var msg = messages[j];
+    if (!msg) continue;
+
+    if (msg.role === 'assistant') {
+      var cleanedMsg = Object.assign({}, msg);
+      if (cleanedMsg.tool_calls && Array.isArray(cleanedMsg.tool_calls)) {
+        var validToolCalls = [];
+        for (var tci = 0; tci < cleanedMsg.tool_calls.length; tci++) {
+          var tc = cleanedMsg.tool_calls[tci];
+          if (tc && tc.id && answeredToolCallIds[tc.id]) {
+            validToolCalls.push(tc);
+          }
+        }
+        if (validToolCalls.length > 0) {
+          cleanedMsg.tool_calls = validToolCalls;
+        } else {
+          delete cleanedMsg.tool_calls;
+          if (!cleanedMsg.content || !String(cleanedMsg.content).trim()) {
+            cleanedMsg.content = '(Request stopped before tool execution)';
+          }
+        }
+      } else if (!cleanedMsg.content || !String(cleanedMsg.content).trim()) {
+        cleanedMsg.content = '(No response)';
+      }
+      sanitized.push(cleanedMsg);
+      continue;
+    }
+
+    if (msg.role === 'tool') {
+      if (!msg.content || !String(msg.content).trim()) {
+        var fixedTool = Object.assign({}, msg);
+        fixedTool.content = '(empty tool output)';
+        sanitized.push(fixedTool);
+      } else {
+        sanitized.push(msg);
+      }
+      continue;
+    }
+
+    if (msg.role === 'user') {
+      if (!msg.content && (!msg.images || !msg.images.length)) {
+        var fixedUser = Object.assign({}, msg);
+        fixedUser.content = '(empty message)';
+        sanitized.push(fixedUser);
+      } else {
+        sanitized.push(msg);
+      }
+      continue;
+    }
+
+    sanitized.push(msg);
+  }
+
+  return sanitized;
+}
+
 export async function buildMessages(userPrompt, options) {
   options = options || {};
   var history = options.history || [];
@@ -332,7 +401,7 @@ export async function buildMessages(userPrompt, options) {
     messages.push(userMsg);
   }
 
-  return messages;
+  return sanitizeMessageSequence(messages);
 }
 
 export async function buildSystemPromptOnly(workspace, skills, memory, mcpContext) {

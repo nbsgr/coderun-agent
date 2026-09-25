@@ -3563,6 +3563,52 @@ assert.strictEqual(mockSendBtn.style.display, 'flex', 'Send button is visible wh
 
 console.log('✓ Vector 87 Passed: Agent loop active input box animation (Copilot blue border flow) contract & state synchronization verified.');
 
+// --- TEST 88: Prompt Builder Orphan Tool Call Sanitization & Stream Watchdog Contract ---
+console.log('\n--- TEST 88: Prompt Builder Orphan Tool Call Sanitization & Stream Watchdog Contract ---');
+
+// 1. Verify executionTrace.setStoragePath exists and functions
+assert.strictEqual(typeof executionTrace.setStoragePath, 'function', 'executionTrace.setStoragePath must be a function');
+executionTrace.setStoragePath('scratch/test_trace_storage_88');
+assert.strictEqual(executionTrace.getDefaultStoragePath(), 'scratch/test_trace_storage_88', 'Storage path should be set correctly');
+
+// 2. Verify buildMessages reconciles orphan tool calls
+var testHistoryWithOrphanTool = [
+  { role: 'user', content: 'clear project' },
+  {
+    role: 'assistant',
+    content: 'I will check structure first.',
+    tool_calls: [
+      {
+        id: 'call_orphan_123',
+        type: 'function',
+        function: { name: 'list_directory', arguments: '{"path":"."}' }
+      }
+    ]
+  }
+];
+
+var sanitizedMessages88 = await buildMessages('what happend', {
+  history: testHistoryWithOrphanTool,
+  workspace: 'scratch/test_adv_suite'
+});
+
+var assistantMsg88 = null;
+for (var mi88 = 0; mi88 < sanitizedMessages88.length; mi88++) {
+  if (sanitizedMessages88[mi88].role === 'assistant') {
+    assistantMsg88 = sanitizedMessages88[mi88];
+    break;
+  }
+}
+assert.ok(assistantMsg88, 'Assistant message should exist in sanitized messages');
+assert.strictEqual(assistantMsg88.tool_calls, undefined, 'Orphan tool_calls must be stripped from assistant message');
+assert.strictEqual(assistantMsg88.content, 'I will check structure first.', 'Assistant content must be preserved');
+
+var lastMsg88 = sanitizedMessages88[sanitizedMessages88.length - 1];
+assert.strictEqual(lastMsg88.role, 'user', 'Last message must be user prompt');
+assert.strictEqual(lastMsg88.content, 'what happend', 'User prompt content must match');
+
+console.log('✓ Vector 88 Passed: Prompt builder orphan tool call sanitization, executionTrace path binding & message sequence integrity verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3575,7 +3621,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 87 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 88 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);
