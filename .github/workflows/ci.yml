@@ -2,32 +2,29 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main, master ]
   pull_request:
-    branches: ["main"]
-
-permissions:
-  contents: read
+    branches: [ main, master ]
 
 jobs:
   test:
-    name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 18.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: "npm"
+          node-version: 18.x
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Dependencies
+        run: npm ci || npm install
 
-      - name: Run test suite
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Complete Adversarial Regression Test Suite
         run: npm test

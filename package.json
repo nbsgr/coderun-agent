@@ -26,10 +26,12 @@
     "onCommand:coderun.undoLastEdit"
   ],
   "scripts": {
+    "lint": "eslint -c eslint.config.cjs src/ test/ scripts/",
+    "lint:fix": "eslint -c eslint.config.cjs src/ test/ scripts/ --fix",
     "pretest": "node scripts/ensure-vscode-mock.js",
     "test": "node test/runAllTests.js"
   },
-  "main": "./src/extension.js",
+  "main": "./src/extension/main/extension.js",
   "contributes": {
     "commands": [
       {
@@ -194,6 +196,7 @@
   },
   "devDependencies": {
     "@vscode/vsce": "^3.9.2",
+    "eslint": "^10.11.0",
     "vscode": "file:./test/mocks/vscode"
   },
   "dependencies": {

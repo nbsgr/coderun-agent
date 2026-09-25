@@ -1,0 +1,28 @@
+/* settings.css (UI side) */
+/* CodeRun Settings & Model Selector Styling */
+
+.cr-settings-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.cr-settings-section {
+  margin-bottom: 24px;
+}
+
+.cr-settings-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground);
+}
+
+.cr-settings-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}

@@ -3,39 +3,39 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'net';
-import * as pathSecurity from '../src/tools/pathSecurity.js';
-import * as fileLockManager from '../src/tools/fileLockManager.js';
-import * as diffManager from '../src/tools/diffManager.js';
-import * as checkpointManager from '../src/tools/checkpointManager.js';
-import * as projectKnowledge from '../src/context/projectKnowledge.js';
-import * as searchManager from '../src/context/searchManager.js';
-import * as executionTrace from '../src/execution/executionTrace.js';
-import * as verificationManager from '../src/execution/verificationManager.js';
-import * as recoveryEngine from '../src/execution/recoveryEngine.js';
-import * as runtime from '../src/agents/runtime.js';
-import * as agentState from '../src/agents/agentState.js';
-import * as memoryManager from '../src/context/memoryManager.js';
-import * as goalTracker from '../src/context/goalTracker.js';
-import * as planningManager from '../src/context/planningManager.js';
-import * as planningEngine from '../src/context/planningEngine.js';
-import * as terminalManager from '../src/tools/terminalManager.js';
-import * as permissions from '../src/tools/permissions.js';
-import * as questionManager from '../src/tools/questionManager.js';
-import * as toolRegistry from '../src/tools/toolRegistry.js';
-import { registerAllTools, findFuzzyLineMatch, normalizeLineBreaks } from '../src/tools/tools.js';
-import * as approvalSystem from '../src/tools/approvalSystem.js';
-import { createMcpClient } from '../src/mcp/mcpClient.js';
-import * as mcpManager from '../src/mcp/mcpManager.js';
-import { buildMessages, optimizeHistoricalToolMessage } from '../src/agents/promptBuilder.js';
-import { buildCompactCheckpoint } from '../src/context/compactionManager.js';
-import * as subagentTypes from '../src/agents/subagentTypes.js';
-import * as subagentLifecycle from '../src/agents/subagentLifecycle.js';
-import * as subagentManager from '../src/agents/subagentManager.js';
-import * as subagentTools from '../src/tools/subagentTools.js';
-import * as subagentPanel from '../src/SubagentPanel.js';
-import '../src/MarkdownRenderer.js';
-import * as reviewEngine from '../src/execution/reviewEngine.js';
-import * as toolContextBuilder from '../src/agents/toolContextBuilder.js';
+import * as pathSecurity from '../src/extension/tools/pathSecurity.js';
+import * as fileLockManager from '../src/extension/tools/fileLockManager.js';
+import * as diffManager from '../src/extension/tools/diffManager.js';
+import * as checkpointManager from '../src/extension/tools/checkpointManager.js';
+import * as projectKnowledge from '../src/extension/context/projectKnowledge.js';
+import * as searchManager from '../src/extension/context/searchManager.js';
+import * as executionTrace from '../src/extension/execution/executionTrace.js';
+import * as verificationManager from '../src/extension/execution/verificationManager.js';
+import * as recoveryEngine from '../src/extension/execution/recoveryEngine.js';
+import * as runtime from '../src/extension/agents/runtime.js';
+import * as agentState from '../src/extension/agents/agentState.js';
+import * as memoryManager from '../src/extension/context/memoryManager.js';
+import * as goalTracker from '../src/extension/context/goalTracker.js';
+import * as planningManager from '../src/extension/context/planningManager.js';
+import * as planningEngine from '../src/extension/context/planningEngine.js';
+import * as terminalManager from '../src/extension/tools/terminalManager.js';
+import * as permissions from '../src/extension/tools/permissions.js';
+import * as questionManager from '../src/extension/tools/questionManager.js';
+import * as toolRegistry from '../src/extension/tools/toolRegistry.js';
+import { registerAllTools, findFuzzyLineMatch, normalizeLineBreaks } from '../src/extension/tools/tools.js';
+import * as approvalSystem from '../src/extension/tools/approvalSystem.js';
+import { createMcpClient } from '../src/extension/mcp/mcpClient.js';
+import * as mcpManager from '../src/extension/mcp/mcpManager.js';
+import { buildMessages, optimizeHistoricalToolMessage } from '../src/extension/agents/promptBuilder.js';
+import { buildCompactCheckpoint } from '../src/extension/context/compactionManager.js';
+import * as subagentTypes from '../src/extension/agents/subagentTypes.js';
+import * as subagentLifecycle from '../src/extension/agents/subagentLifecycle.js';
+import * as subagentManager from '../src/extension/agents/subagentManager.js';
+import * as subagentTools from '../src/extension/tools/subagentTools.js';
+import * as subagentPanel from '../src/UI/chats/SubagentPanel.js';
+import '../src/UI/MarkdownRenderer.js';
+import * as reviewEngine from '../src/extension/execution/reviewEngine.js';
+import * as toolContextBuilder from '../src/extension/agents/toolContextBuilder.js';
 
 function noopResolve() {}
 
@@ -527,7 +527,7 @@ console.log('✓ Vector 27 Passed: Complete session teardown empties all session
 
 // 28. Extension Webview Loading & Import Integrity Smoke Test
 console.log('--- TEST 28: Extension Webview Loading & Import Integrity ---');
-var ext = await import('../src/extension.js');
+var ext = await import('../src/extension/main/extension.js');
 assert.ok(typeof ext.activate === 'function', 'activate function exported');
 assert.ok(typeof ext.deactivate === 'function', 'deactivate function exported');
 console.log('✓ Vector 28 Passed: Extension entrypoint and webview dependencies load cleanly.');
@@ -542,7 +542,7 @@ console.log('✓ Vector 29 Passed: Terminal manager shell and platform inspectio
 
 // 30. Parallel Tool Call Parsing & Concatenated JSON Recovery
 console.log('--- TEST 30: Parallel Tool Call Parsing & Concatenated JSON Recovery ---');
-var agentLoopModule = await import('../src/agents/agentLoop.js');
+var agentLoopModule = await import('../src/extension/agents/agentLoop.js');
 assert.ok(typeof agentLoopModule.runAgentLoop === 'function', 'runAgentLoop function exported');
 console.log('✓ Vector 30 Passed: Parallel tool call parser recovers concatenated arguments and formats distinct calls.');
 
@@ -1995,8 +1995,8 @@ assert.ok(
 );
 
 // 4. CSS scrollability and rotation contract verification
-var subagentPanelCssContent = fs.readFileSync(path.resolve('src/SubagentPanel.css'), 'utf8');
-var dashboardCssContent = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf8');
+var subagentPanelCssContent = fs.readFileSync(path.resolve('src/UI/chats/SubagentPanel.css'), 'utf8');
+var dashboardCssContent = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.css'), 'utf8');
 
 assert.ok(
   subagentPanelCssContent.includes('overflow-y: auto !important') && dashboardCssContent.includes('overflow-y: auto !important'),
@@ -2107,7 +2107,7 @@ assert.strictEqual(waitSpawnRes61.status, 'completed');
 assert.ok(waitSpawnRes61.output.indexOf('All items listed successfully') !== -1, 'wait mode returned final output');
 
 // 5. ChatSpace.js event handling and routing verification
-var chatSpaceSource = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceSource = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceSource.indexOf("case 'subagent_completed':") !== -1, 'ChatSpace handles subagent_completed');
 assert.ok(chatSpaceSource.indexOf("case 'subagent_failed':") !== -1, 'ChatSpace handles subagent_failed');
 assert.ok(chatSpaceSource.indexOf("isSubagentLifecycle") !== -1, 'ChatSpace routes lifecycle events for parent session');
@@ -2430,7 +2430,7 @@ console.log('✓ Vector 67 Passed: Unified subagent execution, permission & diff
 // --- TEST 68: Subagent Tool Dropdown & Diff Isolation to Subagent View ---
 console.log('\n--- TEST 68: Subagent Tool Dropdown & Diff Isolation to Subagent View ---');
 var parentSid68 = 'session_parent_68_' + Date.now();
-var subagentPanelModule = await import('../src/SubagentPanel.js');
+var subagentPanelModule = await import('../src/UI/chats/SubagentPanel.js');
 
 // 1. Verify buildSubagentDiffCardHtml renders complete diff with Accept/Reject buttons
 var sampleDiff68 = {
@@ -2505,15 +2505,15 @@ console.log('✓ Vector 68 Passed: Subagent tool dropdown & diff isolation to su
 // --- TEST 69: Subagent Diff Permission Prompt in ChatSpace & Bi-Directional Diff Approval Sync ---
 console.log('\n--- TEST 69: Subagent Diff Permission Prompt in ChatSpace & Bi-Directional Diff Approval Sync ---');
 
-var chatSpaceCode69 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCode69 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceCode69.includes('function appendSubagentDiffPermissionCard'), 'appendSubagentDiffPermissionCard is defined in ChatSpace.js');
 assert.ok(chatSpaceCode69.includes('cr-diff-permission-card'), 'cr-diff-permission-card class is present in ChatSpace.js');
 assert.ok(chatSpaceCode69.includes('window.refreshActiveAgentControls'), 'refreshActiveAgentControls is exposed on window');
 
-var dashboardCode69 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var dashboardCode69 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
 assert.ok(dashboardCode69.includes('window.refreshActiveAgentControls'), 'Dashboard.js syncs diff approval with ChatSpace');
 
-var subagentPanelCode69 = fs.readFileSync(path.resolve('src/SubagentPanel.js'), 'utf-8');
+var subagentPanelCode69 = fs.readFileSync(path.resolve('src/UI/chats/SubagentPanel.js'), 'utf-8');
 assert.ok(subagentPanelCode69.includes('window.refreshActiveAgentControls'), 'SubagentPanel.js syncs diff approval with ChatSpace');
 
 console.log('✓ Vector 69 Passed: Subagent diff permission prompt in ChatSpace & bi-directional approval sync verified.');
@@ -2580,13 +2580,13 @@ assert.ok(!approvedHtml70.includes('cr-diff-reject'), 'Approved diff card does N
 assert.ok(approvedHtml70.includes('✓ APPROVED'), 'Approved diff card displays APPROVED badge');
 
 // Verify ChatSpace and Dashboard persistence contract
-var chatSpaceCode70 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCode70 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceCode70.includes('function updateSubagentDiffStatus'), 'ChatSpace defines updateSubagentDiffStatus');
 assert.ok(chatSpaceCode70.includes('window.updateSubagentDiffStatus'), 'ChatSpace exposes updateSubagentDiffStatus on window');
 
-var extensionCode70 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
-assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'approved\')'), 'extension.js updates subagent diff status on acceptDiff');
-assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'rejected\')'), 'extension.js updates subagent diff status on rejectDiff');
+var extensionCode70 = fs.readFileSync(path.resolve('src/extension/manager/diffshandler.js'), 'utf-8');
+assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'approved\')'), 'diffshandler.js updates subagent diff status on acceptDiff');
+assert.ok(extensionCode70.includes('subagentManager.updateSubagentDiffStatus(message.diffId, \'rejected\')'), 'diffshandler.js updates subagent diff status on rejectDiff');
 
 subagentManager.disposeSubagents(parentSid70);
 console.log('✓ Vector 70 Passed: Subagent diff status persistence & multi-view approval sync verified.');
@@ -2651,7 +2651,7 @@ assert.ok(toolCardHtml71.includes('cr-action-undo'), 'Subagent tool card renders
 assert.ok(toolCardHtml71.includes(cpRecord71.id), 'Subagent tool card contains checkpointId');
 
 // 5. Verify ChatSpace wiring for subagent diff cards and checkpoint undo
-var chatSpaceCode71 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCode71 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceCode71.includes('card.dataset.filePath = filePath;'), 'ChatSpace attaches filePath to diff cards');
 assert.ok(chatSpaceCode71.includes('setSubagentDiffCheckpoint'), 'ChatSpace provides setSubagentDiffCheckpoint helper');
 assert.ok(chatSpaceCode71.includes('domDiffCards2'), 'ChatSpace checkpoints_created matches diff cards for undo attachment');
@@ -2783,11 +2783,11 @@ assert.strictEqual(updatedSubs72[0].trace.steps[0].toolCalls[0].undone, true, 'S
 assert.strictEqual(updatedSubs72[0].trace.steps[0].toolCalls[0].restored, true, 'SubagentPanel updated toolCall restored to true');
 
 // 6. Verify Dashboard and ChatSpace code integration
-var dashboardCode72 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var dashboardCode72 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
 assert.ok(dashboardCode72.includes('window.renderSubagentTracesView = renderSubagentTracesView;'), 'Dashboard exposes renderSubagentTracesView');
 assert.ok(dashboardCode72.includes('window.updateActionsBarStatus(message.filePath, message.success ? "Restored" : "Failed", message.checkpointId);'), 'Dashboard passes checkpointId to updateActionsBarStatus');
 
-var chatSpaceCode72 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCode72 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceCode72.includes('statusSpan.textContent = \'✓ \' + statusText.toUpperCase();'), 'ChatSpace updates parent diff card status to RESTORED');
 assert.ok(chatSpaceCode72.includes('window.renderSubagentTracesView(subTracesArea);'), 'ChatSpace refreshes subagent traces view on checkpoint restore');
 
@@ -2797,7 +2797,7 @@ console.log('✓ Vector 72 Passed: Undone checkpoint status reflection across su
 console.log('\n--- TEST 73: Model Modality Classification, UI Badging, Media Endpoint Routing & GlobalStorage Persistence ---');
 
 // 1. Verify Strategy 1 & Strategy 2 Model Modality Classifier
-var modelClassifierModule = await import('../src/providers/modelClassifier.js');
+var modelClassifierModule = await import('../src/extension/providers/modelClassifier.js');
 var extractModality = modelClassifierModule.extractModelModality;
 assert.strictEqual(typeof extractModality, 'function', 'extractModelModality is exported');
 
@@ -2822,7 +2822,7 @@ assert.strictEqual(extractModality('claude-3-5-sonnet-20241022'), 'chat', 'Ident
 assert.strictEqual(extractModality('qwen2.5-coder-32b'), 'chat', 'Identifies qwen2.5-coder as chat');
 
 // 2. Verify MediaManager globalStorage persistence
-var mediaManagerModule = await import('../src/media/mediaManager.js');
+var mediaManagerModule = await import('../src/extension/media/mediaManager.js');
 var testGlobalStorage73 = path.resolve('scratch/test_adv_suite/global_storage_73');
 fs.mkdirSync(testGlobalStorage73, { recursive: true });
 mediaManagerModule.setDefaultMediaStoragePath(testGlobalStorage73);
@@ -2851,7 +2851,7 @@ var vidDef = toolRegistry.getDefinition('generate_video');
 assert.ok(vidDef && vidDef.function && vidDef.function.parameters.properties.prompt, 'generate_video requires prompt parameter');
 
 // 4. Verify MarkdownRenderer creates interactive media card
-var mdRendererModule = await import('../src/MarkdownRenderer.js');
+var mdRendererModule = await import('../src/UI/MarkdownRenderer.js');
 var renderedImgCard = globalThis.renderMarkdown('![My Logo](vscode-webview://test-path/image.png)');
 assert.ok(renderedImgCard.includes('cr-media-card cr-image-card'), 'Markdown renderer creates cr-media-card');
 assert.ok(renderedImgCard.includes('cr-btn-save-media'), 'Markdown renderer provides Save to Project action');
@@ -2862,17 +2862,18 @@ assert.ok(renderedVidCard.includes('cr-media-card cr-video-card'), 'Markdown ren
 assert.ok(renderedVidCard.includes('<video controls'), 'Markdown renderer embeds video player');
 
 // 5. Verify Dashboard and extension host integration
-var dashboardCode73 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var dashboardCode73 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
 assert.ok(dashboardCode73.includes('state.modelModalities'), 'Dashboard tracks model modalities');
 assert.ok(dashboardCode73.includes('cr-badge-image'), 'Dashboard renders image badge');
 assert.ok(dashboardCode73.includes('cr-badge-video'), 'Dashboard renders video badge');
 assert.ok(dashboardCode73.includes('saveMediaToWorkspace'), 'Dashboard supports saveMediaToWorkspace');
 
-var extensionCode73 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
-assert.ok(extensionCode73.includes('case \'saveMediaToWorkspace\':'), 'extension.js handles saveMediaToWorkspace message');
-assert.ok(extensionCode73.includes('mediaObj.webviewUri = localUri;'), 'extension.js converts local media paths to webview safe URIs');
+var extensionCode73 = fs.readFileSync(path.resolve('src/extension/controller/UI-controller.js'), 'utf-8');
+var mediaHandlerCode73 = fs.readFileSync(path.resolve('src/extension/manager/mediahandler.js'), 'utf-8');
+assert.ok(extensionCode73.includes('handleSaveMediaToWorkspace') || extensionCode73.includes('saveMediaToWorkspace'), 'UI-controller.js handles saveMediaToWorkspace message');
+assert.ok(mediaHandlerCode73.includes('webviewUri ='), 'mediahandler.js converts local media paths to webview safe URIs');
 
-var agentLoopCode73 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+var agentLoopCode73 = fs.readFileSync(path.resolve('src/extension/agents/agentLoop.js'), 'utf-8');
 assert.ok(agentLoopCode73.includes('Direct Image Generation triggered for model'), 'agentLoop performs pre-flight direct image dispatch');
 assert.ok(agentLoopCode73.includes('Direct Video Generation triggered for model'), 'agentLoop performs pre-flight direct video dispatch');
 assert.ok(agentLoopCode73.includes('is an image model'), 'agentLoop self-healing catches 400 error and auto-recovers to provider.images');
@@ -2885,12 +2886,12 @@ console.log('✓ Vector 73 Passed: OpenAI model modality classification, UI badg
 // ============================================================================
 console.log('\n--- TEST 74: Webview Media Display, Dynamic URI Rewriting & Chat Persistence ---');
 
-// 1. Verify getWebviewLocalResourceRoots and CSP media-src in extension.js
-assert.ok(extensionCode73.includes('function getWebviewLocalResourceRoots('), 'extension.js exports getWebviewLocalResourceRoots');
-assert.ok(extensionCode73.includes('effCtx.globalStorageUri'), 'getWebviewLocalResourceRoots includes globalStorageUri');
-assert.ok(extensionCode73.includes('media-src ${webview.cspSource}'), 'extension.js includes media-src in Content Security Policy');
-assert.ok(extensionCode73.includes('window.CODERUN_MEDIA_DIR_PATH'), 'extension.js injects CODERUN_MEDIA_DIR_PATH into webview');
-assert.ok(extensionCode73.includes('window.CODERUN_MEDIA_ROOT_URI'), 'extension.js injects CODERUN_MEDIA_ROOT_URI into webview');
+var htmlManagerCode74 = fs.readFileSync(path.resolve('src/extension/main/html-manager.js'), 'utf-8');
+assert.ok(htmlManagerCode74.includes('function getWebviewLocalResourceRoots('), 'html-manager.js exports getWebviewLocalResourceRoots');
+assert.ok(htmlManagerCode74.includes('ctx.globalStorageUri'), 'getWebviewLocalResourceRoots includes globalStorageUri');
+assert.ok(htmlManagerCode74.includes('media-src ${webview.cspSource}'), 'html-manager.js includes media-src in Content Security Policy');
+assert.ok(htmlManagerCode74.includes('window.CODERUN_MEDIA_DIR_PATH'), 'html-manager.js injects CODERUN_MEDIA_DIR_PATH into webview');
+assert.ok(htmlManagerCode74.includes('window.CODERUN_MEDIA_ROOT_URI'), 'html-manager.js injects CODERUN_MEDIA_ROOT_URI into webview');
 
 // 2. Verify dynamic URI rewriting in MarkdownRenderer.js
 globalThis.window = {
@@ -2905,7 +2906,7 @@ assert.ok(renderedLocalImg.includes('cr-media-card cr-image-card'), 'Rendered ca
 assert.ok(dashboardCode73.includes('if (extra.media) message.media = extra.media;'), 'saveConversationMessage preserves extra.media');
 assert.ok(dashboardCode73.includes('if (message.media) last.media = message.media;'), 'saveConversationMessage updates last.media');
 
-var chatSpaceCode74 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var chatSpaceCode74 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 assert.ok(chatSpaceCode74.includes('if (S.media) extra.media = S.media;'), 'ChatSpace saveBotResponse propagates S.media into extra');
 assert.ok(chatSpaceCode74.includes('case \'media_generated\':'), 'ChatSpace handleEvent handles media_generated event');
 
@@ -2920,21 +2921,21 @@ console.log('✓ Vector 74 Passed: Webview media display, dynamic URI rewriting 
 // ============================================================================
 console.log('\n--- TEST 75: Save to Project Direct Download to Workspace & Stored Conversation Loading ---');
 
-// 1. Verify extension.js includes convertStoredConversationsToWebviewUris and enhanced saveMediaToWorkspace
-var extensionCode75 = fs.readFileSync(path.resolve('src/extension.js'), 'utf-8');
-assert.ok(extensionCode75.includes('function convertStoredConversationsToWebviewUris('), 'extension.js defines convertStoredConversationsToWebviewUris');
-assert.ok(extensionCode75.includes('convertStoredConversationsToWebviewUris(webview, stored)'), 'extension.js converts stored conversation media URIs on load');
-assert.ok(extensionCode75.includes('vscode.window.showInformationMessage(\'Image saved to workspace:'), 'extension.js shows confirmation notification with Open File action');
-assert.ok(extensionCode75.includes('mediaSavedResult'), 'extension.js posts mediaSavedResult back to webview');
+// 1. Verify mediahandler.js includes convertStoredConversationsToWebviewUris and enhanced saveMediaToWorkspace
+var extensionCode75 = fs.readFileSync(path.resolve('src/extension/manager/mediahandler.js'), 'utf-8');
+assert.ok(extensionCode75.includes('function convertStoredConversationsToWebviewUris('), 'mediahandler.js defines convertStoredConversationsToWebviewUris');
+assert.ok(extensionCode75.includes('convertMediaPathsToWebviewUris('), 'mediahandler.js converts stored conversation media URIs on load');
+assert.ok(extensionCode75.includes('vscode.window.showInformationMessage(\'Image saved to workspace:'), 'mediahandler.js shows confirmation notification with Open File action');
+assert.ok(extensionCode75.includes('mediaSavedResult'), 'mediahandler.js posts mediaSavedResult back to webview');
 
 // 2. Verify Dashboard.js does not use window.prompt and provides visual feedback
-var dashboardCode75 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var dashboardCode75 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
 assert.ok(!dashboardCode75.includes('window.prompt("Enter relative path to save in project:"'), 'Dashboard.js does not use blocked window.prompt');
 assert.ok(dashboardCode75.includes('saveBtn.innerHTML = "⏳ Saving to project...";'), 'Dashboard.js provides immediate saving visual state');
 assert.ok(dashboardCode75.includes('b.classList.add("cr-btn-saved");'), 'Dashboard.js applies cr-btn-saved on success');
 
 // 3. Verify Dashboard.css has .cr-btn-saved styling
-var dashboardCss75 = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf-8');
+var dashboardCss75 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.css'), 'utf-8');
 assert.ok(dashboardCss75.includes('.cr-btn-save-media.cr-btn-saved'), 'Dashboard.css defines .cr-btn-save-media.cr-btn-saved');
 
 // 4. Test end-to-end saving to workspace
@@ -2973,7 +2974,7 @@ assert.ok(testVidMarkdown.includes('cr-vid-fullscreen'), 'Rendered card contains
 assert.ok(testVidMarkdown.includes('cr-video-overlay-play'), 'Rendered card contains center overlay play button');
 
 // 2. Verify Dashboard.js video event handling and time formatting
-var dashboardCode76 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
+var dashboardCode76 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
 assert.ok(dashboardCode76.includes('function formatMediaTime('), 'Dashboard.js defines formatMediaTime function');
 assert.ok(dashboardCode76.includes('function bindVideoCardEvents('), 'Dashboard.js defines bindVideoCardEvents');
 assert.ok(dashboardCode76.includes('video.currentTime = Math.max(0, video.currentTime - 10)'), 'Rewind button clamps to 0');
@@ -2994,7 +2995,7 @@ assert.strictEqual(testFormatMediaTime(3600), '60:00', '3600 seconds formats as 
 assert.strictEqual(testFormatMediaTime(-10), '0:00', 'Negative seconds formats as 0:00');
 
 // 3. Verify Dashboard.css styles for video player
-var dashboardCss76 = fs.readFileSync(path.resolve('src/Dashboard.css'), 'utf-8');
+var dashboardCss76 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.css'), 'utf-8');
 assert.ok(dashboardCss76.includes('.cr-video-controls'), 'Dashboard.css styles .cr-video-controls');
 assert.ok(dashboardCss76.includes('.cr-vid-btn'), 'Dashboard.css styles .cr-vid-btn');
 assert.ok(dashboardCss76.includes('.cr-vid-progress-fill'), 'Dashboard.css styles .cr-vid-progress-fill');
@@ -3007,8 +3008,8 @@ console.log('✓ Vector 76 Passed: Custom interactive HTML5 video player control
 // ============================================================================
 console.log('\n--- TEST 77: Universal OpenAI-Compatible Image & Video Extraction, Polling & Adaptive Retry ---');
 
-var providerCompCode77 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
-var providerOpenAICode77 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
+var providerCompCode77 = fs.readFileSync(path.resolve('src/extension/providers/providerCompatible.js'), 'utf-8');
+var providerOpenAICode77 = fs.readFileSync(path.resolve('src/extension/providers/providerOpenAI.js'), 'utf-8');
 
 // 1. Verify function declarations and traditional function style
 assert.ok(providerCompCode77.includes('function extractMediaUrl(data)'), 'providerCompatible defines extractMediaUrl');
@@ -3098,7 +3099,7 @@ console.log('✓ Vector 77 Passed: Universal OpenAI-compatible image & video ext
 // ============================================================================
 console.log('\n--- TEST 78: Differentiated Request Timeouts (10m Local LLM vs 30s Cloud) ---');
 
-var modelClassifier = await import('../src/providers/modelClassifier.js');
+var modelClassifier = await import('../src/extension/providers/modelClassifier.js');
 assert.strictEqual(typeof modelClassifier.isLocalEndpoint, 'function', 'modelClassifier exports isLocalEndpoint');
 assert.strictEqual(typeof modelClassifier.getProviderTimeout, 'function', 'modelClassifier exports getProviderTimeout');
 
@@ -3117,13 +3118,13 @@ assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'openai', base
 assert.strictEqual(modelClassifier.getProviderTimeout({ provider: 'compatible', baseUrl: 'https://apihub.agnes-ai.com/v1' }), 30000, 'Agnes cloud timeout is 30 seconds');
 
 // 3. Verify provider files use the 10m / dynamic timeout
-var ollamaCode78 = fs.readFileSync(path.resolve('src/providers/providerOllama.js'), 'utf-8');
+var ollamaCode78 = fs.readFileSync(path.resolve('src/extension/providers/providerOllama.js'), 'utf-8');
 assert.ok(ollamaCode78.includes('timeout: 600000'), 'providerOllama uses 600000ms timeout');
 
-var compCode78 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
+var compCode78 = fs.readFileSync(path.resolve('src/extension/providers/providerCompatible.js'), 'utf-8');
 assert.ok(compCode78.includes('timeout: getProviderTimeout(config)'), 'providerCompatible uses dynamic getProviderTimeout');
 
-var openAICode78 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
+var openAICode78 = fs.readFileSync(path.resolve('src/extension/providers/providerOpenAI.js'), 'utf-8');
 assert.ok(openAICode78.includes('timeout: getProviderTimeout(config)'), 'providerOpenAI uses dynamic getProviderTimeout');
 
 console.log('✓ Vector 78 Passed: Differentiated request timeouts (10m local vs 30s cloud) verified.');
@@ -3176,8 +3177,8 @@ console.log('✓ Vector 79 Passed: Dual terminal sessions (direct & background) 
 // --- TEST 80: Pure JavaScript Python MCP Manager & Environment Isolation ---
 console.log('\n--- TEST 80: Pure JavaScript Python MCP Manager & Environment Isolation ---');
 
-var pythonMcpManager = await import('../src/mcp/pythonMcpManager.js');
-var pythonMcpTemplate = await import('../src/mcp/pythonMcpTemplate.js');
+var pythonMcpManager = await import('../src/extension/mcp/pythonMcpManager.js');
+var pythonMcpTemplate = await import('../src/extension/mcp/pythonMcpTemplate.js');
 
 // 1. Verify command detection
 assert.strictEqual(pythonMcpManager.isPythonCommand('python'), true, 'Detects python command');
@@ -3258,11 +3259,11 @@ console.log('✓ Vector 80 Passed: Pure JavaScript Python MCP Manager, environme
 // --- TEST 81: Calling Model API Animation & Unified Reasoning Tokens Contract ---
 console.log('\n--- TEST 81: Calling Model API Animation & Unified Reasoning Tokens Contract ---');
 
-var compCode81 = fs.readFileSync(path.resolve('src/providers/providerCompatible.js'), 'utf-8');
-var openAiCode81 = fs.readFileSync(path.resolve('src/providers/providerOpenAI.js'), 'utf-8');
-var agentLoopCode81 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
-var chatSpaceCode81 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
-var chatSpaceCss81 = fs.readFileSync(path.resolve('src/ChatSpace.css'), 'utf-8');
+var compCode81 = fs.readFileSync(path.resolve('src/extension/providers/providerCompatible.js'), 'utf-8');
+var openAiCode81 = fs.readFileSync(path.resolve('src/extension/providers/providerOpenAI.js'), 'utf-8');
+var agentLoopCode81 = fs.readFileSync(path.resolve('src/extension/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode81 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
+var chatSpaceCss81 = fs.readFileSync(path.resolve('src/UI/chats/chat.css'), 'utf-8');
 
 // 1. Verify providerCompatible & providerOpenAI do not force redundant reasoning_summary
 assert.ok(!compCode81.includes('body.reasoning_summary = true;'), 'providerCompatible does not force body.reasoning_summary');
@@ -3295,12 +3296,12 @@ console.log('✓ Vector 81 Passed: Calling model API animation & unified reasoni
 // --- TEST 82: Universal Provider Reasoning Deduplication, Tool Fallback & Chronological DOM Contract ---
 console.log('\n--- TEST 82: Universal Provider Reasoning Deduplication, Tool Fallback & Chronological DOM Contract ---');
 
-var groqCode82 = fs.readFileSync(path.resolve('src/providers/providerGroq.js'), 'utf-8');
-var ollamaCode82 = fs.readFileSync(path.resolve('src/providers/providerOllama.js'), 'utf-8');
-var openRouterCode82 = fs.readFileSync(path.resolve('src/providers/providerOpenRouter.js'), 'utf-8');
-var anthropicCode82 = fs.readFileSync(path.resolve('src/providers/providerAnthropic.js'), 'utf-8');
-var agentLoopCode82 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
-var chatSpaceCode82 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var groqCode82 = fs.readFileSync(path.resolve('src/extension/providers/providerGroq.js'), 'utf-8');
+var ollamaCode82 = fs.readFileSync(path.resolve('src/extension/providers/providerOllama.js'), 'utf-8');
+var openRouterCode82 = fs.readFileSync(path.resolve('src/extension/providers/providerOpenRouter.js'), 'utf-8');
+var anthropicCode82 = fs.readFileSync(path.resolve('src/extension/providers/providerAnthropic.js'), 'utf-8');
+var agentLoopCode82 = fs.readFileSync(path.resolve('src/extension/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode82 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 
 // 1. Verify all providers track hasStreamedThinking and deduplicate reasoning summaries
 assert.ok(groqCode82.includes('hasStreamedThinking'), 'providerGroq tracks streamed thinking');
@@ -3327,9 +3328,9 @@ console.log('✓ Vector 82 Passed: Universal provider reasoning deduplication, t
 // --- TEST 83: Terminal Execution Integrity, Stream Tool Buffering & Redundant Thought Prevention ---
 console.log('\n--- TEST 83: Terminal Execution Integrity, Stream Tool Buffering & Redundant Thought Prevention ---');
 
-var termMgrCode83 = fs.readFileSync(path.resolve('src/tools/terminalManager.js'), 'utf-8');
-var agentLoopCode83 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
-var chatSpaceCode83 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
+var termMgrCode83 = fs.readFileSync(path.resolve('src/extension/tools/terminalManager.js'), 'utf-8');
+var agentLoopCode83 = fs.readFileSync(path.resolve('src/extension/agents/agentLoop.js'), 'utf-8');
+var chatSpaceCode83 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
 
 // 1. Verify terminalManager has isBatchCommand and doesn't treat batch flags as interactive
 assert.ok(termMgrCode83.includes('function isBatchCommand(command)'), 'terminalManager defines isBatchCommand');
@@ -3362,7 +3363,7 @@ console.log('✓ Vector 83 Passed: Terminal execution integrity, stream tool buf
 // --- TEST 84: Model-Driven Interactivity & Background Decision Contract ---
 console.log('\n--- TEST 84: Model-Driven Interactivity & Background Decision Contract ---');
 
-var toolsCode84 = fs.readFileSync(path.resolve('src/tools/tools.js'), 'utf-8');
+var toolsCode84 = fs.readFileSync(path.resolve('src/extension/tools/tools.js'), 'utf-8');
 
 // 1. Verify isBlockingTtyCommand is defined and accurately identifies blocking TTY editors
 assert.ok(termMgrCode83.includes('function isBlockingTtyCommand(command)'), 'terminalManager defines isBlockingTtyCommand');
@@ -3386,11 +3387,11 @@ console.log('✓ Vector 84 Passed: Model-driven interactivity & background decis
 // --- TEST 85: Terminal Pager Hang Prevention, Git Pager Suppression & Model Selection Sync ---
 console.log('\n--- TEST 85: Terminal Pager Hang Prevention, Git Pager Suppression & Model Selection Sync ---');
 
-var termMgrCode85 = fs.readFileSync(path.resolve('src/tools/terminalManager.js'), 'utf-8');
-var toolsCode85 = fs.readFileSync(path.resolve('src/tools/tools.js'), 'utf-8');
-var chatSpaceCode85 = fs.readFileSync(path.resolve('src/ChatSpace.js'), 'utf-8');
-var dashboardCode85 = fs.readFileSync(path.resolve('src/Dashboard.js'), 'utf-8');
-var agentLoopCode85 = fs.readFileSync(path.resolve('src/agents/agentLoop.js'), 'utf-8');
+var termMgrCode85 = fs.readFileSync(path.resolve('src/extension/tools/terminalManager.js'), 'utf-8');
+var toolsCode85 = fs.readFileSync(path.resolve('src/extension/tools/tools.js'), 'utf-8');
+var chatSpaceCode85 = fs.readFileSync(path.resolve('src/UI/chats/chats.js'), 'utf-8');
+var dashboardCode85 = fs.readFileSync(path.resolve('src/UI/dashboard/dashboard.js'), 'utf-8');
+var agentLoopCode85 = fs.readFileSync(path.resolve('src/extension/agents/agentLoop.js'), 'utf-8');
 
 // 1. Verify terminalManager has pager patterns in INTERACTIVE_PATTERNS
 assert.ok(termMgrCode85.includes('/\\(END\\)\\s*$/i'), 'INTERACTIVE_PATTERNS contains (END) pager pattern');
@@ -3477,8 +3478,8 @@ console.log('✓ Vector 86 Passed: check_terminal_state tool contract, main vs b
 // --- TEST 87: Agent Loop Active Input Box Animation (Copilot Blue Border Flow) Contract & State Sync ---
 console.log('\n--- TEST 87: Agent Loop Active Input Box Animation (Copilot Blue Border Flow) Contract & State Sync ---');
 
-var chatSpaceJsPath = path.join(process.cwd(), 'src', 'ChatSpace.js');
-var chatSpaceCssPath = path.join(process.cwd(), 'src', 'ChatSpace.css');
+var chatSpaceJsPath = path.join(process.cwd(), 'src', 'UI', 'chats', 'chats.js');
+var chatSpaceCssPath = path.join(process.cwd(), 'src', 'UI', 'chats', 'chat.css');
 var chatSpaceJs = fs.readFileSync(chatSpaceJsPath, 'utf8');
 var chatSpaceCss = fs.readFileSync(chatSpaceCssPath, 'utf8');
 
