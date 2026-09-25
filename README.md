@@ -4,12 +4,12 @@
   <img src="./icons/logo.png" width="160" alt="CodeRun Logo"/>
 </p>
 
-[![Version](https://img.shields.io/badge/version-v1.6.3-blue.svg)](https://github.com/nbsgr/coderun-agent)
+[![Version](https://img.shields.io/badge/version-v1.6.4-blue.svg)](https://github.com/nbsgr/coderun-agent)
 [![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code&label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![VS Code Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-blue?logo=github&logoColor=white)](https://nbsgr.github.io/coderun-agent/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/nbsgr/coderun-agent/pulls)
 
 **CodeRun AI Agent** (`AI-AGENT`) is a professional, multi-provider autonomous coding companion for Visual Studio Code. Built upon an advanced agentic loop, CodeRun acts as an intelligent pair programmer capable of reading, writing, and editing files, indexing codebases in a high-speed local SQLite database, running interactive terminal processes, applying precision diffs, and orchestrating multi-step execution plans.
@@ -446,7 +446,7 @@ Install **"CodeRun AI Agent"** via the Extensions view (`Ctrl+Shift+X`) in VS Co
 ```bash
 code --install-extension Bala-Siva-Ganesh.ai-agent
 # Or install from local VSIX:
-code --install-extension coderun-agent-1.6.3.vsix
+code --install-extension coderun-agent-1.6.4.vsix
 ```
 
 ### 2. Development Setup (From Source)
