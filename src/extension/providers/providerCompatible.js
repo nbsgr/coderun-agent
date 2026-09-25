@@ -38,25 +38,48 @@ export async function* chat(config, messages, tools, reqOpts) {
   if (tools && tools.length) body.tools = tools;
 
   var requestOptions = (reqOpts && reqOpts.signal) ? { signal: reqOpts.signal } : undefined;
-  var stream = await client.chat.completions.create(body, requestOptions);
+  var stream;
+  try {
+    stream = await client.chat.completions.create(body, requestOptions);
+  } catch (createErr) {
+    if (createErr) {
+      if (!createErr.model) createErr.model = config.model;
+      if (!createErr.provider) createErr.provider = config.provider || 'compatible';
+      if (!createErr.baseUrl) createErr.baseUrl = config.baseUrl || '';
+    }
+    throw createErr;
+  }
 
   var hasStreamedThinking = false;
-  for await (var chunk of stream) {
-    var parsed = parseChunk(chunk);
-    if (parsed.error) {
-      throw new Error(parsed.error);
-    }
-    if (parsed.thinking) {
-      if (parsed._isSummary && hasStreamedThinking) {
-        delete parsed.thinking;
-        delete parsed.thinkingKey;
-      } else {
-        hasStreamedThinking = true;
+  try {
+    for await (var chunk of stream) {
+      var parsed = parseChunk(chunk);
+      if (parsed.error) {
+        var chunkErr = new Error(parsed.error);
+        chunkErr.model = config.model;
+        chunkErr.provider = config.provider || 'compatible';
+        chunkErr.baseUrl = config.baseUrl || '';
+        throw chunkErr;
+      }
+      if (parsed.thinking) {
+        if (parsed._isSummary && hasStreamedThinking) {
+          delete parsed.thinking;
+          delete parsed.thinkingKey;
+        } else {
+          hasStreamedThinking = true;
+        }
+      }
+      if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
+        yield parsed;
       }
     }
-    if (parsed.content || parsed.thinking || parsed.tool_calls || parsed.usage) {
-      yield parsed;
+  } catch (streamErr) {
+    if (streamErr) {
+      if (!streamErr.model) streamErr.model = config.model;
+      if (!streamErr.provider) streamErr.provider = config.provider || 'compatible';
+      if (!streamErr.baseUrl) streamErr.baseUrl = config.baseUrl || '';
     }
+    throw streamErr;
   }
 }
 

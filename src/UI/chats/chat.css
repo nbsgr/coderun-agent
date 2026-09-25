@@ -523,6 +523,46 @@ select {
   word-break: break-word;
 }
 
+.cr-content-block:empty {
+  display: none !important;
+}
+
+.cr-stopped-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: italic;
+  margin: 4px 0;
+}
+
+.cr-stopped-icon {
+  font-size: 11px;
+  color: #e2e8f0;
+}
+
+.cr-stopped-text {
+  color: #94a3b8;
+}
+
+.cr-stopped-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 3px 8px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
 /* ── Tool call block (legacy, rarely used) ──────────── */
 .cr-tool-call {
   border: 1px solid #2d2d2d;

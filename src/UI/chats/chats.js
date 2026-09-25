@@ -1465,12 +1465,25 @@ function initializeChatSpace() {
   }
 
   function handleStopButtonClick(chatCtx) {
+    chatCtx.isUserStopped = true;
     if (chatCtx.abortCtrl) { chatCtx.abortCtrl.abort(); chatCtx.abortCtrl = null; }
     if (window.VSCODE_API) {
       try {
         window.VSCODE_API.postMessage({ type: 'stopChat', sessionId: chatCtx.convId, conversationId: chatCtx.convId });
       } catch (e) {
         // Intentionally ignore if postMessage is restricted in the current environment
+      }
+    }
+    if (chatCtx && chatCtx.S) {
+      removeCallingIndicator(chatCtx.S);
+      removeTyping(chatCtx.S.botBody);
+      clearStatusLines(chatCtx.S);
+      if (chatCtx.S.botBody && !chatCtx.S.fullResponse && !chatCtx.S.fullThinking && (!chatCtx.S._toolCalls || !chatCtx.S._toolCalls.length)) {
+        if (!chatCtx.S.botBody.querySelector('.cr-stopped-line')) {
+          var stopLine = mk('div', 'cr-stopped-line');
+          stopLine.innerHTML = '<span class="cr-stopped-icon">⏹</span><span class="cr-stopped-text">Request stopped by user</span>';
+          chatCtx.S.botBody.appendChild(stopLine);
+        }
       }
     }
     setStreaming(chatCtx, false);
@@ -1592,10 +1605,17 @@ function initializeChatSpace() {
   }
 
   function formatErrorMessage(msg) {
-    if (!msg) return 'Unknown error';
+    if (!msg) return 'Unknown error occurred while calling model API.';
     var str = String(msg);
     if (str.indexOf('Error: ') === 0) {
       str = str.substring(7);
+    }
+    var trimmed = str.trim();
+    if (trimmed.toLowerCase() === 'terminated' || trimmed.toLowerCase() === 'fetch failed') {
+      return 'Connection Terminated Abruptly\n\n' +
+        '• Reason: The model API connection was closed prematurely by the server or network.\n' +
+        '• Likely Cause: The prompt context size may be too large for the model, or the remote server closed the connection.\n' +
+        '• Recommendation: Click "Compact" in the chat toolbar to compress conversation history and reduce token usage, or check your provider connection.';
     }
     return str;
   }
@@ -1685,7 +1705,8 @@ function initializeChatSpace() {
       console.log('[CHATSPACE] Received content event:', ev.message.content.substring(0, 100));
     }
     if (ev.type === 'stream_end') {
-      finishStream(chatCtx, S);
+      var wasStopped = Boolean(ev.stopped || (chatCtx && chatCtx.isUserStopped));
+      finishStream(chatCtx, S, wasStopped);
       setStreaming(chatCtx, false);
       chatCtx.onStreamEnd();
       saveBotResponse(chatCtx, S);
@@ -2787,9 +2808,23 @@ function initializeChatSpace() {
           if (ev.reason === 'max_iterations') {
             appendContinueButton(chatCtx, S.botBody);
           }
+          if (ev.reason === 'stopped' || (chatCtx && chatCtx.isUserStopped)) {
+            var hasAnyContent2 = Boolean(S.fullResponse || finalContent || S.fullThinking || (S._toolCalls && S._toolCalls.length));
+            if (!hasAnyContent2) {
+              if (S.botBody && !S.botBody.querySelector('.cr-stopped-line')) {
+                var stopLine2 = mk('div', 'cr-stopped-line');
+                stopLine2.innerHTML = '<span class="cr-stopped-icon">⏹</span><span class="cr-stopped-text">Request stopped by user</span>';
+                S.botBody.appendChild(stopLine2);
+              }
+            } else if (S.botBody && !S.botBody.querySelector('.cr-stopped-tag') && !S.botBody.querySelector('.cr-stopped-line')) {
+              var stopTag2 = mk('div', 'cr-stopped-tag');
+              stopTag2.innerHTML = '<span class="cr-stopped-icon">⏹</span><span>Stopped by user</span>';
+              S.botBody.appendChild(stopTag2);
+            }
+          }
           S.thinkBlock = null; S.thinkPre = null;
           clearStatusLines(S);
-          if (S && S.botBody) {
+          if (S && S.botBody && (S.fullResponse || finalContent)) {
             appendBotCopyButton(S.botBody, S.fullResponse || finalContent);
           }
           break;
@@ -3087,13 +3122,15 @@ function initializeChatSpace() {
     }
   }
 
-  function finishStream(chatCtx, S) {
+  function finishStream(chatCtx, S, isStopped) {
     closeCurrentContentBlock(S);
+    removeCallingIndicator(S);
     removeTyping(S.botBody);
+    clearStatusLines(S);
     S.thinkBlock = null; S.thinkPre = null;
-    if (chatCtx.conversation && chatCtx.conversation.plan) {
+    if (chatCtx && chatCtx.conversation && chatCtx.conversation.plan) {
       renderTodos(chatCtx, chatCtx.conversation.plan);
-    } else    if (chatCtx.todosPanel) {
+    } else if (chatCtx && chatCtx.todosPanel) {
       chatCtx.todosPanel.style.display = 'none';
       chatCtx.todosPanel.innerHTML = '';
     }
@@ -3107,7 +3144,31 @@ function initializeChatSpace() {
       S.currentTurnUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     }
     if (S && S.botBody) {
-      appendBotCopyButton(S.botBody, S.fullResponse);
+      var wasAborted = Boolean(isStopped || (chatCtx && chatCtx.isUserStopped));
+      var hasAnyContent = Boolean(S.fullResponse || S.fullThinking || (S._toolCalls && S._toolCalls.length));
+      if (wasAborted) {
+        if (!hasAnyContent) {
+          if (!S.botBody.querySelector('.cr-stopped-line')) {
+            var stopLine = mk('div', 'cr-stopped-line');
+            stopLine.innerHTML = '<span class="cr-stopped-icon">⏹</span><span class="cr-stopped-text">Request stopped by user</span>';
+            S.botBody.appendChild(stopLine);
+          }
+        } else if (!S.botBody.querySelector('.cr-stopped-tag') && !S.botBody.querySelector('.cr-stopped-line')) {
+          var stopTag = mk('div', 'cr-stopped-tag');
+          stopTag.innerHTML = '<span class="cr-stopped-icon">⏹</span><span>Stopped by user</span>';
+          S.botBody.appendChild(stopTag);
+        }
+      } else if (!hasAnyContent && !S.botBody.querySelector('.cr-error-line') && !S.botBody.querySelector('.cr-stopped-line')) {
+        var emptyLine = mk('div', 'cr-error-line');
+        emptyLine.innerHTML = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">No response received. The model connection ended without returning output.</span>';
+        S.botBody.appendChild(emptyLine);
+      }
+      if (S.fullResponse) {
+        appendBotCopyButton(S.botBody, S.fullResponse);
+      }
+    }
+    if (chatCtx) {
+      chatCtx.isUserStopped = false;
     }
   }
 

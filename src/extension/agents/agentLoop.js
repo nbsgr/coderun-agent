@@ -86,6 +86,77 @@ function hasPriorThinkingInTurn(msgList) {
   return false;
 }
 
+function formatAgentApiError(err, config, currentTokens, iteration) {
+  if (!err) return 'Unknown error occurred while calling the model API.';
+
+  var rawMsg = (err && err.message) ? String(err.message) : String(err || '');
+  var causeMsg = (err && err.cause && err.cause.message) ? String(err.cause.message) : '';
+  var errCode = (err && err.code) || (err && err.cause && err.cause.code) || '';
+  var errStatus = (err && err.status) || (err && err.statusCode) || (err && err.response && err.response.status) || '';
+  var errType = (err && err.type) || (err && err.error && err.error.type) || (err && err.name) || '';
+  var errDetails = (err && err.error && (err.error.message || err.error.code)) || '';
+
+  var modelName = (config && config.model) || 'Model';
+  var tokenInfo = currentTokens ? (' (~' + (typeof currentTokens === 'number' ? (currentTokens > 1000 ? Math.round(currentTokens / 1000) + 'K' : currentTokens) : currentTokens) + ' tokens in context)') : '';
+
+  var isTerminated = rawMsg.toLowerCase().indexOf('terminated') !== -1 || 
+                     causeMsg.toLowerCase().indexOf('terminated') !== -1 || 
+                     String(errCode).indexOf('TERMINATED') !== -1 ||
+                     String(errCode) === 'ECONNRESET';
+  var isTimeout = rawMsg.toLowerCase().indexOf('timeout') !== -1 || 
+                  rawMsg.toLowerCase().indexOf('timed out') !== -1 || 
+                  String(errType).indexOf('Timeout') !== -1 || 
+                  errCode === 'ETIMEDOUT';
+  var isRateLimit = errStatus === 429 || rawMsg.toLowerCase().indexOf('rate limit') !== -1;
+  var isContextExceeded = errStatus === 400 && (rawMsg.toLowerCase().indexOf('context') !== -1 || rawMsg.toLowerCase().indexOf('token') !== -1 || String(errDetails).toLowerCase().indexOf('context') !== -1);
+
+  if (isTerminated) {
+    return 'Connection to ' + modelName + ' terminated abruptly' + tokenInfo + '.\n\n' +
+      '• Reason: The remote model server closed the network connection or socket prematurely before completing the response.\n' +
+      '• Likely causes: The prompt context size' + tokenInfo + ' may have exceeded the model\'s context window limit or caused GPU memory exhaustion (OOM), or the server-side idle timeout dropped the connection.\n' +
+      (errCode ? ('• Technical Code: ' + errCode + '\n') : '') +
+      (errStatus ? ('• HTTP Status: ' + errStatus + '\n') : '') +
+      (causeMsg && causeMsg !== 'terminated' ? ('• Underlying Cause: ' + causeMsg + '\n') : '') +
+      '• Recommendation: Use the "Compact" button in the chat toolbar to compress conversation history and reduce token usage, or check your provider connection.';
+  }
+
+  if (isTimeout) {
+    return 'Request to ' + modelName + ' timed out' + tokenInfo + '.\n\n' +
+      '• Reason: The model took longer than the request timeout limit to respond.\n' +
+      '• Recommendation: Click "Compact" to reduce context size, or increase the request timeout in Settings.';
+  }
+
+  if (isContextExceeded) {
+    return 'Context length exceeded for ' + modelName + tokenInfo + '.\n\n' +
+      '• Reason: The conversation history and tool outputs exceeded the model\'s maximum token window.\n' +
+      (rawMsg ? ('• Details: ' + rawMsg + '\n') : '') +
+      '• Recommendation: Click "Compact" to compress previous turns or start a new chat session.';
+  }
+
+  if (isRateLimit) {
+    return 'API Rate Limit Exceeded (HTTP 429) for ' + modelName + '.\n\n' +
+      '• Reason: The provider\'s request quota or rate limit has been reached.\n' +
+      (rawMsg ? ('• Details: ' + rawMsg + '\n') : '') +
+      '• Recommendation: Wait a moment before retrying or check your provider quota.';
+  }
+
+  var parts = [];
+  if (errStatus) {
+    parts.push('API Error (HTTP ' + errStatus + (errType ? ' - ' + errType : '') + ')');
+  } else if (errType && errType !== 'Error') {
+    parts.push(errType);
+  } else {
+    parts.push('API Call Failed for ' + modelName);
+  }
+
+  var msgText = errDetails || rawMsg;
+  if (msgText) parts.push(msgText);
+  if (errCode && errCode !== errStatus) parts.push('(Code: ' + errCode + ')');
+  if (causeMsg && causeMsg !== rawMsg) parts.push('Cause: ' + causeMsg);
+
+  return parts.join(': ');
+}
+
 function handleStopRequest(sessionId, sendEvent, fullContent, fullThinking) {
   var currentState = agentState.getState(sessionId);
   if (agentState.isTerminal(sessionId)) {
@@ -749,9 +820,22 @@ export async function runAgentLoop(userPrompt, config, options) {
           }
         }
 
+        if (signal && (signal.stopped || signal.aborted)) {
+          console.log('[AGENT LOOP] Stop/abort caught in stream catch block');
+          return handleStopRequest(sessionId, sendEvent, fullContent, fullThinking);
+        }
+
+        var estimatedTokens = (sessionUsage && sessionUsage.total_tokens) || Math.round(JSON.stringify(messages).length / 3.8);
+        var transparentErrMsg = formatAgentApiError(err, config, estimatedTokens, iteration);
+
         agentState.transitionWithTrace('failed', sessionId, executionTrace);
         events.emit('state_changed', { state: 'failed', sessionId: sessionId });
-        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: errMsg, sessionId: sessionId });
+        events.emit('agent:' + EVENT_TYPES.AGENT_ERROR, { type: EVENT_TYPES.AGENT_ERROR, message: transparentErrMsg, sessionId: sessionId });
+        try {
+          err.message = transparentErrMsg;
+        } catch (_) {
+          /* ignore read-only error object */
+        }
         throw err;
       }
 
