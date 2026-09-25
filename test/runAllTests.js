@@ -33,7 +33,7 @@ import * as subagentLifecycle from '../src/extension/agents/subagentLifecycle.js
 import * as subagentManager from '../src/extension/agents/subagentManager.js';
 import * as subagentTools from '../src/extension/tools/subagentTools.js';
 import * as subagentPanel from '../src/UI/chats/SubagentPanel.js';
-import '../src/UI/MarkdownRenderer.js';
+import '../src/UI/chats/MarkdownRenderer.js';
 import * as reviewEngine from '../src/extension/execution/reviewEngine.js';
 import * as toolContextBuilder from '../src/extension/agents/toolContextBuilder.js';
 
@@ -2851,7 +2851,7 @@ var vidDef = toolRegistry.getDefinition('generate_video');
 assert.ok(vidDef && vidDef.function && vidDef.function.parameters.properties.prompt, 'generate_video requires prompt parameter');
 
 // 4. Verify MarkdownRenderer creates interactive media card
-var mdRendererModule = await import('../src/UI/MarkdownRenderer.js');
+var mdRendererModule = await import('../src/UI/chats/MarkdownRenderer.js');
 var renderedImgCard = globalThis.renderMarkdown('![My Logo](vscode-webview://test-path/image.png)');
 assert.ok(renderedImgCard.includes('cr-media-card cr-image-card'), 'Markdown renderer creates cr-media-card');
 assert.ok(renderedImgCard.includes('cr-btn-save-media'), 'Markdown renderer provides Save to Project action');

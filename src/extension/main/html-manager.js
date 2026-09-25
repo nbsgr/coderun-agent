@@ -18,6 +18,7 @@ export function getWebviewLocalResourceRoots(extensionUri, ctx) {
   var roots = [
     vscode.Uri.file(path.join(extensionUri.fsPath, 'src')),
     vscode.Uri.file(path.join(extensionUri.fsPath, 'src', 'UI')),
+    vscode.Uri.file(path.join(extensionUri.fsPath, 'icons')),
     extensionUri
   ];
   if (ctx && ctx.globalStorageUri) {
@@ -43,20 +44,21 @@ export function getWebviewLocalResourceRoots(extensionUri, ctx) {
 
 export function getWebviewHtml(webview, extensionUri, extensionContext) {
   var uiPath = path.join(extensionUri.fsPath, 'src', 'UI');
+  var iconsPath = path.join(extensionUri.fsPath, 'icons');
   var nonce = getNonce();
   var cb = Date.now();
 
   var dashboardCss = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'dashboard', 'dashboard.css'))).toString() + '?cb=' + cb;
   var chatSpaceCss = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'chat.css'))).toString() + '?cb=' + cb;
   var subagentPanelCss = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'SubagentPanel.css'))).toString() + '?cb=' + cb;
-  var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'MarkdownRenderer.js'))).toString() + '?cb=' + cb;
-  var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'webview-shared.js'))).toString() + '?cb=' + cb;
+  var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'MarkdownRenderer.js'))).toString() + '?cb=' + cb;
+  var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'webview-shared.js'))).toString() + '?cb=' + cb;
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'dashboard', 'dashboard.js'))).toString() + '?cb=' + cb;
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'chats.js'))).toString() + '?cb=' + cb;
   var subagentPanelJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'SubagentPanel.js'))).toString() + '?cb=' + cb;
-  var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'bot-avatar.jpg'))).toString();
-  var logoUri = webview.asWebviewUri(vscode.Uri.file(path.join(extensionUri.fsPath, 'logo.png'))).toString();
-  var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'user-avatar.svg'))).toString();
+  var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'bot-avatar.jpg'))).toString();
+  var logoUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'logo.png'))).toString();
+  var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'user-avatar.svg'))).toString();
 
   var mediaDirPath = '';
   var mediaRootUri = '';

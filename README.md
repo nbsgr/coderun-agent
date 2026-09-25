@@ -1,7 +1,7 @@
 # CodeRun AI Agent 🚀
 
 <p align="center">
-  <img src="./logo.png" width="160" alt="CodeRun Logo"/>
+  <img src="./icons/logo.png" width="160" alt="CodeRun Logo"/>
 </p>
 
 [![Version](https://img.shields.io/badge/version-v1.6.3-blue.svg)](https://github.com/nbsgr/coderun-agent)
@@ -35,16 +35,18 @@ The repository follows a deliberately small, modular JavaScript architecture des
   * **No `class` Keyword:** Object factories, prototypes, and plain object literals are used instead of ES classes.
   * **No JSDoc `@param` tags:** Function contracts are self-documenting through clean parameters and inline commentary rather than JSDoc tags.
 
-### 🏗️ Modular Engine Architecture (Blast Radius Containment)
-The agent runtime decomposes responsibilities away from a monolithic loop into specialized, isolated engines behind stable interfaces:
-* **`src/agents/agentLoop.js` (Orchestrator):** Lightweight loop driver coordinating model stream responses, tool execution, and session state transitions.
-* **`src/tools/toolExecutor.js` (Execution Engine):** Manages `executeSingleToolCall`, robust argument parsing with markdown fence stripping and concatenated JSON recovery, permission gating, step verification, and automated recovery actions.
-* **`src/agents/contextEngine.js` (Context Engine):** Encapsulates startup context assembly (project knowledge, active plans, timeline, and MCP contexts) and dynamic per-iteration system prompt rebuilds.
-* **`src/agents/delegationEngine.js` (Delegation Engine):** Manages background subagent tracking, completion harvesting, blocking wait loops, and natural-language delegation rationale text.
-* **`src/agents/mediaRuntime.js` (Media Runtime):** Handles direct image and video model generation pre-flight, routing non-chat models directly to `/v1/images/generations` and `/v1/videos` with isolated disk persistence.
-* **`src/agents/decisionEngine.js` (Decision Engine):** Forces a concluding LLM response when tool execution completes as the last message in conversation history.
-* **`src/agents/toolContextBuilder.js` (Tool Context & Hygiene):** Pure utility library constructing tool context objects and detecting loop hygiene issues (repetitive tool calls, consecutive failures).
-* **`src/agents/agentState.js` (State Machine):** Formal finite state machine with atomic `transitionWithTrace` to enforce valid state progressions and record transition telemetry.
+### 🏗️ 3-Tier Modular Pattern & Engine Architecture
+The extension decomposes responsibilities into a strict **Controller → Handler → Manager** 3-tier architecture:
+* **Frontend Webview (`src/UI/`):** All DOM rendering, CSS styling, UI controllers (`host-controller.js`), and managers (`chats.js`, `dashboard.js`, `settings.js`).
+* **Backend Extension Host (`src/extension/`):** All host commands, IPC routers (`UI-controller.js`), domain handlers (`manager/*handler.js`), and engine managers.
+* **`src/extension/agents/agentLoop.js` (Orchestrator):** Lightweight loop driver coordinating model stream responses, tool execution, and session state transitions.
+* **`src/extension/tools/toolExecutor.js` (Execution Engine):** Manages `executeSingleToolCall`, robust argument parsing with markdown fence stripping and concatenated JSON recovery, permission gating, step verification, and automated recovery actions.
+* **`src/extension/agents/contextEngine.js` (Context Engine):** Encapsulates startup context assembly (project knowledge, active plans, timeline, and MCP contexts) and dynamic per-iteration system prompt rebuilds.
+* **`src/extension/agents/delegationEngine.js` (Delegation Engine):** Manages background subagent tracking, completion harvesting, blocking wait loops, and natural-language delegation rationale text.
+* **`src/extension/agents/mediaRuntime.js` (Media Runtime):** Handles direct image and video model generation pre-flight, routing non-chat models directly to `/v1/images/generations` and `/v1/videos` with isolated disk persistence.
+* **`src/extension/agents/decisionEngine.js` (Decision Engine):** Forces a concluding LLM response when tool execution completes as the last message in conversation history.
+* **`src/extension/agents/toolContextBuilder.js` (Tool Context & Hygiene):** Pure utility library constructing tool context objects and detecting loop hygiene issues (repetitive tool calls, consecutive failures).
+* **`src/extension/agents/agentState.js` (State Machine):** Formal finite state machine with atomic `transitionWithTrace` to enforce valid state progressions and record transition telemetry.
 
 ### 🔒 Operational Boundaries
 * **Session ownership is explicit:** Agent state, permissions, terminal sessions, diffs, checkpoints, and traces are keyed by conversation/session ID.
@@ -139,14 +141,14 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 *   **Signal Cancellation & Safe Stop:** Abort signals propagate cleanly into active tool invocations, auto-retries, and recovery steps without race conditions.
 
 ### 🧩 Native VS Code LSP & Diagnostic Self-Reflection
-*   **VS Code Language Server Commands (`src/tools/tools.js`):** Interacts directly with VS Code's internal language provider commands:
+*   **VS Code Language Server Commands (`src/extension/tools/tools.js`):** Interacts directly with VS Code's internal language provider commands:
     *   `get_definition`: Invokes `vscode.commands.executeCommand('vscode.executeDefinitionProvider', uri, position)`. Returns the definition file path, line, character, and line preview. If the provider returns no results (or runs outside VS Code), falls back to cursor token extraction and local symbol lookup via `symbolParser.js`.
     *   `find_references`: Invokes `vscode.commands.executeCommand('vscode.executeReferenceProvider', uri, position)`. Returns all referenced locations with file paths, lines, characters, and preview snippets, with regex workspace fallback.
     *   `document_symbols`: Invokes `vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', uri)`. Recursively formats symbols into hierarchical objects with name, SymbolKind string (`Class`, `Method`, `Function`, `Variable`, etc.), and start/end line bounds. Falls back to regex-based symbol parsing if uninitialized.
-*   **Compiler & LSP Diagnostic Inspection (`src/execution/reviewEngine.js`):**
+*   **Compiler & LSP Diagnostic Inspection (`src/extension/execution/reviewEngine.js`):**
     *   In the self-reflection review phase, `checkCompilerDiagnostics()` queries `vscode.languages.getDiagnostics(uri)` for modified files.
     *   Filters specifically for `DiagnosticSeverity.Error` (severity `0`), capturing file path, line number, source name, and error message to fail review audits if code modifications introduce syntax or compiler breaks.
-*   **Embedded SQLite Knowledge Base (`src/context/projectKnowledge.js`):**
+*   **Embedded SQLite Knowledge Base (`src/extension/context/projectKnowledge.js`):**
     *   Maintains a WebAssembly-based SQLite database (`index.db`) powered by `sql.js` in `globalStorageUri/projects/<Name_Hash>/` tracking indexed files, text chunks, metadata, and parsed symbols.
     *   **`query_project_db` Tool:** Allows executing read-only `SELECT` SQL queries against this local database (strictly rejects any mutation statements like `INSERT`, `UPDATE`, `DELETE`, `DROP`).
 
@@ -279,22 +281,22 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | Feature / Capability | Architectural Design | Implementation & Highlights |
 | :--- | :--- | :--- |
 | **Modular Engine Architecture** | Decomposed runtime across 7 specialized engines (Context, Delegation, Tool Execution, Media, Decision, ContextBuilder, StateMachine) | ✅ **Failure Containment** reducing agentLoop by 50% to a pure coordinator |
-| **Multi-Provider Support** | Modular provider adapters in `src/providers/` with unified normalization & streaming | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) |
+| **Multi-Provider Support** | Modular provider adapters in `src/extension/providers/` with unified normalization & streaming | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) |
 | **100% Free & Local (Ollama)** | Native Ollama streaming adapter with model context length discovery | ✅ **Native** streaming, vision & context autodiscovery |
 | **Transparent User Sandbox** | Dedicated user sandbox directory (`~/.coderun/sandbox/`) with automatic CWD sync | ✅ **Native** isolated execution without polluting workspace git repo |
-| **On-Install Browser & Puppeteer MCP** | Embedded browser discovery in `src/mcp/mcpManager.js` + Puppeteer MCP server | ✅ **Auto-detects Chrome/Edge/Brave** or installs Chromium with screenshot capture |
-| **Persistent Memory Graph MCP** | Built-in stdio-based knowledge graph server (`src/mcp/builtinServers/memoryGraphServer.cjs`) | ✅ **Pre-configured built-in catalog** for cross-session entity & relation tracking |
-| **Media Model Routing & Persistence** | Dual-strategy classifier in `src/providers/modelClassifier.js` + `src/media/mediaManager.js` | ✅ **Automatic routing** to `/v1/images/generations` and `/v1/videos` with persistent disk storage in VS Code `globalStorage` |
-| **Deterministic Context Compaction** | Local 0ms checkpoint generator (`src/context/compactionManager.js`) | ✅ **0ms Instant Local Checkpoints** with zero external API calls or token cost |
-| **Historical Tool Compaction** | Wire-protocol optimizer in `src/context/contextManager.js` | ✅ **Automatic** reduction of old tool turns by up to 90% while retaining full active outputs & failure diffs |
-| **Local SQLite Codebase Index** | Embedded SQL.js database (`src/context/projectKnowledge.js`) with serialized disk persistence | ✅ **Embedded SQL.js** for fast local symbol & file indexing with zero cloud upload |
-| **Interactive Terminal REPLs** | VS Code Terminal API bridge with shell integration & prompt detection (`src/tools/terminalManager.js`) | ✅ **Full lifecycle** (`terminal_input`, prompt detection, `stop_terminal` Ctrl+C) |
+| **On-Install Browser & Puppeteer MCP** | Embedded browser discovery in `src/extension/mcp/mcpManager.js` + Puppeteer MCP server | ✅ **Auto-detects Chrome/Edge/Brave** or installs Chromium with screenshot capture |
+| **Persistent Memory Graph MCP** | Built-in stdio-based knowledge graph server (`src/extension/mcp/builtinServers/memoryGraphServer.cjs`) | ✅ **Pre-configured built-in catalog** for cross-session entity & relation tracking |
+| **Media Model Routing & Persistence** | Dual-strategy classifier in `src/extension/providers/modelClassifier.js` + `src/extension/media/mediaManager.js` | ✅ **Automatic routing** to `/v1/images/generations` and `/v1/videos` with persistent disk storage in VS Code `globalStorage` |
+| **Deterministic Context Compaction** | Local 0ms checkpoint generator (`src/extension/context/compactionManager.js`) | ✅ **0ms Instant Local Checkpoints** with zero external API calls or token cost |
+| **Historical Tool Compaction** | Wire-protocol optimizer in `src/extension/context/contextManager.js` | ✅ **Automatic** reduction of old tool turns by up to 90% while retaining full active outputs & failure diffs |
+| **Local SQLite Codebase Index** | Embedded SQL.js database (`src/extension/context/projectKnowledge.js`) with serialized disk persistence | ✅ **Embedded SQL.js** for fast local symbol & file indexing with zero cloud upload |
+| **Interactive Terminal REPLs** | VS Code Terminal API bridge with shell integration & prompt detection (`src/extension/tools/terminalManager.js`) | ✅ **Full lifecycle** (`terminal_input`, prompt detection, `stop_terminal` Ctrl+C) |
 | **Dynamic Card Error Containment** | Dynamic card sizing & auto-wrapping CSS (`overflow-wrap: anywhere`) | ✅ **Auto-wrapping & no boundary overflow** on long uninterrupted URLs and JSON payloads |
 | **Live Monotonic Token Tracking** | Real-time context window gauge with model limit store (`modelContextWindows`) | ✅ **Real-time saturation warnings** (proactive visual alerts at 70% and 90%) |
-| **Interactive User Questions** | Session-isolated question lifecycle manager (`src/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
-| **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/tools/tools.js` & `src/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
-| **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/ChatSpace.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
-| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
+| **Interactive User Questions** | Session-isolated question lifecycle manager (`src/extension/tools/questionManager.js`) | ✅ **`ask_question` with interactive option chips & custom write-in** |
+| **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/extension/tools/tools.js` & `src/extension/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
+| **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/UI/chats/chats.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
+| **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/extension/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
 | **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **87 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
 
 
@@ -449,92 +451,159 @@ node test/runAllTests.js
 
 ---
 
-## 📖 Deep Dive: CodeRun Architecture
+## 📖 Deep Dive: CodeRun 3-Tier Architecture
 
-CodeRun's engine is split into isolated modular layers that govern the lifecycle of every agent execution:
+CodeRun's codebase strictly implements the **3-Tier Modular Pattern (Controller → Handler → Manager)** with complete physical and logical separation between the Backend Extension Host (`src/extension/`) and Frontend Webview (`src/UI/`):
 
-```
-src/
-├── extension.js                  ← VS Code activation, IPC message bridge, secrets, health checks
-├── Dashboard.js / .css           ← Webview manager: dual-nav (Chats/Traces), multi-run tabs, settings,
-│                                    unified model dropdown, modelContextWindows store
-├── ChatSpace.js / .css           ← Chat space: collapsible tool cards, live token tracking badge,
-│                                    live context window gauge, dynamic auto-sizing error cards,
-│                                    inline terminal cards with live streaming, permission dialogs, diff reviews
-├── MarkdownRenderer.js           ← Client-side markdown processor with tables, code, XSS sanitization & syntax highlighting
-├── webview-shared.js             ← Shared utilities (esc, truncate, stripAnsi) between Dashboard & ChatSpace
+```plaintext
+cline-ollama/
+├── icons/                            ← Brand, logo, and avatar media assets
+│   ├── bot-avatar.jpg
+│   ├── logo.png
+│   ├── media-generation.png
+│   └── user-avatar.svg
 │
-├── agents/                       ← Core agent orchestration engine
-│   ├── agent.js                  ← Public agent wrapper API
-│   ├── agentLoop.js              ← Core agentic loop (Think → Plan → Act → Verify)
-│   ├── agentState.js             ← Formal finite state machine for the agent loop
-│   ├── subagentManager.js        ← Autonomous subagent lifecycle manager (spawn, pause, resume, stop, limits, defaults)
-│   ├── subagentTypes.js          ← Subagent constants, role normalization, state machines, and limit validators
-│   ├── promptBuilder.js          ← Assembles system prompt with workspace, planning, and memory contexts
-│   ├── runtime.js                ← Execution session runtime, goals, and plan counts
-│   ├── events.js                 ← Internal pub/sub event bus
-│   └── constants.js              ← Magic numbers, event types, default system prompt
-│
-├── context/                      ← Context extraction and knowledge systems
-│   ├── contextManager.js         ← Identifies request intent, extracts editor state & active file details
-│   ├── compactionManager.js      ← Local 0ms conversation compaction engine, turn range tracking & checkpoint generator
-│   ├── gitIntelligence.js        ← Workspace git status, active branch, and diff summary fragments
-│   ├── goalTracker.js            ← Tracks goals, subgoals, and plan execution metrics
-│   ├── learningManager.js        ← Extracts and stores repository conventions and user preferences
-│   ├── memoryManager.js          ← Session-scoped memory and key facts store
-│   ├── planningEngine.js         ← Generates structured multi-step plans
-│   ├── planningManager.js        ← Plan file management and execution status context
-│   ├── projectKnowledge.js       ← SQLite-backed project knowledge base and indexing pipeline
-│   ├── rulesLoader.js            ← Loads user-defined project rules & conventions (~/.coderun/rules, .coderunrules)
-│   ├── searchManager.js          ← Disk-verified search indexing and query filters
-│   ├── symbolParser.js           ← AST/Regex parsing for classes, functions, and symbols
-│   ├── workspaceContext.js       ← Active workspace directory resolution
-│   └── workspaceIntelligence.js  ← Non-blocking asynchronous repository profiling and language stats
-│
-├── execution/                    ← Execution diagnostics and verification
-│   ├── executionTrace.js         ← Real-time trace engine (LLM calls, tools, errors, disk persistence)
-│   ├── multiAgentRuntime.js      ← Role-based prompt mapping across execution states
-│   ├── observationEngine.js      ← Analyzes tool results to produce synthetic observations
-│   ├── recoveryEngine.js         ← Automatic error diagnosis, 1-retry cap, and LLM diagnostic advice
-│   ├── reviewEngine.js           ← Automated post-execution code review and sanity checks
-│   ├── timelineManager.js        ← Logs chronological workspace events to timeline history
-│   ├── verificationManager.js    ← Automated verification heuristics (empty file protection, build checks)
-│   └── workflowEngine.js         ← Step sequence coordinator
-│
-├── mcp/                          ← Model Context Protocol (MCP) subsystem
-│   ├── mcpClient.js              ← JSON-RPC stdio and HTTP client transport, handshake & dispatch
-│   ├── mcpManager.js             ← Server catalog, lifecycle management, auto-browser detection (Chrome/Edge/Brave)
-│   ├── pythonMcpManager.js       ← Python runtime detection, isolated virtualenv, unbuffered stdio & error tips
-│   ├── pythonMcpTemplate.js      ← Multi-runtime template definitions across Node.js and Python
-│   └── builtinServers/           ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
-│
-├── providers/                    ← Multi-provider LLM integrations
-│   ├── providerManager.js        ← Factory to instantiate the correct provider SDK
-│   ├── providerGemini.js         ← Native REST & OpenAI-compatible Gemini with Protobuf schema sanitization
-│   ├── providerAnthropic.js      ← Anthropic Claude Messages API with SSE buffer flushing
-│   ├── providerOpenAI.js         ← OpenAI Chat Completions with function calling & o3-mini support
-│   ├── providerOllama.js         ← Local Ollama streaming with model context length discovery
-│   ├── providerGroq.js           ← Groq high-speed inference with dynamic context limit detection
-│   ├── providerOpenRouter.js     ← OpenRouter API with dynamic model list and context window fetching
-│   ├── providerXAI.js            ← xAI Grok API integration
-│   └── providerCompatible.js     ← Custom OpenAI/Anthropic/Gemini compatible endpoints
-│
-└── tools/                        ← Active tool implementations and security
-    ├── tools.js                  ← 31 active async generators across 8 core categories
-    ├── toolDefinitions.js        ← Declares JSON schemas (functions, parameters) sent to the LLM
-    ├── toolExecutor.js           ← Tool call argument parsing, execution reporting, and result formatting
-    ├── toolRegistry.js           ← Unified tool registry with alias mapping, MCP dynamic registration & filtering
-    ├── subagentTools.js          ← Subagent tool suite (spawn_subagent, status, list, stop, wait)
-    ├── questionManager.js        ← Interactive user question lifecycle, option selection & write-in resolution
-    ├── terminalManager.js        ← VS Code Integrated Terminal API with dual sessions (CodeRun(main) & CodeRun(BG)),
-    │                                auto shell detection (powershell/cmd/bash/zsh/fish/wsl),
-    │                                ANSI escape stripping, interactive REPL support, and selective stop_terminal
-    ├── checkpointManager.js      ← SQLite-backed file backups, snapshot comparison, and rollback operations
-    ├── diffManager.js            ← Staged diff patches with SHA-256 concurrency checks
-    ├── fileLockManager.js        ← Hierarchical lock coordination for concurrent directory and file mutations
-    ├── permissions.js            ← Session-isolated permission management and always-allow rules
-    ├── approvalSystem.js         ← Dangerous command policy checks and approval workflows
-    └── pathSecurity.js           ← Canonical path traversal guard and workspace boundary validation
+├── src/
+│   ├── extension/                    ← 100% Backend Extension Host Logic
+│   │   ├── main/                     ← Extension lifecycle & activation root
+│   │   │   ├── extension.js          ← Main activation entry point (declared in package.json)
+│   │   │   ├── agentview-manager.js  ← Webview View / Panel registration & disposal
+│   │   │   ├── commands-manager.js   ← Command palette actions (openSidebar, newChat, undo)
+│   │   │   └── html-manager.js       ← Synchronous HTML loader, CSP injection & resource resolver
+│   │   │
+│   │   ├── controller/               ← Pure extension message routing
+│   │   │   └── UI-controller.js      ← Routes webview onDidReceiveMessage to domain handlers
+│   │   │
+│   │   ├── manager/                  ← Domain request handlers (coordinators)
+│   │   │   ├── chatshandler.js       ← Chat messages, prompts, abort, and model streaming
+│   │   │   ├── diffshandler.js       ← Diff acceptance, rejection, and subagent diff status sync
+│   │   │   ├── mcphandler.js         ← MCP server discovery, restart, and tool invocation
+│   │   │   ├── mediahandler.js       ← Media resolution, base64 extraction & workspace saving
+│   │   │   ├── modelshandler.js      ← Dynamic model retrieval, classification & health checks
+│   │   │   ├── ruleshandler.js       ← User rules loading, saving & directory watching
+│   │   │   ├── settingshandler.js    ← Provider configs, API keys & user settings sync
+│   │   │   ├── subagentshandler.js   ← Subagent status queries & lifecycle operations
+│   │   │   ├── terminalhandler.js    ← Terminal executions, shell input, and interrupts
+│   │   │   └── traceshandler.js      ← Execution traces querying & disk exports
+│   │   │
+│   │   ├── permission-manager/       ← Unified permission storage
+│   │   │   └── permission-store.js   ← Session-isolated async permission resolution callbacks
+│   │   │
+│   │   ├── agents/                   ← Core agent orchestration engine
+│   │   │   ├── agent.js              ← Public agent wrapper API
+│   │   │   ├── agentLoop.js          ← Core agentic loop (Think → Plan → Act → Verify)
+│   │   │   ├── agentState.js         ← Formal finite state machine for the agent loop
+│   │   │   ├── subagentManager.js    ← Autonomous subagent lifecycle manager (spawn, pause, resume, stop)
+│   │   │   ├── subagentTypes.js      ← Subagent role constants, normalization & state validators
+│   │   │   ├── promptBuilder.js      ← Assembles system prompt with workspace, plan & memory contexts
+│   │   │   ├── runtime.js            ← Execution session runtime, goals & plan counts
+│   │   │   ├── events.js             ← Internal pub/sub event bus
+│   │   │   └── constants.js          ← Event types, constants & default prompt
+│   │   │
+│   │   ├── context/                  ← Context extraction and knowledge systems
+│   │   │   ├── contextManager.js     ← Intent detection, active editor state & wire compaction
+│   │   │   ├── compactionManager.js  ← Local 0ms conversation compaction & checkpoint generator
+│   │   │   ├── gitIntelligence.js    ← Workspace git status, active branch & diff fragments
+│   │   │   ├── goalTracker.js        ← Tracks goals, subgoals & plan metrics
+│   │   │   ├── learningManager.js    ← Extracts repository conventions & user preferences
+│   │   │   ├── memoryManager.js      ← Session-scoped memory and key facts store
+│   │   │   ├── planningEngine.js     ← Generates structured multi-step execution plans
+│   │   │   ├── planningManager.js    ← Plan file management and execution status context
+│   │   │   ├── projectKnowledge.js   ← SQLite-backed project knowledge base (index.db via SQL.js)
+│   │   │   ├── rulesLoader.js        ← Loads user rules (~/.coderun/rules, .coderunrules)
+│   │   │   ├── searchManager.js      ← Disk-verified search indexing and query filters
+│   │   │   ├── symbolParser.js       ← AST/Regex parsing for classes, functions & symbols
+│   │   │   ├── workspaceContext.js   ← Active workspace directory resolution
+│   │   │   └── workspaceIntelligence.js ← Asynchronous repository profiling and language stats
+│   │   │
+│   │   ├── execution/                ← Execution diagnostics and verification
+│   │   │   ├── executionTrace.js     ← Real-time trace engine (LLM calls, tools, errors, persistence)
+│   │   │   ├── multiAgentRuntime.js  ← Role-based prompt mapping across execution states
+│   │   │   ├── observationEngine.js  ← Analyzes tool results to produce synthetic observations
+│   │   │   ├── recoveryEngine.js     ← Automatic error diagnosis, 1-retry cap & diagnostic advice
+│   │   │   ├── reviewEngine.js       ← Automated post-execution code review & compiler diagnostics
+│   │   │   ├── timelineManager.js    ← Logs chronological workspace events to timeline history
+│   │   │   ├── verificationManager.js ← Automated verification heuristics & empty file protection
+│   │   │   └── workflowEngine.js     ← Step sequence coordinator
+│   │   │
+│   │   ├── mcp/                      ← Model Context Protocol (MCP) subsystem
+│   │   │   ├── mcpClient.js          ← JSON-RPC stdio and HTTP client transport & handshake
+│   │   │   ├── mcpManager.js         ← Server catalog, lifecycle & browser detection (Chrome/Edge/Brave)
+│   │   │   ├── pythonMcpManager.js   ← Python virtualenv isolation, unbuffered stdio & error tips
+│   │   │   ├── pythonMcpTemplate.js  ← Multi-runtime template definitions across Node.js & Python
+│   │   │   └── builtinServers/       ← Built-in zero-config servers (web-fetch, memory graph, puppeteer)
+│   │   │
+│   │   ├── media/                    ← Media processing and persistence
+│   │   │   └── mediaManager.js       ← Image/video extraction, disk persistence & workspace copying
+│   │   │
+│   │   ├── providers/                ← Multi-provider LLM integrations
+│   │   │   ├── modelClassifier.js    ← Detects image/video models to prevent chat completion 400s
+│   │   │   ├── providerManager.js    ← Instantiates the active provider adapter SDK
+│   │   │   ├── providerOllama.js     ← Local Ollama streaming with model context length discovery
+│   │   │   ├── providerOpenAI.js     ← OpenAI Chat Completions with function calling & o3-mini support
+│   │   │   ├── providerAnthropic.js  ← Anthropic Claude Messages API with SSE buffer flushing
+│   │   │   ├── providerGemini.js     ← Native REST & OpenAI-compatible Gemini with Protobuf sanitization
+│   │   │   ├── providerGroq.js       ← Groq high-speed inference with dynamic context limit detection
+│   │   │   ├── providerOpenRouter.js ← OpenRouter API with dynamic model list & context window fetching
+│   │   │   └── providerCompatible.js ← Custom OpenAI/Anthropic/Gemini compatible endpoints
+│   │   │
+│   │   └── tools/                    ← Core tool implementations and security
+│   │       ├── tools.js              ← 36 active async generators across 9 core categories
+│   │       ├── toolDefinitions.js    ← Declares JSON schemas (functions, parameters) sent to the LLM
+│   │       ├── toolExecutor.js       ← Argument parsing, execution reporting & result formatting
+│   │       ├── toolRegistry.js       ← Unified tool registry with alias mapping & MCP registration
+│   │       ├── subagentTools.js      ← Subagent tool suite (spawn_subagent, status, list, stop, wait)
+│   │       ├── questionManager.js    ← Interactive user question lifecycle (ask_question)
+│   │       ├── terminalManager.js    ← VS Code Integrated Terminal API with dual sessions (main & BG),
+│   │       │                            pager suppression, ANSI escape stripping & REPL support
+│   │       ├── checkpointManager.js  ← SQLite-backed file backups, snapshots & rollback operations
+│   │       ├── diffManager.js        ← Staged diff patches with SHA-256 concurrency checks
+│   │       ├── fileLockManager.js    ← Hierarchical lock coordination for concurrent file mutations
+│   │       ├── permissions.js        ← Session-isolated permission management & security policies
+│   │       ├── approvalSystem.js     ← Dangerous command policy checks and approval workflows
+│   │       └── pathSecurity.js       ← Canonical path traversal guard & workspace boundary validation
+│   │
+│   └── UI/                           ← 100% Frontend Webview DOM & Styling
+│       ├── index.html                ← Native ES module template loading dashboard/dashboard.js
+│       │
+│       ├── controller/               ← Pure Webview message routing & VS Code API
+│       │   ├── vscode-api.js         ← Singleton acquireVsCodeApi export
+│       │   ├── host-controller.js    ← Pure event listener (window.addEventListener("message"))
+│       │   └── tools-handler.js      ← Dispatches permission responses to backend
+│       │
+│       ├── dashboard/                ← Shell layout, header status, navigation & logo
+│       │   ├── dashboard.js          ← Main dashboard shell coordinator
+│       │   ├── dashboard.css         ← Global layout, badges, video controls & light/dark theme
+│       │   └── logo-manager.js       ← Dynamic logo retrieval from extension host
+│       │
+│       ├── chats/                    ← Chat rendering, timeline, tool cards & diffs
+│       │   ├── chats.js              ← Primary chat view container coordinating chat managers
+│       │   ├── chat.css              ← Chat bubbles, cards, terminal cards & timeline styles
+│       │   ├── chats-checkpoint-manager.js ← Undo buttons and checkpoint rollback cards
+│       │   ├── chats-diff-manager.js ← Staged diff cards, side-by-side previews & approvals
+│       │   ├── chats-media-manager.js ← Image/video card rendering, scrubber & export actions
+│       │   ├── chats-message-manager.js ← User/bot bubble layout, history & typing indicators
+│       │   ├── chats-plan-manager.js ← Interactive multi-step planning checklist widget
+│       │   ├── chats-question-manager.js ← Interactive question chips & write-in input box
+│       │   ├── chats-stream-parser.js ← Chunk parser, thought blocks & tool call stream buffer
+│       │   ├── chats-subagent-manager.js ← Subagent lifecycle events & dropdown status sync
+│       │   ├── MarkdownRenderer.js   ← Client-side markdown processor with syntax highlighting
+│       │   ├── SubagentPanel.js      ← Collapsible subagent dropdown panel with timeline
+│       │   ├── SubagentPanel.css     ← Subagent dropdown styling, tokens gauge & status dots
+│       │   └── webview-shared.js     ← Shared string sanitization, truncation & ANSI utilities
+│       │
+│       ├── permission-manager/       ← Reusable permission prompt dialogs
+│       │   └── permission-card.js    ← Modal cards for tool approvals with always-allow toggles
+│       │
+│       └── settings/                 ← Provider, model, MCP, rules & trace panels
+│           ├── settings.js           ← Settings panel container
+│           ├── settings.css          ← Settings inputs, provider cards & tables
+│           ├── settings-manager.js   ← Provider credentials, active selection & test connection
+│           ├── model-manager.js      ← Unified model dropdown, modality badges & search
+│           ├── mcp-manager.js        ← MCP server toggles, environment variables & status
+│           ├── rules-manager.js      ← System & workspace rules editor with instant save
+│           ├── traces-manager.js     ← Execution traces viewer with multi-run selector
+│           └── command-handler.js    ← Command palette bridge from UI buttons
 ```
 
 ---
