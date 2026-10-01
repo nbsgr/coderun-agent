@@ -1,6 +1,6 @@
 [
   {
-    "id": "run_1790347047346_xafxff",
+    "id": "run_1790837325098_3d555l",
     "sessionId": "sub_sess_59",
     "agentId": "subagent_tester_59",
     "name": "Security Tester",
@@ -10,9 +10,9 @@
     "depth": 0,
     "role": "debugger",
     "agentType": "subagent",
-    "startedAt": 1790347047346,
-    "completedAt": 1790347047347,
-    "durationMs": 1,
+    "startedAt": 1790837325098,
+    "completedAt": 1790837325098,
+    "durationMs": 0,
     "status": "completed",
     "provider": "ollama",
     "model": "qwen2.5-coder",
@@ -47,7 +47,7 @@
         },
         "toolCalls": [
           {
-            "id": "tool_1790347047347",
+            "id": "tool_1790837325098",
             "toolName": "run_command",
             "command": "npm test -- --grep \"security\"",
             "input": {
@@ -58,7 +58,7 @@
             "durationMs": 95,
             "checkpointId": null,
             "filePath": "",
-            "timestamp": 1790347047347
+            "timestamp": 1790837325098
           }
         ]
       }
@@ -69,7 +69,7 @@
       "durationMs": 0
     },
     "metrics": {
-      "totalDurationMs": 1,
+      "totalDurationMs": 0,
       "totalTokens": {
         "input": 120,
         "output": 45,

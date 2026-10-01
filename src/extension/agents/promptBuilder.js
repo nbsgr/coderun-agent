@@ -1,7 +1,7 @@
 // promptBuilder.js — Assembles the final prompt from all context pieces
 // No concatenation inside agent.js — everything happens here.
 
-import { SYSTEM_PROMPT } from './constants.js';
+import { SYSTEM_PROMPT, SUBAGENT_SYSTEM_PROMPT } from './constants.js';
 import { loadRules } from '../context/rulesLoader.js';
 import { compactToolResult } from '../context/compactionManager.js';
 import * as pathSecurity from '../tools/pathSecurity.js';
@@ -154,7 +154,8 @@ export async function buildMessages(userPrompt, options) {
   var messages = [];
 
   // 1. System prompt
-  var systemContent = SYSTEM_PROMPT;
+  var isSubagent = !!(options && ((options.agentIdentity && (options.agentIdentity.agentType === 'subagent' || options.agentIdentity.parentAgentId || options.agentIdentity.role)) || options.agentType === 'subagent'));
+  var systemContent = isSubagent ? SUBAGENT_SYSTEM_PROMPT : SYSTEM_PROMPT;
   if (workspace) {
     systemContent += '\n\n## CURRENT WORKSPACE\nThe active workspace directory is: ' + workspace;
     systemContent += '\nYou are running inside this folder. Use relative paths (e.g., \'src/main.py\' or \'.\').';
@@ -430,17 +431,7 @@ export async function buildSystemPromptOnly(workspace, skills, memory, mcpContex
 }
 
 function getSubagentSystemPrompt() {
-  var prompt = SYSTEM_PROMPT;
-  var subIdx = prompt.indexOf('## SUBAGENTS AND DELEGATION RULES');
-  if (subIdx !== -1) {
-    var nextSecIdx = prompt.indexOf('\n## ', subIdx + 10);
-    if (nextSecIdx !== -1) {
-      prompt = prompt.slice(0, subIdx) + prompt.slice(nextSecIdx + 1);
-    } else {
-      prompt = prompt.slice(0, subIdx);
-    }
-  }
-  return prompt;
+  return SUBAGENT_SYSTEM_PROMPT;
 }
 
 export async function buildSubagentMessages(task, subContext, workspace, agentIdentity) {

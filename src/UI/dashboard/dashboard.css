@@ -9,7 +9,7 @@ body {
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
   color: var(--vscode-foreground, #e2e8f0);
   font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: var(--vscode-font-size, 13px);
@@ -22,7 +22,7 @@ body {
   margin: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
   box-sizing: border-box;
 }
 
@@ -32,6 +32,13 @@ body {
   --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(148, 163, 184, 0.15));
   --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(148, 163, 184, 0.28));
   --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%2394a3b8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --cr-card-bg: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+  --cr-card-head-bg: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.08));
+  --cr-card-head-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  --cr-card-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.18)));
+  --cr-card-body-bg: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.04));
+  --cr-card-pre-bg: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  --cr-card-pre-border: var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
 }
 
 body.vscode-light {
@@ -39,6 +46,13 @@ body.vscode-light {
   --cr-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(0, 0, 0, 0.18));
   --cr-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(0, 0, 0, 0.35));
   --cr-select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6L8 10L12 6' stroke='%2364748b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --cr-card-bg: var(--vscode-editorWidget-background, #f8f9fa);
+  --cr-card-head-bg: var(--vscode-sideBarSectionHeader-background, #f0f2f5);
+  --cr-card-head-hover: var(--vscode-list-hoverBackground, #e6e9ee);
+  --cr-card-border: var(--vscode-widget-border, #d0d7de);
+  --cr-card-body-bg: var(--vscode-editorWidget-background, #ffffff);
+  --cr-card-pre-bg: var(--vscode-textCodeBlock-background, #f6f8fa);
+  --cr-card-pre-border: var(--vscode-widget-border, #d0d7de);
 }
 
 body.vscode-high-contrast {
@@ -113,7 +127,7 @@ textarea {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 
 .cr-header {
@@ -122,8 +136,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #1a2332;
-  background: #080c14;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
+  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--vscode-editor-background)));
   flex-shrink: 0;
 }
 
@@ -257,8 +271,8 @@ textarea {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  border-right: 1px solid #1a2332;
-  background: #080c14;
+  border-right: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   flex-shrink: 0;
   z-index: 101;
 }
@@ -300,8 +314,8 @@ textarea {
   width: 230px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #1a2332;
-  background: #0d1219;
+  border-right: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #181818));
   transition: width 160ms cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   flex-shrink: 0;
@@ -340,7 +354,7 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex-shrink: 0;
-  border-bottom: 1px solid #1a2332;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
 }
 
 .cr-thread-list {
@@ -365,12 +379,13 @@ textarea {
 }
 
 .cr-thread-item:hover {
-  background: rgba(148, 163, 184, 0.06);
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
 }
 
 .cr-thread-item.active {
-  background: rgba(56, 139, 253, 0.08);
-  border-color: rgba(56, 139, 253, 0.28);
+  background: var(--vscode-list-activeSelectionBackground, rgba(56, 139, 253, 0.15));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  border-color: var(--vscode-focusBorder, rgba(56, 189, 248, 0.3));
 }
 
 .cr-thread-icon {
@@ -459,11 +474,11 @@ textarea {
 .cr-rename-input {
   width: 100%;
   padding: 4px 8px;
-  border: 1px solid #388bfd;
+  border: 1px solid var(--vscode-focusBorder, #388bfd);
   border-radius: 6px;
   outline: none;
   color: var(--vscode-input-foreground, #e2e8f0);
-  background: #111827;
+  background: var(--vscode-input-background, #1e1e1e);
   font-size: 12px;
 }
 
@@ -471,7 +486,7 @@ textarea {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #0b0f17;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   min-width: 0;
   width: 100%;
 }
@@ -482,14 +497,14 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #1a2332;
-  background: #080c14;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   flex-shrink: 0;
   width: 100%;
 }
 
 .cr-model-bar label {
-  color: #8b949e;
+  color: var(--vscode-descriptionForeground, #8b949e);
   font-size: 12px;
 }
 
@@ -498,8 +513,8 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #080c14;
-  border-bottom: 1px solid #1a2332;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.15)));
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
@@ -516,11 +531,11 @@ textarea {
   font-size: 11px;
   font-weight: 500;
   border-radius: 6px;
-  border: 1px solid #1e293b;
-  background: #111827;
-  color: #94a3b8;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  color: var(--vscode-descriptionForeground, #94a3b8);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease-in-out;
   user-select: none;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -529,20 +544,23 @@ textarea {
 }
 
 .cr-view-nav-btn:hover {
-  background: rgba(148, 163, 184, 0.08);
-  color: #e2e8f0;
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.14));
+  border-color: var(--vscode-focusBorder, rgba(128, 128, 128, 0.35));
+  color: var(--vscode-foreground, #ffffff);
 }
 
 .cr-view-nav-btn.active {
-  background: var(--vscode-badge-background, #40768e);
-  color: var(--vscode-badge-foreground, #ffffff);
-  border-color: var(--vscode-badge-background, #40768e);
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #ffffff));
+  border-color: var(--vscode-focusBorder, #007acc);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(64, 118, 142, 0.35);
+  box-shadow: none;
 }
+
 .cr-view-nav-btn.active:hover {
-  background: #4c8ca8;
-  border-color: #4c8ca8;
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.28));
+  border-color: var(--vscode-focusBorder, #007acc);
+  color: var(--vscode-foreground, #ffffff);
 }
 
 #chat-area-container {
@@ -554,7 +572,7 @@ textarea {
   width: 100%;
   position: relative;
   overflow: hidden;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 
 #traces-area-container {
@@ -562,7 +580,7 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  background: #0b0f17;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   padding: 12px 16px;
   gap: 12px;
 }
@@ -578,7 +596,7 @@ textarea {
   position: relative;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 
 #subagent-traces-area-container {
@@ -594,7 +612,7 @@ textarea {
   overflow-x: hidden !important;
   box-sizing: border-box;
   padding: 16px;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 
 .cr-subagent-trace-body {
@@ -741,23 +759,23 @@ textarea {
   font-size: 11px;
   font-weight: 500;
   border-radius: 6px;
-  border: 1px solid #1e293b;
-  background: #111827;
-  color: #94a3b8;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+  color: var(--vscode-descriptionForeground, #94a3b8);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .cr-trace-run-tab:hover {
-  background: #162235;
-  color: #e2e8f0;
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+  color: var(--vscode-foreground, #e2e8f0);
 }
 
 .cr-trace-run-tab.active {
-  background: var(--vscode-badge-background, #40768e);
-  color: #ffffff;
-  border-color: var(--vscode-badge-background, #40768e);
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.22));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #ffffff));
+  border-color: var(--vscode-focusBorder, #38bdf8);
   font-weight: 600;
 }
 
@@ -767,8 +785,8 @@ textarea {
   justify-content: space-between;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #0d1219;
-  border: 1px solid #1a2332;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -871,8 +889,8 @@ textarea {
 
 .cr-trace-node {
   border-radius: 8px;
-  background: #0d1219;
-  border: 1px solid #1a2332;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -1042,8 +1060,8 @@ textarea {
 /* 🤖 LLM Call Card */
 .cr-trace-llm-card {
   border-radius: 8px;
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -1054,7 +1072,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #1a2332;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
   padding-bottom: 8px;
 }
 
@@ -1065,7 +1083,7 @@ textarea {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 12px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--vscode-foreground, #ffffff);
 }
 
 .cr-trace-card-icon {
@@ -1102,7 +1120,7 @@ textarea {
   font-size: 11px;
   line-height: 1.4;
   padding: 2px 0 2px 8px;
-  border-left: 2px solid #1e293b;
+  border-left: 2px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
 }
 
 .cr-trace-msg-label {
@@ -1115,8 +1133,8 @@ textarea {
 }
 
 .cr-trace-thought-box {
-  background: #080c14;
-  border: 1px solid #1a2332;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 11px;
@@ -1160,8 +1178,8 @@ textarea {
 /* 🔧 Tool Call Card */
 .cr-trace-tool-card {
   border-radius: 8px;
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -1172,13 +1190,13 @@ textarea {
 .cr-trace-input-box {
   margin: 0;
   padding: 8px 10px;
-  background: #080c14;
-  border: 1px solid #1a2332;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
   border-radius: 6px;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
   line-height: 1.4;
-  color: #cbd5e1;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground, #cbd5e1));
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 180px;
@@ -1188,13 +1206,13 @@ textarea {
 .cr-trace-output-box {
   margin: 0;
   padding: 8px 10px;
-  background: #080c14;
-  border: 1px solid #1a2332;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
   border-radius: 6px;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
   line-height: 1.4;
-  color: #cbd5e1;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground, #cbd5e1));
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 220px;
@@ -1229,11 +1247,11 @@ textarea {
   min-width: 0;
   height: 30px;
   padding: 4px 10px;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
   border-radius: 6px;
   outline: none;
-  color: #e2e8f0;
-  background: #111827;
+  color: var(--vscode-input-foreground, var(--vscode-foreground, #e2e8f0));
+  background: var(--vscode-input-background, #1e1e1e);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   font-size: 12px;
 }
@@ -1241,7 +1259,7 @@ textarea {
 .cr-input-group select {
   appearance: none !important;
   -webkit-appearance: none !important;
-  background-color: #111827 !important;
+  background-color: var(--vscode-input-background, #1e1e1e) !important;
   background-image: var(--cr-select-arrow) !important;
   background-repeat: no-repeat !important;
   background-position: right 10px center !important;
@@ -1252,14 +1270,14 @@ textarea {
 
 #modelInput:focus,
 .cr-input-group input:focus {
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+  border-color: var(--vscode-focusBorder, #38bdf8);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #38bdf8);
 }
 
 .cr-input-group select:focus {
-  border-color: #38bdf8 !important;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
-  background-color: #111827 !important;
+  border-color: var(--vscode-focusBorder, #38bdf8) !important;
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #38bdf8) !important;
+  background-color: var(--vscode-input-background, #1e1e1e) !important;
   background-image: var(--cr-select-arrow) !important;
 }
 
@@ -1268,7 +1286,9 @@ textarea {
   box-sizing: border-box;
   padding-right: 24px !important;
   cursor: pointer;
-  background: #111827;
+  background: var(--vscode-dropdown-background, var(--vscode-input-background, #1e1e1e));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, rgba(128, 128, 128, 0.25)));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground, #e2e8f0));
 }
 
 .cr-combobox {
@@ -1298,9 +1318,9 @@ textarea {
   height: 28px;
   padding: 0;
   border-radius: 6px;
-  border: 1px solid #1e293b;
-  background: #111827;
-  color: #94a3b8;
+  border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-widget-border, rgba(128, 128, 128, 0.2)));
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.12));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #94a3b8));
   cursor: pointer;
   font-size: 13px;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -1308,9 +1328,9 @@ textarea {
 }
 
 .cr-refresh-btn:hover {
-  background: #162235;
-  border-color: #388bfd;
-  color: #ffffff;
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.24));
+  border-color: var(--vscode-focusBorder, #388bfd);
+  color: var(--vscode-foreground, #ffffff);
 }
 
 .cr-combobox-list {
@@ -1320,9 +1340,9 @@ textarea {
   right: 0;
   max-height: 280px;
   overflow-y: auto;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.25)));
   border-radius: 8px;
-  background: #0d1219;
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background, #1f1f1f));
   z-index: 1000;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
@@ -1332,8 +1352,8 @@ textarea {
   top: 0;
   z-index: 10;
   padding: 6px 8px;
-  background: #0d1219;
-  border-bottom: 1px solid #1a2332;
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background, #1f1f1f));
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
 }
 
 .cr-model-search-input {
@@ -1341,20 +1361,20 @@ textarea {
   box-sizing: border-box;
   padding: 5px 8px;
   font-size: 11px;
-  color: #e2e8f0;
-  background: #111827;
-  border: 1px solid #1e293b;
+  color: var(--vscode-input-foreground, #e2e8f0);
+  background: var(--vscode-input-background, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
   border-radius: 6px;
   outline: none;
 }
 
 .cr-model-search-input:focus {
-  border-color: #388bfd;
+  border-color: var(--vscode-focusBorder, #388bfd);
   box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.2);
 }
 
 .cr-combobox-group {
-  border-bottom: 1px solid #162235;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.12));
 }
 
 .cr-combobox-group:last-child {
@@ -1365,8 +1385,8 @@ textarea {
   padding: 7px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
-  background: #080c14;
+  color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground, #94a3b8));
+  background: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.08));
   cursor: pointer;
   user-select: none;
   display: flex;
@@ -1376,8 +1396,8 @@ textarea {
 }
 
 .cr-combobox-group-header:hover {
-  background: #111827;
-  color: #f1f5f9;
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.14));
+  color: var(--vscode-foreground, #f1f5f9);
 }
 
 .cr-group-count {
@@ -1396,7 +1416,7 @@ textarea {
 }
 
 .cr-combobox-group-items {
-  background: #0d1219;
+  background: transparent;
 }
 
 .cr-combobox-subgroup-title {
@@ -1413,7 +1433,7 @@ textarea {
 .cr-combobox-item {
   padding: 6px 10px 6px 20px;
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--vscode-foreground, #cbd5e1);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1434,14 +1454,14 @@ textarea {
 }
 
 .cr-combobox-item.active {
-  background: var(--vscode-badge-background, #40768e) !important;
-  color: #ffffff !important;
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-button-background, #007acc)) !important;
+  color: var(--vscode-list-activeSelectionForeground, #ffffff) !important;
   font-weight: 600;
 }
 
 .cr-combobox-item.active:hover {
-  background: #4c8ca8 !important;
-  color: #ffffff !important;
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-button-background, #007acc)) !important;
+  color: var(--vscode-list-activeSelectionForeground, #ffffff) !important;
 }
 
 .cr-model-check {
@@ -1463,8 +1483,8 @@ textarea {
 }
 
 .cr-combobox-item:hover {
-  background: rgba(56, 139, 253, 0.08);
-  color: #ffffff;
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  color: var(--vscode-list-hoverForeground, var(--vscode-foreground, #ffffff));
 }
 
 .cr-model-pin-btn {
@@ -1667,7 +1687,7 @@ textarea {
   flex-direction: column;
   gap: 14px;
   overflow: auto;
-  background: #0b0f17;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
 }
 
 .cr-input-group {
@@ -1677,7 +1697,7 @@ textarea {
 }
 
 .cr-input-group label {
-  color: #94a3b8;
+  color: var(--vscode-foreground, #cccccc);
   font-size: 12px;
   font-weight: 500;
 }
@@ -1691,16 +1711,16 @@ textarea {
 .cr-input-group.cr-checkbox input {
   width: 14px;
   height: 14px;
-  accent-color: var(--vscode-badge-background, #40768e);
+  accent-color: var(--vscode-focusBorder, #38bdf8);
 }
 
 .cr-workspace-display {
   min-height: 28px;
   padding: 6px 10px;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
   border-radius: 6px;
-  color: #94a3b8;
-  background: #111827;
+  color: var(--vscode-descriptionForeground, #94a3b8);
+  background: var(--vscode-input-background, #1e1e1e);
   font-family: var(--vscode-editor-font-family, "Cascadia Code", Consolas, monospace);
   font-size: 11.5px;
   word-break: break-all;
@@ -1718,33 +1738,39 @@ textarea {
   font-size: 12px;
   font-weight: 600;
   transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-decoration: none;
 }
 
 .cr-save-btn {
-  border: 1px solid var(--vscode-badge-background, #40768e);
-  color: var(--vscode-badge-foreground, #ffffff);
-  background: var(--vscode-badge-background, #40768e);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--vscode-button-border, transparent);
+  color: var(--vscode-button-foreground, #ffffff);
+  background: var(--vscode-button-background, #0e639c);
+  box-shadow: none;
 }
 
 .cr-save-btn:hover {
-  background: #4c8ca8;
-  border-color: #4c8ca8;
-  box-shadow: 0 2px 8px rgba(64, 118, 142, 0.35);
+  background: var(--vscode-button-hoverBackground, #1177bb);
+  border-color: var(--vscode-focusBorder, #38bdf8);
+  color: var(--vscode-button-foreground, #ffffff);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(56, 189, 248, 0.4));
 }
 
 .cr-danger-btn {
-  border: 1px solid #f85149;
+  border: 1px solid transparent;
   color: #ffffff;
-  background: #f85149;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  background: var(--vscode-statusBarItem-errorBackground, #b91c1c);
+  box-shadow: none;
 }
 
 .cr-danger-btn:hover {
-  background: #d43d36;
-  border-color: #d43d36;
+  background: #dc2626;
+  border-color: #fca5a5;
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(248, 81, 73, 0.35);
+  box-shadow: 0 0 0 1px rgba(254, 202, 202, 0.5);
 }
 
 /* Duplicate terminal styles removed — primary definitions are above */
@@ -1768,14 +1794,14 @@ textarea {
 .cr-saved-providers {
   margin-top: 16px;
   padding-top: 14px;
-  border-top: 1px solid #1a2332;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-sideBar-border, rgba(128, 128, 128, 0.18)));
 }
 
 .cr-saved-providers-heading {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--vscode-descriptionForeground, #64748b);
   margin-bottom: 8px;
   letter-spacing: 0.5px;
 }
@@ -1786,8 +1812,8 @@ textarea {
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #1e293b;
-  background: #111827;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
   cursor: default;
   transition: background 0.15s ease, border-color 0.15s ease;
   min-width: 0;
@@ -1795,8 +1821,8 @@ textarea {
 }
 
 .cr-saved-provider-item:hover {
-  background: #162235;
-  border-color: #388bfd;
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+  border-color: var(--vscode-focusBorder, rgba(56, 189, 248, 0.4));
 }
 
 .cr-saved-provider-name {
@@ -1804,7 +1830,7 @@ textarea {
   font-size: 12px;
   max-width: 140px;
   min-width: 60px;
-  color: #e2e8f0;
+  color: var(--vscode-foreground, #e2e8f0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1815,7 +1841,7 @@ textarea {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 11px;
-  color: #64748b;
+  color: var(--vscode-descriptionForeground, #64748b);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1901,17 +1927,17 @@ textarea {
 }
 
 .cr-rules-card {
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   transition: border-color 0.15s ease;
 }
 
 .cr-rules-card:hover {
-  border-color: rgba(56, 189, 248, 0.4);
+  border-color: var(--vscode-focusBorder, rgba(56, 189, 248, 0.4));
 }
 
 .cr-rules-card-header {
@@ -1993,9 +2019,9 @@ textarea {
 
 .cr-rules-editor-wrapper {
   display: flex;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
   border-radius: 6px;
-  background: #080c14;
+  background: var(--vscode-input-background, #1e1e1e);
   overflow: hidden;
   min-height: 120px;
   max-height: 260px;
@@ -2004,18 +2030,18 @@ textarea {
 }
 
 .cr-rules-editor-wrapper:focus-within {
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+  border-color: var(--vscode-focusBorder, #38bdf8);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #38bdf8);
 }
 
 .cr-rules-gutter {
   width: 34px;
-  background: #0d1219;
-  border-right: 1px solid #1a2332;
+  background: var(--vscode-editorGutter-background, rgba(128, 128, 128, 0.06));
+  border-right: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
   padding: 8px 6px 8px 0;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
-  color: #475569;
+  color: var(--vscode-editorLineNumber-foreground, #475569);
   text-align: right;
   user-select: none;
   overflow: hidden;
@@ -2031,7 +2057,7 @@ textarea {
   flex: 1;
   border: none;
   background: transparent;
-  color: #cbd5e1;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground, #cbd5e1));
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 12px;
   line-height: 18px;
@@ -2103,7 +2129,7 @@ textarea {
   font-family: var(--vscode-editor-font-family, monospace);
   color: #64748b;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid #1e293b;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
   border-radius: 4px;
   padding: 2px 6px;
   user-select: none;
@@ -2140,8 +2166,8 @@ textarea {
 }
 
 .cr-rules-precedence-card {
-  background: #0d1219;
-  border: 1px solid #1a2332;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 8px;
   padding: 12px 14px;
   margin-top: 14px;
@@ -2150,13 +2176,13 @@ textarea {
 .cr-precedence-heading {
   font-size: 12.5px;
   font-weight: 600;
-  color: #e6edf3;
+  color: var(--vscode-foreground, #e6edf3);
   margin: 0 0 2px 0;
 }
 
 .cr-precedence-desc {
   font-size: 11px;
-  color: #8b949e;
+  color: var(--vscode-descriptionForeground, #8b949e);
   margin: 0 0 10px 0;
 }
 
@@ -2275,20 +2301,22 @@ body.vscode-light #subagent-traces-area-container {
 }
 
 body.vscode-light .cr-view-nav-btn {
-  border-color: var(--vscode-button-secondaryBorder, #cecece);
-  background: var(--vscode-button-secondaryBackground, #e8e8e8);
-  color: var(--vscode-button-secondaryForeground, #333333);
+  border: 1px solid var(--vscode-widget-border, rgba(0, 0, 0, 0.15));
+  background: var(--vscode-editorWidget-background, rgba(0, 0, 0, 0.03));
+  color: var(--vscode-descriptionForeground, #666666);
 }
 
 body.vscode-light .cr-view-nav-btn:hover {
-  background: var(--vscode-button-secondaryHoverBackground, #dadada);
+  background: var(--vscode-toolbar-hoverBackground, rgba(0, 0, 0, 0.08));
+  border-color: var(--vscode-focusBorder, rgba(0, 122, 204, 0.4));
   color: var(--vscode-foreground, #111111);
 }
 
 body.vscode-light .cr-view-nav-btn.active {
-  background: var(--vscode-button-background, #007acc);
-  color: var(--vscode-button-foreground, #ffffff);
-  border-color: var(--vscode-button-background, #007acc);
+  background: var(--vscode-button-secondaryBackground, #e0e0e0);
+  color: var(--vscode-button-secondaryForeground, #000000);
+  border-color: var(--vscode-focusBorder, #007acc);
+  box-shadow: none;
 }
 
 body.vscode-light .cr-thread-item:hover,
@@ -2662,8 +2690,8 @@ body.vscode-light .cr-rules-divider {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2679,9 +2707,9 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-btn-add-mcp {
-  background: var(--vscode-badge-background, #40768e);
-  color: #ffffff;
-  border: none;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: 1px solid var(--vscode-button-border, var(--vscode-button-background, #0e639c));
   border-radius: 6px;
   padding: 6px 14px;
   font-size: 12px;
@@ -2694,12 +2722,13 @@ body.vscode-light .cr-rules-divider {
   white-space: nowrap;
 }
 .cr-btn-add-mcp:hover {
-  background: #4c8ca8;
+  background: var(--vscode-button-hoverBackground, #1177bb);
+  border-color: var(--vscode-button-hoverBackground, #1177bb);
 }
 
 .cr-mcp-header-divider {
   height: 1px;
-  background: #1a2332;
+  background: var(--vscode-widget-border, var(--vscode-sideBar-border, rgba(128, 128, 128, 0.18)));
   width: 100%;
   margin: 0;
 }
@@ -2727,8 +2756,8 @@ body.vscode-light .cr-rules-divider {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -2754,9 +2783,9 @@ body.vscode-light .cr-rules-divider {
 
 /* ── Built-in Tools Dropdown Card ── */
 .cr-builtin-tools-card {
-  background: #111827;
-  border: 1px solid #1e293b;
-  border-left: 3px solid #40768e;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
+  border-left: 3px solid var(--vscode-badge-background, #40768e);
   border-radius: 8px;
   margin-bottom: 20px;
   overflow: hidden;
@@ -3081,8 +3110,8 @@ body.vscode-light .cr-rules-divider {
 
 /* ── Server Cards ── */
 .cr-mcp-card {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
   border-left: 3px solid #2ea043;
   border-radius: 8px;
   padding: 14px 16px;
@@ -3442,8 +3471,8 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-mcp-modal {
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, #1f1f1f);
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
   border-radius: 12px;
   width: 100%;
   max-width: 620px;
@@ -3460,8 +3489,8 @@ body.vscode-light .cr-rules-divider {
   align-items: flex-start;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #1a2332;
-  background: #0d1219;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
+  background: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.08));
 }
 
 .cr-mcp-modal-title-wrap {
@@ -3524,8 +3553,8 @@ body.vscode-light .cr-rules-divider {
 
 /* Section 1: Quick Setup Card */
 .cr-mcp-modal-section {
-  background: #0d1219;
-  border: 1px solid #1a2332;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.04));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 10px;
   padding: 14px 16px;
 }
@@ -4096,7 +4125,7 @@ body.vscode-light .cr-rules-divider {
   display: flex !important;
   flex-direction: column !important;
   gap: 16px !important;
-  background: #0b0f17 !important;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e)) !important;
 }
 
 .cr-subagent-top-header {
@@ -4124,8 +4153,8 @@ body.vscode-light .cr-rules-divider {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4152,14 +4181,14 @@ body.vscode-light .cr-rules-divider {
 
 .cr-subagent-header-divider {
   height: 1px;
-  background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  background: var(--vscode-widget-border, var(--vscode-sideBar-border, rgba(128, 128, 128, 0.18)));
   margin-top: 2px;
 }
 
 /* Active Runtime Card */
 .cr-subagent-active-card {
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 8px;
   padding: 14px 16px;
   display: flex;
@@ -4201,8 +4230,8 @@ body.vscode-light .cr-rules-divider {
 .cr-subagent-status-pill {
   flex: 1;
   min-width: 140px;
-  background: #0b0f17;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
   border-radius: 6px;
   padding: 8px 12px;
   display: flex;
@@ -4237,8 +4266,8 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-subagent-section-card {
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05));
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -4252,7 +4281,7 @@ body.vscode-light .cr-rules-divider {
   align-items: flex-start;
   gap: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15));
 }
 
 .cr-subagent-section-icon {
@@ -4303,10 +4332,10 @@ body.vscode-light .cr-rules-divider {
   min-height: 36px !important;
   line-height: 34px !important;
   padding: 0 12px !important;
-  border: 1px solid #2d3748 !important;
+  border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25)) !important;
   border-radius: 6px !important;
-  background-color: #0b0f17 !important;
-  color: #f0f6fc !important;
+  background-color: var(--vscode-input-background, #1e1e1e) !important;
+  color: var(--vscode-input-foreground, var(--vscode-foreground, #f0f6fc)) !important;
   font-size: 13px !important;
   font-family: inherit !important;
   outline: none !important;
@@ -4642,9 +4671,9 @@ body.vscode-light .cr-rules-divider {
 
 /* Subagent UI Enhancements & Thought Process Styling */
 .cr-subagent-card {
-  border: 1px solid var(--cr-card-border, #1e293b);
+  border: 1px solid var(--cr-card-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.18)));
   border-radius: 8px;
-  background: var(--cr-card-bg, #0d1219);
+  background: var(--cr-card-bg, var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06)));
   margin-bottom: 12px;
   overflow: hidden;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
@@ -4652,12 +4681,12 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-subagent-card:hover {
-  border-color: #30363d;
+  border-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .cr-subagent-card[open] {
-  border-color: rgba(56, 139, 253, 0.35);
+  border-color: var(--vscode-focusBorder, rgba(56, 189, 248, 0.35));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
@@ -4668,7 +4697,7 @@ body.vscode-light .cr-rules-divider {
   padding: 10px 14px;
   cursor: pointer;
   user-select: none;
-  background: var(--cr-card-head-bg, #111827);
+  background: var(--cr-card-head-bg, var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.08)));
   transition: background 0.15s ease;
   list-style: none;
   gap: 10px;
@@ -4677,7 +4706,7 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-subagent-head:hover {
-  background: var(--cr-card-head-hover, #161f30);
+  background: var(--cr-card-head-hover, var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12)));
 }
 
 .cr-subagent-timeline-track {
@@ -4718,9 +4747,9 @@ body.vscode-light .cr-rules-divider {
 .cr-thinking-block,
 .cr-subagent-thinking {
   margin: 6px 0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
   border-radius: 6px;
-  background: rgba(13, 17, 23, 0.6);
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
   overflow: hidden;
   transition: border-color 0.15s ease;
 }
@@ -4729,7 +4758,7 @@ body.vscode-light .cr-rules-divider {
 .cr-subagent-think-block:hover,
 .cr-thinking-block:hover,
 .cr-subagent-thinking:hover {
-  border-color: rgba(56, 139, 253, 0.3);
+  border-color: var(--vscode-focusBorder, rgba(56, 139, 253, 0.45)) !important;
 }
 
 .cr-think-summary,
@@ -4742,8 +4771,8 @@ body.vscode-light .cr-rules-divider {
   user-select: none;
   font-size: 11.5px;
   font-weight: 500;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.02);
+  color: var(--vscode-descriptionForeground, #94a3b8);
+  background: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.04));
   list-style: none;
   transition: color 0.15s ease, background 0.15s ease;
 }
@@ -4755,8 +4784,8 @@ body.vscode-light .cr-rules-divider {
 
 .cr-think-summary:hover,
 .cr-thinking-header:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--vscode-foreground, #e2e8f0);
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
 }
 
 .cr-thinking-body {
@@ -4764,11 +4793,11 @@ body.vscode-light .cr-rules-divider {
   font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
   font-size: 11.5px;
   line-height: 1.6;
-  color: #94a3b8;
+  color: var(--vscode-foreground, #94a3b8);
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(10, 15, 26, 0.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2)) !important;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15)) !important;
   max-height: 220px;
   overflow-y: auto;
 }
@@ -4781,10 +4810,10 @@ body.vscode-light .cr-rules-divider {
   font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
   font-size: 11.5px !important;
   line-height: 1.6 !important;
-  color: #94a3b8 !important;
-  background: rgba(10, 15, 26, 0.6) !important;
+  color: var(--vscode-foreground, #94a3b8) !important;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2)) !important;
   border: none !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.15)) !important;
   border-radius: 0 !important;
   white-space: pre-wrap !important;
   word-break: break-word !important;

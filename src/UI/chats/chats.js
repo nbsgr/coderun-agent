@@ -1072,7 +1072,7 @@ function initializeChatSpace() {
   function handleWelcomeAction(chatCtx, promptText) {
     if (!chatCtx || !chatCtx.input) return;
     chatCtx.input.value = promptText;
-    handleInputTextChange(chatCtx.input, chatCtx.charCount);
+    handleInputTextChange(chatCtx.input, chatCtx.charCount, chatCtx.sendBtn);
     chatCtx.input.focus();
     if (typeof chatCtx.input.setSelectionRange === 'function') {
       var len = chatCtx.input.value.length;
@@ -1435,10 +1435,18 @@ function initializeChatSpace() {
     scrollBottom(msgList);
   }
 
-  function handleInputTextChange(input, charCount) {
+  function handleInputTextChange(input, charCount, sendBtn) {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
     if (charCount) charCount.textContent = input.value.length;
+    var btn = sendBtn;
+    if (!btn && input && input.parentElement) {
+      btn = input.parentElement.querySelector('.cr-send-btn');
+    }
+    if (btn) {
+      var hasText = input && input.value && input.value.trim().length > 0;
+      btn.classList.toggle('cr-send-btn--active', Boolean(hasText));
+    }
   }
 
   function handleInputKeyDown(doSendFn, e) {
@@ -1461,7 +1469,15 @@ function initializeChatSpace() {
     }
     if (sendBtn) sendBtn.classList.toggle('cr-send-btn--busy', on);
     if (stopBtn) stopBtn.style.display = on ? 'flex' : 'none';
-    if (sendBtn) sendBtn.style.display = on ? 'none' : 'flex';
+    if (sendBtn) {
+      sendBtn.style.display = on ? 'none' : 'flex';
+      if (on) {
+        sendBtn.classList.remove('cr-send-btn--active');
+      } else {
+        var hasText = input && input.value && input.value.trim().length > 0;
+        sendBtn.classList.toggle('cr-send-btn--active', Boolean(hasText));
+      }
+    }
   }
 
   function handleStopButtonClick(chatCtx) {
@@ -1828,6 +1844,7 @@ function initializeChatSpace() {
     var conversation = chatCtx.conversation;
     var msgList = chatCtx.msgList;
     var input = chatCtx.input;
+    var sendBtn = chatCtx.sendBtn;
     var previewBox = chatCtx.previewBox;
     var charCount = chatCtx.charCount;
     var model = chatCtx.model;
@@ -1865,6 +1882,7 @@ function initializeChatSpace() {
       input.value = '';
       input.style.height = 'auto';
       if (charCount) charCount.textContent = '0';
+      if (sendBtn) sendBtn.classList.remove('cr-send-btn--active');
 
       if (!conversation.messages) conversation.messages = [];
       if (window.saveConversationMessage) {
@@ -6155,7 +6173,7 @@ function initializeChatSpace() {
       }
       loadHistory(chatCtx, msgList, conversation.messages || []);
 
-      function onInputTextChange() { handleInputTextChange(input, charCount); }
+      function onInputTextChange() { handleInputTextChange(input, charCount, sendBtn); }
       input.addEventListener('input', onInputTextChange);
       function onDoSendAction() { doSend(chatCtx); }
       function onInputKeyDown(e) { handleInputKeyDown(onDoSendAction, e); }
