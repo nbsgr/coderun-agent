@@ -1959,8 +1959,8 @@ var mockContainer60 = { innerHTML: '' };
 subagentPanel.saveSubagentsToLocalStorage('sess_suite_60', [testSub60]);
 subagentPanel.renderSubagentsView(mockContainer60, null, 'sess_suite_60');
 assert.ok(
-  mockContainer60.innerHTML.includes('click on the drop to check the complete excution of subagents'),
-  'Toolbar contains exact description text: "click on the drop to check the complete excution of subagents"'
+  mockContainer60.innerHTML.includes('Click on any subagent to view complete execution details'),
+  'Toolbar contains clean description text: "Click on any subagent to view complete execution details"'
 );
 
 // 2. SVG right-pointing chevron in dropdown and tool card

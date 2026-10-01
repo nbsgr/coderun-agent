@@ -515,8 +515,6 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
   var idBadgeHtml = '';
   if (agentId && name !== agentId) {
     idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + escHtml(agentId) + '">#' + escHtml(agentId) + '</span>';
-  } else if (agentId) {
-    idBadgeHtml = '<span class="cr-subagent-id-badge" title="Subagent ID: ' + escHtml(agentId) + '">ID: ' + escHtml(agentId) + '</span>';
   }
 
   // Controls for paused / running states
@@ -531,14 +529,6 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
 
   // Extract thinking and tool calls from trace or subagent object
   var trace = subagent.trace || null;
-  var subModel = subagent.model || (trace && trace.model) || (subagent.config && subagent.config.model) || '';
-  var subProv = subagent.provider || (trace && trace.provider) || (subagent.config && subagent.config.provider) || '';
-  var modelBadgeHtml = '';
-  if (subModel) {
-    var provShort = subProv ? (subProv.startsWith('compatible:') ? subProv.substring(11) : subProv) : '';
-    var badgeText = provShort ? (provShort + '/' + subModel) : subModel;
-    modelBadgeHtml = '<span class="cr-subagent-model-badge" title="Model: ' + escHtml(subModel) + (subProv ? ' (' + escHtml(subProv) + ')' : '') + '">' + escHtml(badgeText) + '</span>';
-  }
   var allThinking = subagent.thinking || '';
   var allToolCalls = subagent.toolCalls || [];
   var totalTokens = { input: 0, output: 0, total: 0 };
@@ -661,11 +651,12 @@ export function buildSubagentDropdownCardHtml(subagent, isOpen) {
             '<div class="cr-subagent-title-row">' +
               '<span class="cr-subagent-status-dot cr-subagent-status-dot--' + status + '"></span>' +
               '<span class="cr-subagent-name" title="' + escHtml(name) + (agentId ? ' (ID: ' + escHtml(agentId) + ')' : '') + '">' + escHtml(name) + '</span>' +
-              idBadgeHtml +
-              '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">— ' + role + '</span>' +
-              modelBadgeHtml +
+              '<span class="cr-subagent-role-badge cr-subagent-role--' + roleLower + '">' + role + '</span>' +
             '</div>' +
-            '<div class="cr-subagent-task" title="' + escHtml(task) + '">Task: "' + escHtml(truncateStr(task, 60)) + '"</div>' +
+            '<div class="cr-subagent-subtitle-row">' +
+              idBadgeHtml +
+              '<span class="cr-subagent-task" title="' + escHtml(task) + '">Task: "' + escHtml(truncateStr(task, 60)) + '"</span>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         '<div class="cr-subagent-head-right">' +
@@ -928,7 +919,7 @@ export function renderSubagentsView(container, targetSubagentId, customSessionId
           '<span class="cr-subagents-count-badge">' + subagents.length + '</span>' +
         '</div>' +
         '<div class="cr-subagents-toolbar-right">' +
-          '<span class="cr-subagents-toolbar-desc">click on the drop to check the complete excution of subagents</span>' +
+          '<span class="cr-subagents-toolbar-desc">Click on any subagent to view complete execution details</span>' +
         '</div>' +
       '</div>' +
       '<div class="cr-subagents-list" id="crSubagentsList">' +

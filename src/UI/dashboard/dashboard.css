@@ -4670,34 +4670,85 @@ body.vscode-light .cr-rules-divider {
 }
 
 /* Subagent UI Enhancements & Thought Process Styling */
+.cr-subagents-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--cr-card-border, rgba(255, 255, 255, 0.08));
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cr-subagents-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.cr-subagents-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cr-card-title, #f1f5f9);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.cr-subagents-count-badge {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+  border: 1px solid rgba(56, 139, 253, 0.28);
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cr-subagents-toolbar-right {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.cr-subagents-toolbar-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin: 0;
+}
+
 .cr-subagent-card {
-  border: 1px solid var(--cr-card-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.18)));
+  border: 1px solid var(--cr-card-border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
-  background: var(--cr-card-bg, var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06)));
-  margin-bottom: 12px;
+  background: var(--cr-card-bg, rgba(255, 255, 255, 0.02));
+  margin-bottom: 10px;
   overflow: hidden;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .cr-subagent-card:hover {
-  border-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  border-color: rgba(56, 139, 253, 0.4) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .cr-subagent-card[open] {
-  border-color: var(--vscode-focusBorder, rgba(56, 189, 248, 0.35));
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-color: rgba(56, 139, 253, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .cr-subagent-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 9px 12px;
   cursor: pointer;
   user-select: none;
-  background: var(--cr-card-head-bg, var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.08)));
+  background: rgba(255, 255, 255, 0.03);
   transition: background 0.15s ease;
   list-style: none;
   gap: 10px;
@@ -4706,7 +4757,16 @@ body.vscode-light .cr-rules-divider {
 }
 
 .cr-subagent-head:hover {
-  background: var(--cr-card-head-hover, var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12)));
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cr-subagent-subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
 }
 
 .cr-subagent-timeline-track {
