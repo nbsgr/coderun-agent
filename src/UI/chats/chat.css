@@ -1731,31 +1731,31 @@ select {
 }
 
 .cr-btn-allow {
-  background: rgba(64, 118, 142, 0.22);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: 1px solid var(--vscode-button-border, rgba(56, 189, 248, 0.35));
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-allow:hover {
-  background: rgba(64, 118, 142, 0.42);
-  border-color: #38bdf8;
-  color: #ffffff;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+  background: var(--vscode-button-hoverBackground, #1177bb);
+  border-color: var(--vscode-focusBorder, #38bdf8);
+  color: var(--vscode-button-foreground, #ffffff);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(56, 189, 248, 0.45));
 }
 
 .cr-btn-deny {
-  background: rgba(248, 81, 73, 0.08);
-  color: #f87171;
-  border: 1px solid rgba(248, 81, 73, 0.35);
+  background: var(--vscode-statusBarItem-errorBackground, #d43d36);
+  color: #ffffff;
+  border: 1px solid rgba(248, 113, 113, 0.35);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-deny:hover {
-  background: rgba(248, 81, 73, 0.2);
-  border-color: #f87171;
+  background: var(--vscode-statusBarItem-errorBackground, #d43d36);
+  border-color: #fca5a5;
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25);
+  box-shadow: 0 0 0 1px rgba(254, 202, 202, 0.5);
 }
 
 .cr-permission-status {
@@ -1804,31 +1804,31 @@ select {
 }
 
 .cr-btn-always-allow {
-  background: rgba(34, 197, 94, 0.08);
-  color: #4ade80;
-  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: rgba(14, 99, 156, 0.35);
+  color: #ffffff;
+  border: 1px solid rgba(56, 189, 248, 0.45);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-always-allow:hover {
-  background: rgba(34, 197, 94, 0.2);
-  border-color: #4ade80;
+  background: rgba(14, 99, 156, 0.6);
+  border-color: var(--vscode-focusBorder, #38bdf8);
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(74, 222, 128, 0.25);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(56, 189, 248, 0.45));
 }
 
 .cr-btn-always-deny {
-  background: rgba(239, 68, 68, 0.08);
-  color: #f87171;
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(212, 61, 54, 0.32);
+  color: #ffffff;
+  border: 1px solid rgba(248, 113, 113, 0.45);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cr-btn-always-deny:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: #f87171;
+  background: rgba(212, 61, 54, 0.55);
+  border-color: #fca5a5;
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25);
+  box-shadow: 0 0 0 1px rgba(254, 202, 202, 0.5);
 }
 
 /* ── Auto-resolved permission line (Always * decisions) ── */
@@ -2808,11 +2808,11 @@ select {
 
 /* ── Global Agent Controls Panel ───────────────────────── */
 .cr-agent-controls-panel {
-  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
-  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.18));
-  border-left: 3px solid rgba(234, 179, 8, 0.75);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: var(--vscode-editorWidget-background, rgba(22, 27, 34, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(56, 189, 248, 0.85);
+  border-radius: 8px;
+  padding: 8px 10px;
   margin-bottom: 8px;
   font-size: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
@@ -2830,7 +2830,7 @@ select {
 
 .cr-controls-left {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   width: 100%;
 }
@@ -2840,7 +2840,7 @@ select {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 1px;
+  color: #38bdf8;
 }
 
 .cr-controls-label {
@@ -2862,9 +2862,9 @@ select {
   align-items: center;
   padding: 2px 7px;
   border-radius: 5px;
-  background: rgba(234, 179, 8, 0.12);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  color: #facc15;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 11px;
   font-weight: 600;
@@ -2880,26 +2880,22 @@ select {
 
 .cr-controls-buttons {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
   width: 100%;
   align-items: center;
 }
 
 .cr-controls-btn-row {
-  display: flex;
-  gap: 6px;
-  flex: 1 1 125px;
-  width: 100%;
+  display: contents;
 }
 
-.cr-controls-btn-row .cr-btn,
-.cr-controls-buttons > .cr-btn {
-  flex: 1 1 0;
+.cr-controls-buttons .cr-btn {
   min-width: 0;
-  padding: 6px 10px;
+  padding: 5px 4px;
   border-radius: 6px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
@@ -2907,106 +2903,81 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   box-sizing: border-box;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-.cr-controls-btn-row .cr-btn:active,
-.cr-controls-buttons > .cr-btn:active {
+.cr-controls-buttons .cr-btn:active {
   transform: translateY(1px);
 }
 
+/* Allow & Accept: Exact match to active Send button aesthetic & hover border-highlight */
 .cr-btn-continue-all,
-.cr-controls-buttons .cr-btn-allow {
-  background: rgba(64, 118, 142, 0.22) !important;
-  color: #38bdf8 !important;
-  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+.cr-controls-buttons .cr-btn-allow,
+.cr-controls-buttons .cr-btn-accept-all-diffs {
+  flex: 1 1 0;
+  background: var(--vscode-button-background, #0e639c) !important;
+  color: var(--vscode-button-foreground, #ffffff) !important;
+  border: 1px solid var(--vscode-button-border, rgba(56, 189, 248, 0.35)) !important;
+  opacity: 1;
 }
 
 .cr-btn-continue-all:hover,
-.cr-controls-buttons .cr-btn-allow:hover {
-  background: rgba(64, 118, 142, 0.42) !important;
-  border-color: #38bdf8 !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25) !important;
+.cr-controls-buttons .cr-btn-allow:hover,
+.cr-controls-buttons .cr-btn-accept-all-diffs:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb) !important;
+  border-color: var(--vscode-focusBorder, #38bdf8) !important;
+  color: var(--vscode-button-foreground, #ffffff) !important;
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(56, 189, 248, 0.45)) !important;
 }
 
+/* Deny & Reject: Exact match to Stop button aesthetic & hover border-highlight */
 .cr-btn-quit-all,
-.cr-controls-buttons .cr-btn-deny {
-  background: rgba(248, 81, 73, 0.08) !important;
-  color: #f87171 !important;
-  border: 1px solid rgba(248, 81, 73, 0.35) !important;
+.cr-controls-buttons .cr-btn-deny,
+.cr-controls-buttons .cr-btn-reject-all-diffs {
+  flex: 0.9 1 0;
+  background: var(--vscode-statusBarItem-errorBackground, #d43d36) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(248, 113, 113, 0.35) !important;
+  opacity: 1;
 }
 
 .cr-btn-quit-all:hover,
-.cr-controls-buttons .cr-btn-deny:hover {
-  background: rgba(248, 81, 73, 0.2) !important;
-  border-color: #f87171 !important;
+.cr-controls-buttons .cr-btn-deny:hover,
+.cr-controls-buttons .cr-btn-reject-all-diffs:hover {
+  background: var(--vscode-statusBarItem-errorBackground, #d43d36) !important;
+  border-color: #fca5a5 !important;
   color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25) !important;
+  box-shadow: 0 0 0 1px rgba(254, 202, 202, 0.5) !important;
 }
 
+/* Always Allow: Blue palette companion to Allow with crisp white text */
 .cr-controls-buttons .cr-btn-always-allow {
-  background: rgba(34, 197, 94, 0.08) !important;
-  color: #4ade80 !important;
-  border: 1px solid rgba(74, 222, 128, 0.35) !important;
+  flex: 1.35 1 0;
+  background: rgba(14, 99, 156, 0.35) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-allow:hover {
-  background: rgba(34, 197, 94, 0.2) !important;
-  border-color: #4ade80 !important;
+  background: rgba(14, 99, 156, 0.6) !important;
+  border-color: var(--vscode-focusBorder, #38bdf8) !important;
   color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(74, 222, 128, 0.25) !important;
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(56, 189, 248, 0.45)) !important;
 }
 
+/* Always Deny: Red palette companion to Deny with crisp white text */
 .cr-controls-buttons .cr-btn-always-deny {
-  background: rgba(239, 68, 68, 0.08) !important;
-  color: #f87171 !important;
-  border: 1px solid rgba(248, 113, 113, 0.35) !important;
+  flex: 1.3 1 0;
+  background: rgba(212, 61, 54, 0.32) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(248, 113, 113, 0.45) !important;
 }
 
 .cr-controls-buttons .cr-btn-always-deny:hover {
-  background: rgba(239, 68, 68, 0.2) !important;
-  border-color: #f87171 !important;
+  background: rgba(212, 61, 54, 0.55) !important;
+  border-color: #fca5a5 !important;
   color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25) !important;
-}
-
-.cr-btn-accept-all-diffs {
-  background: rgba(64, 118, 142, 0.22) !important;
-  color: #38bdf8 !important;
-  border: 1px solid rgba(56, 189, 248, 0.45) !important;
-  padding: 6px 12px !important;
-  border-radius: 6px !important;
-  font-size: 11.5px !important;
-  cursor: pointer !important;
-  font-weight: 600 !important;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
-}
-
-.cr-btn-accept-all-diffs:hover {
-  background: rgba(64, 118, 142, 0.42) !important;
-  border-color: #38bdf8 !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25) !important;
-}
-
-.cr-btn-reject-all-diffs {
-  background: rgba(248, 81, 73, 0.08) !important;
-  color: #f87171 !important;
-  border: 1px solid rgba(248, 81, 73, 0.35) !important;
-  padding: 6px 12px !important;
-  border-radius: 6px !important;
-  font-size: 11.5px !important;
-  cursor: pointer !important;
-  font-weight: 600 !important;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
-}
-
-.cr-btn-reject-all-diffs:hover {
-  background: rgba(248, 81, 73, 0.2) !important;
-  border-color: #f87171 !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 10px rgba(248, 81, 73, 0.25) !important;
+  box-shadow: 0 0 0 1px rgba(254, 202, 202, 0.5) !important;
 }
 
 /* ── Interactive Question Banner (above input bar) ────────── */
@@ -3391,41 +3362,6 @@ select {
   flex-basis: 100%;
 }
 
-.cr-btn-quit-all:hover {
-  background: rgba(248, 81, 73, 0.1) !important;
-  border-color: rgba(248, 81, 73, 0.8) !important;
-}
-
-.cr-btn-accept-all-diffs {
-  background: #238636 !important;
-  color: #ffffff !important;
-  border: none !important;
-  padding: 4px 10px !important;
-  border-radius: 4px !important;
-  font-size: 11px !important;
-  cursor: pointer !important;
-  font-weight: 500 !important;
-}
-
-.cr-btn-accept-all-diffs:hover {
-  background: #2ea043 !important;
-}
-
-.cr-btn-reject-all-diffs {
-  background: var(--vscode-input-background, #242424) !important;
-  color: #f85149 !important;
-  border: 1px solid rgba(248, 81, 73, 0.4) !important;
-  padding: 4px 10px !important;
-  border-radius: 4px !important;
-  font-size: 11px !important;
-  cursor: pointer !important;
-  font-weight: 500 !important;
-}
-
-.cr-btn-reject-all-diffs:hover {
-  background: rgba(248, 81, 73, 0.1) !important;
-  border-color: rgba(248, 81, 73, 0.8) !important;
-}
 
 /* ── Clickable Files and Diffs ───────────────────────── */
 .cr-clickable-file {

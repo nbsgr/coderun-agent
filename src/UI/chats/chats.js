@@ -776,14 +776,10 @@ function initializeChatSpace() {
             '</span>' +
           '</div>' +
           '<div class="cr-controls-buttons">' +
-            '<div class="cr-controls-btn-row">' +
-              '<button class="cr-btn cr-btn-allow cr-btn-continue-all" data-action="allow" data-id="' + esc(activePerm.id) + '" title="Allow this call">Allow</button>' +
-              '<button class="cr-btn cr-btn-deny cr-btn-quit-all" data-action="deny" data-id="' + esc(activePerm.id) + '" title="Deny this call">Deny</button>' +
-            '</div>' +
-            '<div class="cr-controls-btn-row">' +
-              '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + esc(activePerm.id) + '" title="Always allow this tool">Always Allow</button>' +
-              '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + esc(activePerm.id) + '" title="Always deny this tool">Always Deny</button>' +
-            '</div>' +
+            '<button class="cr-btn cr-btn-allow cr-btn-continue-all" data-action="allow" data-id="' + esc(activePerm.id) + '" title="Allow this call">Allow</button>' +
+            '<button class="cr-btn cr-btn-deny cr-btn-quit-all" data-action="deny" data-id="' + esc(activePerm.id) + '" title="Deny this call">Deny</button>' +
+            '<button class="cr-btn cr-btn-always-allow" data-action="always-allow" data-id="' + esc(activePerm.id) + '" title="Always allow this tool">Always Allow</button>' +
+            '<button class="cr-btn cr-btn-always-deny" data-action="always-deny" data-id="' + esc(activePerm.id) + '" title="Always deny this tool">Always Deny</button>' +
           '</div>';
       } else {
         var subDiffBadge = '';
