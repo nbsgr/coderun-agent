@@ -228,7 +228,7 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 
 ### 🔍 Diff Management & Approval Pipeline
 *   **Granular Tool Permission Gating:** Sensitive filesystem and execution tools (`read_file`, `create_folder`, `write_file`, `edit_file`, `patch_file`, `delete_file`, `delete_folder`, `run_terminal`, `terminal_input`) require explicit user confirmation before executing.
-*   **Centralized Sticky Confirmation Bar:** Permission actions (`Allow`, `Deny`, `Always Allow`, `Always Deny`) are cleanly anchored in the sticky controls panel above the chat input, preventing layout jitter and keeping chat history focused.
+*   **Centralized Single-Line Confirmation Bar:** Permission actions (`Allow`, `Deny`, `Always Allow`, `Always Deny`) are cleanly anchored in a single, non-wrapping row within the sticky controls panel above the chat input. Designed with a cohesive Blue & Red palette with crisp white typography, matching the active Send button (`#0e639c`) and Stop button (`#d43d36`) aesthetics and hover border-highlights.
 *   **Clean Dropdown Tool Cards:** Embedded tool cards display tool inputs and parameters cleanly with an active "Permission Required" status badge, automatically updating to `✓ Allowed` or `✗ Denied` once resolved without redundant nested buttons.
 *   **SHA-256 Optimistic Concurrency:** Stages proposed file changes in memory with baseline SHA-256 hashing to prevent overwriting external disk edits.
 *   **Auto-Open Inline Webview Diffs:** Diffs (`<details class="cr-diff-details">`) open by default during permission checks and tool executions so users immediately review file changes before approving/rejecting, automatically collapsing upon resolution.
@@ -257,8 +257,8 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 *   **100% Wire Protocol & UI Integrity:** Historical tool call schemas and `tool_call_id` pairing remain strictly compliant with OpenAI, Anthropic, Gemini, and Ollama specifications. Webviews, real-time tool cards, execution traces, checkpoints, and SQLite logs retain complete, unadulterated history.
 *   **Local LLM Immunity:** Completely eliminates context saturation crashes and VRAM swapping on local Ollama models (such as Qwen 2.5 Coder or DeepSeek-R1) with 8K–32K context limits.
 
-### 🪵 Real-Time Visual Execution Traces
-*   **Dual View (`[Chats]` / `[Traces]`):** Switch between conversational chat and an interactive step-by-step trace graph.
+### 🪵 Real-Time Visual Execution Traces & Multi-View Navigation
+*   **Unified Multi-View Navigation Bar (`[ 💬 Agent Chats ]` / `[ ⚡ Agent Traces ]` / `[ 🤖 Subagents ]` / `[ 🔀 Subagent Traces ]`):** Seamlessly switch between the primary conversational chatspace, real-time parent agent execution traces, autonomous subagents management, and dedicated subagent execution traces.
 *   **Detailed Step Diagnostics:** Inspect exact system prompts, LLM decisions, duration in milliseconds, inputs, and outputs per step.
 *   **One-Click Export:** Copy individual step data or export the full run JSON to clipboard.
 
@@ -312,6 +312,8 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 *   **Model Combobox with Instant Search:** Full-featured searchable model combobox matching the main chatspace with sticky search bar (`🔍 Search models...`), collapsible provider groups, and active checkmark badges (`✓`).
 *   **Automatic Model Inheritance:** Selecting `(Inherit from Main Agent)` automatically syncs the subagent model to inherit the main agent's active model in real time.
 *   **Distinct Checkpoint & Trace Attribution:** Checkpoints, file modifications, and execution traces are attributed to unique subagent IDs (`agentId`), enabling isolated rollbacks and dedicated Subagent Traces inspection.
+*   **Integrated Subagent Dashboard Panel:** The dedicated **Subagents** tab in the top navigation bar displays a live registry of active and completed child workers with two-row title cards, status badges, and isolated execution streams.
+*   **Dedicated Subagent Traces Tab:** Inspect hierarchical, step-by-step reasoning, prompts, and tool invocations dedicated exclusively to child subagents under the **Subagent Traces** view.
 
 ### 🎨 Intelligent Image & Video Generation & Persistent Media Storage
 
