@@ -615,10 +615,10 @@ function initializeDashboard() {
                     '<button id="refreshModelsBtn" class="cr-refresh-btn" title="Refresh models">↻</button>' +
                   '</div>' +
                   '<div class="cr-view-nav">' +
-                    '<button id="viewNavChatsBtn" class="cr-view-nav-btn active">Agent Chats</button>' +
-                    '<button id="viewNavTracesBtn" class="cr-view-nav-btn">Agent Traces</button>' +
-                    '<button id="viewNavSubagentsBtn" class="cr-view-nav-btn">Subagents</button>' +
-                    '<button id="viewNavSubagentTracesBtn" class="cr-view-nav-btn">Subagent Traces</button>' +
+                    '<button id="viewNavChatsBtn" class="cr-view-nav-btn active"><span class="cr-view-nav-icon">💬</span><span class="cr-view-nav-label">A-Chats</span></button>' +
+                    '<button id="viewNavTracesBtn" class="cr-view-nav-btn"><span class="cr-view-nav-icon">⚡</span><span class="cr-view-nav-label">A-Traces</span></button>' +
+                    '<button id="viewNavSubagentsBtn" class="cr-view-nav-btn"><span class="cr-view-nav-icon">🤖</span><span class="cr-view-nav-label">Subagents</span></button>' +
+                    '<button id="viewNavSubagentTracesBtn" class="cr-view-nav-btn"><span class="cr-view-nav-icon">🔀</span><span class="cr-view-nav-label">Sub-Traces</span></button>' +
                   '</div>' +
                   '<div id="chat-area-container"></div>' +
                   '<div id="traces-area-container" style="display:none;"></div>' +
