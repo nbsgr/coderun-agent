@@ -1,6 +1,6 @@
 {
   "name": "ai-agent",
-  "displayName": "NEXUS",
+  "displayName": "NEXUS:AI-AGENT",
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
   "version": "1.6.9",
   "publisher": "Bala-Siva-Ganesh",
