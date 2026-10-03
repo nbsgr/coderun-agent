@@ -1632,27 +1632,37 @@ function initializeChatSpace() {
     return str;
   }
 
-  function handleStreamError(chatCtx, err) {
+  function handleStreamError(chatCtx, err, ev) {
     var S = chatCtx.S;
     removeTyping(S.botBody);
     var errMsg = err && err.message ? err.message : String(err || 'Unknown error');
-    var cleanMsg = formatErrorMessage(errMsg);
-    var existingErr = S.botBody ? S.botBody.querySelector('.cr-error-line') : null;
-    var errorHtml = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(cleanMsg) + '</span>';
-    if (existingErr) {
-      existingErr.innerHTML = errorHtml;
+    var isCaptcha = !!(ev && ev.isCaptcha) || !!(err && err.isCaptcha);
+    var isAuthError = !!(ev && ev.isAuthError) || !!(err && err.isAuthError);
+
+    if (isCaptcha && typeof window.renderCaptchaCard === 'function' && S && S.botBody) {
+      var captchaUrl = (ev && ev.captchaUrl) || (err && err.captchaUrl) || 'https://chat.qwen.ai';
+      window.renderCaptchaCard(S.botBody, captchaUrl);
+    } else if (isAuthError && typeof window.renderAuthErrorCard === 'function' && S && S.botBody) {
+      window.renderAuthErrorCard(S.botBody);
     } else {
-      var errorLine = mk('div', 'cr-error-line');
-      errorLine.innerHTML = errorHtml;
-      if (S.botBody) S.botBody.appendChild(errorLine);
+      var cleanMsg = formatErrorMessage(errMsg);
+      var existingErr = S.botBody ? S.botBody.querySelector('.cr-error-line') : null;
+      var errorHtml = '<span class="cr-error-icon">' + I.err + '</span><span class="cr-error-text">' + esc(cleanMsg) + '</span>';
+      if (existingErr) {
+        existingErr.innerHTML = errorHtml;
+      } else {
+        var errorLine = mk('div', 'cr-error-line');
+        errorLine.innerHTML = errorHtml;
+        if (S.botBody) S.botBody.appendChild(errorLine);
+      }
     }
     if (S && S.botBody) {
-      appendBotCopyButton(S.botBody, S.fullResponse || cleanMsg, Date.now());
+      appendBotCopyButton(S.botBody, S.fullResponse || errMsg, Date.now());
     }
     setStreaming(chatCtx, false);
 
     if (typeof window.saveConversationMessage === 'function') {
-      window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: cleanMsg });
+      window.saveConversationMessage(chatCtx.convId, 'assistant', '', { error: errMsg });
     }
 
     try {
@@ -1757,7 +1767,7 @@ function initializeChatSpace() {
     }
     if (ev.type === 'stream_error' || ev.type === 'agent_error' || ev.type === 'error') {
       var streamErr = ev.error || ev.message;
-      handleStreamError(chatCtx, streamErr);
+      handleStreamError(chatCtx, streamErr, ev);
       chatCtx.onStreamError(streamErr);
       window.activeChatStreamCallback = null;
       return;
@@ -2396,15 +2406,34 @@ function initializeChatSpace() {
               cardToUpdate = S.toolCards[idxKey];
             }
           }
+          if (!cardToUpdate && resTool === 'generate_image') {
+            for (var tk in S.toolCards) {
+              if (Object.prototype.hasOwnProperty.call(S.toolCards, tk)) {
+                var tcCand = S.toolCards[tk];
+                if (tcCand && tcCand.dataset && tcCand.dataset.status !== 'success' && tcCand.dataset.status !== 'error') {
+                  if (tk.indexOf('Generating image') === 0 || (tcCand.dataset.toolName && tcCand.dataset.toolName.indexOf('Generating image') === 0)) {
+                    cardToUpdate = tcCand;
+                    break;
+                  }
+                }
+              }
+            }
+          }
           if (!cardToUpdate && S.botBody) {
             var domCards = S.botBody.querySelectorAll('.cr-tool-card');
             for (var dci = domCards.length - 1; dci >= 0; dci--) {
               var cand = domCards[dci];
-              if (cand && cand.dataset && cand.dataset.toolName === resTool &&
-                  cand.dataset.status !== 'success' && cand.dataset.status !== 'error') {
-                cardToUpdate = cand;
-                if (ev.toolCallId) S.toolCards[ev.toolCallId] = cardToUpdate;
-                break;
+              if (cand && cand.dataset && cand.dataset.status !== 'success' && cand.dataset.status !== 'error') {
+                var cName = (cand.dataset.toolName || '').toLowerCase();
+                var rName = (resTool || '').toLowerCase();
+                if (cName === rName ||
+                    (rName === 'generate_image' && (cName.indexOf('generating image') === 0 || cName.indexOf('image') !== -1)) ||
+                    (rName === 'generate_video' && (cName.indexOf('generating video') === 0 || cName.indexOf('video') !== -1)) ||
+                    cName.indexOf(rName) !== -1 || rName.indexOf(cName) !== -1) {
+                  cardToUpdate = cand;
+                  if (ev.toolCallId) S.toolCards[ev.toolCallId] = cardToUpdate;
+                  break;
+                }
               }
             }
           }
@@ -2795,6 +2824,14 @@ function initializeChatSpace() {
           closeCurrentContentBlock(S);
           clearStatusLines(S);
           showCallingIndicator(S, resolveCurrentModel(chatCtx, ev));
+          var runningCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
+          for (var rci = 0; rci < runningCards.length; rci++) {
+            var rCard = runningCards[rci];
+            if (rCard && rCard.dataset && rCard.dataset.status !== 'success' && rCard.dataset.status !== 'error') {
+              updateToolCard(chatCtx, rCard, 'success', { result: 'Completed' });
+              rCard.dataset.status = 'success';
+            }
+          }
           S.toolCards = {};
           S._seenToolIds = {};
           S._toolCalls = [];
@@ -2808,6 +2845,14 @@ function initializeChatSpace() {
           removeTyping(S.botBody);
           closeThinkBlock(S);
           closeCurrentContentBlock(S);
+          var unclosedCards = S.botBody ? S.botBody.querySelectorAll('.cr-tool-card') : [];
+          for (var uci = 0; uci < unclosedCards.length; uci++) {
+            var uCard = unclosedCards[uci];
+            if (uCard && uCard.dataset && uCard.dataset.status !== 'success' && uCard.dataset.status !== 'error') {
+              updateToolCard(chatCtx, uCard, 'success', { result: 'Completed' });
+              uCard.dataset.status = 'success';
+            }
+          }
           var finalContent = ev.content || ev.full_content;
           if (finalContent && (!S.botBody || !S.botBody.querySelector('.cr-content-block'))) {
             var finalBlock = appendContentBlock(S.botBody);

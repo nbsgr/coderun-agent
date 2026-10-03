@@ -2,8 +2,11 @@
 // All provider config (URL, model name) is read from VS Code settings and globalState.
 // API keys are stored exclusively in VS Code encrypted secrets store.
 
+import fs from 'fs';
+import path from 'path';
 import * as vscode from 'vscode';
 import { PROVIDER_DEFAULTS, STORAGE_KEYS } from './constants.js';
+import { hasValidQwenToken } from '../browser/providerQwen.js';
 
 var _cached = null;
 
@@ -60,6 +63,13 @@ export async function getProviderConfigWithKey(context) {
   var cfg = getProviderConfig();
   if (needsApiKey(cfg.provider)) {
     cfg.apiKey = await getApiKey(context, cfg.provider) || await getApiKey(context) || '';
+    if ((!cfg.apiKey || !hasValidQwenToken(cfg.apiKey)) && cfg.provider === 'qwen') {
+      try {
+        var providerQwen = await import('../browser/providerQwen.js');
+        var lastC = providerQwen.getLastCookie() || '';
+        if (hasValidQwenToken(lastC)) cfg.apiKey = lastC;
+      } catch (_) { void 0; }
+    }
   } else {
     cfg.apiKey = '';
   }
@@ -67,17 +77,61 @@ export async function getProviderConfigWithKey(context) {
 }
 
 // Get API key from VS Code secrets storage (encrypted).
-export function getApiKey(context, provider) {
+export async function getApiKey(context, provider) {
   if (provider) {
-    return context.secrets.get('coderun.apiKey.' + provider);
+    var key = await context.secrets.get('coderun.apiKey.' + provider);
+    if (provider === 'qwen') {
+      if (hasValidQwenToken(key)) {
+        return key;
+      }
+      var fb = (context && context.globalState && (context.globalState.get('coderun.qwenFallbackCookie') || context.globalState.get('qwen-coderun.fallbackCookie'))) || '';
+      if (hasValidQwenToken(fb)) {
+        try { await context.secrets.store('coderun.apiKey.qwen', fb); } catch (_) { void 0; }
+        return fb;
+      }
+      try {
+        var appData = process.env.APPDATA || '';
+        var candidatePaths = [
+          path.join(appData, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData, 'Code - Insiders', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData, 'VSCodium', 'User', 'globalStorage', 'qwen_extracted_cookie.txt')
+        ];
+        for (var i = 0; i < candidatePaths.length; i++) {
+          if (fs.existsSync(candidatePaths[i])) {
+            var fileCookie = fs.readFileSync(candidatePaths[i], 'utf8').trim();
+            if (hasValidQwenToken(fileCookie)) {
+              try { await context.secrets.store('coderun.apiKey.qwen', fileCookie); } catch (_) { void 0; }
+              if (context && context.globalState) {
+                try { context.globalState.update('coderun.qwenFallbackCookie', fileCookie); } catch (_) { void 0; }
+              }
+              return fileCookie;
+            }
+          }
+        }
+      } catch (_) { void 0; }
+      if (typeof globalThis.qwenGetActiveCookie === 'function') {
+        var actCookie = globalThis.qwenGetActiveCookie();
+        if (hasValidQwenToken(actCookie)) return actCookie;
+      }
+      return '';
+    }
+    return key;
   }
-  return context.secrets.get('coderun.apiKey');
+  return await context.secrets.get('coderun.apiKey');
 }
 
 // Save API key to VS Code secrets storage (encrypted).
 export async function setApiKey(context, key, provider) {
   if (provider) {
     await context.secrets.store('coderun.apiKey.' + provider, key);
+    if (provider === 'qwen' && context && context.globalState && key && hasValidQwenToken(key)) {
+      await context.globalState.update('coderun.qwenFallbackCookie', key);
+      try {
+        var appData = process.env.APPDATA || '';
+        var extCookiePath = path.join(appData, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt');
+        fs.writeFileSync(extCookiePath, key, 'utf8');
+      } catch (_) { void 0; }
+    }
   } else {
     await context.secrets.store('coderun.apiKey', key);
   }
@@ -144,6 +198,7 @@ export function needsApiKey(provider) {
     openrouter: true,
     xai: true,
     groq: true,
+    qwen: true,
     compatible: true
   };
   return needs[provider] || false;
@@ -215,6 +270,13 @@ export async function getProviderConfigByName(context, providerName) {
   var apiKey = '';
   if (needsApiKey(providerName)) {
     apiKey = await getApiKey(context, providerName) || await getApiKey(context) || '';
+    if ((!apiKey || !hasValidQwenToken(apiKey)) && providerName === 'qwen') {
+      try {
+        var providerQwen2 = await import('../browser/providerQwen.js');
+        var lastC2 = providerQwen2.getLastCookie() || '';
+        if (hasValidQwenToken(lastC2)) apiKey = lastC2;
+      } catch (_) { void 0; }
+    }
   }
 
   return {

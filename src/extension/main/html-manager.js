@@ -56,6 +56,10 @@ export function getWebviewHtml(webview, extensionUri, extensionContext) {
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'dashboard', 'dashboard.js'))).toString() + '?cb=' + cb;
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'chats.js'))).toString() + '?cb=' + cb;
   var subagentPanelJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'SubagentPanel.js'))).toString() + '?cb=' + cb;
+  var browserCss = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'browser', 'browser.css'))).toString() + '?cb=' + cb;
+  var browserBadgeJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'browser', 'browser-badge.js'))).toString() + '?cb=' + cb;
+  var browserCardsJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'browser', 'browser-cards.js'))).toString() + '?cb=' + cb;
+  var browserAuthManagerJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'browser', 'browser-auth-manager.js'))).toString() + '?cb=' + cb;
   var botAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'bot-avatar.jpg'))).toString();
   var logoUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'logo.png'))).toString();
   var userAvatarUri = webview.asWebviewUri(vscode.Uri.file(path.join(iconsPath, 'user-avatar.svg'))).toString();
@@ -99,6 +103,7 @@ export function getWebviewHtml(webview, extensionUri, extensionContext) {
   <link rel="stylesheet" href="${dashboardCss}">
   <link rel="stylesheet" href="${chatSpaceCss}">
   <link rel="stylesheet" href="${subagentPanelCss}">
+  <link rel="stylesheet" href="${browserCss}">
 </head>
 <body>
   <div id="app"></div>
@@ -123,6 +128,9 @@ export function getWebviewHtml(webview, extensionUri, extensionContext) {
 
   <script nonce="${nonce}" src="${markdownJs}"></script>
   <script nonce="${nonce}" src="${webviewSharedJs}"></script>
+  <script nonce="${nonce}" src="${browserBadgeJs}"></script>
+  <script nonce="${nonce}" src="${browserCardsJs}"></script>
+  <script nonce="${nonce}" src="${browserAuthManagerJs}"></script>
   <script nonce="${nonce}" src="${dashboardJs}"></script>
   <script nonce="${nonce}" src="${chatSpaceJs}"></script>
 

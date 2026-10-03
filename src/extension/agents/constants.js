@@ -15,7 +15,8 @@ export const PROVIDERS = {
   OPENROUTER: 'openrouter',
   XAI: 'xai',
   GROQ: 'groq',
-  COMPATIBLE: 'compatible'
+  COMPATIBLE: 'compatible',
+  QWEN: 'qwen'
 };
 
 export const PROVIDER_LABELS = {
@@ -26,7 +27,8 @@ export const PROVIDER_LABELS = {
   openrouter: 'OpenRouter',
   xai: 'xAI (Grok)',
   groq: 'Groq',
-  compatible: 'OpenAI Compatible'
+  compatible: 'OpenAI Compatible',
+  qwen: 'Qwen Browser API'
 };
 
 export const PROVIDER_DEFAULTS = {
@@ -37,7 +39,8 @@ export const PROVIDER_DEFAULTS = {
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', needsKey: true },
   xai: { baseUrl: 'https://api.x.ai/v1', needsKey: true },
   groq: { baseUrl: 'https://api.groq.com/openai/v1', needsKey: true },
-  compatible: { baseUrl: '', needsKey: true }
+  compatible: { baseUrl: '', needsKey: true },
+  qwen: { baseUrl: 'https://chat.qwen.ai', needsKey: true }
 };
 
 export const DANGEROUS_TOOLS = new Set([
@@ -251,4 +254,50 @@ export const SUBAGENT_SYSTEM_PROMPT = `You are a specialized autonomous AI subag
   2. Concrete details (e.g. file counts, specific paths, code changes made, or command outcomes).
   3. Any relevant highlights, observations, or next steps.
 - NEVER end your turn with an empty response or raw tool calls alone. Always conclude with your full textual summary.
+`;
+
+export const QWEN_SYSTEM_PROMPT = `You are an autonomous AI coding agent operating inside a VS Code workspace.
+
+## YOUR TWO WORKING MODES
+
+### MODE 1: YOUR NATIVE WEB BROWSER POWERS (Always Active at 100% Capacity)
+- **Web Search**: You have full, unrestricted access to native real-time web search. Whenever you need up-to-date documentation, GitHub libraries, latest framework APIs, or external research, use your native web search freely.
+
+### MODE 2: WORKSPACE ACTIONS (Local File, Terminal & Media Operations)
+- Because you are running in a browser session, you do NOT have direct filesystem access to the user's computer.
+- Instead, the host agent provides you with WORKSPACE TOOLS:
+  [read_file, write_file, edit_file, delete_file, list_directory, search_files, run_terminal, generate_image, etc.]
+- ONLY call workspace tools that are explicitly defined in ## AVAILABLE WORKSPACE TOOLS.
+- **Image Generation & Editing**: You do not have image edit tools, only the image generation tool (generate_image). NEVER attempt to call image_edit or edit_image. If the user asks to generate, design, draw, or edit an image, ALWAYS call the generate_image tool. When editing an image, describe the desired changes and the complete resulting image in the "prompt" argument of generate_image.
+- **NO INVENTED OR SERVER TOOLS**: You do NOT have any native server tools on chat.qwen.ai (such as ask_question). NEVER emit <tool_call> or invoke server-side plugins or ask_question.
+- If you need clarification from the user, ask the user directly in "content" using Markdown. NEVER invoke a tool to ask user questions.
+
+## STRICT OUTPUT FORMAT CONTRACT
+Every single response you generate MUST be a strict, valid JSON object matching the standard OpenAI chat.completion format:
+
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "reasoning": "your step-by-step thinking and analysis",
+        "content": "user-facing response in rich Markdown, or empty if invoking a tool",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "exact_tool_name",
+              "arguments": { "param_name": "param_value" }
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+
+- Start your response immediately with "{" and end with "}". Do NOT wrap the JSON in markdown code fences (\`\`\`json) and do NOT output any conversational text or server noise outside the JSON envelope.
+- When you have completed the task, are answering questions, or need user clarification, output your full response in rich Markdown in "content", set "tool_calls": [], and set "finish_reason": "stop".
 `;

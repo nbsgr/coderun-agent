@@ -4,7 +4,54 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as config from '../agents/config.js';
+import { hasValidQwenToken } from '../browser/providerQwen.js';
+
+function mergeSetCookies(currentCookieStr, setCookiesArray) {
+  if (!setCookiesArray || !setCookiesArray.length) return currentCookieStr;
+
+  if (currentCookieStr && currentCookieStr.trim().startsWith('eyJ')) {
+    currentCookieStr = 'token=' + currentCookieStr.trim();
+  }
+
+  var cookieMap = new Map();
+  if (currentCookieStr) {
+    var parts = currentCookieStr.split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i].trim();
+      if (!part) continue;
+      var eqIdx = part.indexOf('=');
+      if (eqIdx !== -1) {
+        var key = part.substring(0, eqIdx).trim();
+        var val = part.substring(eqIdx + 1).trim();
+        if (key) cookieMap.set(key, val);
+      } else if (part.startsWith('eyJ')) {
+        cookieMap.set('token', part);
+      }
+    }
+  }
+
+  for (var j = 0; j < setCookiesArray.length; j++) {
+    var setCookieStr = setCookiesArray[j];
+    var mainPart = setCookieStr.split(';')[0].trim();
+    var eqIdx2 = mainPart.indexOf('=');
+    if (eqIdx2 !== -1) {
+      var key2 = mainPart.substring(0, eqIdx2).trim();
+      var val2 = mainPart.substring(eqIdx2 + 1).trim();
+      if (key2) cookieMap.set(key2, val2);
+    }
+  }
+
+  var newParts = [];
+  function appendCookiePair(val, key) {
+    newParts.push(key + '=' + val);
+  }
+  cookieMap.forEach(appendCookiePair);
+  return newParts.join('; ');
+}
+
+globalThis.qwenMergeSetCookies = mergeSetCookies;
 import { runAgent } from '../agents/agent.js';
 import { runAgentLoop } from '../agents/agentLoop.js';
 import * as terminalManager from '../tools/terminalManager.js';
@@ -53,6 +100,51 @@ export function activate(context) {
       console.warn('[CODERUN] Failed to initialize storage paths:', e ? e.message : e);
     }
   }
+
+  globalThis.qwenOnCookieUpdate = function onCookieUpdate(newCookie) {
+    if (context && newCookie) {
+      config.setApiKey(context, newCookie, 'qwen').catch(function() { void 0; });
+      context.globalState.update('coderun.qwenFallbackCookie', newCookie);
+    }
+  };
+
+  globalThis.qwenGetActiveCookie = function getActiveCookie() {
+    return (context && context.globalState && context.globalState.get('coderun.qwenFallbackCookie')) || '';
+  };
+
+  // Automatic Cookie Recovery for Qwen Provider
+  config.getApiKey(context, 'qwen').then(function afterGetQwenKey(existingKey) {
+    if (!hasValidQwenToken(existingKey)) {
+      var candidate = (context && context.globalState && (context.globalState.get('coderun.qwenFallbackCookie') || context.globalState.get('qwen-coderun.fallbackCookie'))) || '';
+      if (!hasValidQwenToken(candidate)) {
+        try {
+          var appDataDir = process.env.APPDATA || '';
+          var extractedPaths = [
+            path.join(appDataDir, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+            path.join(appDataDir, 'Code - Insiders', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+            path.join(appDataDir, 'VSCodium', 'User', 'globalStorage', 'qwen_extracted_cookie.txt')
+          ];
+          for (var pIdx = 0; pIdx < extractedPaths.length; pIdx++) {
+            if (fs.existsSync(extractedPaths[pIdx])) {
+              var fileContent = fs.readFileSync(extractedPaths[pIdx], 'utf8').trim();
+              if (hasValidQwenToken(fileContent)) {
+                candidate = fileContent;
+                break;
+              }
+            }
+          }
+        } catch (_) { void 0; }
+      }
+      if (hasValidQwenToken(candidate)) {
+        console.log('[CODERUN] Restored authenticated Qwen session from fallback storage');
+        config.setApiKey(context, candidate, 'qwen').catch(function() { void 0; });
+        context.globalState.update('coderun.qwenFallbackCookie', candidate);
+        import('../browser/providerQwen.js').then(function(pq) {
+          pq.setLastCookie(candidate);
+        }).catch(function() { void 0; });
+      }
+    }
+  }).catch(function() { void 0; });
 
   registerAllTools();
 

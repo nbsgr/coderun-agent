@@ -15,6 +15,7 @@ import * as subagentManager from '../agents/subagentManager.js';
 import * as executionTrace from '../execution/executionTrace.js';
 import * as mcpManager from '../mcp/mcpManager.js';
 import { buildCompactCheckpoint } from '../context/compactionManager.js';
+import * as providerQwen from '../browser/providerQwen.js';
 import { handleAskPermission } from '../permission-manager/permission-store.js';
 import { convertMediaPathsToWebviewUris, convertStoredConversationsToWebviewUris } from './mediahandler.js';
 import { sendCurrentSettings } from './settingshandler.js';
@@ -95,6 +96,12 @@ export async function handleStartChat(message, webview, extensionContext) {
   var providerName = message.provider || '';
   var frontendModel = message.model || '';
 
+  if (!providerName || providerName === 'ollama') {
+    if (frontendModel && (/^qwen3\.[0-9]/i.test(frontendModel) || frontendModel.includes('qwen3.'))) {
+      providerName = 'qwen';
+    }
+  }
+
   var providerConfig;
   if (providerName && (PROVIDER_DEFAULTS[providerName] || providerName.startsWith('compatible:'))) {
     providerConfig = await config.getProviderConfigByName(extensionContext, providerName);
@@ -106,12 +113,25 @@ export async function handleStartChat(message, webview, extensionContext) {
     providerConfig.model = frontendModel.trim();
   }
 
+  if (message.chatId || message.qwenChatId) {
+    providerConfig.chatId = message.chatId || message.qwenChatId;
+  }
+
   if (!providerConfig.model) {
     webview.postMessage({
       type: 'agentEvent',
       event: { type: 'stream_error', error: 'No model configured. Please select a model in the CodeRun model dropdown.' }
     });
     return;
+  }
+
+  if (config.needsApiKey(providerConfig.provider) && !providerConfig.apiKey) {
+    if (providerConfig.provider === 'qwen') {
+      try {
+        var providerQwen = await import('../browser/providerQwen.js');
+        providerConfig.apiKey = providerQwen.getLastCookie() || '';
+      } catch (_) { void 0; }
+    }
   }
 
   if (config.needsApiKey(providerConfig.provider) && !providerConfig.apiKey) {
@@ -152,6 +172,8 @@ export async function handleStartChat(message, webview, extensionContext) {
       return handleAskPermission(webview, tool, args, tcId, sId || convSessionId, pId || convSessionId);
     }
 
+    providerConfig.sessionId = convSessionId;
+    providerConfig.conversationId = convSessionId;
     await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, onAgentEvent, onAskPermission, { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: Boolean(message.isContinuation) });
     console.log('[EXTENSION] runAgent completed');
     if (extensionContext && extensionContext.globalStorageUri) {
@@ -179,7 +201,16 @@ export async function handleStartChat(message, webview, extensionContext) {
         console.debug('[CHAT] Failed trace save error:', failedTrErr ? failedTrErr.message : failedTrErr);
       }
     }
-    webview.postMessage({ type: 'agentEvent', event: { type: 'stream_error', error: errMsg } });
+    webview.postMessage({
+      type: 'agentEvent',
+      event: {
+        type: 'stream_error',
+        error: errMsg,
+        isAuthError: Boolean(err && err.isAuthError),
+        isCaptcha: Boolean(err && err.isCaptcha),
+        captchaUrl: (err && err.captchaUrl) || ''
+      }
+    });
   } finally {
     if (abortControllers[convSessionId] === abortCtrl) {
       delete abortControllers[convSessionId];
@@ -202,6 +233,9 @@ export function handleStopChat(message) {
     var stopTarget = (message && message.target) || 'foreground';
     terminalManager.stopTerminal(stopSessionId, stopTarget);
     subagentManager.stopSubagents(stopSessionId, 'Parent agent stopped');
+    try {
+      providerQwen.stopChat();
+    } catch (_) { void 0; }
   } else {
     for (var sidKey in abortControllers) {
       if (abortControllers[sidKey]) {
@@ -282,6 +316,11 @@ export function handleRequestConversations(webview, extensionContext) {
 export function handleConfirmDelete(message, webview) {
   function onConfirmDelete(res) {
     if (res === 'Delete' && webview && typeof webview.postMessage === 'function') {
+      if (message && (message.qwenChatId || message.id)) {
+        try {
+          providerQwen.deleteChat(null, message.qwenChatId || message.id);
+        } catch (_) { void 0; }
+      }
       webview.postMessage({ type: 'deleteConversationConfirmed', id: message.id });
     }
   }
@@ -295,6 +334,9 @@ export function handleConfirmDelete(message, webview) {
 export function handleConfirmClearAll(webview) {
   function onConfirmClearAll(res) {
     if (res === 'Delete All' && webview && typeof webview.postMessage === 'function') {
+      try {
+        providerQwen.clearAllSessions(null);
+      } catch (_) { void 0; }
       webview.postMessage({ type: 'clearAllConversationsConfirmed' });
     }
   }

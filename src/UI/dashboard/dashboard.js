@@ -14,7 +14,8 @@ function initializeDashboard() {
     openrouter: "https://openrouter.ai/api/v1",
     xai: "https://api.x.ai/v1",
     groq: "https://api.groq.com/openai/v1",
-    compatible: ""
+    compatible: "",
+    qwen: "https://chat.qwen.ai"
   };
   var STORAGE_KEY = "coderun_conversations";
   var SETTINGS_KEY = "coderun_settings";
@@ -317,7 +318,8 @@ function initializeDashboard() {
         '<option value="gemini">Google Gemini</option>' +
         '<option value="openrouter">OpenRouter</option>' +
         '<option value="xai">xAI (Grok)</option>' +
-        '<option value="groq">Groq</option>';
+        '<option value="groq">Groq</option>' +
+        '<option value="qwen">Qwen Browser API</option>';
       
       // Add custom compatible options
       var hasCurrentAsCustom = false;
@@ -382,6 +384,28 @@ function initializeDashboard() {
       hasApiKeyForCurrent = true;
     }
     if (apiKeyEl) apiKeyEl.value = hasApiKeyForCurrent ? "••••••••" : "";
+
+    var qwenContainer = document.getElementById("qwenSettingsCardContainer");
+    var apiKeyGroup = apiKeyEl ? apiKeyEl.closest('.cr-input-group') : null;
+    var baseUrlGroup = baseUrlEl ? baseUrlEl.closest('.cr-input-group') : null;
+    if (currentProvider === 'qwen') {
+      if (qwenContainer) {
+        qwenContainer.style.display = 'block';
+        if (typeof window.renderQwenSettingsCard === 'function') {
+          var cookieToShow = state.qwenCookie || (typeof localStorage !== 'undefined' ? localStorage.getItem('coderun_qwen_cookie') : '') || (window.activeQwenCookie || '') || '';
+          var isTokValid = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(cookieToShow) : false;
+          window.renderQwenSettingsCard(qwenContainer, hasApiKeyForCurrent && isTokValid, cookieToShow);
+        }
+      }
+      if (apiKeyGroup) apiKeyGroup.style.display = 'none';
+      if (baseUrlGroup) baseUrlGroup.style.display = 'none';
+    } else {
+      if (qwenContainer) {
+        qwenContainer.style.display = 'none';
+      }
+      if (apiKeyGroup) apiKeyGroup.style.display = 'flex';
+      if (baseUrlGroup) baseUrlGroup.style.display = 'flex';
+    }
 
     var modelVal = state.settings.model || '';
     if (!modelVal && configs[currentProvider] && configs[currentProvider].model) {
@@ -500,6 +524,17 @@ function initializeDashboard() {
       state.selectedProvider = provider;
       updateModelBadge();
       updateModelSelectValue();
+    }
+
+    if (provider === 'qwen') {
+      var savedLocalCookie = (typeof localStorage !== 'undefined') ? localStorage.getItem('coderun_qwen_cookie') : '';
+      if (savedLocalCookie) {
+        state.qwenCookie = savedLocalCookie;
+        state.hasApiKey = true;
+      }
+      if (window.VSCODE_API && typeof window.VSCODE_API.postMessage === 'function') {
+        window.VSCODE_API.postMessage({ type: 'getQwenCookie' });
+      }
     }
 
     updateSettingsUI();
@@ -629,7 +664,8 @@ function initializeDashboard() {
             '</section>' +
             '<section id="panel-settings" class="cr-panel">' +
               '<div class="cr-settings">' +
-                '<div class="cr-input-group"><label>Provider</label><select id="cfgProvider"><option value="ollama">Ollama</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option><option value="compatible">OpenAI Compatible</option></select></div>' +
+                '<div class="cr-input-group"><label>Provider</label><select id="cfgProvider"><option value="ollama">Ollama</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option><option value="qwen">Qwen Browser API</option><option value="compatible">OpenAI Compatible</option></select></div>' +
+                '<div id="qwenSettingsCardContainer" style="display:none; margin-bottom: 12px;"></div>' +
                 '<div class="cr-input-group" id="cfgCompatibleNameGroup" style="display:none"><label>Custom Provider Name</label><input type="text" id="cfgCompatibleName" placeholder="e.g. Bynara, LM Studio"></div>' +
                 '<div class="cr-input-group" id="cfgCompatibleApiTypeGroup" style="display:none"><label>API Type</label><select id="cfgCompatibleApiType"><option value="openai">OpenAI Compatible</option><option value="anthropic">Anthropic Compatible</option><option value="gemini">Google Gemini Compatible</option></select></div>' +
                 '<div class="cr-input-group"><label>Base URL</label><input type="text" id="cfgBaseUrl" value="' + esc(state.baseUrl) + '" placeholder="e.g., https://api.example.com/v1"></div>' +
@@ -4766,10 +4802,21 @@ function initializeDashboard() {
       var keyMap = state.providerHasKeyMap || {};
       var hasExistingKey = keyMap[newProvider];
 
-      if (hasExistingKey && newApiKey === "") {
-        apiKeyToSend = "";
-      } else if (hasExistingKey && newApiKey === "••••••••") {
-        apiKeyToSend = "••••••••";
+      if (newProvider === 'qwen') {
+        var manualCookieEl = document.getElementById("qwenManualCookieInput");
+        var manualCookieVal = manualCookieEl ? manualCookieEl.value.trim() : "";
+        var activeCookie = manualCookieVal || state.qwenCookie || (typeof localStorage !== "undefined" ? localStorage.getItem("coderun_qwen_cookie") : "") || (window.activeQwenCookie || "") || "";
+        if (activeCookie) {
+          apiKeyToSend = activeCookie;
+        } else if (hasExistingKey) {
+          apiKeyToSend = "••••••••";
+        }
+      } else {
+        if (hasExistingKey && newApiKey === "") {
+          apiKeyToSend = "";
+        } else if (hasExistingKey && newApiKey === "••••••••") {
+          apiKeyToSend = "••••••••";
+        }
       }
 
       window.VSCODE_API.postMessage({
@@ -4787,10 +4834,12 @@ function initializeDashboard() {
         apiKey: apiKeyToSend
       });
 
-      if (newApiKey && newApiKey !== "••••••••") {
-        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey });
-      } else if (newApiKey === "" && hasExistingKey) {
-        window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "" });
+      if (newProvider !== 'qwen') {
+        if (newApiKey && newApiKey !== "••••••••") {
+          window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: newApiKey, provider: newProvider });
+        } else if (newApiKey === "" && hasExistingKey) {
+          window.VSCODE_API.postMessage({ type: "saveApiKey", apiKey: "", provider: newProvider });
+        }
       }
     } else {
       try {
@@ -4935,6 +4984,9 @@ function initializeDashboard() {
   }
 
   function getProviderLabel(providerName) {
+    if (providerName === 'qwen') {
+      return 'Qwen Browser API';
+    }
     var displayLabel = providerName;
     if (providerName.startsWith('compatible:')) {
       var name = providerName.substring(11);
@@ -5281,7 +5333,15 @@ function initializeDashboard() {
   function updateModelBadge() {
     var badge = document.getElementById("headerModelBadge");
     if (!badge) return;
-    badge.textContent = state.selectedModel || state.settings.model || "No model";
+    var modelName = state.selectedModel || state.settings.model || "No model";
+    var provider = state.selectedProvider || state.settings.provider || "";
+    if (provider === "qwen") {
+      badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;">🌐</span> ' + esc(modelName) + '</span>';
+      badge.title = "Qwen Browser Session (Native Web Search & Vision)";
+    } else {
+      badge.textContent = modelName;
+      badge.title = "";
+    }
   }
 
   function handleThreadItemClick(event) {
@@ -5393,11 +5453,22 @@ function initializeDashboard() {
         var subCountBadge = (subList && subList.length > 0)
           ? '<span class="cr-thread-subagent-badge" title="' + subList.length + ' subagent(s)">👥 ' + subList.length + '</span>'
           : '';
+        var isQwenThread = conversation.provider === 'qwen';
+        if (!isQwenThread && conversation.messages) {
+          for (var mi = 0; mi < conversation.messages.length; mi++) {
+            if (conversation.messages[mi].provider === 'qwen') {
+              isQwenThread = true;
+              break;
+            }
+          }
+        }
+        var qwenBadge = isQwenThread ? (typeof window.renderThreadBrowserTag === 'function' ? window.renderThreadBrowserTag() : '<span class="cr-browser-thread-tag">🌐 Qwen</span>') : '';
         item.innerHTML =
           '<span class="cr-thread-icon">💬</span>' +
           '<div class="cr-thread-content">' +
             '<div class="cr-thread-top-row">' +
               '<span class="cr-thread-title">' + esc(conversation.title || "New chat") + '</span>' +
+              qwenBadge +
               subCountBadge +
               (timeStr ? '<span class="cr-thread-time">' + esc(timeStr) + '</span>' : '') +
             '</div>' +
@@ -5704,8 +5775,19 @@ function initializeDashboard() {
   }
 
   function deleteConversation(id) {
+    var conv = null;
+    for (var i = 0; i < state.conversations.length; i++) {
+      if (state.conversations[i].id === id) {
+        conv = state.conversations[i];
+        break;
+      }
+    }
     if (state.isVsCode && window.VSCODE_API) {
-      window.VSCODE_API.postMessage({ type: "confirmDelete", id: id });
+      window.VSCODE_API.postMessage({
+        type: "confirmDelete",
+        id: id,
+        qwenChatId: (conv && (conv.qwenChatId || conv.id)) || id
+      });
       return;
     }
     if (confirm("Delete this conversation?")) performDelete(id);
@@ -5765,13 +5847,23 @@ function initializeDashboard() {
   function clearTerminal() {}
 
   function getDashboardModel() { return state.selectedModel; }
-  function getDashboardProvider() { return state.selectedProvider; }
+  function getDashboardProvider() {
+    return state.selectedProvider || state.provider || (state.settings && state.settings.provider) || '';
+  }
   function getDashboardWorkspace() { return state.workspaceFolder; }
   function getDashboardBaseUrl() { return state.baseUrl; }
   function getDashboardAlwaysDecisions() { return state.alwaysDecisions || {}; }
+  function setDashboardQwenCookie(cookie) {
+    if (cookie) {
+      state.qwenCookie = cookie;
+      state.hasApiKey = true;
+      if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = true;
+    }
+  }
 
   window.getDashboardModel = getDashboardModel;
   window.getDashboardProvider = getDashboardProvider;
+  window.setDashboardQwenCookie = setDashboardQwenCookie;
   window.getDashboardWorkspace = getDashboardWorkspace;
   window.getDashboardBaseUrl = getDashboardBaseUrl;
   window.getDashboardAlwaysDecisions = getDashboardAlwaysDecisions;
@@ -5995,6 +6087,19 @@ function initializeDashboard() {
 
   function handleWindowMessage(event) {
     var message = event.data || {};
+    if (typeof window.handleBrowserAuthMessage === 'function') {
+      window.handleBrowserAuthMessage(message);
+    }
+    if (message.type === 'qwenAuthState' && message.authenticated) {
+      state.hasApiKey = true;
+      if (state.providerHasKeyMap) {
+        state.providerHasKeyMap.qwen = true;
+      }
+      if (state.savedProviderConfigs && state.savedProviderConfigs.qwen) {
+        state.savedProviderConfigs.qwen.apiKey = 'browser_session_active';
+      }
+      updateSettingsUI();
+    }
     if (message.type === "loadConversations") {
       window.loadConversationsFromExtension(message.conversations, message.selectedModel, message.selectedProvider);
     }
@@ -6019,7 +6124,45 @@ function initializeDashboard() {
     if (message.type === "newChat") {
       createNewChat();
     }
+    if (message.type === "qwenCookieResult") {
+      if (message.cookie) {
+        var isTokValid = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(message.cookie) : false;
+        state.qwenCookie = message.cookie;
+        try {
+          localStorage.setItem('coderun_qwen_cookie', message.cookie);
+        } catch (_) { void 0; }
+        state.hasApiKey = isTokValid;
+        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = isTokValid;
+        var qwenContainer = document.getElementById("qwenSettingsCardContainer");
+        if (qwenContainer && (state.provider === 'qwen' || (state.settings && state.settings.provider === 'qwen'))) {
+          if (typeof window.renderQwenSettingsCard === 'function') {
+            window.renderQwenSettingsCard(qwenContainer, isTokValid, message.cookie);
+          }
+        }
+      }
+    }
+    if (message.type === "qwenAuthState") {
+      if (message.cookie) {
+        state.qwenCookie = message.cookie;
+        try {
+          localStorage.setItem('coderun_qwen_cookie', message.cookie);
+        } catch (_) { void 0; }
+        state.hasApiKey = true;
+        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = true;
+      }
+      if (typeof window.handleBrowserAuthMessage === 'function') {
+        window.handleBrowserAuthMessage(message);
+      }
+    }
     if (message.type === "currentSettings") {
+      if (message.qwenCookie) {
+        state.qwenCookie = message.qwenCookie;
+        try {
+          localStorage.setItem('coderun_qwen_cookie', message.qwenCookie);
+        } catch (_) { void 0; }
+        state.hasApiKey = true;
+        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = true;
+      }
       if (message.providerHasKeyMap) {
         state.providerHasKeyMap = message.providerHasKeyMap;
       }
@@ -6684,6 +6827,17 @@ function initializeDashboard() {
           var oldText = copyBtn.textContent;
           copyBtn.textContent = "✓ Copied!";
           setTimeout(function resetCopied() { copyBtn.textContent = oldText; }, 2000);
+        });
+      }
+      return;
+    }
+    var imgTarget = e.target;
+    if (imgTarget && imgTarget.tagName === 'IMG' && imgTarget.classList.contains('md-img') && imgTarget.src) {
+      var apiOpen = window.VSCODE_API || window.vscode;
+      if (apiOpen && apiOpen.postMessage) {
+        apiOpen.postMessage({
+          type: 'openExternal',
+          url: imgTarget.src
         });
       }
       return;

@@ -3,9 +3,12 @@
 // Strict traditional function declarations only
 
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import * as config from '../agents/config.js';
 import { PROVIDER_DEFAULTS } from '../agents/constants.js';
 import { checkProviderHealth, refreshAllProviderModels } from './modelshandler.js';
+import { hasValidQwenToken } from '../browser/providerQwen.js';
 
 export async function sendCurrentSettings(webview, extensionContext) {
   var activeProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
@@ -68,6 +71,54 @@ export async function sendCurrentSettings(webview, extensionContext) {
   }
   await Promise.all(keyPromises);
 
+  var qwenCookie = '';
+  try {
+    qwenCookie = await config.getApiKey(extensionContext, 'qwen') || '';
+  } catch (_) { void 0; }
+  if (!hasValidQwenToken(qwenCookie)) {
+    if (extensionContext && extensionContext.globalState) {
+      qwenCookie = extensionContext.globalState.get('coderun.qwenFallbackCookie') ||
+                   extensionContext.globalState.get('qwen-coderun.fallbackCookie') || '';
+    }
+    if (!hasValidQwenToken(qwenCookie)) {
+      try {
+        var appData2 = process.env.APPDATA || '';
+        var candidatePaths2 = [
+          path.join(appData2, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData2, 'Code - Insiders', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData2, 'VSCodium', 'User', 'globalStorage', 'qwen_extracted_cookie.txt')
+        ];
+        for (var cIdx2 = 0; cIdx2 < candidatePaths2.length; cIdx2++) {
+          if (fs.existsSync(candidatePaths2[cIdx2])) {
+            var fileCookie2 = fs.readFileSync(candidatePaths2[cIdx2], 'utf8').trim();
+            if (hasValidQwenToken(fileCookie2)) {
+              qwenCookie = fileCookie2;
+              break;
+            }
+          }
+        }
+      } catch (_) { void 0; }
+    }
+  }
+  if (!hasValidQwenToken(qwenCookie)) {
+    try {
+      var providerQwenMod = await import('../browser/providerQwen.js');
+      var lastC = providerQwenMod.getLastCookie() || '';
+      if (hasValidQwenToken(lastC)) qwenCookie = lastC;
+    } catch (_) { void 0; }
+  }
+  if (hasValidQwenToken(qwenCookie)) {
+    hasKeyMap.qwen = true;
+    if (extensionContext) {
+      try {
+        await config.setApiKey(extensionContext, qwenCookie, 'qwen');
+        await extensionContext.globalState.update('coderun.qwenFallbackCookie', qwenCookie);
+      } catch (_) { void 0; }
+    }
+  } else {
+    hasKeyMap.qwen = false;
+  }
+
   if (webview && typeof webview.postMessage === 'function') {
     webview.postMessage({
       type: 'currentSettings',
@@ -89,7 +140,8 @@ export async function sendCurrentSettings(webview, extensionContext) {
         subagentMaxDepth: config.getConfig().subagentMaxDepth || 1
       },
       providerConfigs: providerConfigs,
-      providerHasKeyMap: hasKeyMap
+      providerHasKeyMap: hasKeyMap,
+      qwenCookie: qwenCookie
     });
   }
 }
@@ -138,13 +190,33 @@ export async function handleSaveSettings(message, webview, extensionContext, sta
 
       if (message.apiKey !== undefined && message.apiKey !== null) {
         if (message.apiKey === '') {
-          await config.deleteApiKey(extensionContext, savedProvider);
+          if (savedProvider === 'qwen') {
+            try {
+              resolvedApiKey = await config.getApiKey(extensionContext, 'qwen') || '';
+              if (!resolvedApiKey) {
+                var providerQwenMod1 = await import('../browser/providerQwen.js');
+                resolvedApiKey = providerQwenMod1.getLastCookie() || '';
+              }
+            } catch (_) { void 0; }
+          } else {
+            await config.deleteApiKey(extensionContext, savedProvider);
+          }
         } else if (message.apiKey !== '••••••••') {
           await config.setApiKey(extensionContext, message.apiKey, savedProvider);
           resolvedApiKey = message.apiKey;
+          if (savedProvider === 'qwen') {
+            try {
+              var providerQwenMod2 = await import('../browser/providerQwen.js');
+              providerQwenMod2.setLastCookie(message.apiKey);
+            } catch (_) { void 0; }
+          }
         } else {
           try {
             resolvedApiKey = await config.getApiKey(extensionContext, savedProvider) || '';
+            if (!resolvedApiKey && savedProvider === 'qwen') {
+              var providerQwenMod3 = await import('../browser/providerQwen.js');
+              resolvedApiKey = providerQwenMod3.getLastCookie() || '';
+            }
           } catch (keyErr) {
             console.debug('[SETTINGS] Error reading stored key:', keyErr ? keyErr.message : keyErr);
           }
@@ -179,14 +251,74 @@ export async function handleSaveSettings(message, webview, extensionContext, sta
 
 export async function handleSaveApiKey(message, webview, extensionContext, statusBarItem) {
   if (message.apiKey !== undefined && extensionContext) {
+    var targetProvider = message.provider || config.getConfig().provider;
     if (message.apiKey === '') {
-      await config.deleteApiKey(extensionContext);
+      if (targetProvider === 'qwen') {
+        return;
+      }
+      await config.deleteApiKey(extensionContext, targetProvider);
     } else {
-      await config.setApiKey(extensionContext, message.apiKey);
+      await config.setApiKey(extensionContext, message.apiKey, targetProvider);
+      if (targetProvider === 'qwen') {
+        try {
+          var providerQwenMod4 = await import('../browser/providerQwen.js');
+          providerQwenMod4.setLastCookie(message.apiKey);
+        } catch (_) { void 0; }
+      }
     }
     await sendCurrentSettings(webview, extensionContext);
     await checkProviderHealth(webview, null, extensionContext, statusBarItem);
     await refreshAllProviderModels(webview, extensionContext, statusBarItem);
+  }
+}
+
+export async function handleGetQwenCookie(webview, extensionContext) {
+  var cookie = '';
+  try {
+    cookie = await config.getApiKey(extensionContext, 'qwen') || '';
+  } catch (_) { void 0; }
+  if (!hasValidQwenToken(cookie)) {
+    if (extensionContext && extensionContext.globalState) {
+      cookie = extensionContext.globalState.get('coderun.qwenFallbackCookie') ||
+               extensionContext.globalState.get('qwen-coderun.fallbackCookie') || '';
+    }
+    if (!hasValidQwenToken(cookie)) {
+      try {
+        var appData = process.env.APPDATA || '';
+        var candidatePaths = [
+          path.join(appData, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData, 'Code - Insiders', 'User', 'globalStorage', 'qwen_extracted_cookie.txt'),
+          path.join(appData, 'VSCodium', 'User', 'globalStorage', 'qwen_extracted_cookie.txt')
+        ];
+        for (var cIdx = 0; cIdx < candidatePaths.length; cIdx++) {
+          if (fs.existsSync(candidatePaths[cIdx])) {
+            var fileCookie = fs.readFileSync(candidatePaths[cIdx], 'utf8').trim();
+            if (hasValidQwenToken(fileCookie)) {
+              cookie = fileCookie;
+              break;
+            }
+          }
+        }
+      } catch (_) { void 0; }
+    }
+  }
+  if (!hasValidQwenToken(cookie)) {
+    try {
+      var providerQwenMod5 = await import('../browser/providerQwen.js');
+      var lastC5 = providerQwenMod5.getLastCookie() || '';
+      if (hasValidQwenToken(lastC5)) cookie = lastC5;
+    } catch (_) { void 0; }
+  }
+  if (hasValidQwenToken(cookie) && extensionContext) {
+    try {
+      await config.setApiKey(extensionContext, cookie, 'qwen');
+      await extensionContext.globalState.update('coderun.qwenFallbackCookie', cookie);
+      var providerQwenModSave = await import('../browser/providerQwen.js');
+      providerQwenModSave.setLastCookie(cookie);
+    } catch (_) { void 0; }
+  }
+  if (webview && typeof webview.postMessage === 'function') {
+    webview.postMessage({ type: 'qwenCookieResult', cookie: cookie });
   }
 }
 

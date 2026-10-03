@@ -1,0 +1,220 @@
+/* browser.css — Styles for Qwen Browser API integration, badges, auth cards, and CAPTCHA */
+
+/* ── Distinctive Qwen Browser Badge in Header & Sidebar ── */
+.cr-browser-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.12) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #818cf8;
+  letter-spacing: 0.2px;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.1);
+}
+
+.cr-browser-badge-icon {
+  font-size: 12px;
+}
+
+.cr-browser-thread-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 6px;
+}
+
+/* ── Auth / Session Expired Card in Chat ── */
+.cr-auth-card {
+  margin: 10px 0;
+  padding: 14px 16px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-left: 4px solid #eab308;
+  border-radius: 10px;
+  color: var(--text-primary, #f3f4f6);
+  animation: crFadeIn 0.25s ease-out;
+}
+
+.cr-captcha-card {
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-left: 4px solid #3b82f6;
+}
+
+.cr-auth-card-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cr-auth-card-icon {
+  color: #eab308;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cr-captcha-card .cr-auth-card-icon {
+  color: #3b82f6;
+}
+
+.cr-auth-card-content {
+  flex: 1;
+}
+
+.cr-auth-card-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #eab308;
+  margin-bottom: 4px;
+}
+
+.cr-captcha-card .cr-auth-card-title {
+  color: #60a5fa;
+}
+
+.cr-auth-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #9ca3af);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.cr-auth-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cr-auth-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.cr-auth-btn-primary:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+}
+
+.cr-auth-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.cr-captcha-card .cr-auth-btn-primary {
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.cr-captcha-card .cr-auth-btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.cr-auth-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--text-secondary, #9ca3af);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cr-auth-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #f3f4f6);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.cr-qwen-signed-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 6px;
+  color: #10b981;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  letter-spacing: 0.2px;
+}
+
+/* ── Dedicated Qwen Settings Container ── */
+.cr-qwen-settings-box {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.cr-qwen-settings-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.cr-qwen-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.cr-qwen-dot.offline {
+  background: #9ca3af;
+  box-shadow: none;
+}
+
+.cr-qwen-dot.waiting {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+  animation: crPulse 1.2s infinite;
+}
+
+@keyframes crPulse {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.7; }
+}
+
+@keyframes crFadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes crSpin {
+  to { transform: rotate(360deg); }
+}

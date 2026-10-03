@@ -9,6 +9,7 @@ import * as providerGemini from './providerGemini.js';
 import * as providerOpenRouter from './providerOpenRouter.js';
 import * as providerCompatible from './providerCompatible.js';
 import * as providerGroq from './providerGroq.js';
+import * as providerQwen from '../browser/providerQwen.js';
 
 export function createProvider(config) {
   if (!config || typeof config !== 'object') {
@@ -45,6 +46,8 @@ export function createProvider(config) {
       return providerGroq;
     case PROVIDERS.COMPATIBLE:
       return providerCompatible;
+    case PROVIDERS.QWEN:
+      return providerQwen;
     default:
       return providerOllama;
   }
@@ -67,7 +70,8 @@ export function needsApiKey(provider) {
     openrouter: true,
     xai: true,
     groq: true,
-    compatible: true
+    compatible: true,
+    qwen: true
   };
   return needs[provider] || false;
 }

@@ -2,6 +2,7 @@
 // Main message router between UI webview and Extension Backend
 // Pure functions, traditional function declarations only. Zero business logic.
 
+import * as vscode from 'vscode';
 import {
   handleWebviewReady,
   handleStartChat,
@@ -17,6 +18,7 @@ import {
   sendCurrentSettings,
   handleSaveSettings,
   handleSaveApiKey,
+  handleGetQwenCookie,
   handleRemoveProviderConfig,
   handleSaveSelectedModel,
   handleSavePinnedModels
@@ -83,6 +85,12 @@ import {
   handleShowAlert,
   handleRequestWorkspaceFolder
 } from '../manager/terminalhandler.js';
+
+import {
+  handleStartQwenBrowserLogin,
+  handleCancelQwenBrowserLogin,
+  handleSolveQwenCaptcha
+} from '../browser/qwenAuthHandler.js';
 
 export function uiresponse(webviewView, context, statusBarItem) {
   console.log('[CODERUN] Message listener attached to webviewView');
@@ -198,6 +206,22 @@ function handlemessage(message, webview, context, statusBarItem) {
     handleToggleAllBuiltinTools(message, webview);
   } else if (msgType === 'refreshMcpServer') {
     handleRefreshMcpServer(message, webview);
+  } else if (msgType === 'startQwenBrowserLogin') {
+    handleStartQwenBrowserLogin(webview, context, statusBarItem);
+  } else if (msgType === 'cancelQwenBrowserLogin') {
+    handleCancelQwenBrowserLogin(webview);
+  } else if (msgType === 'solveQwenCaptcha') {
+    handleSolveQwenCaptcha(message, webview, context);
+  } else if (msgType === 'getQwenCookie') {
+    handleGetQwenCookie(webview, context);
+  } else if (msgType === 'openExternal') {
+    if (message.url) {
+      try {
+        vscode.env.openExternal(vscode.Uri.parse(message.url));
+      } catch (openErr) {
+        console.warn('[CODERUN] Could not open external URL:', openErr ? openErr.message : openErr);
+      }
+    }
   } else {
     console.log('[CODERUN] Unknown message type:', msgType);
   }
