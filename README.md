@@ -4,7 +4,7 @@
   <img src="./icons/logo.png" width="160" alt="CodeRun Logo"/>
 </p>
 
-[![Version](https://img.shields.io/badge/version-v1.6.7-blue.svg)](https://github.com/nbsgr/coderun-agent)
+[![Version](https://img.shields.io/badge/version-v1.6.8-blue.svg)](https://github.com/nbsgr/coderun-agent)
 [![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code&label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![VS Code Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-blue?logo=github&logoColor=white)](https://nbsgr.github.io/coderun-agent/)
@@ -14,7 +14,7 @@
 
 **CodeRun AI Agent** (`AI-AGENT`) is a professional, multi-provider autonomous coding companion for Visual Studio Code. Built upon an advanced agentic loop, CodeRun acts as an intelligent pair programmer capable of reading, writing, and editing files, indexing codebases in a high-speed local SQLite database, running interactive terminal processes, applying precision diffs, and orchestrating multi-step execution plans.
 
-Whether you are running completely offline with local models via **Ollama**, leveraging official API keys (**OpenAI**, **Anthropic Claude**, **Google Gemini**, **Groq**, **OpenRouter**, **xAI Grok**), or routing custom endpoints (**Cloudflare Workers AI**, **vLLM**, **LM Studio**, **Aero Link**), CodeRun delivers a deeply integrated, robust, and secure developer experience.
+Whether you are running completely offline with local models via **Ollama**, leveraging official API keys (**OpenAI**, **Anthropic Claude**, **Google Gemini**, **Groq**, **OpenRouter**, **xAI Grok**), using browser automation sessions (**Qwen**), or routing custom endpoints (**Cloudflare Workers AI**, **vLLM**, **LM Studio**, **Aero Link**), CodeRun delivers a deeply integrated, robust, and secure developer experience.
 
 > 📖 **Official Live Documentation & Architecture Guide:** [https://nbsgr.github.io/coderun-agent/](https://nbsgr.github.io/coderun-agent/)
 
@@ -129,7 +129,15 @@ The repository enforces strict physical and logical separation between the Backe
 ## 🌟 Key Highlights & Features
 
 ### 🤖 Multi-Provider Model Orchestration
-*   **8 Native Providers Supported:** Ollama, OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter, xAI (Grok), and custom OpenAI Compatible endpoints.
+*   **9 Native Providers Supported:** Ollama, OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter, xAI (Grok), Qwen (Browser Automation), and custom OpenAI Compatible endpoints.
+*   **Qwen Browser Automation Provider:**
+    *   **Browser Session Connectivity:** Operates directly using session cookies/tokens with zero external API key requirements.
+    *   **Abstracted Service Architecture:** Orchestrates dynamic model discovery through the **Models API**, creates isolated conversations via the **New Chat API**, streams real-time reasoning and response tokens through the **Chat Completions API**, handles multi-modal asset attachments via the **Media / OSS Upload API**, runs text-to-image synthesis via the **Image Generation API (Wanx)**, and safely releases resources with the **Chat Deletion API**.
+    *   **Per-Chat Session Isolation:** Every VS Code chat tab maintains its own independent session ID, preventing context length explosion and conversational cross-talk between separate chats.
+    *   **Dual Operating Modes:** Transparently supports both autonomous agent loop mode (multi-turn tool calling, diff generation, and verification) and interactive conversational chat mode.
+    *   **Strict OpenAI Schema Contract:** Normalizes and converts model outputs to standard OpenAI function-calling formats before passing to the agent loop, buffering thinking tokens cleanly and emitting single tool calls at once to ensure glitch-free UI rendering.
+    *   **Unified Image Tool Contract:** Operates exclusively with the standard `generate_image` tool (taking `prompt`) for both image creation and iterative image modifications, preventing hallucinations of non-existent editing tools.
+    *   **Stateless Context Parity:** Builds complete message histories dynamically on each turn identically to standard API providers, maintaining full deterministic context control rather than relying on browser-side memory.
 *   **Intelligent Media Routing & Persistent Storage:** Automatically classifies image and video models (such as `agnes-image-*`, `dall-e-*`, `flux`, `sdxl`, `agnes-video-*`, `sora`, `kling`, `runway`, `minimax`) using provider metadata inspection and keyword heuristics. Routes media generation requests directly to `/v1/images/generations` and `/v1/videos` instead of chat completions to prevent HTTP 400 errors.
 *   **Native Zero-Dependency HTML5 Video Player:** Generated videos render with a built-in interactive HTML5 player:
     *   **Play / Pause Toggle:** Click the player button or click directly on the video screen.
@@ -351,7 +359,8 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | Feature / Capability | Architectural Design | Implementation & Highlights |
 | :--- | :--- | :--- |
 | **Modular Engine Architecture** | Decomposed runtime across 7 specialized engines (Context, Delegation, Tool Execution, Media, Decision, ContextBuilder, StateMachine) | ✅ **Failure Containment** reducing agentLoop by 50% to a pure coordinator |
-| **Multi-Provider Support** | Modular provider adapters in `src/extension/providers/` with unified normalization & streaming | **8 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Custom) |
+| **Multi-Provider Support** | Modular provider adapters in `src/extension/providers/` and `src/extension/browser/` with unified normalization & streaming | **9 Providers** (Ollama, Gemini, OpenAI, Claude, Groq, OpenRouter, xAI, Qwen, Custom) |
+| **Qwen Browser Automation** | Headless browser provider in `src/extension/browser/providerQwen.js` with per-chat session isolation | ✅ **Browser Automation** with streaming SSE reasoning, Wanx image synthesis & strict tool parsing |
 | **100% Free & Local (Ollama)** | Native Ollama streaming adapter with model context length discovery | ✅ **Native** streaming, vision & context autodiscovery |
 | **Transparent User Sandbox** | Dedicated user sandbox directory (`~/.coderun/sandbox/`) with automatic CWD sync | ✅ **Native** isolated execution without polluting workspace git repo |
 | **On-Install Browser & Puppeteer MCP** | Embedded browser discovery in `src/extension/mcp/mcpManager.js` + Puppeteer MCP server | ✅ **Auto-detects Chrome/Edge/Brave** or installs Chromium with screenshot capture |
@@ -440,6 +449,47 @@ When MCP servers are enabled in Settings, their tools dynamically register into 
 | **OpenRouter** | `https://openrouter.ai/api/v1` | Yes | ✅ `image_url` Blocks | 200+ vision & reasoning models |
 | **xAI (Grok)** | `https://api.x.ai/v1` | Yes | ✅ `image_url` Blocks | `grok-2`, `grok-2-vision` |
 | **OpenAI Compatible** | Custom | Optional | ✅ `image_url` Blocks | LM Studio, vLLM, LocalAI, Cloudflare |
+| **Qwen (Browser Automation)** | `N/A (Browser Automation Session)` | Session Cookie / Token | ✅ Media / OSS Upload | Qwen reasoning & vision models |
+
+---
+
+## 🌐 Qwen Browser Automation Provider
+
+CodeRun includes a native browser automation provider adapter (`src/extension/browser/providerQwen.js`) that connects Visual Studio Code directly to Qwen's conversational interface using an authenticated browser automation session:
+
+### 1. Abstracted Service Architecture
+The browser automation layer coordinates with several backend services using conceptual service interfaces without requiring static API keys or external endpoints:
+* **Models API**: Dynamically retrieves the available catalog of Qwen reasoning and chat models and surfaces them in the unified model dropdown.
+* **New Chat API**: Initializes and provisions an isolated remote chat session ID for each newly opened conversation tab.
+* **Chat Completions API**: Full Server-Sent Events (SSE) streaming transport that streams real-time reasoning / thought tokens, incremental message text, and function calling payloads.
+* **Image Generation API (Wanx)**: Built-in text-to-image synthesis pipeline supporting prompt-based visual asset generation with automatic polling and local asset persistence.
+* **Media / OSS Upload API**: Multi-modal upload pipeline for images and files attached to chat prompts for vision inspection.
+* **Chat Deletion & Cleanup API**: Gracefully terminates and purges remote session state when a conversation is reset or deleted in VS Code.
+
+### 2. Per-Chat Session Isolation
+To prevent context explosion and memory cross-contamination across tasks, CodeRun binds session IDs **per chat conversation**:
+* Opening a new chat in VS Code automatically provisions a fresh session ID via the New Chat API.
+* Closing or clearing a chat triggers graceful session cleanup via the Chat Deletion API.
+* Conversations never bleed into each other, ensuring clean context boundaries and optimal token efficiency.
+
+### 3. Dual Operating Modes
+The provider seamlessly supports two distinct execution modes:
+* **Agent Loop Mode**: Executes autonomous coding loops with the full 36-tool suite, file editing, terminal execution, diff generation, and verification.
+* **Chat Mode**: Provides fast, interactive conversational answers with streaming reasoning thoughts.
+
+### 4. Strict OpenAI Schema Contract & Tool Normalization
+To ensure flawless integration with CodeRun's agentic loop and webview UI:
+* **OpenAI Format Normalization**: Model outputs are parsed, sanitized, and normalized into strict OpenAI-compliant function call schemas directly within the provider before yielding to the agent loop.
+* **Streaming Thought Buffering**: Reasoning tokens are cleanly streamed into the collapsible thinking container in real time.
+* **Single Tool Call Emission**: Tool invocations are completely buffered and emitted as complete units, eliminating intermediate UI flickering or partial JSON rendering glitches.
+
+### 5. Unified Image Generation Tool Contract
+* Image requests operate strictly via the `generate_image` tool (taking `prompt` parameter) for both initial generation and subsequent modifications.
+* Explicit prompt contracts instruct the model that image generation tools are available while preventing hallucinations of unsupported image editing tools (`image_edit` / `edit_image`).
+
+### 6. Stateless Context Maintenance
+* CodeRun maintains the entire conversational context dynamically on every turn just like standard REST API providers.
+* It does not rely on browser-side conversational memory, guaranteeing deterministic agent loop behavior, exact prompt structure control, and clean undo/compaction behavior.
 
 ---
 
@@ -450,7 +500,7 @@ Install **"CodeRun AI Agent"** via the Extensions view (`Ctrl+Shift+X`) in VS Co
 ```bash
 code --install-extension Bala-Siva-Ganesh.ai-agent
 # Or install from local VSIX:
-code --install-extension coderun-agent-1.6.7.vsix
+code --install-extension coderun-agent-1.6.8.vsix
 ```
 
 ### 2. Development Setup (From Source)
@@ -558,6 +608,12 @@ cline-ollama/
 │   │   │   ├── subagentshandler.js   ← Subagent status queries & lifecycle operations
 │   │   │   ├── terminalhandler.js    ← Terminal executions, shell input, and interrupts
 │   │   │   └── traceshandler.js      ← Execution traces querying & disk exports
+│   │   ├── browser/                  ← Browser automation provider & session lifecycle
+│   │   │   ├── providerQwen.js       ← Browser provider adapter, SSE reasoning, Wanx images & tool formatting
+│   │   │   ├── qwenSessionManager.js ← Multi-session state management & cookie/token persistence
+│   │   │   ├── qwenAuthHandler.js    ← Headless browser authentication & credentials orchestration
+│   │   │   ├── qwenOssManager.js     ← Multi-modal media upload orchestration via Media / OSS Upload API
+│   │   │   └── browserLoginManager.js ← Embedded browser lifecycle & cookie extraction
 │   │   │
 │   │   ├── permission-manager/       ← Unified permission storage
 │   │   │   └── permission-store.js   ← Session-isolated async permission resolution callbacks
@@ -667,6 +723,12 @@ cline-ollama/
 │       │
 │       ├── permission-manager/       ← Reusable permission prompt dialogs
 │       │   └── permission-card.js    ← Modal cards for tool approvals with always-allow toggles
+│       │
+│       ├── browser/                  ← Browser automation UI components & status
+│       │   ├── browser-auth-manager.js ← UI authentication modal, login status polling & token entry
+│       │   ├── browser-badge.js      ← Provider status indicators in UI
+│       │   ├── browser-cards.js      ← Dynamic authentication & session status cards
+│       │   └── browser.css           ← Styles for browser automation modals & session widgets
 │       │
 │       └── settings/                 ← Provider, model, MCP, rules & trace panels
 │           ├── settings.js           ← Settings panel container
