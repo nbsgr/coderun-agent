@@ -1,6 +1,6 @@
 {
   "name": "ai-agent",
-  "displayName": "AI-AGENT",
+  "displayName": "CODERUN",
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
   "version": "1.6.8",
   "publisher": "Bala-Siva-Ganesh",
@@ -58,7 +58,7 @@
       "activitybar": [
         {
           "id": "coderunSidebar",
-          "title": "AI-AGENT",
+          "title": "CODERUN",
           "icon": "$(comment-discussion)"
         }
       ]
