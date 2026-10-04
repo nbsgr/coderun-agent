@@ -24,6 +24,12 @@ export function getWebviewLocalResourceRoots(extensionUri, ctx) {
   if (ctx && ctx.globalStorageUri) {
     roots.push(ctx.globalStorageUri);
     roots.push(vscode.Uri.file(path.join(ctx.globalStorageUri.fsPath, 'media')));
+    try {
+      var globalStorageParent = path.dirname(ctx.globalStorageUri.fsPath);
+      if (globalStorageParent) {
+        roots.push(vscode.Uri.file(globalStorageParent));
+      }
+    } catch (_) { void 0; }
   }
   var defStorage = mediaManager.getDefaultMediaStoragePath();
   if (defStorage) {

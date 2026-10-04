@@ -201,6 +201,22 @@ export async function handleGetMediaData(message, webview, extensionContext) {
             }
           }
         }
+        if (!fs.existsSync(resolvedFile)) {
+          var globalStorageParent = extensionContext && extensionContext.globalStorageUri ? path.dirname(extensionContext.globalStorageUri.fsPath) : '';
+          if (globalStorageParent && fs.existsSync(globalStorageParent)) {
+            var siblings = fs.readdirSync(globalStorageParent);
+            for (var si = 0; si < siblings.length; si++) {
+              var siblingMedia = path.join(globalStorageParent, siblings[si], 'media');
+              if (fs.existsSync(siblingMedia)) {
+                var siblingCand = path.join(siblingMedia, cleanName);
+                if (fs.existsSync(siblingCand)) {
+                  resolvedFile = siblingCand;
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
     }
     if (fs.existsSync(resolvedFile)) {

@@ -6513,7 +6513,59 @@ function initializeChatSpace() {
         cBtnErr.textContent = '📦 Compact Conversation';
       }
     }
+
+    if (message.type === 'mediaDataResult') {
+      if (message.success && message.dataUri) {
+        var cleanTarget = String(message.path || '').split('?')[0].split('#')[0];
+        var targetBase = cleanTarget.split('/').pop().split('\\').pop();
+        for (var pmi = 0; pmi < pendingChatMediaImages.length; pmi++) {
+          var pItem = pendingChatMediaImages[pmi];
+          if (pItem && pItem.element) {
+            var itemClean = String(pItem.src || '').split('?')[0].split('#')[0];
+            var itemBase = itemClean.split('/').pop().split('\\').pop();
+            if (itemClean === cleanTarget || itemBase === targetBase || (message.resolvedPath && itemClean.indexOf(targetBase) !== -1)) {
+              if (pItem.element.tagName === 'IMG') {
+                pItem.element.src = message.dataUri;
+              } else if (pItem.element.tagName === 'VIDEO') {
+                pItem.element.src = message.dataUri;
+                pItem.element.load();
+              }
+            }
+          }
+        }
+        var allImgs = document.querySelectorAll('img[data-media-raw-src], img[data-media-src], video[data-media-raw-src], video[data-media-src]');
+        for (var ai = 0; ai < allImgs.length; ai++) {
+          var el = allImgs[ai];
+          var elSrc = el.dataset.mediaRawSrc || el.dataset.mediaSrc || el.getAttribute('src') || '';
+          var elClean = elSrc.split('?')[0].split('#')[0];
+          var elBase = elClean.split('/').pop().split('\\').pop();
+          if (elBase && (elBase === targetBase || elClean === cleanTarget)) {
+            if (el.tagName === 'IMG') {
+              el.src = message.dataUri;
+            } else if (el.tagName === 'VIDEO') {
+              el.src = message.dataUri;
+              el.load();
+            }
+          }
+        }
+      }
+    }
   }
+
+  var pendingChatMediaImages = [];
+  function requestChatMediaData(imgEl, rawSrc) {
+    if (!imgEl || !rawSrc) return;
+    pendingChatMediaImages.push({ element: imgEl, src: rawSrc });
+    var api = window.VSCODE_API || window.vscode;
+    if (api && api.postMessage) {
+      api.postMessage({
+        type: 'getMediaData',
+        path: rawSrc
+      });
+    }
+  }
+  window.requestMediaData = requestChatMediaData;
+
   window.addEventListener("message", handleWindowMessage);
 
   if (typeof window.getDashboardActiveConversationId === "function") {

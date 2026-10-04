@@ -4,6 +4,7 @@
 
 import { handleDiffResult } from '../chats/chats-diff-manager.js';
 import { handleUndoComplete } from '../chats/chats-checkpoint-manager.js';
+import { handleMediaDataResult } from '../chats/chats-media-manager.js';
 
 var listeners = [];
 
@@ -43,6 +44,8 @@ function handlemessage(message) {
     handleDiffResult(message);
   } else if (msgType === 'undoComplete') {
     handleUndoComplete(message);
+  } else if (msgType === 'mediaDataResult') {
+    handleMediaDataResult(message);
   } else if (msgType === 'showAlert') {
     if (message.message && typeof alert === 'function') {
       alert(message.message);

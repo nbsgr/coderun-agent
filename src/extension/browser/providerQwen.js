@@ -137,36 +137,15 @@ export function formatToolsForPrompt(tools) {
       effectiveTools = [];
     }
   }
-  var hasGenImg = false;
-  for (var ei = 0; ei < effectiveTools.length; ei++) {
-    var eName = (effectiveTools[ei].function && effectiveTools[ei].function.name) || effectiveTools[ei].name;
-    if (eName === 'generate_image') {
-      hasGenImg = true;
-      break;
-    }
-  }
-  if (!hasGenImg) {
-    effectiveTools.push({
-      function: {
-        name: 'generate_image',
-        description: 'Generate an image from a descriptive text prompt. Call this tool whenever the user asks to generate, design, draw, or edit an image.',
-        parameters: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: 'Detailed prompt describing the image to generate' }
-          },
-          required: ['prompt']
-        }
-      }
-    });
-  }
   if (!effectiveTools || !effectiveTools.length) return 'No workspace tools available.';
   var s = '';
   for (var i = 0; i < effectiveTools.length; i++) {
     var t = effectiveTools[i];
     var fn = t.function || t;
     if (!fn || !fn.name) continue;
-    if (fn.name === 'image_edit' || fn.name === 'edit_image') {
+    // Qwen uses native server-side image generation (image_gen_tool).
+    // Never expose workspace image tools to Qwen so it uses its native capabilities directly.
+    if (fn.name === 'generate_image' || fn.name === 'image_edit' || fn.name === 'edit_image' || fn.name === 'img_gen' || fn.name === 'image_gen' || fn.name === 'image_generation') {
       continue;
     }
     s += '\n### ' + fn.name + '\n';
@@ -210,6 +189,12 @@ export function serializeMessages(messages, systemContent, tools) {
       baseSystem = systemContent;
     }
   }
+  // Inform Qwen of its native image generation capability and remove workspace generate_image instruction
+  baseSystem = baseSystem.replace(
+    /- Image Generation & Editing:[\s\S]*?argument of generate_image\./,
+    '- **Native Image Generation**: You have full native server-side image generation capability on chat.qwen.ai. When the user asks to generate, create, draw, or design an image, use your native image generation directly. You do NOT have a workspace generate_image tool.'
+  );
+  baseSystem = baseSystem.replace(/, generate_image/g, '');
   if (baseSystem.indexOf('\n## AVAILABLE WORKSPACE TOOLS\n') === -1) {
     baseSystem += '\n\n## AVAILABLE WORKSPACE TOOLS\n' + formatToolsForPrompt(toolList);
   }
@@ -253,7 +238,7 @@ export function serializeMessages(messages, systemContent, tools) {
       var lastHeader = lastToolName ? (lastToolName + ' (ID: ' + lastToolId + ')') : ('ID: ' + lastToolId);
       parts.push('\n--- CURRENT STEP ---\n[Latest Tool Execution Result for ' + lastHeader + ']:\n' + (lastMsg.content || '') + '\n\nAnalyze this result and decide the next step or final answer in strict OpenAI chat.completion format.');
     } else if (lastMsg.role === 'user') {
-      parts.push('\n--- CURRENT REQUEST ---\nUser:\n' + (lastMsg.content || '') + '\n\n[DIRECTIVE: Respond ONLY with a valid JSON object matching the OpenAI schema (starting with "{" and ending with "}"). If this requires inspecting/reading/writing files or running commands, invoke the tool in "tool_calls". If answering or explaining, set "finish_reason": "stop" and place your markdown in "content". No text outside the JSON.]');
+      parts.push('\n--- CURRENT REQUEST ---\nUser:\n' + (lastMsg.content || ''));
     } else if (lastMsg.role === 'assistant') {
       parts.push('\n--- CURRENT ASSISTANT REQUEST ---\n' + (lastMsg.content || ''));
     }
@@ -586,6 +571,27 @@ export function parseTextToolCalls(text) {
   return toolCalls;
 }
 
+async function resolveDirectImageFallback(config, args, streamedImageUrls) {
+  if (streamedImageUrls && streamedImageUrls.size > 0) return null;
+  try {
+    var parsedImgArgs = (typeof args === 'string') ? JSON.parse(args) : (args || {});
+    var imgPrompt = parsedImgArgs.prompt || parsedImgArgs.description || parsedImgArgs.input || '';
+    if (imgPrompt) {
+      var imgRes = await images(config, imgPrompt);
+      var generatedUrl = (imgRes && imgRes.data && imgRes.data[0] && imgRes.data[0].url) || (typeof imgRes === 'string' ? imgRes : null);
+      if (generatedUrl) {
+        if (streamedImageUrls) {
+          streamedImageUrls.add(generatedUrl);
+        }
+        return generatedUrl;
+      }
+    }
+  } catch (imgErr) {
+    console.warn('[PROVIDER QWEN] Direct image generation fallback failed:', imgErr ? imgErr.message : imgErr);
+  }
+  return null;
+}
+
 export async function* chat(config, messages, tools, options) {
   var systemContent = '';
   for (var sIdx = 0; sIdx < messages.length; sIdx++) {
@@ -614,7 +620,12 @@ export async function* chat(config, messages, tools, options) {
       if (tName) validToolNames.add(tName);
     }
   }
-  validToolNames.add('generate_image');
+  validToolNames.delete('generate_image');
+  validToolNames.delete('image_edit');
+  validToolNames.delete('edit_image');
+  validToolNames.delete('img_gen');
+  validToolNames.delete('image_gen');
+  validToolNames.delete('image_generation');
 
   var cookieStr = (config && config.apiKey) || lastSessionCookie || '';
   if (!cookieStr && typeof globalThis.qwenGetActiveCookie === 'function') {
@@ -956,9 +967,9 @@ export async function* chat(config, messages, tools, options) {
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
       if (!line) continue;
-      if (line.startsWith('data: ')) {
-        var dataStr = line.substring(6);
-        if (dataStr.trim() === '[DONE]') break;
+      if (line.startsWith('data: ') || line.startsWith('data:')) {
+        var dataStr = line.startsWith('data: ') ? line.substring(6) : line.substring(5);
+        if (dataStr.trim() === '[DONE]') continue;
         try {
           var data = JSON.parse(dataStr);
           if (data && data.success === false) {
@@ -1156,15 +1167,22 @@ export async function* chat(config, messages, tools, options) {
         if (fnName === 'image_edit' || fnName === 'edit_image' || fnName === 'img_gen' || fnName === 'image_gen' || fnName === 'image_generation') {
           fnName = 'generate_image';
         }
-        if (fnName === 'generate_image' && streamedImageUrls.size > 0) {
+        var args = fn.arguments;
+        if (typeof args === 'object' && args !== null) {
+          args = JSON.stringify(args);
+        }
+        if (fnName === 'generate_image') {
+          var fbUrl1 = await resolveDirectImageFallback(config, args, streamedImageUrls);
+          if (fbUrl1) {
+            streamedAnyContent = true;
+            var md1 = '\n\n![Generated Image](' + fbUrl1 + ')\n\n';
+            accumContent += md1;
+            yield { content: md1 };
+          }
           continue;
         }
         if (validToolNames && validToolNames.size > 0 && !validToolNames.has(fnName)) {
           continue;
-        }
-        var args = fn.arguments;
-        if (typeof args === 'object' && args !== null) {
-          args = JSON.stringify(args);
         }
         var callId = rawTc.id || ('call_' + tcIdx);
         formattedCalls.push({
@@ -1192,7 +1210,15 @@ export async function* chat(config, messages, tools, options) {
           fbName = 'generate_image';
           if (fbItem.function) fbItem.function.name = 'generate_image';
         }
-        if (fbName === 'generate_image' && streamedImageUrls.size > 0) {
+        if (fbName === 'generate_image') {
+          var fbRawArgs = (fbItem.function && fbItem.function.arguments) || fbItem.arguments;
+          var fbUrl2 = await resolveDirectImageFallback(config, fbRawArgs, streamedImageUrls);
+          if (fbUrl2) {
+            streamedAnyContent = true;
+            var md2 = '\n\n![Generated Image](' + fbUrl2 + ')\n\n';
+            accumContent += md2;
+            yield { content: md2 };
+          }
           continue;
         }
         if (validToolNames && validToolNames.size > 0 && !validToolNames.has(fbName)) {
@@ -1216,15 +1242,22 @@ export async function* chat(config, messages, tools, options) {
             if (rName === 'image_edit' || rName === 'edit_image' || rName === 'img_gen' || rName === 'image_gen' || rName === 'image_generation') {
               rName = 'generate_image';
             }
-            if (rName === 'generate_image' && streamedImageUrls.size > 0) {
+            var rArgs = rFn.arguments;
+            if (typeof rArgs === 'object' && rArgs !== null) {
+              rArgs = JSON.stringify(rArgs);
+            }
+            if (rName === 'generate_image') {
+              var fbUrl3 = await resolveDirectImageFallback(config, rArgs, streamedImageUrls);
+              if (fbUrl3) {
+                streamedAnyContent = true;
+                var md3 = '\n\n![Generated Image](' + fbUrl3 + ')\n\n';
+                accumContent += md3;
+                yield { content: md3 };
+              }
               continue;
             }
             if (validToolNames && validToolNames.size > 0 && !validToolNames.has(rName)) {
               continue;
-            }
-            var rArgs = rFn.arguments;
-            if (typeof rArgs === 'object' && rArgs !== null) {
-              rArgs = JSON.stringify(rArgs);
             }
             formattedRescued.push({
               id: rTc.id || ('call_' + rIdx),

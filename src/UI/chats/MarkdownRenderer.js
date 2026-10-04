@@ -267,7 +267,8 @@ function renderInlineStyles(text) {
 }
 
 function replaceMarkdownImage(match, alt, src) {
-  var safeSrc = sanitizeUrl(src);
+  var rawSrc = String(src || '').replace(/&amp;/g, '&').trim();
+  var safeSrc = sanitizeUrl(rawSrc);
   var isVideo = /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(safeSrc) || safeSrc.startsWith('data:video/');
   if (isVideo) {
     return '<div class="cr-media-card cr-video-card" data-video-card="1">' +
@@ -276,7 +277,7 @@ function replaceMarkdownImage(match, alt, src) {
         (alt ? '<span class="cr-media-alt">' + esc(alt) + '</span>' : '') +
       '</div>' +
       '<div class="cr-media-preview cr-video-preview">' +
-        '<video controls playsinline preload="metadata" class="cr-media-video" src="' + esc(safeSrc) + '" data-media-src="' + esc(safeSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,\'' + esc(safeSrc) + '\');}}"></video>' +
+        '<video controls playsinline preload="metadata" class="cr-media-video" src="' + esc(safeSrc) + '" data-media-src="' + esc(safeSrc) + '" data-media-raw-src="' + esc(rawSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,this.dataset.mediaRawSrc||this.dataset.mediaSrc);}}"></video>' +
         '<div class="cr-video-overlay-play">▶</div>' +
       '</div>' +
       '<div class="cr-video-controls">' +
@@ -293,8 +294,8 @@ function replaceMarkdownImage(match, alt, src) {
         '<button type="button" class="cr-vid-btn cr-vid-fullscreen" title="Fullscreen">⛶</button>' +
       '</div>' +
       '<div class="cr-media-actions">' +
-        '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '">📥 Save to Project</button>' +
-        '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '">📋 Copy URL</button>' +
+        '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '" data-media-raw-path="' + esc(rawSrc) + '">📥 Save to Project</button>' +
+        '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '" data-media-raw-path="' + esc(rawSrc) + '">📋 Copy URL</button>' +
       '</div>' +
     '</div>';
   }
@@ -305,11 +306,11 @@ function replaceMarkdownImage(match, alt, src) {
       (alt ? '<span class="cr-media-alt">' + esc(alt) + '</span>' : '') +
     '</div>' +
     '<div class="cr-media-preview">' +
-      '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" data-media-src="' + esc(safeSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,\'' + esc(safeSrc) + '\');}}" loading="lazy" />' +
+      '<img src="' + esc(safeSrc) + '" alt="' + esc(alt.replace(/&amp;/g, '&')) + '" class="md-img" data-media-src="' + esc(safeSrc) + '" data-media-raw-src="' + esc(rawSrc) + '" onerror="if(!this.dataset.triedFallback){this.dataset.triedFallback=\'1\';if(window.requestMediaData){window.requestMediaData(this,this.dataset.mediaRawSrc||this.dataset.mediaSrc);}}" loading="lazy" />' +
     '</div>' +
     '<div class="cr-media-actions">' +
-      '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '">📥 Save to Project</button>' +
-      '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '">📋 Copy URL</button>' +
+      '<button type="button" class="cr-btn-save-media" data-media-path="' + esc(safeSrc) + '" data-media-raw-path="' + esc(rawSrc) + '">📥 Save to Project</button>' +
+      '<button type="button" class="cr-btn-copy-media" data-media-path="' + esc(safeSrc) + '" data-media-raw-path="' + esc(rawSrc) + '">📋 Copy URL</button>' +
     '</div>' +
   '</div>';
 }
