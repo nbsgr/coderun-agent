@@ -4,7 +4,7 @@
   <img src="./icons/logo.png" width="480" alt="CodeRun Logo"/>
 </p>
 
-[![Version](https://img.shields.io/badge/version-v1.7.2-blue.svg)](https://github.com/nbsgr/coderun-agent)
+[![Version](https://img.shields.io/badge/version-v1.7.3-blue.svg)](https://github.com/nbsgr/coderun-agent)
 [![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code&label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![VS Code Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-blue?logo=github&logoColor=white)](https://nbsgr.github.io/coderun-agent/)
@@ -500,7 +500,7 @@ Install **"CodeRun AI Agent"** via the Extensions view (`Ctrl+Shift+X`) in VS Co
 ```bash
 code --install-extension Bala-Siva-Ganesh.ai-agent
 # Or install from local VSIX:
-code --install-extension coderun-agent-1.7.2.vsix
+code --install-extension coderun-agent-1.7.3.vsix
 ```
 
 ### 2. Development Setup (From Source)
