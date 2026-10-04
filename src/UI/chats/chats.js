@@ -1078,7 +1078,7 @@ function initializeChatSpace() {
 
   function renderWelcomeScreen(chatCtx, msgList) {
     if (!msgList) return;
-    var botAvatarSrc = (window.CODERUN_BOT_AVATAR || window.CODERUN_LOGO_URI || 'bot-avatar.jpg');
+    var botAvatarSrc = (window.CODERUN_LOGO_URI || window.CODERUN_BOT_AVATAR || 'bot-avatar.jpg');
     var wrap = document.createElement('div');
     wrap.className = 'cr-welcome-screen';
     wrap.innerHTML = 
@@ -1086,9 +1086,9 @@ function initializeChatSpace() {
         '<div class="cr-welcome-hero">' +
           '<div class="cr-welcome-avatar-wrapper">' +
             '<div class="cr-welcome-avatar-glow"></div>' +
-            '<img class="cr-welcome-avatar-img" src="' + botAvatarSrc + '" alt="Robot Mascot"/>' +
+            '<img class="cr-welcome-avatar-img" src="' + botAvatarSrc + '" alt="CodeRun Logo"/>' +
           '</div>' +
-          '<h1 class="cr-welcome-title">Welcome to <span class="cr-welcome-brand">AI-AGENT</span></h1>' +
+          '<h1 class="cr-welcome-title">Welcome to <span class="cr-welcome-brand">CodeRun</span></h1>' +
           '<p class="cr-welcome-subtitle">Your intelligent coding companion</p>' +
         '</div>' +
         '<div class="cr-welcome-capabilities">' +

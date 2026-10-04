@@ -612,7 +612,7 @@ function initializeDashboard() {
       '<div class="cr-root">' +
         '<header class="cr-header">' +
           '<div class="cr-header-left">' +
-            '<span class="cr-copilot-mark">R</span>' +
+            '<span class="cr-copilot-mark">' + (window.CODERUN_LOGO_URI ? '<img class="cr-header-logo-img" src="' + window.CODERUN_LOGO_URI + '" alt="CodeRun" onerror="this.style.display=\'none\';"/>' : 'R') + '</span>' +
             '<span class="cr-title">CodeRun Agent</span>' +
             '<span class="cr-model-badge" id="headerModelBadge"></span>' +
           '</div>' +
@@ -5570,16 +5570,16 @@ function initializeDashboard() {
 
   function renderDashboardWelcome(container) {
     if (!container) return;
-    var botAvatarSrc = (window.CODERUN_BOT_AVATAR || window.CODERUN_LOGO_URI || "bot-avatar.jpg");
+    var botAvatarSrc = (window.CODERUN_LOGO_URI || window.CODERUN_BOT_AVATAR || "bot-avatar.jpg");
     container.innerHTML =
       '<div class="cr-welcome-screen">' +
         '<div class="cr-welcome-container">' +
           '<div class="cr-welcome-hero">' +
             '<div class="cr-welcome-avatar-wrapper">' +
               '<div class="cr-welcome-avatar-glow"></div>' +
-              '<img class="cr-welcome-avatar-img" src="' + botAvatarSrc + '" alt="Robot Mascot"/>' +
+              '<img class="cr-welcome-avatar-img" src="' + botAvatarSrc + '" alt="CodeRun Logo"/>' +
             '</div>' +
-            '<h1 class="cr-welcome-title">Welcome to <span class="cr-welcome-brand">AI-AGENT</span></h1>' +
+            '<h1 class="cr-welcome-title">Welcome to <span class="cr-welcome-brand">CodeRun</span></h1>' +
             '<p class="cr-welcome-subtitle">Your intelligent coding companion</p>' +
           '</div>' +
           '<div class="cr-welcome-capabilities">' +

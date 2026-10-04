@@ -1,7 +1,7 @@
 # CodeRun AI Agent 🚀
 
 <p align="center">
-  <img src="./icons/logo.png" width="160" alt="CodeRun Logo"/>
+  <img src="./icons/logo.png" width="480" alt="CodeRun Logo"/>
 </p>
 
 [![Version](https://img.shields.io/badge/version-v1.7.0-blue.svg)](https://github.com/nbsgr/coderun-agent)

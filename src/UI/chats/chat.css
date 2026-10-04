@@ -4226,9 +4226,9 @@ body.vscode-light .cr-msg-copy-btn.cr-copied {
 
 .cr-welcome-avatar-wrapper {
   position: relative;
-  width: 76px;
-  height: 76px;
-  margin-bottom: 8px;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto 12px auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4237,54 +4237,57 @@ body.vscode-light .cr-msg-copy-btn.cr-copied {
 
 .cr-welcome-avatar-glow {
   position: absolute;
-  inset: -12px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.45) 0%, rgba(99, 102, 241, 0.3) 45%, transparent 70%);
-  filter: blur(12px);
+  inset: -6px -12px;
+  border-radius: 18px;
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.4) 0%, rgba(99, 102, 241, 0.2) 50%, transparent 75%);
+  filter: blur(14px);
   pointer-events: none;
   animation: cr-welcome-pulse 4s ease-in-out infinite alternate;
 }
 
 @keyframes cr-welcome-pulse {
   0% {
-    transform: scale(0.92);
-    opacity: 0.65;
+    transform: scale(0.96);
+    opacity: 0.7;
   }
   100% {
-    transform: scale(1.08);
+    transform: scale(1.03);
     opacity: 0.95;
   }
 }
 
 .cr-welcome-avatar-img {
-  width: 76px;
-  height: 76px;
-  border-radius: 18px;
-  object-fit: cover;
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  aspect-ratio: 1536 / 1024;
+  border-radius: 14px;
+  object-fit: contain;
   position: relative;
   z-index: 2;
-  border: 2px solid rgba(56, 189, 248, 0.45);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.25);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 20px rgba(56, 189, 248, 0.25);
   display: block;
 }
 
 .cr-welcome-avatar-svg {
-  width: 76px;
-  height: 76px;
-  border-radius: 18px;
+  width: 100%;
+  max-width: 280px;
+  height: 160px;
+  border-radius: 14px;
   background: var(--vscode-editorWidget-background, #1e1e1e);
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   z-index: 2;
-  border: 2px solid rgba(56, 189, 248, 0.45);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.25);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 20px rgba(56, 189, 248, 0.25);
 }
 
 .cr-welcome-avatar-svg svg {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   color: #38bdf8;
 }
 
