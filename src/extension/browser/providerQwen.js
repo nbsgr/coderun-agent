@@ -27,6 +27,13 @@ export function getLastCookie() {
   return lastSessionCookie;
 }
 
+export function getChatIdForSession(sId) {
+  if (sId && sessionChatMap[sId]) {
+    return sessionChatMap[sId].chatId || null;
+  }
+  return null;
+}
+
 export function hasValidQwenToken(cookieStr) {
   if (!cookieStr || typeof cookieStr !== 'string') return false;
   var trimmed = cookieStr.trim();
@@ -602,7 +609,13 @@ export async function* chat(config, messages, tools, options) {
   if (!qwenChatId) {
     qwenChatId = await createNewQwenChat(qwenModel, initHeaders);
     sessionChatMap[sId] = { chatId: qwenChatId, model: qwenModel, lastAssistantMsgId: null };
+  } else if (!sessionChatMap[sId]) {
+    sessionChatMap[sId] = { chatId: qwenChatId, model: qwenModel, lastAssistantMsgId: null };
+  } else {
+    sessionChatMap[sId].chatId = qwenChatId;
+    sessionChatMap[sId].model = qwenModel;
   }
+  sessionEntry = sessionChatMap[sId];
   activeQwenChatId = qwenChatId;
   if (config) config.chatId = qwenChatId;
 
@@ -742,6 +755,21 @@ export async function* chat(config, messages, tools, options) {
       authErr3.isAuthError = true;
       authErr3.code = 'UNAUTHORIZED';
       throw authErr3;
+    }
+    if (response.status === 400 && (body.parent_id !== null || payloadMsg.parentId !== null)) {
+      console.log('[QWEN] HTTP 400 on chat session with parent_id. Retrying with parent_id: null on same chat...');
+      body.parent_id = null;
+      payloadMsg.parentId = null;
+      payloadMsg.parent_id = null;
+      if (sessionChatMap[sId]) {
+        sessionChatMap[sId].lastAssistantMsgId = null;
+      }
+      response = await fetch(url, {
+        method: 'POST',
+        headers: buildQwenHeaders(cookieStr, activeQwenChatId),
+        body: JSON.stringify(body)
+      });
+      contentType = (response.headers.get('content-type') || '').toLowerCase();
     }
     if (response.status === 400 || response.status === 404) {
       console.log('[QWEN] Chat session returned HTTP ' + response.status + '. Creating fresh session...');
@@ -907,15 +935,15 @@ export async function* chat(config, messages, tools, options) {
             sseAuthErr.code = 'UNAUTHORIZED';
             throw sseAuthErr;
           }
-          if (data && (data.id || data.msg_id || data.message_id)) {
-            var mid = data.id || data.msg_id || data.message_id;
+          var choice = data.choices && data.choices[0];
+          var mid = (data && (data.id || data.msg_id || data.message_id || data.msgId)) ||
+                    (choice && ((choice.delta && (choice.delta.msg_id || choice.delta.id)) || (choice.message && (choice.message.id || choice.message.msg_id))));
+          if (mid) {
             lastAssistantMsgId = mid;
             if (sessionChatMap[sId]) {
               sessionChatMap[sId].lastAssistantMsgId = mid;
             }
           }
-
-          var choice = data.choices && data.choices[0];
           if (choice) {
             var delta = choice.delta || {};
             var deltaContent = delta.content || '';

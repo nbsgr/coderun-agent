@@ -125,9 +125,9 @@ function handlemessage(message, webview, context, statusBarItem) {
   } else if (msgType === 'showAlert') {
     handleShowAlert(message);
   } else if (msgType === 'confirmDelete') {
-    handleConfirmDelete(message, webview);
+    handleConfirmDelete(message, webview, context);
   } else if (msgType === 'confirmClearAll') {
-    handleConfirmClearAll(webview);
+    handleConfirmClearAll(webview, context);
   } else if (msgType === 'runInTerminal' || msgType === 'terminalCommand') {
     handleRunInTerminal(message);
   } else if (msgType === 'requestWorkspaceFolder') {

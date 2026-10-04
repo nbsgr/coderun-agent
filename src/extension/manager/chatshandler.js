@@ -81,7 +81,18 @@ export async function handleWebviewReady(webview, extensionContext, statusBarIte
   await refreshAllProviderModels(webview, extensionContext, statusBarItem);
 }
 
+var savedExtensionContext = null;
+
+function isQwenProvider(p) {
+  if (!p) return false;
+  var s = String(p).trim().toLowerCase();
+  return s === 'qwen' || s === 'qwen browser api';
+}
+
 export async function handleStartChat(message, webview, extensionContext) {
+  if (extensionContext) {
+    savedExtensionContext = extensionContext;
+  }
   var userPrompt = message.message;
   var userImage = message.image || null;
   var history = message.history;
@@ -96,7 +107,9 @@ export async function handleStartChat(message, webview, extensionContext) {
   var providerName = message.provider || '';
   var frontendModel = message.model || '';
 
-  if (!providerName || providerName === 'ollama') {
+  if (isQwenProvider(providerName)) {
+    providerName = 'qwen';
+  } else if (!providerName || providerName === 'ollama') {
     if (frontendModel && (/^qwen3\.[0-9]/i.test(frontendModel) || frontendModel.includes('qwen3.'))) {
       providerName = 'qwen';
     }
@@ -113,8 +126,15 @@ export async function handleStartChat(message, webview, extensionContext) {
     providerConfig.model = frontendModel.trim();
   }
 
-  if (message.chatId || message.qwenChatId) {
-    providerConfig.chatId = message.chatId || message.qwenChatId;
+  if (isQwenProvider(providerName) || isQwenProvider(providerConfig.provider)) {
+    var storedQwenChatId = null;
+    if (extensionContext && extensionContext.globalState) {
+      var qwenSessions = extensionContext.globalState.get('qwen_chat_sessions') || {};
+      storedQwenChatId = qwenSessions[convSessionId] || null;
+    }
+    providerConfig.chatId = message.qwenChatId || message.chatId || storedQwenChatId || undefined;
+  } else if (message.chatId) {
+    providerConfig.chatId = message.chatId;
   }
 
   if (!providerConfig.model) {
@@ -126,9 +146,8 @@ export async function handleStartChat(message, webview, extensionContext) {
   }
 
   if (config.needsApiKey(providerConfig.provider) && !providerConfig.apiKey) {
-    if (providerConfig.provider === 'qwen') {
+    if (isQwenProvider(providerConfig.provider)) {
       try {
-        var providerQwen = await import('../browser/providerQwen.js');
         providerConfig.apiKey = providerQwen.getLastCookie() || '';
       } catch (_) { void 0; }
     }
@@ -176,6 +195,17 @@ export async function handleStartChat(message, webview, extensionContext) {
     providerConfig.conversationId = convSessionId;
     await runAgent(userPrompt, providerConfig.model, workspaceFolder, history, providerConfig, onAgentEvent, onAskPermission, { signal: abortCtrl, image: userImage, sessionId: convSessionId, isContinuation: Boolean(message.isContinuation) });
     console.log('[EXTENSION] runAgent completed');
+    var qwenChatIdToPersist = null;
+    if (isQwenProvider(providerConfig.provider)) {
+      try {
+        qwenChatIdToPersist = providerQwen.getChatIdForSession(convSessionId) || providerConfig.chatId || null;
+        if (qwenChatIdToPersist && extensionContext && extensionContext.globalState) {
+          var qMap = extensionContext.globalState.get('qwen_chat_sessions') || {};
+          qMap[convSessionId] = qwenChatIdToPersist;
+          await extensionContext.globalState.update('qwen_chat_sessions', qMap);
+        }
+      } catch (_) { void 0; }
+    }
     if (extensionContext && extensionContext.globalStorageUri) {
       try {
         await executionTrace.saveTraceToDisk(extensionContext.globalStorageUri.fsPath, convSessionId);
@@ -183,7 +213,14 @@ export async function handleStartChat(message, webview, extensionContext) {
         console.warn('[CHAT] Trace save error on runAgent complete:', trSaveErr ? trSaveErr.message : trSaveErr);
       }
     }
-    webview.postMessage({ type: 'agentEvent', event: { type: 'stream_end', stopped: abortCtrl.stopped } });
+    webview.postMessage({
+      type: 'agentEvent',
+      event: {
+        type: 'stream_end',
+        stopped: abortCtrl.stopped,
+        qwenChatId: qwenChatIdToPersist || undefined
+      }
+    });
   } catch (err) {
     console.error('[EXTENSION] Agent error:', err);
     var errMsg = err ? (err.message || String(err)) : 'Unknown error';
@@ -313,13 +350,24 @@ export function handleRequestConversations(webview, extensionContext) {
   }
 }
 
-export function handleConfirmDelete(message, webview) {
+export function handleConfirmDelete(message, webview, extensionContext) {
+  var ctx = extensionContext || savedExtensionContext;
   function onConfirmDelete(res) {
     if (res === 'Delete' && webview && typeof webview.postMessage === 'function') {
-      if (message && (message.qwenChatId || message.id)) {
+      var convId = message && (message.id || message.conversationId);
+      if (message && (message.qwenChatId || convId)) {
         try {
-          providerQwen.deleteChat(null, message.qwenChatId || message.id);
+          providerQwen.deleteChat(null, message.qwenChatId || convId);
         } catch (_) { void 0; }
+        if (ctx && ctx.globalState && convId) {
+          try {
+            var qSessions = ctx.globalState.get('qwen_chat_sessions') || {};
+            if (qSessions[convId]) {
+              delete qSessions[convId];
+              ctx.globalState.update('qwen_chat_sessions', qSessions);
+            }
+          } catch (_) { void 0; }
+        }
       }
       webview.postMessage({ type: 'deleteConversationConfirmed', id: message.id });
     }
@@ -331,12 +379,18 @@ export function handleConfirmDelete(message, webview) {
   ).then(onConfirmDelete);
 }
 
-export function handleConfirmClearAll(webview) {
+export function handleConfirmClearAll(webview, extensionContext) {
+  var ctx = extensionContext || savedExtensionContext;
   function onConfirmClearAll(res) {
     if (res === 'Delete All' && webview && typeof webview.postMessage === 'function') {
       try {
         providerQwen.clearAllSessions(null);
       } catch (_) { void 0; }
+      if (ctx && ctx.globalState) {
+        try {
+          ctx.globalState.update('qwen_chat_sessions', {});
+        } catch (_) { void 0; }
+      }
       webview.postMessage({ type: 'clearAllConversationsConfirmed' });
     }
   }

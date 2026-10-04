@@ -1728,6 +1728,12 @@ function initializeChatSpace() {
     }
     if (ev.type === 'stream_end') {
       var wasStopped = Boolean(ev.stopped || (chatCtx && chatCtx.isUserStopped));
+      if (ev.qwenChatId && chatCtx && chatCtx.conversation) {
+        chatCtx.conversation.qwenChatId = ev.qwenChatId;
+        if (typeof window.saveDashboardConversations === 'function') {
+          window.saveDashboardConversations();
+        }
+      }
       finishStream(chatCtx, S, wasStopped);
       setStreaming(chatCtx, false);
       chatCtx.onStreamEnd();
@@ -1946,7 +1952,7 @@ function initializeChatSpace() {
         function onActiveStream(ev) { handleActiveChatStream(chatCtx, ev); }
         window.activeChatStreamCallback = onActiveStream;
 
-        window.VSCODE_API.postMessage({
+        var startPayload = {
           type: "startChat",
           conversationId: chatCtx.convId,
           sessionId: chatCtx.convId,
@@ -1957,7 +1963,14 @@ function initializeChatSpace() {
           history: history,
           plan: conversation.plan || null,
           workspaceFolder: currentWorkspace
-        });
+        };
+        var curProvStr = String(currentProvider || '').trim().toLowerCase();
+        var isQwen = curProvStr === 'qwen' || curProvStr === 'qwen browser api';
+        if (isQwen && conversation && conversation.qwenChatId) {
+          startPayload.qwenChatId = conversation.qwenChatId;
+        }
+
+        window.VSCODE_API.postMessage(startPayload);
         return;
       }
 
@@ -2057,7 +2070,7 @@ function initializeChatSpace() {
         function onActiveStream(ev) { handleActiveChatStream(chatCtx, ev); }
         window.activeChatStreamCallback = onActiveStream;
 
-        window.VSCODE_API.postMessage({
+        var continuePayload = {
           type: "startChat",
           conversationId: chatCtx.convId,
           sessionId: chatCtx.convId,
@@ -2069,7 +2082,14 @@ function initializeChatSpace() {
           history: history,
           plan: conversation.plan || null,
           workspaceFolder: currentWorkspace
-        });
+        };
+        var contProvStr = String(currentProvider || '').trim().toLowerCase();
+        var isContQwen = contProvStr === 'qwen' || contProvStr === 'qwen browser api';
+        if (isContQwen && conversation && conversation.qwenChatId) {
+          continuePayload.qwenChatId = conversation.qwenChatId;
+        }
+
+        window.VSCODE_API.postMessage(continuePayload);
         return;
       }
 
