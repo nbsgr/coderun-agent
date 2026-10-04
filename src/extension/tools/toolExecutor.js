@@ -252,6 +252,29 @@ export async function executeSingleToolCall(workspace, sessionId, iteration, sen
         event.args = args;
       }
 
+      if (event.type === 'result') {
+        event.type = 'tool_result';
+        event.success = true;
+        event.message = event.result || 'Completed';
+        event.content = event.result || 'Completed';
+      } else if (event.type === 'error') {
+        event.type = 'tool_result';
+        event.success = false;
+        event.message = event.error || 'Failed';
+      }
+
+      if (event.media) {
+        sendEvent({
+          type: 'media_generated',
+          mediaType: (event.media && event.media.type) || 'image',
+          filePath: event.media && event.media.filePath,
+          filename: event.media && event.media.filename,
+          model: event.media && event.media.model,
+          toolCallId: tcId,
+          sessionId: sessionId
+        });
+      }
+
       // Capture deferred resolve for diff review requests in diffManager
       if (event.type === 'request_diff' && event.id) {
         event.sessionId = sessionId;

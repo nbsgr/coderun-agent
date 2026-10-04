@@ -129,13 +129,36 @@ export function buildQwenHeaders(cookieStr, targetChatId) {
 }
 
 export function formatToolsForPrompt(tools) {
-  var effectiveTools = tools;
+  var effectiveTools = Array.isArray(tools) ? tools.slice() : [];
   if (!effectiveTools || !effectiveTools.length) {
     try {
       effectiveTools = getDefinitions();
     } catch (_) {
       effectiveTools = [];
     }
+  }
+  var hasGenImg = false;
+  for (var ei = 0; ei < effectiveTools.length; ei++) {
+    var eName = (effectiveTools[ei].function && effectiveTools[ei].function.name) || effectiveTools[ei].name;
+    if (eName === 'generate_image') {
+      hasGenImg = true;
+      break;
+    }
+  }
+  if (!hasGenImg) {
+    effectiveTools.push({
+      function: {
+        name: 'generate_image',
+        description: 'Generate an image from a descriptive text prompt. Call this tool whenever the user asks to generate, design, draw, or edit an image.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Detailed prompt describing the image to generate' }
+          },
+          required: ['prompt']
+        }
+      }
+    });
   }
   if (!effectiveTools || !effectiveTools.length) return 'No workspace tools available.';
   var s = '';
@@ -425,6 +448,35 @@ function extractToolCallsField(text) {
   return [];
 }
 
+function normalizeToOpenAi(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (obj.choices && Array.isArray(obj.choices) && obj.choices[0] && obj.choices[0].message) {
+    return obj;
+  }
+  var rawTools = obj.tool_calls || [];
+  var rawReasoning = obj.thought || obj.reasoning || '';
+  var rawContent = obj.content || '';
+  if (rawTools.length > 0 || rawReasoning || rawContent || obj.finish_reason) {
+    return {
+      id: obj.id || 'chatcmpl-qwen',
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            reasoning: rawReasoning,
+            content: rawContent,
+            tool_calls: rawTools
+          },
+          finish_reason: rawTools.length > 0 ? 'tool_calls' : (obj.finish_reason || 'stop')
+        }
+      ]
+    };
+  }
+  return obj;
+}
+
 export function cleanAndParseOpenAiJson(raw) {
   var s = (raw || '').trim();
   s = stripServerNoise(s);
@@ -434,14 +486,16 @@ export function cleanAndParseOpenAiJson(raw) {
   s = stripServerNoise(s).trim();
 
   try {
-    return JSON.parse(s);
+    var directObj = JSON.parse(s);
+    return normalizeToOpenAi(directObj);
   } catch (_) { void 0; }
 
   var start = s.indexOf('{');
   var end = s.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) {
     try {
-      return JSON.parse(s.substring(start, end + 1));
+      var substrObj = JSON.parse(s.substring(start, end + 1));
+      return normalizeToOpenAi(substrObj);
     } catch (_) { void 0; }
   }
 
@@ -560,6 +614,7 @@ export async function* chat(config, messages, tools, options) {
       if (tName) validToolNames.add(tName);
     }
   }
+  validToolNames.add('generate_image');
 
   var cookieStr = (config && config.apiKey) || lastSessionCookie || '';
   if (!cookieStr && typeof globalThis.qwenGetActiveCookie === 'function') {
@@ -1098,7 +1153,7 @@ export async function* chat(config, messages, tools, options) {
         var rawTc = msg.tool_calls[tcIdx];
         var fn = rawTc.function || rawTc;
         var fnName = fn.name;
-        if (fnName === 'image_edit' || fnName === 'edit_image') {
+        if (fnName === 'image_edit' || fnName === 'edit_image' || fnName === 'img_gen' || fnName === 'image_gen' || fnName === 'image_generation') {
           fnName = 'generate_image';
         }
         if (fnName === 'generate_image' && streamedImageUrls.size > 0) {
@@ -1133,7 +1188,7 @@ export async function* chat(config, messages, tools, options) {
       for (var fbi = 0; fbi < fallbackCalls.length; fbi++) {
         var fbItem = fallbackCalls[fbi];
         var fbName = (fbItem.function && fbItem.function.name) || fbItem.name;
-        if (fbName === 'image_edit' || fbName === 'edit_image') {
+        if (fbName === 'image_edit' || fbName === 'edit_image' || fbName === 'img_gen' || fbName === 'image_gen' || fbName === 'image_generation') {
           fbName = 'generate_image';
           if (fbItem.function) fbItem.function.name = 'generate_image';
         }
@@ -1158,7 +1213,7 @@ export async function* chat(config, messages, tools, options) {
             var rTc = rescuedTools[rIdx];
             var rFn = rTc.function || rTc;
             var rName = rFn.name;
-            if (rName === 'image_edit' || rName === 'edit_image') {
+            if (rName === 'image_edit' || rName === 'edit_image' || rName === 'img_gen' || rName === 'image_gen' || rName === 'image_generation') {
               rName = 'generate_image';
             }
             if (rName === 'generate_image' && streamedImageUrls.size > 0) {

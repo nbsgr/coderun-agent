@@ -5528,6 +5528,9 @@ function initializeChatSpace() {
     if (result.content != null) text = result.content;
     else if (result.output != null) text = result.output;
     else if (result.message != null) text = result.message;
+    else if (result.result != null) {
+      text = typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2);
+    }
     else if (result.entries) {
       var entryList = [];
       for (var ei = 0; ei < result.entries.length; ei++) {
@@ -5559,6 +5562,12 @@ function initializeChatSpace() {
       } catch (_) {
         // Intentionally fall back to string representation on serialization error
         text = String(result);
+      }
+    }
+    if ((toolName === 'generate_image' || toolName === 'generate_video' || (result && result.media)) && result && result.media && result.media.filePath) {
+      if (text.indexOf('![') === -1) {
+        var mediaLabel = toolName === 'generate_video' ? 'Generated Video' : 'Generated Image';
+        text += (text ? '\n\n' : '') + '![' + mediaLabel + '](' + result.media.filePath + ')';
       }
     }
     return text;
@@ -5642,9 +5651,15 @@ function initializeChatSpace() {
         }
       } else if (resText) {
         resultContainer.style.display = 'block';
-        resultContainer.innerHTML =
-          '<div class="cr-tool-card-block-label">Tool Output</div>' +
-          '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        if (toolName === 'generate_image' || toolName === 'generate_video' || (result && result.media) || resText.indexOf('![Generated Image') !== -1 || resText.indexOf('![Generated Video') !== -1 || resText.indexOf('![') !== -1) {
+          resultContainer.innerHTML =
+            '<div class="cr-tool-card-block-label">Tool Output</div>' +
+            '<div class="cr-tool-card-media-output">' + md(resText) + '</div>';
+        } else {
+          resultContainer.innerHTML =
+            '<div class="cr-tool-card-block-label">Tool Output</div>' +
+            '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+        }
       } else if (result && (result.message || result.output || result.stdout || result.content)) {
         var initialFallback = result.message || result.output || result.stdout || result.content;
         resultContainer.style.display = 'block';
@@ -5759,9 +5774,15 @@ function initializeChatSpace() {
             resultContainer.innerHTML += '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
           }
         } else if (resText) {
-          resultContainer.innerHTML =
-            '<div class="cr-tool-card-block-label">Tool Output</div>' +
-            '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+          if (toolName === 'generate_image' || toolName === 'generate_video' || (result && result.media) || resText.indexOf('![Generated Image') !== -1 || resText.indexOf('![Generated Video') !== -1 || resText.indexOf('![') !== -1) {
+            resultContainer.innerHTML =
+              '<div class="cr-tool-card-block-label">Tool Output</div>' +
+              '<div class="cr-tool-card-media-output">' + md(resText) + '</div>';
+          } else {
+            resultContainer.innerHTML =
+              '<div class="cr-tool-card-block-label">Tool Output</div>' +
+              '<pre class="cr-tool-card-result-pre">' + esc(resText) + '</pre>';
+          }
         } else {
           var fallbackVal = (result && (result.message || result.output || result.stdout || result.content)) || '';
           if (fallbackVal) {

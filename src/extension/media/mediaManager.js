@@ -13,6 +13,10 @@ export function setDefaultMediaStoragePath(dirPath) {
   }
 }
 
+export function setStoragePath(dirPath) {
+  setDefaultMediaStoragePath(dirPath);
+}
+
 export function getDefaultMediaStoragePath() {
   return _defaultMediaStoragePath;
 }
@@ -20,7 +24,7 @@ export function getDefaultMediaStoragePath() {
 export async function ensureMediaDir(baseStoragePath) {
   var targetBase = baseStoragePath || _defaultMediaStoragePath;
   if (!targetBase) return null;
-  var mediaDir = path.join(targetBase, 'media');
+  var mediaDir = path.basename(targetBase) === 'media' ? targetBase : path.join(targetBase, 'media');
   try {
     await fs.promises.mkdir(mediaDir, { recursive: true });
   } catch (err) {
@@ -30,6 +34,14 @@ export async function ensureMediaDir(baseStoragePath) {
 }
 
 export async function saveMediaFromDataOrUrl(baseStoragePath, sessionId, dataOrUrl, defaultExt) {
+  if (!dataOrUrl) return null;
+  if (typeof dataOrUrl === 'object' && dataOrUrl !== null) {
+    if (dataOrUrl.data && Array.isArray(dataOrUrl.data) && dataOrUrl.data[0]) {
+      dataOrUrl = dataOrUrl.data[0].url || dataOrUrl.data[0].b64_json || dataOrUrl.data[0];
+    } else if (dataOrUrl.url) {
+      dataOrUrl = dataOrUrl.url;
+    }
+  }
   if (!dataOrUrl) return null;
   var mediaDir = await ensureMediaDir(baseStoragePath);
   if (!mediaDir) return null;
