@@ -10,9 +10,9 @@
     "depth": 0,
     "role": "coder",
     "agentType": "root",
-    "startedAt": 1791099426575,
-    "completedAt": 1791099426577,
-    "durationMs": 2,
+    "startedAt": 1791110448299,
+    "completedAt": 1791110448299,
+    "durationMs": 0,
     "status": "completed",
     "provider": "ollama",
     "model": "test-model",
@@ -54,7 +54,7 @@
       "durationMs": 0
     },
     "metrics": {
-      "totalDurationMs": 2,
+      "totalDurationMs": 0,
       "totalTokens": {
         "input": 0,
         "output": 0,

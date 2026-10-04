@@ -3,6 +3,7 @@
 // Strict traditional function declarations only. Zero modifications to agentLoop.js.
 
 import { QWEN_SYSTEM_PROMPT } from '../agents/constants.js';
+import { getDefinitions } from '../tools/toolDefinitions.js';
 import { uploadFileToQwenOss } from './qwenOssManager.js';
 import {
   generateUuid,
@@ -121,11 +122,20 @@ export function buildQwenHeaders(cookieStr, targetChatId) {
 }
 
 export function formatToolsForPrompt(tools) {
-  if (!tools || !tools.length) return 'No workspace tools available.';
+  var effectiveTools = tools;
+  if (!effectiveTools || !effectiveTools.length) {
+    try {
+      effectiveTools = getDefinitions();
+    } catch (_) {
+      effectiveTools = [];
+    }
+  }
+  if (!effectiveTools || !effectiveTools.length) return 'No workspace tools available.';
   var s = '';
-  for (var i = 0; i < tools.length; i++) {
-    var t = tools[i];
+  for (var i = 0; i < effectiveTools.length; i++) {
+    var t = effectiveTools[i];
     var fn = t.function || t;
+    if (!fn || !fn.name) continue;
     if (fn.name === 'image_edit' || fn.name === 'edit_image') {
       continue;
     }
@@ -138,9 +148,9 @@ export function formatToolsForPrompt(tools) {
       var propNames = Object.keys(props);
       for (var p = 0; p < propNames.length; p++) {
         var pName = propNames[p];
-        var prop = props[pName];
-        var req = required.includes(pName) ? ' (required)' : '';
-        s += '- ' + pName + ' (' + prop.type + '): ' + (prop.description || '') + req + '\n';
+        var prop = props[pName] || {};
+        var req = (Array.isArray(required) && required.indexOf(pName) !== -1) ? ' (required)' : '';
+        s += '- ' + pName + ' (' + (prop.type || 'any') + '): ' + (prop.description || '') + req + '\n';
       }
     }
   }
@@ -149,6 +159,15 @@ export function formatToolsForPrompt(tools) {
 
 export function serializeMessages(messages, systemContent, tools) {
   var parts = [];
+
+  var toolList = tools;
+  if (!toolList || !toolList.length) {
+    try {
+      toolList = getDefinitions();
+    } catch (_) {
+      toolList = [];
+    }
+  }
 
   // Master Prompt: Dual native powers + workspace tools + strict JSON response contract
   // Always include QWEN_SYSTEM_PROMPT so Qwen knows it has MODE 1 (Native Web Browser Powers: Image Gen & Web Search)
@@ -161,8 +180,8 @@ export function serializeMessages(messages, systemContent, tools) {
       baseSystem = systemContent;
     }
   }
-  if (baseSystem.indexOf('## AVAILABLE WORKSPACE TOOLS') === -1) {
-    baseSystem += '\n\n## AVAILABLE WORKSPACE TOOLS\n' + formatToolsForPrompt(tools);
+  if (baseSystem.indexOf('\n## AVAILABLE WORKSPACE TOOLS\n') === -1) {
+    baseSystem += '\n\n## AVAILABLE WORKSPACE TOOLS\n' + formatToolsForPrompt(toolList);
   }
   parts.push(baseSystem);
 
@@ -204,7 +223,7 @@ export function serializeMessages(messages, systemContent, tools) {
       var lastHeader = lastToolName ? (lastToolName + ' (ID: ' + lastToolId + ')') : ('ID: ' + lastToolId);
       parts.push('\n--- CURRENT STEP ---\n[Latest Tool Execution Result for ' + lastHeader + ']:\n' + (lastMsg.content || '') + '\n\nAnalyze this result and decide the next step or final answer in strict OpenAI chat.completion format.');
     } else if (lastMsg.role === 'user') {
-      parts.push('\n--- CURRENT REQUEST ---\nUser:\n' + (lastMsg.content || ''));
+      parts.push('\n--- CURRENT REQUEST ---\nUser:\n' + (lastMsg.content || '') + '\n\n[DIRECTIVE: Respond ONLY with a valid JSON object matching the OpenAI schema (starting with "{" and ending with "}"). If this requires inspecting/reading/writing files or running commands, invoke the tool in "tool_calls". If answering or explaining, set "finish_reason": "stop" and place your markdown in "content". No text outside the JSON.]');
     } else if (lastMsg.role === 'assistant') {
       parts.push('\n--- CURRENT ASSISTANT REQUEST ---\n' + (lastMsg.content || ''));
     }
@@ -515,12 +534,21 @@ export async function* chat(config, messages, tools, options) {
     }
   }
 
-  var serialized = serializeMessages(messages, systemContent, tools);
+  var effectiveTools = tools;
+  if (!effectiveTools || !effectiveTools.length) {
+    try {
+      effectiveTools = getDefinitions();
+    } catch (_) {
+      effectiveTools = [];
+    }
+  }
+
+  var serialized = serializeMessages(messages, systemContent, effectiveTools);
 
   var validToolNames = new Set();
-  if (tools && Array.isArray(tools)) {
-    for (var ti = 0; ti < tools.length; ti++) {
-      var tObj = tools[ti];
+  if (effectiveTools && Array.isArray(effectiveTools)) {
+    for (var ti = 0; ti < effectiveTools.length; ti++) {
+      var tObj = effectiveTools[ti];
       var tName = (tObj.function && tObj.function.name) || tObj.name;
       if (tName) validToolNames.add(tName);
     }
