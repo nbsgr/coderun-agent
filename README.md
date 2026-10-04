@@ -326,7 +326,7 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 ### 🎨 Intelligent Image & Video Generation & Persistent Media Storage
 
 <p align="center">
-  <img src="./media-generation.png" width="520" alt="CodeRun Multimodal Media Generation (Image & Video)"/>
+  <img src="./icons/media-generation.png" width="520" alt="CodeRun Multimodal Media Generation (Image & Video)"/>
 </p>
 
 *   **Dual-Strategy Modality Classification:**
