@@ -1,6 +1,6 @@
 {
   "name": "ai-agent",
-  "displayName": "NEXUS:AI-AGENT",
+  "displayName": "CODERUN:AI-AGENT",
   "description": "Multi-provider AI coding agent with Ollama, OpenAI, Anthropic, Gemini, OpenRouter support. Copilot-style chat with tool permissions.",
   "version": "1.6.9",
   "publisher": "Bala-Siva-Ganesh",
@@ -58,7 +58,7 @@
       "activitybar": [
         {
           "id": "coderunSidebar",
-          "title": "NEXUS",
+          "title": "CODERUN",
           "icon": "$(comment-discussion)"
         }
       ]
