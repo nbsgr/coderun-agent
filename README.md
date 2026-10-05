@@ -4,7 +4,7 @@
   <img src="./icons/logo.png" width="480" alt="CodeRun Logo"/>
 </p>
 
-[![Version](https://img.shields.io/badge/version-v1.7.3-blue.svg)](https://github.com/nbsgr/coderun-agent)
+[![Version](https://img.shields.io/badge/version-v1.7.4-blue.svg)](https://github.com/nbsgr/coderun-agent)
 [![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code&label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![VS Code Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Bala-Siva-Ganesh.ai-agent?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Bala-Siva-Ganesh.ai-agent)
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-blue?logo=github&logoColor=white)](https://nbsgr.github.io/coderun-agent/)
@@ -483,13 +483,21 @@ To ensure flawless integration with CodeRun's agentic loop and webview UI:
 * **Streaming Thought Buffering**: Reasoning tokens are cleanly streamed into the collapsible thinking container in real time.
 * **Single Tool Call Emission**: Tool invocations are completely buffered and emitted as complete units, eliminating intermediate UI flickering or partial JSON rendering glitches.
 
-### 5. Unified Image Generation Tool Contract
-* Image requests operate strictly via the `generate_image` tool (taking `prompt` parameter) for both initial generation and subsequent modifications.
-* Explicit prompt contracts instruct the model that image generation tools are available while preventing hallucinations of unsupported image editing tools (`image_edit` / `edit_image`).
+### 5. Native Image Generation & Streaming
+* **Server-Side Synthesis**: When image creation is requested, Qwen synthesizes the image directly server-side and streams the CDN image URL into the conversation as rich markdown.
+* **Zero Tool Overhead**: Image generation completes directly on Turn 1 without triggering redundant workspace tool execution loops or secondary agent turns.
+* **Direct Resolution Fallback**: If the model emits a tool call for image generation without streaming, CodeRun's provider adapter intercepts it, resolves the asset, and returns the markdown image directly to the user.
 
 ### 6. Stateless Context Maintenance
 * CodeRun maintains the entire conversational context dynamically on every turn just like standard REST API providers.
 * It does not rely on browser-side conversational memory, guaranteeing deterministic agent loop behavior, exact prompt structure control, and clean undo/compaction behavior.
+
+### 7. Setup & Configuration
+1. Open the CodeRun **Settings** panel (⚙️).
+2. Select **Qwen (Browser Automation)** as the provider.
+3. Enter your active browser session cookie or token into the session credentials field and click **Save Settings** (credentials are securely stored locally in VS Code storage).
+4. Click the **🔄 (Refresh Models)** icon in the top model selector to dynamically discover available models (e.g., `qwen3.8-max`, `qwen3.7-plus`, `qwen3.6-plus`).
+5. Choose your model and start chatting, analyzing code, or generating assets with full real-time reasoning streaming.
 
 ---
 
@@ -500,7 +508,7 @@ Install **"CodeRun AI Agent"** via the Extensions view (`Ctrl+Shift+X`) in VS Co
 ```bash
 code --install-extension Bala-Siva-Ganesh.ai-agent
 # Or install from local VSIX:
-code --install-extension coderun-agent-1.7.3.vsix
+code --install-extension coderun-agent-1.7.4.vsix
 ```
 
 ### 2. Development Setup (From Source)

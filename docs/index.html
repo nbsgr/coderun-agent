@@ -1689,10 +1689,10 @@
   <!-- Top Navbar -->
   <header class="doc-navbar">
     <a href="#introduction" class="nav-brand">
-      <img src="logo.png?v=1.7.3" alt="CodeRun AI Agent" class="nav-logo-img">
+      <img src="logo.png?v=1.7.4" alt="CodeRun AI Agent" class="nav-logo-img">
       <div class="nav-title">
         CodeRun AI Agent
-        <span class="nav-badge">v1.7.3</span>
+        <span class="nav-badge">v1.7.4</span>
       </div>
     </a>
 
@@ -1806,7 +1806,7 @@
           The comprehensive developer reference manual and architecture specification for <strong>CodeRun AI Agent</strong> (<code>AI-AGENT</code>) — Visual Studio Code's multi-provider autonomous software engineer.
         </p>
         <div class="hero-logo-banner-wrap" style="margin: 28px 0 12px 0; text-align: center;">
-          <img src="logo.png?v=1.7.3" alt="CodeRun: AI Agent for Software Engineering" style="max-width: 620px; width: 100%; height: auto; aspect-ratio: 1536 / 1024; border-radius: 14px; border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 28px rgba(56, 189, 248, 0.25); display: inline-block;" />
+          <img src="logo.png?v=1.7.4" alt="CodeRun: AI Agent for Software Engineering" style="max-width: 620px; width: 100%; height: auto; aspect-ratio: 1536 / 1024; border-radius: 14px; border: 1px solid rgba(56, 189, 248, 0.35); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 28px rgba(56, 189, 248, 0.25); display: inline-block;" />
         </div>
       </section>
 
@@ -2138,7 +2138,7 @@
               <span>VSIX Installation</span>
               <button class="copy-btn" onclick="copyCode(this)">Copy</button>
             </div>
-            <pre><code>code --install-extension coderun-agent-1.7.3.vsix</code></pre>
+            <pre><code>code --install-extension coderun-agent-1.7.4.vsix</code></pre>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-top: 6px;">Or in VS Code: open the Extensions view &rarr; click the <strong>···</strong> (More Actions) menu &rarr; select <strong>Install from VSIX...</strong>.</p>
         </div>
@@ -2395,9 +2395,21 @@
         <ul style="color: var(--text-secondary); font-size: 14.5px; line-height: 1.7; margin-left: 20px;">
           <li><strong>OpenAI Format Normalization:</strong> The provider normalizes responses into standard OpenAI-compliant function call schemas directly inside <code>providerQwen.js</code> before yielding to the agent loop.</li>
           <li><strong>Buffered Single Tool Emission:</strong> Reasoning thoughts stream smoothly into the UI thinking container, while tool invocations are buffered and emitted as complete individual units to prevent partial JSON rendering glitches.</li>
-          <li><strong>Unified Image Tool Contract:</strong> Image generation operates strictly through the standard <code>generate_image</code> tool (taking <code>prompt</code>) for both initial generation and modifications. Explicit system prompt rules prevent the model from hallucinating non-existent <code>image_edit</code> or <code>edit_image</code> tools.</li>
+          <li><strong>Native Image Generation &amp; Streaming:</strong> When image generation is requested, Qwen synthesizes the image directly server-side and streams the CDN image URL as rich markdown into the chat. This terminates cleanly on Turn 1 with zero redundant workspace tool loop overhead. If a tool call is emitted without prior streaming, CodeRun's provider adapter intercepts it, resolves the asset, and returns the markdown image directly.</li>
           <li><strong>Stateless Context Parity:</strong> Conversational context is dynamically assembled and dispatched per turn by the agent loop, maintaining complete parity with standard API providers and avoiding reliance on browser-side memory.</li>
         </ul>
+
+        <h3 class="subsection-heading" style="margin-top: 32px;">⚙️ Setup &amp; Configuration</h3>
+        <p>
+          Configuring the Qwen Browser Automation Provider in CodeRun takes only a few seconds:
+        </p>
+        <ol style="color: var(--text-secondary); font-size: 14.5px; line-height: 1.8; margin-left: 20px;">
+          <li>Open the CodeRun <strong>Settings</strong> panel (<strong>⚙</strong>) on the left sidebar navigation rail.</li>
+          <li>Select <strong>Qwen (Browser Automation)</strong> from the Provider dropdown.</li>
+          <li>Enter your active browser session cookie or token into the session credentials field and click <strong>Save Settings</strong> (credentials are securely preserved in local storage).</li>
+          <li>Click the <strong>🔄 (Refresh Models)</strong> icon in the chat model selector to dynamically discover available models (e.g. <code>qwen3.8-max</code>, <code>qwen3.7-plus</code>, <code>qwen3.6-plus</code>).</li>
+          <li>Select your model and start coding, asking questions, or generating visual assets with real-time reasoning streaming.</li>
+        </ol>
 
       <!-- How to Save Providers -->
       <section id="saving-providers">
@@ -2762,7 +2774,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         <div class="feature-card" style="margin-top: 16px; margin-bottom: 24px; border-left: 3px solid var(--accent-blue);">
           <div style="font-weight: 700; color: var(--accent-blue); font-size: 15px; margin-bottom: 6px;">🐍 Multi-Runtime Architecture: Node.js (npx) &amp; Python (uvx / python)</div>
           <p style="color: var(--text-secondary); margin-bottom: 8px;">
-            In CodeRun v1.7.3, Python and Node.js are treated as first-class <strong>execution runtimes</strong> rather than single static templates. When adding or editing any MCP server (GitHub, PostgreSQL, MySQL, Web Fetch, Memory, or Custom), you can freely toggle between Node.js and Python environments:
+            In CodeRun v1.7.4, Python and Node.js are treated as first-class <strong>execution runtimes</strong> rather than single static templates. When adding or editing any MCP server (GitHub, PostgreSQL, MySQL, Web Fetch, Memory, or Custom), you can freely toggle between Node.js and Python environments:
           </p>
           <ul style="color: var(--text-secondary); font-size: 13.5px; margin-left: 20px; line-height: 1.6;">
             <li><strong>Node.js (npx / node):</strong> Spawns MCP packages directly via <code>npx -y &lt;package&gt;</code> or local scripts via <code>node script.js</code>.</li>
