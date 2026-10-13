@@ -34,12 +34,55 @@ export function getChatIdForSession(sId) {
   return null;
 }
 
+export function parseJwtPayload(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string') return null;
+  var tokenVal = parseTokenFromCookie(tokenStr) || tokenStr.trim();
+  if (tokenVal.startsWith('Bearer ')) {
+    tokenVal = tokenVal.substring(7).trim();
+  }
+  var parts = tokenVal.split('.');
+  if (parts.length < 2) return null;
+  var base64Url = parts[1];
+  var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4 !== 0) {
+    base64 += '=';
+  }
+  var jsonStr = '';
+  if (typeof Buffer !== 'undefined') {
+    try {
+      jsonStr = Buffer.from(base64, 'base64').toString('utf8');
+    } catch (_) { jsonStr = ''; }
+  } else if (typeof atob === 'function') {
+    try {
+      jsonStr = atob(base64);
+    } catch (_) { jsonStr = ''; }
+  }
+  if (!jsonStr) return null;
+  try {
+    return JSON.parse(jsonStr);
+  } catch (_) {
+    return null;
+  }
+}
+
+export function isQwenTokenExpired(cookieStr) {
+  var payload = parseJwtPayload(cookieStr);
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if (typeof payload.exp === 'number') {
+    var nowSec = Math.floor(Date.now() / 1000);
+    return nowSec >= payload.exp;
+  }
+  return false;
+}
+
 export function hasValidQwenToken(cookieStr) {
   if (!cookieStr || typeof cookieStr !== 'string') return false;
-  var trimmed = cookieStr.trim();
-  if (trimmed.startsWith('eyJ')) return true;
-  return /(?:^|;\s*)(token|active_token)=ey[A-Za-z0-9_-]+/i.test(cookieStr) ||
-         /(?:^|;\s*)(token|active_token)=[A-Za-z0-9_.-]{20,}/i.test(cookieStr);
+  var token = parseTokenFromCookie(cookieStr);
+  if (!token || token.length < 20) return false;
+  if (isQwenTokenExpired(token)) return false;
+  return true;
 }
 
 export function parseTokenFromCookie(cookieStr) {
@@ -47,11 +90,32 @@ export function parseTokenFromCookie(cookieStr) {
   var trimmed = cookieStr.trim();
   if (trimmed.startsWith('eyJ')) return trimmed;
   if (trimmed.startsWith('Bearer ')) return trimmed.substring(7).trim();
+
+  var stateMatch = cookieStr.match(/(?:^|;\s*)qwen_access_token_state=([^;]+)/i);
+  if (stateMatch && stateMatch[1]) {
+    try {
+      var rawState = stateMatch[1].trim();
+      if (rawState.indexOf('%') !== -1) {
+        try { rawState = decodeURIComponent(rawState); } catch (_) { void 0; }
+      }
+      var stateObj = JSON.parse(rawState);
+      if (stateObj && typeof stateObj === 'object' && stateObj.token && typeof stateObj.token === 'string' && stateObj.token.length > 20) {
+        return stateObj.token.trim();
+      }
+    } catch (_) {
+      var innerMatch = stateMatch[1].match(/"token":\s*"([^"]+)"/);
+      if (innerMatch && innerMatch[1] && innerMatch[1].length > 20) {
+        return innerMatch[1].trim();
+      }
+    }
+  }
+
   var parts = cookieStr.split(';');
   for (var i = 0; i < parts.length; i++) {
     var part = parts[i].trim();
     if (part.startsWith('token=')) return part.substring(6);
     if (part.startsWith('active_token=')) return part.substring(13);
+    if (part.startsWith('access_token=')) return part.substring(13);
   }
   for (var j = 0; j < parts.length; j++) {
     var p = parts[j].trim();
@@ -59,11 +123,22 @@ export function parseTokenFromCookie(cookieStr) {
     if (eqIdx !== -1) {
       var kName = p.substring(0, eqIdx).toLowerCase();
       var kVal = p.substring(eqIdx + 1);
-      if ((kName === 'token' || kName === 'active_token') && kVal.length > 20) {
+      if ((kName === 'token' || kName === 'active_token' || kName === 'access_token') && kVal.length > 20) {
         return kVal;
       }
     }
   }
+
+  var refreshMatch = cookieStr.match(/(?:^|;\s*)refresh_token=([^;]+)/i);
+  if (refreshMatch && refreshMatch[1] && refreshMatch[1].trim().length > 20) {
+    return refreshMatch[1].trim();
+  }
+
+  var anyJsonMatch = cookieStr.match(/"token":\s*"(ey[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+)"/);
+  if (anyJsonMatch && anyJsonMatch[1]) {
+    return anyJsonMatch[1].trim();
+  }
+
   return '';
 }
 
@@ -631,7 +706,7 @@ export async function* chat(config, messages, tools, options) {
   if (!cookieStr && typeof globalThis.qwenGetActiveCookie === 'function') {
     cookieStr = globalThis.qwenGetActiveCookie();
   }
-  if (!cookieStr) {
+  if (!cookieStr || isQwenTokenExpired(cookieStr)) {
     var missingAuthErr = new Error('Qwen session token expired or missing. Please sign in with Qwen to continue.');
     missingAuthErr.isAuthError = true;
     missingAuthErr.code = 'UNAUTHORIZED';
@@ -642,6 +717,10 @@ export async function* chat(config, messages, tools, options) {
   cookieStr = cookieStr.trim();
   if (cookieStr.startsWith('eyJ')) {
     cookieStr = 'token=' + cookieStr;
+  }
+  var parsedToken = parseTokenFromCookie(cookieStr);
+  if (cookieStr.indexOf('token=') === -1 && parsedToken) {
+    cookieStr = 'token=' + parsedToken + (cookieStr ? '; ' + cookieStr : '');
   }
 
   var qwenModel = config.model || 'qwen3.7-plus';

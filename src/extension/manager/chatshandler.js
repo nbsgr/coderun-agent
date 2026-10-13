@@ -109,10 +109,6 @@ export async function handleStartChat(message, webview, extensionContext) {
 
   if (isQwenProvider(providerName)) {
     providerName = 'qwen';
-  } else if (!providerName || providerName === 'ollama') {
-    if (frontendModel && (/^qwen3\.[0-9]/i.test(frontendModel) || frontendModel.includes('qwen3.'))) {
-      providerName = 'qwen';
-    }
   }
 
   var providerConfig;

@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import * as vscode from 'vscode';
 import { PROVIDER_DEFAULTS, STORAGE_KEYS } from './constants.js';
-import { hasValidQwenToken } from '../browser/providerQwen.js';
+import { hasValidQwenToken, isQwenTokenExpired } from '../browser/providerQwen.js';
 
 var _cached = null;
 
@@ -81,13 +81,23 @@ export async function getApiKey(context, provider) {
   if (provider) {
     var key = await context.secrets.get('coderun.apiKey.' + provider);
     if (provider === 'qwen') {
-      if (hasValidQwenToken(key)) {
-        return key;
+      if (key) {
+        if (isQwenTokenExpired(key)) {
+          try { await context.secrets.delete('coderun.apiKey.qwen'); } catch (_) { void 0; }
+          key = '';
+        } else if (hasValidQwenToken(key)) {
+          return key;
+        }
       }
       var fb = (context && context.globalState && (context.globalState.get('coderun.qwenFallbackCookie') || context.globalState.get('qwen-coderun.fallbackCookie'))) || '';
-      if (hasValidQwenToken(fb)) {
-        try { await context.secrets.store('coderun.apiKey.qwen', fb); } catch (_) { void 0; }
-        return fb;
+      if (fb) {
+        if (isQwenTokenExpired(fb)) {
+          try { await context.globalState.update('coderun.qwenFallbackCookie', undefined); } catch (_) { void 0; }
+          fb = '';
+        } else if (hasValidQwenToken(fb)) {
+          try { await context.secrets.store('coderun.apiKey.qwen', fb); } catch (_) { void 0; }
+          return fb;
+        }
       }
       try {
         var appData = process.env.APPDATA || '';
@@ -99,7 +109,9 @@ export async function getApiKey(context, provider) {
         for (var i = 0; i < candidatePaths.length; i++) {
           if (fs.existsSync(candidatePaths[i])) {
             var fileCookie = fs.readFileSync(candidatePaths[i], 'utf8').trim();
-            if (hasValidQwenToken(fileCookie)) {
+            if (isQwenTokenExpired(fileCookie)) {
+              try { fs.unlinkSync(candidatePaths[i]); } catch (_) { void 0; }
+            } else if (hasValidQwenToken(fileCookie)) {
               try { await context.secrets.store('coderun.apiKey.qwen', fileCookie); } catch (_) { void 0; }
               if (context && context.globalState) {
                 try { context.globalState.update('coderun.qwenFallbackCookie', fileCookie); } catch (_) { void 0; }
@@ -141,6 +153,16 @@ export async function setApiKey(context, key, provider) {
 export async function deleteApiKey(context, provider) {
   if (provider) {
     await context.secrets.delete('coderun.apiKey.' + provider);
+    if (provider === 'qwen' && context && context.globalState) {
+      await context.globalState.update('coderun.qwenFallbackCookie', undefined);
+      try {
+        var appDataDel = process.env.APPDATA || '';
+        var extCookieDelPath = path.join(appDataDel, 'Code', 'User', 'globalStorage', 'qwen_extracted_cookie.txt');
+        if (fs.existsSync(extCookieDelPath)) {
+          fs.unlinkSync(extCookieDelPath);
+        }
+      } catch (_) { void 0; }
+    }
   } else {
     await context.secrets.delete('coderun.apiKey');
   }

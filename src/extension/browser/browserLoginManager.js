@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { isQwenTokenExpired, parseTokenFromCookie } from './providerQwen.js';
 
 var activeBrowserProc = null;
 var activeWs = null;
@@ -261,10 +262,16 @@ export async function startBrowserLogin(options, onSuccess, onError, onCancel) {
             var c = cookies[i];
             if (c.domain && (c.domain.indexOf('qwen.ai') !== -1 || c.domain.indexOf('aliyun.com') !== -1 || c.domain.indexOf('kimi.ai') !== -1 || c.domain.indexOf('chatgpt.com') !== -1)) {
               cookieMap[c.name] = c.value;
-              if (c.name === targetCookieName || c.name === 'active_token' || c.name === 'token') {
-                if (c.value && c.value.length > 20) {
-                  detectedTokenValue = c.value;
-                }
+              var candTok = '';
+              if (c.name === targetCookieName || c.name === 'active_token' || c.name === 'token' || c.name === 'access_token') {
+                candTok = c.value;
+              } else if (c.name === 'qwen_access_token_state') {
+                candTok = parseTokenFromCookie('qwen_access_token_state=' + c.value);
+              } else if (c.name === 'refresh_token') {
+                candTok = c.value;
+              }
+              if (candTok && candTok.length > 20 && !isQwenTokenExpired(candTok)) {
+                detectedTokenValue = candTok;
               }
             }
           }
@@ -276,21 +283,27 @@ export async function startBrowserLogin(options, onSuccess, onError, onCancel) {
             var parsedLs = JSON.parse(msg.result.result.value);
             if (parsedLs && typeof parsedLs === 'object') {
               fullLocalStorage = parsedLs;
-              var tVal = parsedLs.active_token || parsedLs.token;
-              if (tVal && tVal.length > 20) {
+              var tVal = parsedLs.active_token || parsedLs.token || parsedLs.access_token;
+              if (!tVal && parsedLs.qwen_access_token_state) {
+                tVal = parseTokenFromCookie('qwen_access_token_state=' + (typeof parsedLs.qwen_access_token_state === 'object' ? JSON.stringify(parsedLs.qwen_access_token_state) : parsedLs.qwen_access_token_state));
+              }
+              if (!tVal && parsedLs.refresh_token) {
+                tVal = parsedLs.refresh_token;
+              }
+              if (tVal && tVal.length > 20 && !isQwenTokenExpired(tVal)) {
                 detectedTokenValue = tVal;
               }
             }
           } catch (_) {
             var lsVal = msg.result.result.value;
-            if (lsVal && lsVal.length > 20) {
+            if (lsVal && lsVal.length > 20 && !isQwenTokenExpired(lsVal)) {
               detectedTokenValue = lsVal;
             }
           }
         }
 
         // When a valid token is found, wait 2.5 seconds to capture all remaining security/session cookies
-        if (detectedTokenValue && detectedTokenValue.length > 20) {
+        if (detectedTokenValue && detectedTokenValue.length > 20 && !isQwenTokenExpired(detectedTokenValue)) {
           if (!tokenDetectedTime) {
             tokenDetectedTime = Date.now();
             console.log('[BROWSER LOGIN] Token found, waiting 2.5s to capture all messaging & security cookies...');

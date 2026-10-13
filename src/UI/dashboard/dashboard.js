@@ -378,7 +378,11 @@ function initializeDashboard() {
     // Check if the current selected provider has a saved key, otherwise show empty
     var configs = state.savedProviderConfigs || {};
     var hasApiKeyForCurrent = false;
-    if (configs[currentProvider] && configs[currentProvider].apiKey) {
+    if (currentProvider === 'qwen') {
+      var cookieVal = state.qwenCookie || (typeof localStorage !== 'undefined' ? localStorage.getItem('coderun_qwen_cookie') : '') || (window.activeQwenCookie || '') || '';
+      var isValidQwen = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(cookieVal) : false;
+      hasApiKeyForCurrent = isValidQwen;
+    } else if (configs[currentProvider] && configs[currentProvider].apiKey) {
       hasApiKeyForCurrent = true;
     } else if (currentProvider === state.settings.provider && state.hasApiKey) {
       hasApiKeyForCurrent = true;
@@ -393,6 +397,13 @@ function initializeDashboard() {
         qwenContainer.style.display = 'block';
         if (typeof window.renderQwenSettingsCard === 'function') {
           var cookieToShow = state.qwenCookie || (typeof localStorage !== 'undefined' ? localStorage.getItem('coderun_qwen_cookie') : '') || (window.activeQwenCookie || '') || '';
+          var isTokExp = typeof window.isQwenTokenExpired === 'function' ? window.isQwenTokenExpired(cookieToShow) : false;
+          if (isTokExp) {
+            cookieToShow = '';
+            state.qwenCookie = '';
+            try { localStorage.removeItem('coderun_qwen_cookie'); } catch (_) { void 0; }
+            if (typeof window !== 'undefined') window.activeQwenCookie = '';
+          }
           var isTokValid = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(cookieToShow) : false;
           window.renderQwenSettingsCard(qwenContainer, hasApiKeyForCurrent && isTokValid, cookieToShow);
         }
@@ -6125,30 +6136,37 @@ function initializeDashboard() {
       createNewChat();
     }
     if (message.type === "qwenCookieResult") {
-      if (message.cookie) {
-        var isTokValid = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(message.cookie) : false;
-        state.qwenCookie = message.cookie;
-        try {
+      var isTokValid = (message.cookie && typeof window.hasValidQwenToken === 'function') ? window.hasValidQwenToken(message.cookie) : false;
+      state.qwenCookie = isTokValid ? message.cookie : '';
+      try {
+        if (isTokValid) {
           localStorage.setItem('coderun_qwen_cookie', message.cookie);
-        } catch (_) { void 0; }
-        state.hasApiKey = isTokValid;
-        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = isTokValid;
-        var qwenContainer = document.getElementById("qwenSettingsCardContainer");
-        if (qwenContainer && (state.provider === 'qwen' || (state.settings && state.settings.provider === 'qwen'))) {
-          if (typeof window.renderQwenSettingsCard === 'function') {
-            window.renderQwenSettingsCard(qwenContainer, isTokValid, message.cookie);
-          }
+        } else {
+          localStorage.removeItem('coderun_qwen_cookie');
+        }
+      } catch (_) { void 0; }
+      state.hasApiKey = isTokValid;
+      if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = isTokValid;
+      var qwenContainer = document.getElementById("qwenSettingsCardContainer");
+      if (qwenContainer && (state.provider === 'qwen' || (state.settings && state.settings.provider === 'qwen'))) {
+        if (typeof window.renderQwenSettingsCard === 'function') {
+          window.renderQwenSettingsCard(qwenContainer, isTokValid, isTokValid ? message.cookie : '');
         }
       }
     }
     if (message.type === "qwenAuthState") {
       if (message.cookie) {
-        state.qwenCookie = message.cookie;
+        var isAuthTokValid = typeof window.hasValidQwenToken === 'function' ? window.hasValidQwenToken(message.cookie) : false;
+        state.qwenCookie = isAuthTokValid ? message.cookie : '';
         try {
-          localStorage.setItem('coderun_qwen_cookie', message.cookie);
+          if (isAuthTokValid) {
+            localStorage.setItem('coderun_qwen_cookie', message.cookie);
+          } else {
+            localStorage.removeItem('coderun_qwen_cookie');
+          }
         } catch (_) { void 0; }
-        state.hasApiKey = true;
-        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = true;
+        state.hasApiKey = isAuthTokValid;
+        if (state.providerHasKeyMap) state.providerHasKeyMap['qwen'] = isAuthTokValid;
       }
       if (typeof window.handleBrowserAuthMessage === 'function') {
         window.handleBrowserAuthMessage(message);

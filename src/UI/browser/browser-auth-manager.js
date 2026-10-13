@@ -10,12 +10,112 @@ function escCookieHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function parseTokenFromCookie(cookieStr) {
+  if (!cookieStr || typeof cookieStr !== 'string') return '';
+  var trimmed = cookieStr.trim();
+  if (trimmed.startsWith('eyJ')) return trimmed;
+  if (trimmed.startsWith('Bearer ')) return trimmed.substring(7).trim();
+
+  var stateMatch = cookieStr.match(/(?:^|;\s*)qwen_access_token_state=([^;]+)/i);
+  if (stateMatch && stateMatch[1]) {
+    try {
+      var rawState = stateMatch[1].trim();
+      if (rawState.indexOf('%') !== -1) {
+        try { rawState = decodeURIComponent(rawState); } catch (_) { void 0; }
+      }
+      var stateObj = JSON.parse(rawState);
+      if (stateObj && typeof stateObj === 'object' && stateObj.token && typeof stateObj.token === 'string' && stateObj.token.length > 20) {
+        return stateObj.token.trim();
+      }
+    } catch (_) {
+      var innerMatch = stateMatch[1].match(/"token":\s*"([^"]+)"/);
+      if (innerMatch && innerMatch[1] && innerMatch[1].length > 20) {
+        return innerMatch[1].trim();
+      }
+    }
+  }
+
+  var parts = cookieStr.split(';');
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i].trim();
+    if (part.startsWith('token=')) return part.substring(6);
+    if (part.startsWith('active_token=')) return part.substring(13);
+    if (part.startsWith('access_token=')) return part.substring(13);
+  }
+  for (var j = 0; j < parts.length; j++) {
+    var p = parts[j].trim();
+    var eqIdx = p.indexOf('=');
+    if (eqIdx !== -1) {
+      var kName = p.substring(0, eqIdx).toLowerCase();
+      var kVal = p.substring(eqIdx + 1);
+      if ((kName === 'token' || kName === 'active_token' || kName === 'access_token') && kVal.length > 20) {
+        return kVal;
+      }
+    }
+  }
+
+  var refreshMatch = cookieStr.match(/(?:^|;\s*)refresh_token=([^;]+)/i);
+  if (refreshMatch && refreshMatch[1] && refreshMatch[1].trim().length > 20) {
+    return refreshMatch[1].trim();
+  }
+
+  var anyJsonMatch = cookieStr.match(/"token":\s*"(ey[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+)"/);
+  if (anyJsonMatch && anyJsonMatch[1]) {
+    return anyJsonMatch[1].trim();
+  }
+
+  return '';
+}
+
+function parseJwtPayload(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string') return null;
+  var tokenVal = parseTokenFromCookie(tokenStr) || tokenStr.trim();
+  if (tokenVal.startsWith('Bearer ')) {
+    tokenVal = tokenVal.substring(7).trim();
+  }
+  var parts = tokenVal.split('.');
+  if (parts.length < 2) return null;
+  var base64Url = parts[1];
+  var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4 !== 0) {
+    base64 += '=';
+  }
+  var jsonStr = '';
+  if (typeof atob === 'function') {
+    try {
+      jsonStr = atob(base64);
+    } catch (_) { jsonStr = ''; }
+  } else if (typeof Buffer !== 'undefined') {
+    try {
+      jsonStr = Buffer.from(base64, 'base64').toString('utf8');
+    } catch (_) { jsonStr = ''; }
+  }
+  if (!jsonStr) return null;
+  try {
+    return JSON.parse(jsonStr);
+  } catch (_) {
+    return null;
+  }
+}
+
+function isQwenTokenExpired(cookieStr) {
+  var payload = parseJwtPayload(cookieStr);
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  if (typeof payload.exp === 'number') {
+    var nowSec = Math.floor(Date.now() / 1000);
+    return nowSec >= payload.exp;
+  }
+  return false;
+}
+
 function hasValidQwenToken(cookieStr) {
   if (!cookieStr || typeof cookieStr !== 'string') return false;
-  var trimmed = cookieStr.trim();
-  if (trimmed.startsWith('eyJ')) return true;
-  return /(?:^|;\s*)(token|active_token)=ey[A-Za-z0-9_-]+/i.test(cookieStr) ||
-         /(?:^|;\s*)(token|active_token)=[A-Za-z0-9_.-]{20,}/i.test(cookieStr);
+  var token = parseTokenFromCookie(cookieStr);
+  if (!token || token.length < 20) return false;
+  if (isQwenTokenExpired(token)) return false;
+  return true;
 }
 
 function renderQwenSettingsCard(container, hasKey, cookie) {
@@ -23,20 +123,48 @@ function renderQwenSettingsCard(container, hasKey, cookie) {
 
   var currentCookie = cookie || (typeof localStorage !== 'undefined' ? localStorage.getItem('coderun_qwen_cookie') : '') || (window.activeQwenCookie || '');
   var hasToken = hasValidQwenToken(currentCookie);
-  var isActive = Boolean(hasKey && hasToken);
+  var isExpired = isQwenTokenExpired(currentCookie);
+  var payload = parseJwtPayload(currentCookie);
+  var isActive = Boolean(hasKey && hasToken && !isExpired);
 
-  var statusText = isActive ? 'Browser Session Active' : (currentCookie ? 'Session Missing Auth Token' : 'Not Connected');
-  var dotClass = isActive ? 'cr-qwen-dot' : 'cr-qwen-dot offline';
-
+  var statusText = 'Not Connected';
+  var dotClass = 'cr-qwen-dot offline';
   var authActionHtml = '';
+
   if (isActive) {
+    statusText = 'Browser Session Active';
+    dotClass = 'cr-qwen-dot';
+    var expInfo = '';
+    if (payload && payload.exp) {
+      try {
+        var expDate = new Date(payload.exp * 1000);
+        expInfo = ' (Expires ' + expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')';
+      } catch (_) { void 0; }
+    }
     authActionHtml =
       '<div class="cr-qwen-signed-badge" id="qwenSignedInBadge">' +
         '<span style="font-size: 15px;">✓</span>' +
-        '<span>Sign In Complete (Active)</span>' +
+        '<span>Sign In Complete (Active' + escCookieHtml(expInfo) + ')</span>' +
       '</div>' +
       '<button id="qwen1ClickLoginBtn" class="cr-auth-btn-secondary" style="width: 100%; justify-content: center;">' +
         '🔄 Re-authenticate / Switch Account' +
+      '</button>';
+  } else if (isExpired) {
+    statusText = 'Session Token Expired';
+    dotClass = 'cr-qwen-dot offline';
+    var expiredDateStr = '';
+    if (payload && payload.exp) {
+      try {
+        expiredDateStr = new Date(payload.exp * 1000).toLocaleString();
+      } catch (_) { void 0; }
+    }
+    authActionHtml =
+      '<div style="font-size: 11.5px; color: #ef4444; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; line-height: 1.4;">' +
+        '⚠️ <strong>Session Token Expired' + (expiredDateStr ? ' (' + escCookieHtml(expiredDateStr) + ')' : '') + '</strong><br>' +
+        'Your Qwen session has expired. Click 1-Click Sign In to renew automatically.' +
+      '</div>' +
+      '<button id="qwen1ClickLoginBtn" class="cr-auth-btn-primary" style="width: 100%; justify-content: center; padding: 10px; font-size: 13px;">' +
+        '🚀 Sign In with Qwen (1-Click)' +
       '</button>';
   } else {
     var warningHtml = '';
@@ -53,7 +181,19 @@ function renderQwenSettingsCard(container, hasKey, cookie) {
       '</button>';
   }
 
-  var detailsOpenAttr = currentCookie ? ' open' : '';
+  if (isExpired) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('coderun_qwen_cookie');
+      }
+    } catch (_) { void 0; }
+    if (typeof window !== 'undefined') {
+      window.activeQwenCookie = '';
+    }
+  }
+
+  var cookieValueForInput = isExpired ? '' : currentCookie;
+  var detailsOpenAttr = (cookieValueForInput && !isExpired) ? ' open' : '';
   var html =
     '<div class="cr-qwen-settings-box" id="crQwenSettingsBox">' +
       '<div class="cr-qwen-settings-status">' +
@@ -75,7 +215,7 @@ function renderQwenSettingsCard(container, hasKey, cookie) {
         '<summary style="user-select: none; font-weight: 600;">Manual Cookie Entry (Fallback)</summary>' +
         '<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">' +
           '<p style="margin: 0; font-size: 11px; line-height: 1.4;">Paste your session cookie string (or token starting with eyJ...):</p>' +
-          '<textarea id="qwenManualCookieInput" rows="3" style="width: 100%; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 6px; color: var(--text-primary); font-family: monospace; font-size: 11px; box-sizing: border-box; resize: vertical;" placeholder="token=eyJ...">' + escCookieHtml(currentCookie) + '</textarea>' +
+          '<textarea id="qwenManualCookieInput" rows="3" style="width: 100%; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 6px; color: var(--text-primary); font-family: monospace; font-size: 11px; box-sizing: border-box; resize: vertical;" placeholder="token=eyJ...">' + escCookieHtml(cookieValueForInput) + '</textarea>' +
           '<button id="qwenSaveManualCookieBtn" class="cr-auth-btn-primary" style="background: #10b981; justify-content: center; padding: 7px;">Save Cookie</button>' +
         '</div>' +
       '</details>' +
@@ -127,6 +267,16 @@ function renderQwenSettingsCard(container, hasKey, cookie) {
         if (feedback) {
           feedback.style.color = '#ef4444';
           feedback.textContent = 'Please paste a valid cookie or token.';
+        }
+        return;
+      }
+      var isExpiredVal = isQwenTokenExpired(val);
+      if (isExpiredVal) {
+        if (feedback) {
+          feedback.style.color = '#ef4444';
+          var payloadExp = parseJwtPayload(val);
+          var expTimeStr = (payloadExp && payloadExp.exp) ? new Date(payloadExp.exp * 1000).toLocaleString() : '';
+          feedback.textContent = '❌ Error: Pasted token is expired' + (expTimeStr ? ' (' + expTimeStr + ')' : '') + '. Please sign in for a fresh token.';
         }
         return;
       }
@@ -245,6 +395,9 @@ function handleBrowserAuthMessage(message) {
 }
 
 if (typeof window !== 'undefined') {
+  window.parseTokenFromCookie = parseTokenFromCookie;
+  window.parseJwtPayload = parseJwtPayload;
+  window.isQwenTokenExpired = isQwenTokenExpired;
   window.hasValidQwenToken = hasValidQwenToken;
   window.renderQwenSettingsCard = renderQwenSettingsCard;
   window.handleBrowserAuthMessage = handleBrowserAuthMessage;

@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as config from '../agents/config.js';
 import { PROVIDER_DEFAULTS } from '../agents/constants.js';
 import { checkProviderHealth, refreshAllProviderModels } from './modelshandler.js';
-import { hasValidQwenToken } from '../browser/providerQwen.js';
+import { hasValidQwenToken, isQwenTokenExpired } from '../browser/providerQwen.js';
 
 export async function sendCurrentSettings(webview, extensionContext) {
   var activeProvider = extensionContext?.globalState.get('coderun_selected_provider', '') || '';
@@ -39,7 +39,11 @@ export async function sendCurrentSettings(webview, extensionContext) {
     if (activeProvider) {
       var key = await config.getApiKey(extensionContext, activeProvider);
       var savedEntry = config.getSavedProviderConfig(extensionContext, activeProvider);
-      hasKey = (Boolean(key) && key.length > 0) || (Boolean(savedEntry) && Boolean(savedEntry.apiKey));
+      if (activeProvider === 'qwen') {
+        hasKey = hasValidQwenToken(key) || Boolean(savedEntry && hasValidQwenToken(savedEntry.apiKey));
+      } else {
+        hasKey = (Boolean(key) && key.length > 0) || (Boolean(savedEntry) && Boolean(savedEntry.apiKey));
+      }
     } else {
       var defaultKey = await config.getApiKey(extensionContext);
       hasKey = Boolean(defaultKey) && defaultKey.length > 0;
@@ -55,7 +59,11 @@ export async function sendCurrentSettings(webview, extensionContext) {
 
   function checkOneKey(pk) {
     function resolveOneKey(pkKey) {
-      hasKeyMap[pk] = Boolean(pkKey) && pkKey.length > 0;
+      if (pk === 'qwen') {
+        hasKeyMap[pk] = hasValidQwenToken(pkKey);
+      } else {
+        hasKeyMap[pk] = Boolean(pkKey) && pkKey.length > 0;
+      }
     }
     function catchOneKey() {
       hasKeyMap[pk] = false;
@@ -252,11 +260,14 @@ export async function handleSaveSettings(message, webview, extensionContext, sta
 export async function handleSaveApiKey(message, webview, extensionContext, statusBarItem) {
   if (message.apiKey !== undefined && extensionContext) {
     var targetProvider = message.provider || config.getConfig().provider;
-    if (message.apiKey === '') {
-      if (targetProvider === 'qwen') {
-        return;
-      }
+    if (message.apiKey === '' || (targetProvider === 'qwen' && isQwenTokenExpired(message.apiKey))) {
       await config.deleteApiKey(extensionContext, targetProvider);
+      if (targetProvider === 'qwen') {
+        try {
+          var providerQwenModClear = await import('../browser/providerQwen.js');
+          providerQwenModClear.setLastCookie('');
+        } catch (_) { void 0; }
+      }
     } else {
       await config.setApiKey(extensionContext, message.apiKey, targetProvider);
       if (targetProvider === 'qwen') {
@@ -293,7 +304,9 @@ export async function handleGetQwenCookie(webview, extensionContext) {
         for (var cIdx = 0; cIdx < candidatePaths.length; cIdx++) {
           if (fs.existsSync(candidatePaths[cIdx])) {
             var fileCookie = fs.readFileSync(candidatePaths[cIdx], 'utf8').trim();
-            if (hasValidQwenToken(fileCookie)) {
+            if (isQwenTokenExpired(fileCookie)) {
+              try { fs.unlinkSync(candidatePaths[cIdx]); } catch (_) { void 0; }
+            } else if (hasValidQwenToken(fileCookie)) {
               cookie = fileCookie;
               break;
             }
@@ -316,6 +329,8 @@ export async function handleGetQwenCookie(webview, extensionContext) {
       var providerQwenModSave = await import('../browser/providerQwen.js');
       providerQwenModSave.setLastCookie(cookie);
     } catch (_) { void 0; }
+  } else {
+    cookie = '';
   }
   if (webview && typeof webview.postMessage === 'function') {
     webview.postMessage({ type: 'qwenCookieResult', cookie: cookie });

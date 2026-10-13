@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as config from '../agents/config.js';
-import { hasValidQwenToken } from '../browser/providerQwen.js';
+import { hasValidQwenToken, isQwenTokenExpired } from '../browser/providerQwen.js';
 
 function mergeSetCookies(currentCookieStr, setCookiesArray) {
   if (!setCookiesArray || !setCookiesArray.length) return currentCookieStr;
@@ -112,10 +112,27 @@ export function activate(context) {
     return (context && context.globalState && context.globalState.get('coderun.qwenFallbackCookie')) || '';
   };
 
-  // Automatic Cookie Recovery for Qwen Provider
+  // Automatic Session Validation and Cookie Recovery for Qwen Provider
   config.getApiKey(context, 'qwen').then(function afterGetQwenKey(existingKey) {
+    if (existingKey && isQwenTokenExpired(existingKey)) {
+      console.log('[CODERUN] Stored Qwen token is expired at startup. Purging stale session...');
+      config.deleteApiKey(context, 'qwen').catch(function() { void 0; });
+      if (context && context.globalState) {
+        context.globalState.update('coderun.qwenFallbackCookie', undefined);
+      }
+      import('../browser/providerQwen.js').then(function(pq) {
+        pq.setLastCookie('');
+      }).catch(function() { void 0; });
+      return;
+    }
     if (!hasValidQwenToken(existingKey)) {
       var candidate = (context && context.globalState && (context.globalState.get('coderun.qwenFallbackCookie') || context.globalState.get('qwen-coderun.fallbackCookie'))) || '';
+      if (candidate && isQwenTokenExpired(candidate)) {
+        if (context && context.globalState) {
+          context.globalState.update('coderun.qwenFallbackCookie', undefined);
+        }
+        candidate = '';
+      }
       if (!hasValidQwenToken(candidate)) {
         try {
           var appDataDir = process.env.APPDATA || '';
@@ -127,7 +144,9 @@ export function activate(context) {
           for (var pIdx = 0; pIdx < extractedPaths.length; pIdx++) {
             if (fs.existsSync(extractedPaths[pIdx])) {
               var fileContent = fs.readFileSync(extractedPaths[pIdx], 'utf8').trim();
-              if (hasValidQwenToken(fileContent)) {
+              if (isQwenTokenExpired(fileContent)) {
+                try { fs.unlinkSync(extractedPaths[pIdx]); } catch (_) { void 0; }
+              } else if (hasValidQwenToken(fileContent)) {
                 candidate = fileContent;
                 break;
               }
