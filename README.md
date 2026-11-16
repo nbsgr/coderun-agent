@@ -122,7 +122,7 @@ The repository enforces strict physical and logical separation between the Backe
 * **Quality Gates:** Every commit must pass:
   1. `node --check <file>`: Strict JavaScript syntax verification.
   2. `npm run lint`: ESLint with custom AST rules enforcing **0 errors**.
-  3. `npm test`: Full adversarial regression suite with **all 88 test groups passing cleanly**.
+  3. `npm test`: Full adversarial regression suite with **all 89 test groups passing cleanly**.
 
 ---
 
@@ -394,7 +394,7 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 | **Native VS Code LSP & Diagnostics** | Language Server Protocol integration in `src/extension/tools/tools.js` & `src/extension/execution/reviewEngine.js` | ✅ **Native LSP** (`get_definition`, `find_references`, `document_symbols`) + live compiler diagnostic self-healing |
 | **Zero-Latency Reasoning & UI State** | Synchronous thinking stream & persistent user toggles in `src/UI/chats/chats.js` | ✅ **Instant auto-scroll** for reasoning models + dropdown state preservation across agent loops |
 | **Autonomous Subagent Workers** | Hierarchical subagent runner in `src/extension/agents/subagentManager.js` with dedicated tools | ✅ **Background (`sync`) & Synchronous (`wait`) delegation** with checkpoints, undo reflection & dedicated 🤖 settings |
-| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **88 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection & tools |
+| **Adversarial Regression Tests** | Standalone test harness (`test/runAllTests.js`) with 0 external dependencies | ✅ **89 Test Groups** covering concurrency, permissions, SSRF, locks, recovery, subagents, checkpoints, dual terminals, terminal introspection, browser tools & coexistence |
 
 
 ---
@@ -566,7 +566,7 @@ node test/runAllTests.js
 
 ## 🧪 Adversarial Test Suite
 
-CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **88 adversarial test groups** with 0 external dependencies:
+CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering **89 adversarial test groups** with 0 external dependencies:
 * Session isolation across terminal instances and permission choices.
 * Concurrency protection via SHA-256 optimistic locking and hierarchical file locks.
 * SSRF protection blocking all private and loopback subnets.
@@ -602,6 +602,7 @@ CodeRun features a comprehensive test harness (`test/runAllTests.js`) covering *
 * check_terminal_state tool contract, main vs background introspection & exit code zero verification (Vector 86).
 * Agent loop active input box animation (Copilot blue border flow) contract & state synchronization (Vector 87).
 * Prompt builder orphan tool call sanitization, executionTrace path binding & message sequence integrity (Vector 88).
+* VS Code integrated browser tools contract, schemas, alias mapping & Puppeteer coexistence (Vector 89).
 
 Run all tests anytime:
 ```bash
