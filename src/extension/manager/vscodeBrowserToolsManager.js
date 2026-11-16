@@ -667,7 +667,7 @@ function fetchPageDirectly(targetUrl) {
         path: parsed.pathname + parsed.search,
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CodeRun-Agent/1.7.5',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CodeRun-Agent/1.7.6',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         },
         timeout: 10000
