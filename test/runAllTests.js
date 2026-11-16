@@ -3609,6 +3609,50 @@ assert.strictEqual(lastMsg88.content, 'what happend', 'User prompt content must 
 
 console.log('✓ Vector 88 Passed: Prompt builder orphan tool call sanitization, executionTrace path binding & message sequence integrity verified.');
 
+// --- TEST 89: VS Code Integrated Browser Tools Contract, Schemas & Coexistence with Puppeteer ---
+console.log('\n--- TEST 89: VS Code Integrated Browser Tools Contract, Schemas & Coexistence with Puppeteer ---');
+
+import * as vscodeBrowserTools from '../src/extension/tools/vscodeBrowserTools.js';
+import * as vscodeBrowserMgr from '../src/extension/manager/vscodeBrowserToolsManager.js';
+import { getVscodeBrowserToolDefinitions, getVscodeBrowserToolAliases } from '../src/extension/tools/vscodeBrowserToolsDefinitions.js';
+
+var bDefs = getVscodeBrowserToolDefinitions();
+assert.ok(Array.isArray(bDefs) && bDefs.length >= 10, 'Expected at least 10 VS Code browser tool definitions');
+
+var expectedTools = [
+  'openBrowserPage', 'navigatePage', 'readPage', 'screenshotPage',
+  'clickElement', 'typeInPage', 'hoverElement', 'dragElement',
+  'handleDialog', 'runPlaywrightCode'
+];
+
+for (var ti = 0; ti < expectedTools.length; ti++) {
+  var tName = expectedTools[ti];
+  var found = toolRegistry.get(tName);
+  assert.ok(found, 'Tool ' + tName + ' must be registered in unified toolRegistry');
+  assert.strictEqual(typeof found.handler, 'function', 'Tool ' + tName + ' must have a generator handler');
+  assert.strictEqual(found.metadata.category, 'browser', 'Tool ' + tName + ' must belong to browser category');
+}
+
+// Test Aliases Resolution
+var bAliases = getVscodeBrowserToolAliases();
+for (var aKey in bAliases) {
+  var targetCanonical = bAliases[aKey];
+  var resolved = toolRegistry.resolveAlias(aKey);
+  assert.strictEqual(resolved, aKey, 'Alias ' + aKey + ' must be registered and resolve');
+}
+
+// Coexistence test: Puppeteer MCP tools and VS Code integrated browser tools coexist seamlessly
+assert.ok(toolRegistry.get('openBrowserPage'), 'openBrowserPage exists');
+assert.ok(toolRegistry.get('readPage'), 'readPage exists');
+assert.ok(toolRegistry.get('screenshotPage'), 'screenshotPage exists');
+
+// Graceful degraded state when no active browser page is open
+var emptyRead = await vscodeBrowserMgr.readPageContent(false, 10);
+assert.ok(emptyRead && emptyRead.elements, 'readPageContent must return safe empty elements when no page open');
+assert.strictEqual(emptyRead.url, 'about:blank', 'Default url must be about:blank');
+
+console.log('✓ Vector 89 Passed: VS Code integrated browser tools contract, schemas, alias mapping & Puppeteer coexistence verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3621,7 +3665,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 88 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 89 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

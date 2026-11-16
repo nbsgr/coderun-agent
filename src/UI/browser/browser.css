@@ -32,6 +32,26 @@
   margin-left: 6px;
 }
 
+.cr-browser-card {
+  padding: 8px 12px;
+  margin: 8px 0;
+  border-radius: 6px;
+  background: rgba(14, 99, 156, 0.15);
+  border: 1px solid rgba(14, 99, 156, 0.4);
+  font-size: 12px;
+}
+
+.cr-browser-card-title {
+  color: #4fc1ff;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.cr-browser-card-body {
+  color: #cccccc;
+  word-break: break-all;
+}
+
 /* ── Auth / Session Expired Card in Chat ── */
 .cr-auth-card {
   margin: 10px 0;

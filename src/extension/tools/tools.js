@@ -22,6 +22,7 @@ import * as fileLockManager from './fileLockManager.js';
 import * as checkpointManager from './checkpointManager.js';
 import * as questionManager from './questionManager.js';
 import * as subagentTools from './subagentTools.js';
+import * as vscodeBrowserTools from './vscodeBrowserTools.js';
 import * as mediaManager from '../media/mediaManager.js';
 import * as providerManager from '../providers/providerManager.js';
 
@@ -2466,6 +2467,8 @@ export function registerAllTools() {
     },
     required: ['prompt']
   });
+
+  vscodeBrowserTools.registerVscodeBrowserTools(reg);
 
   console.log('[TOOLS] Registered ' + toolRegistry.count() + ' tools in ' + toolRegistry.listCategories().length + ' categories');
 }

@@ -74,6 +74,11 @@ import {
 } from '../manager/ruleshandler.js';
 
 import {
+  handleOpenBrowser,
+  handleGetBrowserState
+} from '../manager/vscodebrowserhandler.js';
+
+import {
   handleQuestionResponse,
   handlePermissionResponse,
   handleClearPermissionDecision
@@ -214,6 +219,10 @@ function handlemessage(message, webview, context, statusBarItem) {
     handleSolveQwenCaptcha(message, webview, context);
   } else if (msgType === 'getQwenCookie') {
     handleGetQwenCookie(webview, context);
+  } else if (msgType === 'openVscodeBrowser') {
+    handleOpenBrowser(message, function postMsg(data) { webview.postMessage(data); });
+  } else if (msgType === 'getVscodeBrowserState') {
+    handleGetBrowserState(message, function postMsg(data) { webview.postMessage(data); });
   } else if (msgType === 'openExternal') {
     if (message.url) {
       try {
