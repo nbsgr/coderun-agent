@@ -1747,7 +1747,8 @@
           <li><a href="#builtin-mcp" class="sidebar-link">Built-in MCP Catalog</a></li>
           <li><a href="#adding-mcp" class="sidebar-link">How to Add & Save MCP</a></li>
           <li><a href="#mcp-reflection" class="sidebar-link">How MCP Reflects in Execution</a></li>
-          <li><a href="#browser-automation" class="sidebar-link">Zero-Config Browser Discovery</a></li>
+          <li><a href="#vscode-integrated-browser" class="sidebar-link">VS Code Integrated Browser</a></li>
+          <li><a href="#browser-automation" class="sidebar-link">Zero-Config Puppeteer MCP</a></li>
         </ul>
       </div>
 
@@ -1766,7 +1767,7 @@
         <ul class="sidebar-menu">
           <li><a href="#user-sandbox" class="sidebar-link">User Sandbox & Workspace</a></li>
           <li><a href="#lsp-intelligence" class="sidebar-link">Native LSP &amp; Diagnostics</a></li>
-          <li><a href="#tools-matrix" class="sidebar-link">Complete 36-Tool Matrix</a></li>
+          <li><a href="#tools-matrix" class="sidebar-link">Complete 46-Tool Matrix</a></li>
           <li><a href="#ask-question" class="sidebar-link">Interactive User Questions</a></li>
           <li><a href="#copy-actions" class="sidebar-link">Message Copy Buttons</a></li>
           <li><a href="#terminal-repl" class="sidebar-link">Interactive Terminal REPLs</a></li>
@@ -1996,6 +1997,11 @@
                 <td><strong>On-Install Browser Automation</strong></td>
                 <td>Embedded browser discovery in <code>src/extension/mcp/mcpManager.js</code> + Puppeteer MCP server</td>
                 <td><span class="pill-badge green">✅ Automatic</span> Auto-locates Chrome/Edge/Brave or installs Chromium</td>
+              </tr>
+              <tr>
+                <td><strong>VS Code Integrated Browser ("Sharing with Agent")</strong></td>
+                <td>10 Language Model browser tools (<code>vscodeBrowserTools.js</code>) with <code>activePageId</code> binding &amp; in-chat approvals</td>
+                <td><span class="pill-badge green">✅ 10 LM Tools</span> Authenticated portal sharing, zero session loss, Playwright scripts</td>
               </tr>
               <tr>
                 <td><strong>Persistent Memory Graph MCP</strong></td>
@@ -2834,9 +2840,9 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                   <summary class="cr-builtin-summary">
                     <div class="cr-builtin-summary-left">
                       <span>⚡ Core Agent Built-in Tools</span>
-                      <span class="cr-builtin-badge" id="simBuiltinBadge">Built-in (36 active)</span>
+                      <span class="cr-builtin-badge" id="simBuiltinBadge">Built-in (46 active)</span>
                     </div>
-                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Planning, Interaction, Utility, Sandbox, Database, Subagent, Media</span>
+                    <span style="font-size:11px;color:#8b949e;">Filesystem, Search, Terminal, Browser, Planning, Interaction, Utility, Sandbox, Database, Subagent, Media</span>
                   </summary>
                   <div class="cr-builtin-body">
                     <div class="cr-builtin-toolbar">
@@ -3188,6 +3194,160 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         </ul>
       </section>
 
+      <!-- VS Code Integrated Browser & Sharing with Agent -->
+      <section id="vscode-integrated-browser">
+        <h2 class="section-heading">🌐 VS Code Integrated Browser &amp; "Sharing with Agent"</h2>
+        <p>
+          CodeRun features deep, native integration with Visual Studio Code's <strong>Integrated Browser</strong> (Simple Browser) and the VS Code <strong>Language Model Tools</strong> runtime. Rather than relying exclusively on headless browser scraping, CodeRun allows the agent to visually share, inspect, and interact with the exact web tabs open directly inside your editor.
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-title">🤝 "Sharing with Agent" Live Binding</div>
+            <div class="card-text">
+              Open any webpage or authenticated portal inside VS Code. The browser tab displays the green pill <code>Sharing with Agent</code>. CodeRun automatically captures and binds to <code>activePageId</code> via <code>ensureActivePageId({ forceNew: false })</code> without opening redundant blank tabs.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🔐 Zero Session &amp; Cookie Loss</div>
+            <div class="card-text">
+              Log in to university portals (e.g. KL University ERP), internal corporate dashboards, cloud consoles, OAuth SSO sessions, or local dev servers. Because CodeRun operates on the live authenticated webview, all cookies, session storage, and CSRF tokens are 100% preserved.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🛡️ Copilot-Style In-Chat Approvals</div>
+            <div class="card-text">
+              Sensitive browser operations (navigating, clicking, typing, running Playwright scripts) are prompted directly inside the chat stream with interactive <code>[Allow Once]</code>, <code>[Always Allow]</code>, and <code>[Deny]</code> action cards. Intrusive OS and workbench modal dialogs are completely suppressed.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🎭 Multi-Step Playwright Execution</div>
+            <div class="card-text">
+              Execute advanced multi-action automation routines using standard Playwright syntax with <code>run_playwright_code</code> directly on the shared tab (<code>page.goto</code>, <code>page.click</code>, <code>page.fill</code>, <code>page.evaluate</code>) with sandbox error recovery.
+            </div>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 32px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">The 10 Integrated Browser Tools Suite</h3>
+        <p>
+          CodeRun exposes 10 specialized tools registered directly through the VS Code Language Model Tools API with alias mappings for all leading LLM providers:
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Parameters</th>
+                <th>Permission</th>
+                <th>Capabilities</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>open_browser_page</code><br><small style="color: var(--text-muted);">(openBrowserPage)</small></td>
+                <td><code>url</code>, <code>forceNew</code></td>
+                <td>Safe</td>
+                <td>Opens a URL in VS Code's integrated browser. When <code>forceNew: false</code> (default), seamlessly binds to an existing open tab.</td>
+              </tr>
+              <tr>
+                <td><code>read_page</code><br><small style="color: var(--text-muted);">(readPage)</small></td>
+                <td><code>pageId</code>, <code>ref</code>, <code>element</code></td>
+                <td>Safe</td>
+                <td>Reads rendered DOM structure, visible text, form fields, and console errors from the active page.</td>
+              </tr>
+              <tr>
+                <td><code>click_element</code><br><small style="color: var(--text-muted);">(clickElement)</small></td>
+                <td><code>ref</code>, <code>element</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Clicks a button, link, checkbox, or radio button identified by numeric reference (<code>ref</code>) or CSS selector.</td>
+              </tr>
+              <tr>
+                <td><code>type_in_page</code><br><small style="color: var(--text-muted);">(typeInPage)</small></td>
+                <td><code>text</code>, <code>ref</code>, <code>element</code>, <code>submit</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Types text into input fields, search bars, or textareas with optional automatic Enter/Form submission.</td>
+              </tr>
+              <tr>
+                <td><code>navigate_page</code><br><small style="color: var(--text-muted);">(navigatePage)</small></td>
+                <td><code>url</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Navigates the shared browser tab directly to a target URL or internal application route.</td>
+              </tr>
+              <tr>
+                <td><code>screenshot_page</code><br><small style="color: var(--text-muted);">(screenshotPage)</small></td>
+                <td><code>pageId</code></td>
+                <td>Safe</td>
+                <td>Captures a visual PNG screenshot of the integrated browser page, saving it directly to local media storage for LLM inspection.</td>
+              </tr>
+              <tr>
+                <td><code>hover_element</code><br><small style="color: var(--text-muted);">(hoverElement)</small></td>
+                <td><code>ref</code>, <code>element</code>, <code>pageId</code></td>
+                <td>Safe</td>
+                <td>Hovers over dropdown menus, navigation links, or tooltip targets to reveal sub-menus or hidden elements.</td>
+              </tr>
+              <tr>
+                <td><code>drag_element</code><br><small style="color: var(--text-muted);">(dragElement)</small></td>
+                <td><code>sourceRef</code>, <code>targetRef</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Performs drag-and-drop actions between DOM elements or coordinate points on interactive boards.</td>
+              </tr>
+              <tr>
+                <td><code>handle_dialog</code><br><small style="color: var(--text-muted);">(handleDialog)</small></td>
+                <td><code>action</code> ('accept' | 'dismiss'), <code>promptText</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Accepts or dismisses JavaScript <code>alert()</code>, <code>confirm()</code>, and <code>prompt()</code> modal popups.</td>
+              </tr>
+              <tr>
+                <td><code>run_playwright_code</code><br><small style="color: var(--text-muted);">(runPlaywrightCode)</small></td>
+                <td><code>code</code>, <code>pageId</code></td>
+                <td>⚠️ Dangerous</td>
+                <td>Executes arbitrary Playwright automation snippets against the active browser page with full page evaluation.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top: 28px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">Integrated Browser vs. Puppeteer MCP Coexistence</h3>
+        <p>
+          CodeRun provides both browser architectures side-by-side to accommodate every workflow:
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Workflow Scenario</th>
+                <th>VS Code Integrated Browser</th>
+                <th>Puppeteer MCP Server</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Authenticated Portal Sharing</strong><br><small>(e.g. ERPs, Intranets, Student Portals)</small></td>
+                <td><span class="pill-badge green">✅ Recommended</span> User logs in visually; agent reuses active tab with cookies intact.</td>
+                <td><span class="pill-badge">⚠️ Isolated</span> Separate session requiring credentials or cookies to be passed.</td>
+              </tr>
+              <tr>
+                <td><strong>Visual In-Editor Monitoring</strong></td>
+                <td><span class="pill-badge green">✅ Live View</span> Rendered directly in a VS Code editor tab beside your chat.</td>
+                <td><span class="pill-badge">Headless / External</span> Runs in background or external Chrome/Edge window.</td>
+              </tr>
+              <tr>
+                <td><strong>Background Autonomous Scraping</strong></td>
+                <td>Available</td>
+                <td><span class="pill-badge green">✅ Recommended</span> Fully autonomous headless execution without opening tabs.</td>
+              </tr>
+              <tr>
+                <td><strong>Permission Handling</strong></td>
+                <td>In-Chat Interactive Cards (OS popups suppressed)</td>
+                <td>In-Chat Interactive Cards</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- Browser Automation -->
       <section id="browser-automation">
         <h2 class="section-heading">🌐 Zero-Config Browser Automation & On-Install Setup</h2>
@@ -3503,11 +3663,11 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         </div>
       </section>
 
-      <!-- 36 Tools Matrix -->
+      <!-- 46 Tools Matrix -->
       <section id="tools-matrix">
-        <h2 class="section-heading">🧰 The Complete 36-Tool Matrix</h2>
+        <h2 class="section-heading">🧰 The Complete 46-Tool Matrix</h2>
         <p>
-          CodeRun comes equipped with 36 built-in core tools across 9 operational categories:
+          CodeRun comes equipped with 46 built-in core &amp; browser tools across 10 operational categories:
         </p>
 
         <div class="table-wrap">
@@ -3634,6 +3794,66 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
                 <td><code>check_terminal_state</code></td>
                 <td>Inspects command execution state, exit code, stdout/stderr, working directory, and exit code 0 status of main or background terminal</td>
                 <td>Safe</td>
+              </tr>
+              <tr>
+                <td><strong>🌐 Integrated Browser</strong></td>
+                <td><code>open_browser_page</code></td>
+                <td>Opens a URL in VS Code's integrated browser (<code>forceNew: false</code> to share tab)</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>read_page</code></td>
+                <td>Reads rendered page text, DOM elements, and console errors/warnings</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>click_element</code></td>
+                <td>Clicks button, link, checkbox, or input by element reference or CSS selector</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>type_in_page</code></td>
+                <td>Types text into input fields or textareas with optional auto-submission</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>navigate_page</code></td>
+                <td>Navigates active browser tab directly to a target URL or route</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>screenshot_page</code></td>
+                <td>Captures visual PNG screenshot of current integrated browser tab</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>hover_element</code></td>
+                <td>Hovers over an element to reveal tooltips or flyout submenus</td>
+                <td>Safe</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>drag_element</code></td>
+                <td>Drags an element from source to target coordinates or element refs</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>handle_dialog</code></td>
+                <td>Accepts or dismisses JavaScript alert/confirm/prompt dialogs</td>
+                <td>⚠️ Dangerous</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><code>run_playwright_code</code></td>
+                <td>Executes complex multi-step Playwright automation scripts on the shared tab</td>
+                <td>⚠️ Dangerous</td>
               </tr>
               <tr>
                 <td><strong>💬 Interaction</strong></td>
@@ -4048,14 +4268,15 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
         <li class="toc-item"><a href="#mcp-overview" class="toc-link">What is MCP?</a></li>
         <li class="toc-item"><a href="#adding-mcp" class="toc-link">How to Add MCP</a></li>
         <li class="toc-item"><a href="#mcp-reflection" class="toc-link">How MCP Reflects</a></li>
-        <li class="toc-item"><a href="#browser-automation" class="toc-link">Browser Automation</a></li>
+        <li class="toc-item"><a href="#vscode-integrated-browser" class="toc-link">Integrated Browser</a></li>
+        <li class="toc-item"><a href="#browser-automation" class="toc-link">Puppeteer MCP</a></li>
         <li class="toc-item"><a href="#user-sandbox" class="toc-link">User Sandbox</a></li>
         <li class="toc-item"><a href="#subagents-overview" class="toc-link">Subagent Engine</a></li>
         <li class="toc-item"><a href="#subagent-settings" class="toc-link">Subagent Settings</a></li>
         <li class="toc-item"><a href="#subagent-tools" class="toc-link">Subagent Tools</a></li>
         <li class="toc-item"><a href="#subagent-traces" class="toc-link">Subagent Traces</a></li>
         <li class="toc-item"><a href="#lsp-intelligence" class="toc-link">LSP &amp; Diagnostics</a></li>
-        <li class="toc-item"><a href="#tools-matrix" class="toc-link">36-Tool Matrix</a></li>
+        <li class="toc-item"><a href="#tools-matrix" class="toc-link">46-Tool Matrix</a></li>
         <li class="toc-item"><a href="#ask-question" class="toc-link">User Questions</a></li>
         <li class="toc-item"><a href="#terminal-repl" class="toc-link">Terminal REPLs</a></li>
         <li class="toc-item"><a href="#error-containment" class="toc-link">Error Boundary</a></li>
@@ -4187,6 +4408,16 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
       { name: 'terminal_input', cat: 'terminal', perm: 'danger' },
       { name: 'stop_terminal', cat: 'terminal', perm: 'safe' },
       { name: 'check_terminal_state', cat: 'terminal', perm: 'safe' },
+      { name: 'open_browser_page', cat: 'browser', perm: 'safe' },
+      { name: 'read_page', cat: 'browser', perm: 'safe' },
+      { name: 'click_element', cat: 'browser', perm: 'danger' },
+      { name: 'type_in_page', cat: 'browser', perm: 'danger' },
+      { name: 'navigate_page', cat: 'browser', perm: 'danger' },
+      { name: 'screenshot_page', cat: 'browser', perm: 'safe' },
+      { name: 'hover_element', cat: 'browser', perm: 'safe' },
+      { name: 'drag_element', cat: 'browser', perm: 'danger' },
+      { name: 'handle_dialog', cat: 'browser', perm: 'danger' },
+      { name: 'run_playwright_code', cat: 'browser', perm: 'danger' },
       { name: 'ask_question', cat: 'interaction', perm: 'safe' },
       { name: 'create_plan', cat: 'planning', perm: 'safe' },
       { name: 'update_plan', cat: 'planning', perm: 'safe' },

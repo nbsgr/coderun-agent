@@ -292,6 +292,24 @@ CodeRun provides dedicated one-click copy buttons across conversation messages, 
 *   **Built-in Path Isolation & Security:** All standard file operations (`read_file`, `write_file`, `edit_file`, `patch_file`, `delete_file`) natively accept paths inside the user sandbox directory, with automatic path canonicalization and directory traversal protection.
 *   **Dedicated `sandbox` Management Tool:** Inspect sandbox status, list sandbox contents, or clean temporary files on demand (`action: 'status' | 'list' | 'clean'`).
 
+### 🌐 VS Code Integrated Browser & "Sharing with Agent"
+*   **Native Integrated Browser (Simple Browser):** Seamlessly operates inside VS Code's built-in webview browser with full visual fidelity, zero headless lag, and immediate user visibility.
+*   **"Sharing with Agent" Live Tab Binding:** When you open any web page, enterprise portal, or university ERP (e.g. KL University ERP, internal dashboards, cloud consoles, OAuth logins, local dev servers) in the integrated browser, VS Code activates the **"Sharing with Agent"** state. CodeRun binds directly to the active page (`activePageId`) using `{ forceNew: false }`, allowing the agent to inspect, navigate, and interact with your already authenticated session.
+*   **Zero Session Loss & No Unauthenticated Fallbacks:** CodeRun maintains the authenticated session lifecycle. It eliminates unauthenticated raw HTTP GET fallbacks that lose session cookies, CSRF tokens, or render blank pages on sites with JavaScript-gated or `visibility: hidden` content.
+*   **Copilot-Style In-Chat Permission Approval:** Following GitHub Copilot Chat's non-intrusive security UX, CodeRun prompts for sensitive browser tool approvals directly in the chat stream with interactive permission cards (`[Allow Once] [Always Allow] [Deny]`). Intrusive OS and workbench confirmation modal dialogs (`Navigate Browser?`, `Run Playwright Code?`) are programmatically suppressed via `chat.tools.global.autoApprove` and wildcard URL rules (`*`, `https://*`, `http://*`, `*://*/*`), delivering an uninterrupted chat experience while keeping the user in full control.
+*   **10 Integrated Browser Tools:**
+    *   `open_browser_page` (`openBrowserPage`): Open a URL or tab in the integrated browser with reuse support.
+    *   `read_page` (`readPage`): Read rendered DOM content, visible text, form inputs, button states, and console logs.
+    *   `click_element` (`clickElement`): Click buttons, links, dropdowns, and form targets using numeric element references (`ref`) or CSS selectors.
+    *   `type_in_page` (`typeInPage`): Type strings into input fields or textareas with optional auto-submission (`submit: true`).
+    *   `navigate_page` (`navigatePage`): Navigate the browser tab directly to new URLs or routes within an active session.
+    *   `screenshot_page` (`screenshotPage`): Capture visual PNG screenshots of the current integrated browser tab.
+    *   `hover_element` (`hoverElement`): Hover over elements to trigger CSS hover effects, tooltips, and flyout submenus.
+    *   `drag_element` (`dragElement`): Drag elements from a source coordinate/ref to a target coordinate/ref.
+    *   `handle_dialog` (`handleDialog`): Accept or dismiss native alert, confirm, or prompt JavaScript popups.
+    *   `run_playwright_code` (`runPlaywrightCode`): Execute multi-step Playwright automation scripts against the shared tab (`page.goto`, `page.click`, `page.fill`, `page.evaluate`).
+*   **Dual-Engine Coexistence:** The Integrated Browser works side-by-side with the built-in **Puppeteer MCP** server. Use the Integrated Browser for interactive, authenticated visual tab sharing and user-in-the-loop workflows, and Puppeteer MCP for background, headless scraping, or autonomous testing.
+
 ### 🎭 On-Install Browser Setup & Zero-Config Puppeteer MCP
 *   **Local Browser Auto-Detection:** Automatically discovers installed Google Chrome, Microsoft Edge, Brave, and Chromium executables across Windows, macOS, and Linux.
 *   **Zero-Friction Fallback Installation:** If no system browser is found, CodeRun automatically installs a lightweight, dedicated Chromium binary into `~/.coderun/browser/` on first run via `@puppeteer/browsers`—completely eliminating runtime browser missing errors.
@@ -381,9 +399,9 @@ Key architectural design decisions, technical capabilities, and built-in subsyst
 
 ---
 
-## 🧰 Complete Tool Matrix (36 Core Tools)
+## 🧰 Complete Tool Matrix (46 Core & Integrated Browser Tools)
 
-CodeRun exposes a curated set of **36 active core tools** organized across 9 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
+CodeRun exposes a curated set of **46 active core & browser tools** organized across 10 operational categories. The LLM receives standard function calling schemas for these tools, while heavy index operations (such as SQLite indexing) run deterministically in the background.
 
 | Category | Tool | Description | Dangerous / Permissions |
 | :--- | :--- | :--- | :--- |
@@ -406,6 +424,16 @@ CodeRun exposes a curated set of **36 active core tools** organized across 9 ope
 | | `terminal_input` | Send input to an active interactive terminal session / REPL | ⚠️ Yes |
 | | `stop_terminal` | Send `Ctrl+C` interrupt to abort a running command (`target: 'foreground' \| 'background' \| 'all'`) | No |
 | | `check_terminal_state` | Inspect command execution state, exit code (`exit_code_zero`), output, and working directory of main or background terminal | No |
+| **🌐 VS Code Integrated Browser** | `open_browser_page` | Open a URL or tab in VS Code's integrated browser (`forceNew: false` to share tab) | No |
+| | `read_page` | Read rendered page text, DOM elements, and console errors/warnings | No |
+| | `click_element` | Click an element by numeric element ref or CSS selector | ⚠️ Yes |
+| | `type_in_page` | Type text into an input field or textarea with optional `submit` | ⚠️ Yes |
+| | `navigate_page` | Navigate active browser tab directly to a new URL | ⚠️ Yes |
+| | `screenshot_page` | Capture a visual PNG screenshot of the current browser tab | No |
+| | `hover_element` | Hover over an element to reveal tooltips or flyout submenus | No |
+| | `drag_element` | Drag an element from source to target coordinates or refs | ⚠️ Yes |
+| | `handle_dialog` | Accept or dismiss JavaScript alert/confirm/prompt dialogs | ⚠️ Yes |
+| | `run_playwright_code` | Execute multi-step Playwright automation scripts on the shared tab | ⚠️ Yes |
 | **💬 Interaction** | `ask_question` | Ask user clarification questions with clickable choice chips or custom write-in | No |
 | **📋 Planning & Progress** | `create_plan` | Initialize a structured task checklist | No |
 | | `update_plan` | Update task statuses (`[ ]` pending, `[/]` in progress, `[x]` done) | No |
