@@ -210,7 +210,9 @@
     "vscode": "file:./test/mocks/vscode"
   },
   "dependencies": {
+    "@kstonekuan/audio-capture": "^0.0.3",
     "ali-oss": "^6.23.0",
+    "onnxruntime-node": "^1.31.1",
     "openai": "^7.4.0",
     "sql.js": "^1.14.1"
   }
