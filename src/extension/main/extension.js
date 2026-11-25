@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as config from '../agents/config.js';
 import { hasValidQwenToken, isQwenTokenExpired } from '../browser/providerQwen.js';
+import { disposeDictationRuntime } from '../manager/dictationManager.js';
 
 function mergeSetCookies(currentCookieStr, setCookiesArray) {
   if (!setCookiesArray || !setCookiesArray.length) return currentCookieStr;
@@ -311,6 +312,11 @@ export async function deactivate() {
   if (statusBarItem) statusBarItem.dispose();
   terminalManager.dispose();
   permissions.cancelAllPermissions();
+  try {
+    await disposeDictationRuntime();
+  } catch (dictErr) {
+    console.debug('[CODERUN] Error stopping dictation:', dictErr ? dictErr.message : dictErr);
+  }
   try {
     await projectKnowledge.dispose();
   } catch (pkErr) {

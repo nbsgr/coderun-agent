@@ -60,6 +60,7 @@ export function getWebviewHtml(webview, extensionUri, extensionContext) {
   var markdownJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'MarkdownRenderer.js'))).toString() + '?cb=' + cb;
   var webviewSharedJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'webview-shared.js'))).toString() + '?cb=' + cb;
   var dashboardJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'dashboard', 'dashboard.js'))).toString() + '?cb=' + cb;
+  var dictationManagerJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'chats-dictation-manager.js'))).toString() + '?cb=' + cb;
   var chatSpaceJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'chats.js'))).toString() + '?cb=' + cb;
   var subagentPanelJs = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'chats', 'SubagentPanel.js'))).toString() + '?cb=' + cb;
   var browserCss = webview.asWebviewUri(vscode.Uri.file(path.join(uiPath, 'browser', 'browser.css'))).toString() + '?cb=' + cb;
@@ -138,6 +139,7 @@ export function getWebviewHtml(webview, extensionUri, extensionContext) {
   <script nonce="${nonce}" src="${browserCardsJs}"></script>
   <script nonce="${nonce}" src="${browserAuthManagerJs}"></script>
   <script nonce="${nonce}" src="${dashboardJs}"></script>
+  <script nonce="${nonce}" src="${dictationManagerJs}"></script>
   <script nonce="${nonce}" src="${chatSpaceJs}"></script>
 
   <script nonce="${nonce}">

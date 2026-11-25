@@ -36,6 +36,10 @@ import * as subagentPanel from '../src/UI/chats/SubagentPanel.js';
 import '../src/UI/chats/MarkdownRenderer.js';
 import * as reviewEngine from '../src/extension/execution/reviewEngine.js';
 import * as toolContextBuilder from '../src/extension/agents/toolContextBuilder.js';
+import {
+  applyTranscriptionResult,
+  createTranscriptState
+} from '../src/extension/manager/dictationManager.js';
 
 function noopResolve() {}
 
@@ -54,6 +58,21 @@ function resolveAfter30(resolve) {
 console.log('================================================================');
 console.log('=== STARTING COMPLETE ADVERSARIAL REGRESSION TEST SUITE ===');
 console.log('================================================================\n');
+
+var transcriptState = createTranscriptState();
+assert.strictEqual(applyTranscriptionResult(transcriptState, {
+  content: [{ text: 'hello' }],
+  is_final: false
+}).text, 'hello');
+assert.strictEqual(applyTranscriptionResult(transcriptState, {
+  content: [{ text: ' world' }],
+  is_final: false
+}).text, 'hello world');
+assert.strictEqual(applyTranscriptionResult(transcriptState, {
+  content: [{ text: 'hello world' }],
+  is_final: true
+}).text, 'hello world');
+console.log('✓ Foundry interim and final speech segments accumulate into one transcript.');
 
 var testDir = path.resolve('scratch/test_adv_suite');
 if (!fs.existsSync(testDir)) {

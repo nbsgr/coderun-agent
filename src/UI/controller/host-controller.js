@@ -49,6 +49,15 @@ function handlemessage(message) {
     handleMediaDataResult(message);
   } else if (msgType === 'vscodeBrowserState' || msgType === 'vscodeBrowserEvent') {
     handleVscodeBrowserMessage(message);
+  } else if (
+    msgType === 'dictationStatus' ||
+    msgType === 'dictationPartial' ||
+    msgType === 'dictationFinal' ||
+    msgType === 'dictationError'
+  ) {
+    if (typeof window !== 'undefined' && typeof window.handleDictationMessage === 'function') {
+      window.handleDictationMessage(message);
+    }
   } else if (msgType === 'showAlert') {
     if (message.message && typeof alert === 'function') {
       alert(message.message);

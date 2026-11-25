@@ -9,6 +9,7 @@ function initializeChatSpace() {
   var I = {
     bot:    '<img class="cr-bot-avatar-img" src="' + (window.CODERUN_BOT_AVATAR || 'bot-avatar.jpg') + '" alt="Bot" onerror="this.outerHTML=\'<svg class=\\\'cr-icon\\\' viewBox=\\\'0 0 24 24\\\' fill=\\\'currentColor\\\'><path d=\\\'M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H4a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zM7 14v2a1 1 0 1 0 2 0v-2H7zm8 0v2a1 1 0 1 0 2 0v-2h-2zM5 20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1H5v1z\\\'/></svg>\'"/>',
     send:   '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+    mic:    '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
     attach: '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     think:  '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>',
     tool:   '<svg class="cr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
@@ -6054,11 +6055,15 @@ function initializeChatSpace() {
           '</div>' +
           '<div class="cr-composer-row">' +
             '<button type="button" class="cr-attach-btn" title="Attach image">' + I.attach + '</button>' +
-            '<textarea class="cr-textarea" rows="1" placeholder="Ask anything..."></textarea>' +
+            '<div class="cr-input-wrap">' +
+              '<textarea class="cr-textarea" rows="1" placeholder="Ask anything..."></textarea>' +
+              '<button type="button" class="cr-mic-btn" title="Voice dictation (on-device)">' + I.mic + '</button>' +
+            '</div>' +
             '<button type="button" class="cr-send-btn" title="Send">' + I.send + '</button>' +
             '<button type="button" class="cr-stop-btn" title="Stop generation" style="display:none">' + I.stop + '</button>' +
           '</div>' +
           '<div class="cr-composer-footer">' +
+            '<span class="cr-dictation-status" role="status" aria-live="polite" aria-hidden="true"></span>' +
             '<div class="cr-usage-wrapper">' +
               '<div class="cr-usage-badge">' +
                 '<span class="cr-usage-icon">📊</span>' +
@@ -6146,6 +6151,7 @@ function initializeChatSpace() {
 
       var msgList    = container.querySelector('.cr-msg-list');
       var input      = container.querySelector('.cr-textarea');
+      var micBtn     = container.querySelector('.cr-mic-btn');
       var sendBtn    = container.querySelector('.cr-send-btn');
       var attachBtn  = container.querySelector('.cr-attach-btn');
       var fileInput  = container.querySelector('.cr-file-input');
@@ -6262,6 +6268,22 @@ function initializeChatSpace() {
       input.addEventListener('keydown', onInputKeyDown);
       function onSendBtnClick() { doSend(chatCtx); }
       sendBtn.addEventListener('click', onSendBtnClick);
+      if (micBtn) {
+        if (typeof window.registerDictationUI === 'function') {
+          window.registerDictationUI(
+            micBtn,
+            input,
+            onInputTextChange,
+            container.querySelector('.cr-dictation-status')
+          );
+        }
+        function onMicBtnClick() {
+          if (typeof window.toggleDictation === 'function') {
+            window.toggleDictation();
+          }
+        }
+        micBtn.addEventListener('click', onMicBtnClick);
+      }
 
       if (stopBtn) {
         function onStopBtnClick() { handleStopButtonClick(chatCtx); }
@@ -6426,6 +6448,17 @@ function initializeChatSpace() {
     var message = event.data || {};
     if (message.type === "agentEvent" && window.activeChatStreamCallback) {
       window.activeChatStreamCallback(message.event);
+    }
+
+    if (
+      message.type === 'dictationStatus' ||
+      message.type === 'dictationPartial' ||
+      message.type === 'dictationFinal' ||
+      message.type === 'dictationError'
+    ) {
+      if (typeof window.handleDictationMessage === 'function') {
+        window.handleDictationMessage(message);
+      }
     }
 
     if (message.type === 'diffResult' && message.diffId) {

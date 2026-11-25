@@ -97,6 +97,11 @@ import {
   handleSolveQwenCaptcha
 } from '../browser/qwenAuthHandler.js';
 
+import {
+  handleStartDictation,
+  handleStopDictation
+} from '../manager/dictationhandler.js';
+
 export function uiresponse(webviewView, context, statusBarItem) {
   console.log('[CODERUN] Message listener attached to webviewView');
   var webview = webviewView.webview || webviewView;
@@ -223,6 +228,10 @@ function handlemessage(message, webview, context, statusBarItem) {
     handleOpenBrowser(message, function postMsg(data) { webview.postMessage(data); });
   } else if (msgType === 'getVscodeBrowserState') {
     handleGetBrowserState(message, function postMsg(data) { webview.postMessage(data); });
+  } else if (msgType === 'startDictation') {
+    handleStartDictation(message, webview, context);
+  } else if (msgType === 'stopDictation') {
+    handleStopDictation(webview);
   } else if (msgType === 'openExternal') {
     if (message.url) {
       try {

@@ -10,7 +10,7 @@
     "url": "https://github.com/nbsgr/coderun-agent.git"
   },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.90.0"
   },
   "type": "module",
   "categories": [
@@ -200,6 +200,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable agent tools and function calling. When disabled, tools parameter is omitted from API requests."
+        },
+        "coderun.dictationModelPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to predownloaded Nemotron 3.5 ASR model assets. Defaults to the VS Code model cache."
         }
       }
     }
@@ -212,8 +217,11 @@
   "dependencies": {
     "@kstonekuan/audio-capture": "^0.0.3",
     "ali-oss": "^6.23.0",
-    "onnxruntime-node": "^1.31.1",
+    "foundry-local-sdk": "2.2.1",
     "openai": "^7.4.0",
     "sql.js": "^1.14.1"
+  },
+  "allowScripts": {
+    "foundry-local-sdk@2.2.1": true
   }
 }
