@@ -158,6 +158,14 @@ The repository enforces strict physical and logical separation between the Backe
 *   **Cloudflare Workers AI Support:** Dynamically parses Cloudflare base URLs to extract your Account ID and retrieve model lists using Cloudflare's search API.
 *   **Google Gemini Protobuf & Schema Sanitization:** Automatic schema normalization recursively strips unsupported JSON Schema keywords (`additionalProperties`, `$schema`, `title`, `$defs`, `definitions`) before submitting to Gemini endpoints, preventing HTTP 400 rejection on complex schemas (such as Puppeteer browser tools). Automatically normalizes model names to prevent HTTP 404 lookup failures.
 
+### 🎙️ On-Device Voice Dictation
+*   **Live English Transcription:** Use the microphone button beside the chat composer to dictate in English (`en-US`). Interim transcript updates are inserted into the input as the local recognizer produces them; click the button again to stop and finalize.
+*   **Local Streaming Runtime:** Audio is captured by the extension host and streamed to Foundry Local using the Nemotron 3.5 ASR Streaming 0.6B generic CPU model. Dictation does not use a cloud transcription API or the webview's browser microphone APIs. The Foundry Local SDK requires a Node.js 20+ extension-host runtime.
+*   **First-Run Model Setup:** If the Nemotron model is not already available locally, Foundry Local may download it on first use. Later inference runs on-device; recognition speed depends on the computer and model load time.
+*   **Storage Isolation:** Foundry's model cache and application data are stored under VS Code's extension `globalStorageUri` in the `dictation-models/` directory, not in the open workspace.
+*   **Optional Existing Model Assets:** Set `coderun.dictationModelPath` to a directory containing the predownloaded Nemotron model assets to register those assets with Foundry Local instead of using its catalog download path.
+*   **CPU Runtime:** The configured Nemotron variant is the generic CPU model; this implementation does not use Intel Xe integrated GPU acceleration.
+
 ### 💻 Interactive Terminal Execution & Dual Terminal Architecture
 *   **Dual Dedicated Terminal Sessions per Chat:** Every chat maintains two isolated, visible VS Code terminal sessions:
     *   **`CodeRun(main)`**: Dedicated direct/foreground terminal executing standard CLI commands, tests, builds, and interactive REPLs with real-time output streaming.

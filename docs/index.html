@@ -1724,6 +1724,7 @@
           <li><a href="#architecture" class="sidebar-link">Agentic Loop & Engine</a></li>
           <li><a href="#three-tier" class="sidebar-link">3-Tier Architecture</a></li>
           <li><a href="#features" class="sidebar-link">Architecture and Features</a></li>
+          <li><a href="#voice-dictation" class="sidebar-link">On-Device Voice Dictation</a></li>
           <li><a href="#installation" class="sidebar-link">Installation & Setup</a></li>
         </ul>
       </div>
@@ -1989,6 +1990,11 @@
                 <td><span class="pill-badge green">✅ Native</span> Full streaming, vision, zero data leaves local machine</td>
               </tr>
               <tr>
+                <td><strong>On-Device Voice Dictation</strong></td>
+                <td>Extension-host audio capture streams PCM to Foundry Local's Nemotron 3.5 ASR Streaming 0.6B generic CPU model</td>
+                <td><span class="pill-badge green">✅ Local Streaming</span> English interim results update the chat composer; audio is not sent to a cloud transcription API</td>
+              </tr>
+              <tr>
                 <td><strong>Isolated User Sandbox</strong></td>
                 <td>Dedicated sandbox directory (<code>~/.coderun/sandbox/</code>) with transparent CWD synchronization</td>
                 <td><span class="pill-badge green">✅ Native</span> Safe scratchpad execution without polluting workspace git repo</td>
@@ -2073,6 +2079,45 @@
         </div>
       </section>
 
+      <!-- On-Device Voice Dictation -->
+      <section id="voice-dictation">
+        <h2 class="section-heading">🎙️ On-Device Voice Dictation</h2>
+        <p>
+          CodeRun provides English voice dictation directly in the chat composer. The microphone is captured by the VS Code extension host and streamed to <strong>Foundry Local</strong> for on-device inference with the <strong>Nemotron 3.5 ASR Streaming 0.6B generic CPU</strong> model. Interim transcript updates appear in the input as they are produced. Click the microphone again to stop and finalize the transcript.
+        </p>
+
+        <div class="card-grid">
+          <div class="feature-card">
+            <div class="card-icon">🔒</div>
+            <div class="card-title">Local Audio Processing</div>
+            <div class="card-text">
+              Audio is sent to the local Foundry runtime, not to a cloud transcription API. The extension uses Node-based host audio capture rather than browser microphone access in the webview. Foundry Local requires a Node.js 20+ extension-host runtime.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">⚙️</div>
+            <div class="card-title">Model Setup &amp; Storage</div>
+            <div class="card-text">
+              On first use, Foundry Local may download the model if it is not already cached. Its model cache and application data are stored in the extension's VS Code <code>globalStorageUri/dictation-models/</code> directory, outside the workspace.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🎛️</div>
+            <div class="card-title">Optional Existing Model</div>
+            <div class="card-text">
+              Set <code>coderun.dictationModelPath</code> to a directory containing predownloaded Nemotron model assets to register that local copy with Foundry Local.
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">💻</div>
+            <div class="card-title">CPU Inference</div>
+            <div class="card-text">
+              The current configured model variant is generic CPU. This implementation does not use Intel Xe integrated GPU acceleration; recognition speed depends on the machine and model load time.
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Installation & Setup -->
       <section id="installation">
         <h2 class="section-heading">📦 Installation & Quick Setup Guide</h2>
@@ -2086,7 +2131,7 @@
             <div class="card-icon">💻</div>
             <div class="card-title">System Requirements</div>
             <div class="card-text">
-              • Visual Studio Code <strong>v1.85.0+</strong> or VS Code Insiders<br>
+              • Visual Studio Code <strong>v1.90.0+</strong> or VS Code Insiders<br>
               • Windows 10/11, macOS (Apple Silicon / Intel), or Linux (x64/arm64)<br>
               • Git installed and available in your terminal PATH
             </div>
@@ -4259,6 +4304,7 @@ node --check src/extension/tools/toolExecutor.js</code></pre>
         <li class="toc-item"><a href="#introduction" class="toc-link">Overview</a></li>
         <li class="toc-item"><a href="#architecture" class="toc-link">Agentic Loop</a></li>
         <li class="toc-item"><a href="#features" class="toc-link">Architecture and Features</a></li>
+        <li class="toc-item"><a href="#voice-dictation" class="toc-link">On-Device Voice Dictation</a></li>
         <li class="toc-item"><a href="#installation" class="toc-link">Installation & Setup</a></li>
         <li class="toc-item"><a href="#providers-overview" class="toc-link">Supported Providers</a></li>
         <li class="toc-item"><a href="#saving-providers" class="toc-link">How to Save Providers</a></li>
