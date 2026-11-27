@@ -3088,6 +3088,10 @@ select {
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 10px;
+  max-height: min(46vh, 360px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   animation: fadeIn 0.2s ease-out;
 }
@@ -3096,6 +3100,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .cr-question-card-header {
@@ -3123,6 +3128,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .cr-question-badge-title {
@@ -3138,6 +3145,7 @@ select {
   font-weight: 500;
   color: #f0f2f5;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .cr-question-options-list {
@@ -3208,29 +3216,35 @@ select {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+  flex: 1;
 }
 
 .cr-question-opt-label {
   font-size: 13px;
   font-weight: 500;
   color: #e2e8f0;
+  overflow-wrap: anywhere;
 }
 
 .cr-question-opt-desc {
   font-size: 11.5px;
   color: #8c9ba5;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .cr-question-custom-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
 }
 
 .cr-question-custom-input {
   flex: 1;
+  min-width: 140px;
   background: #191d26;
   border: 1px solid #252c3d;
   border-radius: 8px;

@@ -241,6 +241,10 @@ export function cancelSession(sessionId) {
   for (var id in _pendingPatches) {
     var patch = _pendingPatches[id];
     if (patch && (patch.sessionId === sessionId || patch.parentSessionId === sessionId || patch.rootSessionId === sessionId)) {
+      if (patch.timer) {
+        clearTimeout(patch.timer);
+        patch.timer = null;
+      }
       if (patch.deferred && patch.deferred.resolve) {
         patch.deferred.resolve({ accepted: false });
       }
@@ -252,6 +256,10 @@ export function cancelSession(sessionId) {
 export function cancelAll() {
   for (var id in _pendingPatches) {
     var patch = _pendingPatches[id];
+    if (patch && patch.timer) {
+      clearTimeout(patch.timer);
+      patch.timer = null;
+    }
     if (patch && patch.deferred && patch.deferred.resolve) {
       patch.deferred.resolve({ accepted: false });
     }

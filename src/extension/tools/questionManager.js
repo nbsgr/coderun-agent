@@ -119,6 +119,23 @@ export function listPendingQuestions(sessionId) {
   return list;
 }
 
+export function cancelQuestion(questionId, reason) {
+  if (!questionId) return false;
+  var item = pendingQuestions[questionId];
+  if (!item) return false;
+  if (item.timer) {
+    clearTimeout(item.timer);
+  }
+  delete pendingQuestions[questionId];
+  item.deferred.resolve({
+    answered: false,
+    answer: '',
+    cancelled: true,
+    message: reason || 'Question cancelled.'
+  });
+  return true;
+}
+
 export function cancelSessionQuestions(sessionId) {
   if (!sessionId) return;
   for (var id in pendingQuestions) {

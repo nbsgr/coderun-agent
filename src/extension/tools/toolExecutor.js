@@ -292,7 +292,7 @@ export async function executeSingleToolCall(workspace, sessionId, iteration, sen
       }
 
       // Propagate subagent metadata for interactive user question events
-      if (event.type === 'ask_question' && event.id) {
+      if ((event.type === 'ask_question' || event.type === 'question_resolved') && event.id) {
         event.sessionId = sessionId;
         if (!event.parentSessionId && toolContext && toolContext.parentSessionId) {
           event.parentSessionId = toolContext.parentSessionId;

@@ -3672,6 +3672,281 @@ assert.strictEqual(emptyRead.url, 'about:blank', 'Default url must be about:blan
 
 console.log('✓ Vector 89 Passed: VS Code integrated browser tools contract, schemas, alias mapping & Puppeteer coexistence verified.');
 
+// --- TEST 90: Question Timeout Lifecycle, Banner Cleanup & Tool Card msgList Safety ---
+console.log('\n--- TEST 90: Question Timeout Lifecycle, Banner Cleanup & Tool Card msgList Safety ---');
+
+// 1. questionManager short-timeout resolves with timedOut=true and clears pending state
+var timedOutQ = questionManager.createQuestion('Timeout test question?', ['Yes', 'No'], 'sess_timeout_90', 25);
+var timedOutOutcome = await timedOutQ.promise;
+assert.strictEqual(timedOutOutcome.answered, false, 'Timed-out question must have answered=false');
+assert.strictEqual(timedOutOutcome.timedOut, true, 'Timed-out question must have timedOut=true');
+assert.strictEqual(questionManager.listPendingQuestions('sess_timeout_90').length, 0, 'Timed-out question must be removed from pending list');
+var lateResolve = questionManager.resolveQuestion(timedOutQ.id, 'Yes', 'sess_timeout_90');
+assert.strictEqual(lateResolve.success, false, 'Resolving an already timed-out question must fail');
+
+// 2. questionManager.cancelQuestion resolves targeted question cleanly
+var targetCancelQ = questionManager.createQuestion('Cancel by ID?', ['A', 'B'], 'sess_cancel_id_90');
+var cancelledFlag = questionManager.cancelQuestion(targetCancelQ.id, 'Cancelled in test');
+assert.strictEqual(cancelledFlag, true, 'cancelQuestion must return true for active question');
+var cancelIdOutcome = await targetCancelQ.promise;
+assert.strictEqual(cancelIdOutcome.answered, false, 'Cancelled question has answered=false');
+assert.strictEqual(cancelIdOutcome.cancelled, true, 'Cancelled question has cancelled=true');
+assert.strictEqual(questionManager.cancelQuestion(targetCancelQ.id), false, 'Second cancelQuestion returns false');
+
+// 3. ask_question yields question_resolved + tool_result on AbortController abort
+var abortCtrl90 = new AbortController();
+var abortGen90 = toolRegistry.execute('ask_question', {
+  question: 'Abort during wait?',
+  options: ['Option 1', 'Option 2']
+}, { workspace: '.', sessionId: 'sess_abort_90', signal: abortCtrl90 });
+
+var abortEv1 = await abortGen90.next();
+assert.strictEqual(abortEv1.value.type, 'action', 'ask_question yields action first');
+var abortEv2 = await abortGen90.next();
+assert.strictEqual(abortEv2.value.type, 'ask_question', 'ask_question yields ask_question second');
+var pendingAbortId = abortEv2.value.id;
+assert.strictEqual(questionManager.listPendingQuestions('sess_abort_90').length, 1, 'Pending question exists before abort');
+
+abortCtrl90.abort();
+var abortEv3 = await abortGen90.next();
+assert.strictEqual(abortEv3.value.type, 'question_resolved', 'ask_question yields question_resolved on abort');
+assert.strictEqual(abortEv3.value.id, pendingAbortId, 'question_resolved carries matching question id');
+assert.strictEqual(abortEv3.value.cancelled, true, 'question_resolved marks cancelled=true');
+var abortEv4 = await abortGen90.next();
+assert.strictEqual(abortEv4.value.type, 'tool_result', 'ask_question yields tool_result after question_resolved');
+assert.strictEqual(abortEv4.value.success, false, 'Aborted ask_question tool_result has success=false');
+assert.strictEqual(abortEv4.value.questionId, pendingAbortId, 'tool_result carries questionId');
+assert.strictEqual(questionManager.listPendingQuestions('sess_abort_90').length, 0, 'Pending question cleared after abort');
+
+// 4. diffManager.cancelSession clears patch timers cleanly
+var deferredPatch90 = {};
+function patchExecutor90(resolve) {
+  deferredPatch90.resolve = resolve;
+}
+deferredPatch90.promise = new Promise(patchExecutor90);
+var storedPatch90 = diffManager.storePatch({
+  id: 'diff_cancel_timer_90',
+  file_path: 'dummy.js',
+  original_content: 'a',
+  new_content: 'b',
+  deferred: deferredPatch90,
+  sessionId: 'sess_diff_90'
+});
+assert.ok(storedPatch90.timer !== null, 'storePatch creates timer when deferred.resolve is present');
+diffManager.cancelSession('sess_diff_90');
+assert.strictEqual(storedPatch90.timer, null, 'cancelSession must clear patch timer');
+var diffCancelOutcome90 = await deferredPatch90.promise;
+assert.strictEqual(diffCancelOutcome90.accepted, false, 'cancelSession resolves deferred with accepted=false');
+
+// 5. Real chats.js VM execution: question banner cleanup on timeout/tool_result/stream_end + tool_call msgList safety
+var vmModule90 = await import('vm');
+function createVmMockElement90(tagName, className) {
+  var children = [];
+  var listeners = {};
+  var el = {
+    tagName: String(tagName || 'DIV').toUpperCase(),
+    className: className || '',
+    dataset: {},
+    style: { display: '' },
+    value: '',
+    textContent: '',
+    innerHTML: '',
+    scrollTop: 0,
+    scrollHeight: 100,
+    disabled: false,
+    open: false,
+    children: children,
+    parentNode: null,
+    classList: {
+      add: function addCls() {},
+      remove: function remCls() {},
+      toggle: function togCls() {}
+    },
+    addEventListener: function addEv(type, fn) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(fn);
+    },
+    removeEventListener: function remEv() {},
+    appendChild: function appChild(child) {
+      if (child) {
+        child.parentNode = el;
+        children.push(child);
+      }
+      return child;
+    },
+    removeChild: function remChild(child) {
+      var idx = children.indexOf(child);
+      if (idx !== -1) children.splice(idx, 1);
+      if (child) child.parentNode = null;
+    },
+    remove: function removeSelf() {
+      if (el.parentNode && typeof el.parentNode.removeChild === 'function') {
+        el.parentNode.removeChild(el);
+      }
+    },
+    insertBefore: function insBefore(child) {
+      return el.appendChild(child);
+    },
+    getAttribute: function getAttr(name) {
+      if (name === 'data-val') return el.dataset.val || 'opt';
+      return '';
+    },
+    setAttribute: function setAttr() {},
+    focus: function focusEl() {},
+    scrollTo: function scrollToEl() {},
+    closest: function closestEl() { return null; },
+    querySelector: function qSel(sel) {
+      if (el._selectorMap && el._selectorMap[sel]) return el._selectorMap[sel];
+      for (var ci = 0; ci < children.length; ci++) {
+        var ch = children[ci];
+        if (ch && ch.className && sel.charAt(0) === '.' && ch.className.indexOf(sel.slice(1)) !== -1) {
+          return ch;
+        }
+      }
+      return null;
+    },
+    querySelectorAll: function qSelAll(sel) {
+      if (el._selectorAllMap && el._selectorAllMap[sel]) return el._selectorAllMap[sel];
+      var out = [];
+      for (var ci = 0; ci < children.length; ci++) {
+        var ch = children[ci];
+        if (ch && ch.className && sel.charAt(0) === '.' && ch.className.indexOf(sel.slice(1)) !== -1) {
+          out.push(ch);
+        }
+      }
+      return out;
+    },
+    _selectorMap: {},
+    _selectorAllMap: {}
+  };
+  return el;
+}
+
+var vmMsgList90 = createVmMockElement90('div', 'cr-msg-list');
+var vmInput90 = createVmMockElement90('textarea', 'cr-textarea');
+var vmSendBtn90 = createVmMockElement90('button', 'cr-send-btn');
+var vmStopBtn90 = createVmMockElement90('button', 'cr-stop-btn');
+var vmTodosPanel90 = createVmMockElement90('div', 'cr-todos-panel');
+var vmSubPanel90 = createVmMockElement90('div', 'cr-running-subagents-panel');
+var vmControlsPanel90 = createVmMockElement90('div', 'cr-agent-controls-panel');
+var vmQuestionBanner90 = createVmMockElement90('div', 'cr-question-banner');
+vmQuestionBanner90.style.display = 'none';
+vmQuestionBanner90._selectorMap['.cr-question-submit-btn'] = createVmMockElement90('button', 'cr-question-submit-btn');
+vmQuestionBanner90._selectorMap['.cr-question-custom-input'] = createVmMockElement90('input', 'cr-question-custom-input');
+
+var vmContainer90 = createVmMockElement90('div', 'chat-area-container');
+vmContainer90._selectorMap['.cr-msg-list'] = vmMsgList90;
+vmContainer90._selectorMap['.cr-textarea'] = vmInput90;
+vmContainer90._selectorMap['.cr-mic-btn'] = createVmMockElement90('button', 'cr-mic-btn');
+vmContainer90._selectorMap['.cr-send-btn'] = vmSendBtn90;
+vmContainer90._selectorMap['.cr-attach-btn'] = createVmMockElement90('button', 'cr-attach-btn');
+vmContainer90._selectorMap['.cr-file-input'] = createVmMockElement90('input', 'cr-file-input');
+vmContainer90._selectorMap['.cr-img-preview'] = createVmMockElement90('div', 'cr-img-preview');
+vmContainer90._selectorMap['.cr-preview-img'] = createVmMockElement90('img', 'cr-preview-img');
+vmContainer90._selectorMap['.cr-clear-img-btn'] = createVmMockElement90('button', 'cr-clear-img-btn');
+vmContainer90._selectorMap['.cr-char-count'] = createVmMockElement90('span', 'cr-char-count');
+vmContainer90._selectorMap['.cr-stop-btn'] = vmStopBtn90;
+vmContainer90._selectorMap['.cr-todos-panel'] = vmTodosPanel90;
+vmContainer90._selectorMap['.cr-running-subagents-panel'] = vmSubPanel90;
+vmContainer90._selectorMap['.cr-agent-controls-panel'] = vmControlsPanel90;
+vmContainer90._selectorMap['.cr-question-banner'] = vmQuestionBanner90;
+
+var postedMessages90 = [];
+var vmSandbox90 = {
+  console: console,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout,
+  Date: Date,
+  JSON: JSON,
+  Array: Array,
+  Object: Object,
+  String: String,
+  Boolean: Boolean,
+  Number: Number,
+  Math: Math,
+  RegExp: RegExp,
+  requestAnimationFrame: function rafStub(fn) { return setTimeout(fn, 0); },
+  cancelAnimationFrame: function cafStub(id) { clearTimeout(id); },
+  document: {
+    createElement: function createEl(tag) { return createVmMockElement90(tag, ''); },
+    addEventListener: function docAddEv() {},
+    querySelector: function docQSel() { return null; },
+    querySelectorAll: function docQSelAll() { return []; },
+    getElementById: function docGetId() { return null; }
+  },
+  localStorage: {
+    getItem: function lsGet() { return null; },
+    setItem: function lsSet() {}
+  },
+  window: null
+};
+vmSandbox90.window = vmSandbox90;
+vmSandbox90.VSCODE = true;
+vmSandbox90.VSCODE_API = {
+  postMessage: function postMsg90(msg) { postedMessages90.push(msg); }
+};
+vmSandbox90.addEventListener = function winAddEv() {};
+vmSandbox90.getDashboardModel = function getDashModel90() { return 'mercury-3'; };
+vmSandbox90.getDashboardProvider = function getDashProv90() { return 'openai'; };
+vmSandbox90.getDashboardWorkspace = function getDashWs90() { return '.'; };
+vmSandbox90.getDashboardBaseUrl = function getDashUrl90() { return 'http://localhost:11434/v1'; };
+
+var chatsSource90 = fs.readFileSync(path.join(process.cwd(), 'src', 'UI', 'chats', 'chats.js'), 'utf-8');
+vmModule90.runInNewContext(chatsSource90, vmSandbox90);
+
+var vmConv90 = { id: 'conv_90', title: 'Test 90', messages: [] };
+var sendListeners90 = [];
+vmSendBtn90.addEventListener = function capSendListener(t, fn) { if (t === 'click') sendListeners90.push(fn); };
+vmSandbox90.renderChatSpace(vmContainer90, vmConv90, { model: 'mercury-3', workspaceFolder: '.' });
+
+// Trigger a send to activate window.activeChatStreamCallback
+assert.ok(typeof vmSandbox90.window._activeChatCtx === 'object', 'renderChatSpace sets _activeChatCtx');
+vmSandbox90.window._activeChatCtx.input.value = 'hello';
+if (sendListeners90.length > 0) {
+  sendListeners90[0]();
+} else if (typeof vmSendBtn90.onclick === 'function') {
+  vmSendBtn90.onclick();
+}
+assert.strictEqual(typeof vmSandbox90.activeChatStreamCallback, 'function', 'activeChatStreamCallback is active');
+
+// Case A: tool_call arriving before action must not throw ReferenceError: msgList is not defined
+vmSandbox90.activeChatStreamCallback({ type: 'tool_call', id: 'tc_vm_90', tool: 'read_file', args: { path: 'package.json' }, index: 0 });
+
+// Case B: ask_question opens banner, question_resolved closes it
+vmSandbox90.activeChatStreamCallback({ type: 'ask_question', id: 'q_vm_1', question: 'Choose A or B?', options: ['A', 'B'] });
+assert.strictEqual(vmQuestionBanner90.style.display, 'block', 'ask_question shows questionBanner');
+assert.strictEqual(vmQuestionBanner90.dataset.questionId, 'q_vm_1', 'questionBanner tracks questionId');
+
+vmSandbox90.activeChatStreamCallback({ type: 'question_resolved', id: 'q_vm_1', answered: false, timedOut: true });
+assert.strictEqual(vmQuestionBanner90.style.display, 'none', 'question_resolved clears questionBanner');
+assert.strictEqual(vmQuestionBanner90.dataset.questionId, '', 'question_resolved clears dataset.questionId');
+
+// Case C: ask_question followed by failed tool_result clears banner
+vmSandbox90.activeChatStreamCallback({ type: 'ask_question', id: 'q_vm_2', question: 'Second question?', options: ['X'] });
+assert.strictEqual(vmQuestionBanner90.style.display, 'block', 'Second ask_question shows questionBanner');
+vmSandbox90.activeChatStreamCallback({ type: 'tool_result', tool: 'ask_question', questionId: 'q_vm_2', success: false, message: 'Question timed out waiting for user answer.' });
+assert.strictEqual(vmQuestionBanner90.style.display, 'none', 'ask_question timeout tool_result clears questionBanner');
+
+// Case D: ask_question followed by stream_end clears banner even if no question_resolved arrived
+vmSandbox90.activeChatStreamCallback({ type: 'ask_question', id: 'q_vm_3', question: 'Third question?', options: ['Y'] });
+assert.strictEqual(vmQuestionBanner90.style.display, 'block', 'Third ask_question shows questionBanner');
+vmSandbox90.activeChatStreamCallback({ type: 'stream_end', stopped: false });
+assert.strictEqual(vmQuestionBanner90.style.display, 'none', 'stream_end clears any remaining questionBanner');
+
+// Case E: ask_question followed by stream_error clears banner
+vmSandbox90.window._activeChatCtx.input.value = 'hello again';
+if (sendListeners90.length > 0) sendListeners90[0]();
+vmSandbox90.activeChatStreamCallback({ type: 'ask_question', id: 'q_vm_4', question: 'Fourth question?', options: ['Z'] });
+assert.strictEqual(vmQuestionBanner90.style.display, 'block', 'Fourth ask_question shows questionBanner');
+vmSandbox90.activeChatStreamCallback({ type: 'stream_error', error: 'Simulated network timeout' });
+assert.strictEqual(vmQuestionBanner90.style.display, 'none', 'stream_error clears questionBanner');
+
+// 6. Verify chat.css bounds .cr-question-banner height and scrollability
+var chatCss90 = fs.readFileSync(path.join(process.cwd(), 'src', 'UI', 'chats', 'chat.css'), 'utf-8');
+assert.ok(chatCss90.indexOf('.cr-question-banner') !== -1 && chatCss90.indexOf('max-height:') !== -1 && chatCss90.indexOf('overflow-y: auto;') !== -1, 'chat.css must constrain .cr-question-banner with max-height and overflow-y: auto');
+
+console.log('✓ Vector 90 Passed: Question timeout lifecycle, abort cleanup, diff timer cleanup, msgList tool_call safety & banner dismissal verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3684,7 +3959,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 89 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 90 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

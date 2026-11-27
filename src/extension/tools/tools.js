@@ -1995,6 +1995,20 @@ async function* ask_question(args, context) {
     return;
   }
 
+  var rawSignal = (context && context.signal) ? context.signal : null;
+  var abortTarget = (rawSignal && rawSignal.signal) ? rawSignal.signal : rawSignal;
+  if (rawSignal && (rawSignal.aborted || rawSignal.stopped)) {
+    yield {
+      type: 'tool_result',
+      tool: 'ask_question',
+      success: false,
+      question: question,
+      cancelled: true,
+      message: 'Question cancelled.'
+    };
+    return;
+  }
+
   yield {
     type: 'action',
     action: 'ask_question',
@@ -2011,6 +2025,14 @@ async function* ask_question(args, context) {
     agentName,
     agentType
   );
+
+  function onAbortQuestion() {
+    questionManager.cancelQuestion(qRecord.id, 'Question cancelled.');
+  }
+
+  if (abortTarget && typeof abortTarget.addEventListener === 'function') {
+    abortTarget.addEventListener('abort', onAbortQuestion, { once: true });
+  }
 
   yield {
     type: 'ask_question',
@@ -2032,26 +2054,61 @@ async function* ask_question(args, context) {
         type: 'tool_result',
         tool: 'ask_question',
         success: true,
+        questionId: qRecord.id,
         question: question,
         answer: outcome.answer,
         message: 'User answered: ' + outcome.answer
       };
     } else {
+      var isTimedOut = Boolean(outcome && outcome.timedOut);
+      var isCancelled = Boolean(outcome && outcome.cancelled);
+      var unresolvedMsg = (outcome && outcome.message) || 'Question was not answered.';
+      yield {
+        type: 'question_resolved',
+        id: qRecord.id,
+        answered: false,
+        timedOut: isTimedOut,
+        cancelled: isCancelled,
+        sessionId: sessionId,
+        parentSessionId: parentSessionId,
+        rootSessionId: rootSessionId,
+        message: unresolvedMsg
+      };
       yield {
         type: 'tool_result',
         tool: 'ask_question',
         success: false,
+        questionId: qRecord.id,
         question: question,
-        message: (outcome && outcome.message) || 'Question was not answered.'
+        timedOut: isTimedOut,
+        cancelled: isCancelled,
+        message: unresolvedMsg
       };
     }
   } catch (err) {
+    questionManager.cancelQuestion(qRecord.id, 'Question cancelled.');
+    yield {
+      type: 'question_resolved',
+      id: qRecord.id,
+      answered: false,
+      timedOut: false,
+      cancelled: true,
+      sessionId: sessionId,
+      parentSessionId: parentSessionId,
+      rootSessionId: rootSessionId,
+      message: err.message
+    };
     yield {
       type: 'tool_result',
       tool: 'ask_question',
       success: false,
+      questionId: qRecord.id,
       message: err.message
     };
+  } finally {
+    if (abortTarget && typeof abortTarget.removeEventListener === 'function') {
+      abortTarget.removeEventListener('abort', onAbortQuestion);
+    }
   }
 }
 

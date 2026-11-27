@@ -396,6 +396,8 @@ function initializeChatSpace() {
       }
     }
     if (chatCtx.controlsPanel) chatCtx.controlsPanel.style.display = 'none';
+    chatCtx.permissionQueue = [];
+    clearQuestionBanner(chatCtx);
 
     var baseUsage = (chatCtx.conversation && chatCtx.conversation.usage) || S.sessionUsage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, context_tokens: 0 };
     S.turnStartUsage = {
@@ -660,6 +662,51 @@ function initializeChatSpace() {
       }
       links[li].onclick = onRunningSubLinkClick;
     }
+  }
+
+  function settlePendingPermissionById(chatCtx, id, statusLabel) {
+    if (!chatCtx || !id) return;
+    if (chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      var nextQueue = [];
+      for (var qi = 0; qi < chatCtx.permissionQueue.length; qi++) {
+        if (chatCtx.permissionQueue[qi].id !== id) {
+          nextQueue.push(chatCtx.permissionQueue[qi]);
+        }
+      }
+      chatCtx.permissionQueue = nextQueue;
+    }
+    var actionsEl = chatCtx.msgList ? chatCtx.msgList.querySelector('#actions-' + id) : null;
+    if (actionsEl && actionsEl.querySelector('button[data-action]')) {
+      actionsEl.innerHTML = '<span class="cr-permission-status denied">' + esc(statusLabel || '✗ Denied') + '</span>';
+    }
+    updateAgentControlsPanel(chatCtx);
+  }
+
+  function clearAllPendingControls(chatCtx, statusLabel) {
+    if (!chatCtx) return;
+    if (chatCtx.permissionQueue && chatCtx.permissionQueue.length) {
+      var queueCopy = chatCtx.permissionQueue.slice();
+      chatCtx.permissionQueue = [];
+      for (var qi = 0; qi < queueCopy.length; qi++) {
+        var qItem = queueCopy[qi];
+        if (qItem && qItem.id && chatCtx.msgList) {
+          var actionsEl = chatCtx.msgList.querySelector('#actions-' + qItem.id);
+          if (actionsEl && actionsEl.querySelector('button[data-action]')) {
+            actionsEl.innerHTML = '<span class="cr-permission-status denied">' + esc(statusLabel || '✗ Cancelled') + '</span>';
+          }
+        }
+      }
+    }
+    if (chatCtx.msgList) {
+      var leftoverAllowBtns = chatCtx.msgList.querySelectorAll('.cr-permission-actions button[data-action="allow"]');
+      for (var lbi = 0; lbi < leftoverAllowBtns.length; lbi++) {
+        var actBox = leftoverAllowBtns[lbi].closest('.cr-permission-actions');
+        if (actBox) {
+          actBox.innerHTML = '<span class="cr-permission-status denied">' + esc(statusLabel || '✗ Cancelled') + '</span>';
+        }
+      }
+    }
+    updateAgentControlsPanel(chatCtx);
   }
 
   function resolvePermissionItem(chatCtx, id, act, toolFallback) {
@@ -993,7 +1040,10 @@ function initializeChatSpace() {
   }
 
   function submitQuestionAnswer(chatCtx, questionId, answer, originalQuestion) {
-    if (!window.VSCODE_API) return;
+    if (!chatCtx || !window.VSCODE_API) return;
+    var banner = chatCtx.questionBanner;
+    if (!banner || banner.style.display === 'none') return;
+    if (banner.dataset.questionId && questionId && banner.dataset.questionId !== questionId) return;
 
     window.VSCODE_API.postMessage({
       type: 'questionResponse',
@@ -1002,7 +1052,7 @@ function initializeChatSpace() {
       sessionId: chatCtx.convId
     });
 
-    clearQuestionBanner(chatCtx);
+    clearQuestionBanner(chatCtx, questionId);
 
     // Append compact user response chip in bot message so conversation reflects user's decision
     var targetContainer = (chatCtx.S && chatCtx.S.botBody) ? chatCtx.S.botBody : chatCtx.msgList;
@@ -1014,12 +1064,20 @@ function initializeChatSpace() {
     }
   }
 
-  function clearQuestionBanner(chatCtx) {
+  function clearQuestionBanner(chatCtx, expectedQuestionId) {
+    if (!chatCtx) return;
     var banner = chatCtx.questionBanner;
     if (!banner) return;
+    if (expectedQuestionId && banner.dataset.questionId && banner.dataset.questionId !== expectedQuestionId) {
+      return;
+    }
+    var wasVisible = banner.style.display !== 'none';
     banner.style.display = 'none';
     banner.innerHTML = '';
     banner.dataset.questionId = '';
+    if (wasVisible && chatCtx.msgList) {
+      scrollBottom(chatCtx.msgList);
+    }
   }
 
   function findMatchingToolResponse(messages, toolId, assistantMsgIndex, toolCallIndex) {
@@ -1499,6 +1557,8 @@ function initializeChatSpace() {
         }
       }
     }
+    clearQuestionBanner(chatCtx);
+    clearAllPendingControls(chatCtx, '✗ Cancelled');
     setStreaming(chatCtx, false);
     if (window.stopGeneration) window.stopGeneration();
   }
@@ -1613,6 +1673,8 @@ function initializeChatSpace() {
         // Intentionally ignore if postMessage is restricted in the current environment
       }
     }
+    clearQuestionBanner(chatCtx);
+    clearAllPendingControls(chatCtx, '✗ Cancelled');
     setStreaming(chatCtx, false);
     chatCtx.onStreamEnd();
   }
@@ -1660,6 +1722,8 @@ function initializeChatSpace() {
     if (S && S.botBody) {
       appendBotCopyButton(S.botBody, S.fullResponse || errMsg, Date.now());
     }
+    clearQuestionBanner(chatCtx);
+    clearAllPendingControls(chatCtx, '✗ Cancelled');
     setStreaming(chatCtx, false);
 
     if (typeof window.saveConversationMessage === 'function') {
@@ -1703,6 +1767,7 @@ function initializeChatSpace() {
       ev.type === 'requestPermission' ||
       ev.type === 'request_diff' ||
       ev.type === 'ask_question' ||
+      ev.type === 'question_resolved' ||
       ev.type === 'trace_updated' ||
       ev.type === 'checkpoints_created' ||
       ev.type === 'subagent_status';
@@ -2190,13 +2255,13 @@ function initializeChatSpace() {
             var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
             var toolId = tc.id || '';
             var toolIndex = tc.index;
-            reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
+            reuseOrCreateTerminalCard(S, chatCtx.msgList, toolName, toolArgs, toolId, toolIndex);
             continue;
           }
           var toolArgs = (tc.function && tc.function.arguments) || tc.arguments || {};
           var toolId = tc.id || '';
           var toolIndex = tc.index;
-          reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
+          reuseOrCreateToolCard(S, chatCtx.msgList, toolName, toolArgs, toolId, toolIndex);
         }
       }
       return;
@@ -2285,6 +2350,10 @@ function initializeChatSpace() {
           closeCurrentContentBlock(S);
           break;
         }
+        case 'question_resolved': {
+          clearQuestionBanner(chatCtx, ev.id || null);
+          break;
+        }
         case 'requestPermission': {
           removeCallingIndicator(S);
           removeTyping(S.botBody);
@@ -2325,11 +2394,11 @@ function initializeChatSpace() {
           var toolIndex = ev.index;
 
           if (toolName === 'run_terminal') {
-            reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex);
+            reuseOrCreateTerminalCard(S, chatCtx.msgList, toolName, toolArgs, toolId, toolIndex);
             closeThinkBlock(S);
             closeCurrentContentBlock(S);
           } else {
-            var card = reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex);
+            var card = reuseOrCreateToolCard(S, chatCtx.msgList, toolName, toolArgs, toolId, toolIndex);
             if (card) {
               S.toolCallBlocks[ev.id || card.dataset.cardKey || ('tool_' + S._toolIdCounter)] = card;
             }
@@ -2392,6 +2461,13 @@ function initializeChatSpace() {
           if (!resTool) break;
           var resSuccess = ev.success !== false;
           var resStatus = resSuccess ? 'success' : 'error';
+
+          if (resTool === 'ask_question') {
+            clearQuestionBanner(chatCtx, ev.questionId || null);
+          }
+          if (ev.toolCallId) {
+            settlePendingPermissionById(chatCtx, ev.toolCallId, resSuccess ? '✓ Allowed' : '✗ Timed out / Denied');
+          }
           
           if (resTool === 'run_terminal') {
             var termCardToUpdate = null;
@@ -2564,6 +2640,15 @@ function initializeChatSpace() {
               if (targetPathA && ev.checkpoint_id) {
                 setSubagentDiffCheckpoint(ev.sessionId || chatCtx.convId, targetPathA, ev.checkpoint_id);
               }
+            }
+          }
+          if ((ev.rejected || !resSuccess) && cardToUpdate) {
+            var pendingDiffEls = cardToUpdate.querySelectorAll('.cr-diff-card[data-diff-status="pending"]');
+            for (var pdi = 0; pdi < pendingDiffEls.length; pdi++) {
+              setDiffCardStatus(pendingDiffEls[pdi], 'rejected');
+            }
+            if (pendingDiffEls.length > 0) {
+              updateAgentControlsPanel(chatCtx);
             }
           }
           closeCurrentContentBlock(S);
@@ -2862,6 +2947,7 @@ function initializeChatSpace() {
         }
         case 'agent_done':
         case 'done': {
+          clearQuestionBanner(chatCtx);
           removeCallingIndicator(S);
           removeTyping(S.botBody);
           closeThinkBlock(S);
@@ -3207,6 +3293,8 @@ function initializeChatSpace() {
     removeCallingIndicator(S);
     removeTyping(S.botBody);
     clearStatusLines(S);
+    clearQuestionBanner(chatCtx);
+    clearAllPendingControls(chatCtx, isStopped ? '✗ Cancelled' : '✗ Closed');
     S.thinkBlock = null; S.thinkPre = null;
     if (chatCtx && chatCtx.conversation && chatCtx.conversation.plan) {
       renderTodos(chatCtx, chatCtx.conversation.plan);
@@ -5223,7 +5311,7 @@ function initializeChatSpace() {
     return null;
   }
 
-  function reuseOrCreateTerminalCard(S, toolName, toolArgs, toolId, toolIndex) {
+  function reuseOrCreateTerminalCard(S, msgList, toolName, toolArgs, toolId, toolIndex) {
     if (typeof toolArgs === 'string') {
       try {
         toolArgs = JSON.parse(toolArgs);
@@ -5264,7 +5352,8 @@ function initializeChatSpace() {
     var displayId = toolId || 'term_' + (++S._toolIdCounter);
     var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
 
-    var cardElement = appendTerminalCard(S, msgList, S.botBody, cardKey, toolName, toolArgs, 'pending', null);
+    var targetMsgList = msgList || (window._activeChatCtx && window._activeChatCtx.msgList) || null;
+    var cardElement = appendTerminalCard(S, targetMsgList, S.botBody, cardKey, toolName, toolArgs, 'pending', null);
     if (toolId) cardElement.dataset.toolCallId = toolId;
     cardElement.dataset.terminalId = '';
     S.toolCards[cardKey] = cardElement;
@@ -5274,7 +5363,7 @@ function initializeChatSpace() {
     return cardElement;
   }
 
-  function reuseOrCreateToolCard(S, toolName, toolArgs, toolId, toolIndex) {
+  function reuseOrCreateToolCard(S, msgList, toolName, toolArgs, toolId, toolIndex) {
     if (typeof toolArgs === 'string') {
       try {
         toolArgs = JSON.parse(toolArgs);
@@ -5314,7 +5403,8 @@ function initializeChatSpace() {
 
     var displayId = toolId || 'tool_' + (++S._toolIdCounter);
     var cardKey = toolName + '_' + (++S._toolIdCounter) + '_' + Date.now();
-    var cardElement = appendToolCard(S, msgList, S.botBody, cardKey, toolName, toolArgs, 'running');
+    var targetMsgList = msgList || (window._activeChatCtx && window._activeChatCtx.msgList) || null;
+    var cardElement = appendToolCard(S, targetMsgList, S.botBody, cardKey, toolName, toolArgs, 'running');
     if (toolId) {
       cardElement.dataset.toolCallId = toolId;
     }
