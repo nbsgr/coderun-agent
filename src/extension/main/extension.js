@@ -62,6 +62,8 @@ import { registerAllTools } from '../tools/tools.js';
 import * as subagentManager from '../agents/subagentManager.js';
 import * as mediaManager from '../media/mediaManager.js';
 import * as mcpManager from '../mcp/mcpManager.js';
+import * as vscodeBrowserToolsManager from '../manager/vscodeBrowserToolsManager.js';
+import { ensureBrowserSettingsOnInstall } from '../manager/browserSettingsSetup.js';
 import * as pathSecurity from '../tools/pathSecurity.js';
 import * as workspaceIntelligence from '../context/workspaceIntelligence.js';
 import * as projectKnowledge from '../context/projectKnowledge.js';
@@ -89,9 +91,18 @@ import {
 var statusBarItem = null;
 var extensionContext = null;
 
-export function activate(context) {
+export async function activate(context) {
   console.log('[CODERUN] Activating extension...');
   extensionContext = context;
+
+  try {
+    var browserSetup = await ensureBrowserSettingsOnInstall(context);
+    if (browserSetup.errors.length > 0) {
+      console.warn('[CODERUN] Browser tools setup was incomplete:', browserSetup.errors.join('; '));
+    }
+  } catch (setupErr) {
+    console.warn('[CODERUN] Browser tools setup failed:', setupErr ? setupErr.message : setupErr);
+  }
 
   if (context.globalStorageUri) {
     try {
@@ -326,5 +337,10 @@ export async function deactivate() {
     mcpManager.stopAllServers();
   } catch (mcpErr) {
     console.debug('[CODERUN] Error stopping MCP servers:', mcpErr ? mcpErr.message : mcpErr);
+  }
+  try {
+    await vscodeBrowserToolsManager.dispose();
+  } catch (browserErr) {
+    console.debug('[CODERUN] Error disposing CDP browser:', browserErr ? browserErr.message : browserErr);
   }
 }

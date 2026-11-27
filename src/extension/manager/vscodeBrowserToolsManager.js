@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
+import * as cdpBrowserManager from './cdpBrowserManager.js';
 
 // ==========================================
 // STATE
@@ -21,9 +22,41 @@ var currentUrl = '';
 var currentPageTitle = '';
 var isPageLoaded = false;
 var recentConsoleLogs = [];
+var _lastPreviewUrl = '';
+var _lastPreviewCommand = '';
+
+function getBrowserBackendMode(options) {
+  if (options && (options.backend === 'cdp' || options.backend === 'vscodeLm')) {
+    return options.backend;
+  }
+  try {
+    var cfg = vscode.workspace.getConfiguration('coderun');
+    return cfg.get('browserBackend', 'vscodeLm') === 'cdp' ? 'cdp' : 'vscodeLm';
+  } catch (cfgErr) {
+    console.warn('[CODERUN BROWSER] Could not read browser backend setting:', cfgErr ? cfgErr.message : cfgErr);
+  }
+  return 'vscodeLm';
+}
+
+function shouldUseVscodeLmBackend(options) {
+  return getBrowserBackendMode(options) === 'vscodeLm';
+}
+
+function isHeadlessBrowserMode(options) {
+  if (options && options.headless !== undefined) {
+    return Boolean(options.headless);
+  }
+  try {
+    var cfg = vscode.workspace.getConfiguration('coderun');
+    return Boolean(cfg.get('browserHeadless', true));
+  } catch (cfgErr) {
+    console.warn('[CODERUN BROWSER] Could not read CDP headless setting:', cfgErr ? cfgErr.message : cfgErr);
+  }
+  return true;
+}
 
 export function getActivePageId() {
-  return activePageId;
+  return cdpBrowserManager.getActivePageId() || activePageId;
 }
 
 export function setActivePageId(id) {
@@ -31,11 +64,21 @@ export function setActivePageId(id) {
 }
 
 export function getCurrentUrl() {
-  return currentUrl;
+  return cdpBrowserManager.getCurrentUrl() || currentUrl;
 }
 
 export function isBrowserOpen() {
-  return isPageLoaded && Boolean(currentUrl);
+  return cdpBrowserManager.isBrowserOpen() || (isPageLoaded && Boolean(currentUrl));
+}
+
+export async function dispose() {
+  _lastPreviewUrl = '';
+  _lastPreviewCommand = '';
+  activePageId = null;
+  currentUrl = '';
+  currentPageTitle = '';
+  isPageLoaded = false;
+  await cdpBrowserManager.disposeBrowser();
 }
 
 // ==========================================
@@ -49,6 +92,12 @@ function extractPageId(text) {
   var m2 = text.match(/page_?id["':\s]+([a-zA-Z0-9_\-\.]+)/i);
   if (m2 && m2[1]) return m2[1].trim();
   return null;
+}
+
+function extractSummaryField(text, field) {
+  if (!text) return '';
+  var match = String(text).match(new RegExp('^' + field + '\\s*:\\s*(.+)$', 'im'));
+  return match && match[1] ? match[1].trim() : '';
 }
 
 function extractTextFromToolResult(toolResult) {
@@ -167,8 +216,7 @@ async function invokeNativeLmTool(resolvedToolName, parameters) {
 
   try {
     var invokeOptions = {
-      input: parameters || {},
-      parameters: parameters || {}
+      input: parameters || {}
     };
 
     var toolResult = await vscode.lm.invokeTool(resolvedToolName, invokeOptions, cancelSource.token);
@@ -183,7 +231,7 @@ async function invokeNativeLmTool(resolvedToolName, parameters) {
 function createNativeToolUnavailableError(toolName) {
   return new Error(
     'VS Code integrated browser tool "' + toolName +
-    '" is unavailable or the browser tab is not shared with the agent.'
+    '" is unavailable. Ensure VS Code browser tools are enabled. To use an existing tab, select "Share with Agent" in its toolbar and confirm; CodeRun cannot grant that permission automatically. Set coderun.browserBackend to "cdp" only if you want a separate browser session.'
   );
 }
 
@@ -202,7 +250,7 @@ function findActiveSharedBrowserTab() {
       for (var ti = 0; ti < tabs.length; ti++) {
         var tab = tabs[ti];
         var label = tab.label || '';
-        if (label.includes('KL ERP') || label.includes('ERP') || label.includes('Browser') || label.includes('Simple Browser')) {
+        if (label.includes('Browser') || label.includes('Simple Browser')) {
           return {
             label: label,
             isActive: tab.isActive,
@@ -222,134 +270,227 @@ async function ensureActivePageId(targetUrl) {
     return activePageId;
   }
 
-  var nativeOpen = resolveNativeLmTool('openBrowserPage');
-  if (!nativeOpen) {
-    return null;
-  }
-
-  var urlToUse = targetUrl || currentUrl;
-  if (!urlToUse) {
-    var tabInfo = findActiveSharedBrowserTab();
-    if (tabInfo && tabInfo.label.includes('KL ERP')) {
-      urlToUse = 'https://newerp.kluniversity.in/index.php?r=site%2Findexindi';
-    } else {
-      urlToUse = 'https://newerp.kluniversity.in/';
-    }
+  var nativeTool = resolveNativeLmTool('readPage');
+  var toolName = 'readPage';
+  if (!nativeTool) {
+    throw createNativeToolUnavailableError(toolName);
   }
 
   try {
-    console.log('[CODERUN BROWSER] Connecting to active shared tab via', nativeOpen, 'url:', urlToUse);
-    var output = await invokeNativeLmTool(nativeOpen, {
-      url: urlToUse,
-      forceNew: false
-    });
+    console.log('[CODERUN BROWSER] Resolving VS Code browser page via', nativeTool);
+    var output = await invokeNativeLmTool(nativeTool, {});
 
     var extractedId = extractPageId(output);
-    if (extractedId) {
-      activePageId = extractedId;
-      currentUrl = urlToUse;
-      currentPageTitle = 'Integrated Browser (' + extractedId + ')';
-      isPageLoaded = true;
-      console.log('[CODERUN BROWSER] Connected to shared tab! Page ID:', activePageId);
+    if (!extractedId) {
+      throw new Error('The VS Code browser tool did not return a page ID.');
     }
+    activePageId = extractedId;
+    currentUrl = extractSummaryField(output, 'URL') || targetUrl || currentUrl;
+    currentPageTitle = extractSummaryField(output, 'Page Title') || ('Integrated Browser (' + extractedId + ')');
+    isPageLoaded = true;
+    console.log('[CODERUN BROWSER] Resolved VS Code browser page:', activePageId);
     return activePageId;
   } catch (err) {
-    console.warn('[CODERUN BROWSER] Failed to connect to shared tab:', err ? err.message : err);
-    return null;
+    throw new Error('Could not access the VS Code browser page: ' + (err ? err.message : String(err)));
   }
+}
+
+export async function openVscodeBrowserPreview(targetUrl, options) {
+  options = options || {};
+  var rawUrl = targetUrl ? String(targetUrl).trim() : '';
+  if (!rawUrl || rawUrl === 'about:blank' || !cdpBrowserManager.isAllowedBrowserUrl(rawUrl)) {
+    return { previewOpened: false, skipped: true };
+  }
+
+  if (!vscode || !vscode.commands || typeof vscode.commands.executeCommand !== 'function') {
+    return { previewOpened: false, skipped: false };
+  }
+
+  if (!options.force && _lastPreviewUrl === rawUrl && findActiveSharedBrowserTab()) {
+    return {
+      previewOpened: true,
+      reused: true,
+      command: _lastPreviewCommand || 'workbench.action.browser.open',
+      url: rawUrl
+    };
+  }
+
+  try {
+    await vscode.commands.executeCommand('workbench.action.browser.open', rawUrl);
+    _lastPreviewUrl = rawUrl;
+    _lastPreviewCommand = 'workbench.action.browser.open';
+    return { previewOpened: true, command: 'workbench.action.browser.open', url: rawUrl };
+  } catch (primaryErr) {
+    console.debug('[CODERUN BROWSER] workbench.action.browser.open fallback:', primaryErr ? primaryErr.message : primaryErr);
+  }
+
+  try {
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      await vscode.commands.executeCommand('simpleBrowser.show', rawUrl);
+      _lastPreviewUrl = rawUrl;
+      _lastPreviewCommand = 'simpleBrowser.show';
+      return { previewOpened: true, command: 'simpleBrowser.show', url: rawUrl };
+    }
+    if (rawUrl.startsWith('file://') && vscode.Uri && typeof vscode.Uri.parse === 'function') {
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(rawUrl));
+      _lastPreviewUrl = rawUrl;
+      _lastPreviewCommand = 'vscode.open';
+      return { previewOpened: true, command: 'vscode.open', url: rawUrl };
+    }
+  } catch (fallbackErr) {
+    console.warn('[CODERUN BROWSER] Could not open VS Code browser preview:', fallbackErr ? fallbackErr.message : fallbackErr);
+    return { previewOpened: false, error: fallbackErr ? fallbackErr.message : String(fallbackErr) };
+  }
+
+  return { previewOpened: false, skipped: false };
 }
 
 // ==========================================
 // CORE MANAGER OPERATIONS
 // ==========================================
 
-export async function openPage(url, forceNew) {
-  var requestedUrl = url ? String(url).trim() : currentUrl;
+export async function openPage(url, forceNew, options) {
+  options = options || {};
+  var requestedUrl = url ? String(url).trim() : '';
   var shouldForceNew = Boolean(forceNew);
   recentConsoleLogs = [];
 
-  if (!shouldForceNew && activePageId && requestedUrl && requestedUrl === currentUrl) {
+  if (!shouldUseVscodeLmBackend(options)) {
+    var cdpUrl = requestedUrl || currentUrl;
+    var cdpRes = await cdpBrowserManager.openPage(cdpUrl, shouldForceNew, {
+      headless: isHeadlessBrowserMode(options)
+    });
+    currentUrl = cdpRes.url || requestedUrl || 'about:blank';
+    currentPageTitle = cdpRes.title || currentUrl;
+    isPageLoaded = true;
+    var openPreview = await openVscodeBrowserPreview(currentUrl, { force: shouldForceNew });
+    cdpRes.previewOpened = Boolean(openPreview && openPreview.previewOpened);
+    if (openPreview && openPreview.command) {
+      cdpRes.previewCommand = openPreview.command;
+    }
+    cdpRes.backend = 'cdp';
+    return cdpRes;
+  }
+
+  if (!shouldForceNew && activePageId && (!requestedUrl || requestedUrl === currentUrl)) {
     return {
       status: 200,
       url: currentUrl,
       title: currentPageTitle || currentUrl,
       pageId: activePageId,
+      backend: 'vscodeLm',
       message: 'Reusing the active VS Code integrated browser page.'
     };
   }
 
-  // Priority 1: Native LM tool open_browser_page
+  if (!requestedUrl) {
+    var nativeRead = resolveNativeLmTool('readPage');
+    if (!nativeRead) {
+      throw createNativeToolUnavailableError('readPage');
+    }
+
+    activePageId = null;
+    var activeSummary;
+    try {
+      activeSummary = await invokeNativeLmTool(nativeRead, {});
+    } catch (readErr) {
+      throw new Error('Could not connect to the active VS Code browser tab. Share it with the agent and confirm the prompt, or provide a URL to open. Details: ' + (readErr ? readErr.message : String(readErr)));
+    }
+    if (!activeSummary || !activeSummary.trim()) {
+      throw new Error('VS Code did not return a shared browser page. Share the tab using "Share with Agent", or provide a URL to open.');
+    }
+
+    activePageId = extractPageId(activeSummary);
+    if (!activePageId) {
+      throw new Error('VS Code did not return a page ID for the active tab. Verify that the tab is shared with the agent.');
+    }
+    currentUrl = extractSummaryField(activeSummary, 'URL') || currentUrl;
+    currentPageTitle = extractSummaryField(activeSummary, 'Page Title') || 'Shared VS Code browser tab';
+    isPageLoaded = true;
+    return {
+      status: 200,
+      url: currentUrl || 'about:blank',
+      title: currentPageTitle,
+      pageId: activePageId,
+      backend: 'vscodeLm',
+      summary: activeSummary,
+      message: 'Connected to the existing VS Code browser tab.'
+    };
+  }
+
   var nativeOpen = resolveNativeLmTool('openBrowserPage');
-  if (nativeOpen) {
-    try {
-      var targetUrl = requestedUrl || 'about:blank';
-      var lmRes = await invokeNativeLmTool(nativeOpen, {
-        url: targetUrl,
-        forceNew: shouldForceNew
-      });
-
-      var parsedId = extractPageId(lmRes);
-      if (parsedId) {
-        activePageId = parsedId;
-      }
-
-      isPageLoaded = true;
-      currentPageTitle = targetUrl;
-      currentUrl = targetUrl;
-
-      return {
-        status: 200,
-        url: currentUrl,
-        title: currentPageTitle,
-        pageId: activePageId,
-        summary: lmRes,
-        message: 'Connected to VS Code integrated browser page via native tool (' + nativeOpen + ').'
-      };
-    } catch (e) {
-      throw new Error('Failed to connect to the VS Code integrated browser: ' + (e ? e.message : e));
-    }
+  if (!nativeOpen) {
+    throw createNativeToolUnavailableError('openBrowserPage');
   }
 
-  if (url) {
-    try {
-      await vscode.commands.executeCommand('simpleBrowser.show', requestedUrl);
-    } catch (err) {
-      throw new Error('Could not open the VS Code Simple Browser: ' + (err ? err.message : err));
-    }
+  if (shouldForceNew || requestedUrl !== currentUrl) {
+    activePageId = null;
   }
 
-  currentUrl = requestedUrl || 'about:blank';
-  isPageLoaded = true;
-  currentPageTitle = currentUrl || 'Integrated Browser';
+  try {
+    var lmRes = await invokeNativeLmTool(nativeOpen, {
+      url: requestedUrl,
+      forceNew: shouldForceNew
+    });
 
-  return {
-    status: 200,
-    url: currentUrl || 'about:blank',
-    title: currentPageTitle,
-    pageId: activePageId,
-    message: 'Page opened in VS Code integrated browser tab (' + (currentUrl || 'about:blank') + '). Click "Sharing with Agent" in the browser toolbar if prompted.'
-  };
+    var parsedId = extractPageId(lmRes);
+    if (!lmRes || !lmRes.trim() || !parsedId) {
+      throw new Error('VS Code did not return a page ID for the opened browser page.');
+    }
+    activePageId = parsedId;
+
+    isPageLoaded = true;
+    currentPageTitle = extractSummaryField(lmRes, 'Page Title') || requestedUrl;
+    currentUrl = extractSummaryField(lmRes, 'URL') || requestedUrl;
+
+    return {
+      status: 200,
+      url: currentUrl,
+      title: currentPageTitle,
+      pageId: activePageId,
+      backend: 'vscodeLm',
+      summary: lmRes,
+      message: 'Connected to VS Code integrated browser page via native tool (' + nativeOpen + ').'
+    };
+  } catch (e) {
+    activePageId = null;
+    throw new Error('Failed to connect to the VS Code integrated browser: ' + (e ? e.message : e));
+  }
 }
 
 export async function navigate(url, options) {
   options = options || {};
+  if (!shouldUseVscodeLmBackend(options)) {
+    var cdpNav = await cdpBrowserManager.navigate(url, options);
+    currentUrl = cdpNav.url || url;
+    currentPageTitle = cdpNav.title || currentPageTitle;
+    var navPreview = await openVscodeBrowserPreview(currentUrl);
+    cdpNav.previewOpened = Boolean(navPreview && navPreview.previewOpened);
+    if (navPreview && navPreview.command) {
+      cdpNav.previewCommand = navPreview.command;
+    }
+    cdpNav.backend = 'cdp';
+    return cdpNav;
+  }
+
   var nativeNav = resolveNativeLmTool('navigatePage');
   if (nativeNav) {
     try {
       var pId = options.pageId || activePageId;
-      if (!pId) pId = await ensureActivePageId(url);
 
       var params = {
-        pageId: pId || '',
         type: options.type || 'url',
         url: url
       };
+      if (pId) {
+        params.pageId = pId;
+      }
 
       var res = await invokeNativeLmTool(nativeNav, params);
       currentUrl = url;
-      return { status: 200, url: url, result: res };
+      return { status: 200, url: url, result: res, backend: 'vscodeLm' };
     } catch (e) {
-      console.warn('[CODERUN BROWSER] Native navigate notice:', e ? e.message : e);
+      throw new Error('Failed to navigate the VS Code browser page: ' + (e ? e.message : String(e)));
     }
   }
   throw createNativeToolUnavailableError('navigatePage');
@@ -359,51 +500,67 @@ export async function navigate(url, options) {
 // DOM & INTERACTION OPERATIONS
 // ==========================================
 
-export async function readPageContent(pageId, includeConsole, maxElements) {
+export async function readPageContent(pageId, includeConsole, maxElements, options) {
   // Support both (includeConsole, maxElements) and (pageId, includeConsole, maxElements) signatures
   if (typeof pageId === 'boolean') {
+    options = maxElements;
     maxElements = includeConsole;
     includeConsole = pageId;
     pageId = null;
   }
 
-  // PRIORITY 1: Read from live shared tab using native VS Code LM tool ("read_page")
-  var nativeRead = resolveNativeLmTool('readPage');
-  if (nativeRead) {
-    try {
-      var targetPageId = pageId || activePageId;
-      if (!targetPageId) {
-        targetPageId = await ensureActivePageId(currentUrl);
-      }
-
-      var params = {};
-      if (targetPageId) {
-        params.pageId = targetPageId;
-      }
-
-      var nativeOutput = await invokeNativeLmTool(nativeRead, params);
-      if (nativeOutput && nativeOutput.trim()) {
-        console.log('[CODERUN BROWSER] Successfully read live shared tab via native tool:', nativeRead);
-        var parsedId = extractPageId(nativeOutput);
-        if (parsedId) {
-          activePageId = parsedId;
-        }
-
-        return {
-          title: currentPageTitle || 'KL ERP (Live Shared Tab)',
-          url: currentUrl || 'https://newerp.kluniversity.in/index.php?r=site%2Findexindi',
-          pageId: activePageId,
-          elements: [],
-          bodyText: nativeOutput,
-          consoleLogs: recentConsoleLogs.slice(-20)
-        };
-      }
-    } catch (lmErr) {
-      console.warn('[CODERUN BROWSER] Native readPage notice:', lmErr ? lmErr.message : lmErr);
-      if (lmErr && String(lmErr.message).includes('not found')) {
-        activePageId = null;
-      }
+  if (!shouldUseVscodeLmBackend(options)) {
+    if (cdpBrowserManager.isBrowserOpen() || cdpBrowserManager.getActivePageId()) {
+      var cdpData = await cdpBrowserManager.readPageContent(pageId, includeConsole, maxElements);
+      cdpData.backend = 'cdp';
+      return cdpData;
     }
+    if (!currentUrl) {
+      return {
+        title: currentPageTitle || 'Integrated Browser',
+        url: 'about:blank',
+        pageId: null,
+        elements: [],
+        bodyText: 'Shared browser tab active. Inspecting page elements...',
+        backend: 'cdp',
+        consoleLogs: recentConsoleLogs.slice(-20)
+      };
+    }
+  }
+
+  if (shouldUseVscodeLmBackend(options)) {
+    var nativeRead = resolveNativeLmTool('readPage');
+    if (!nativeRead) {
+      throw createNativeToolUnavailableError('readPage');
+    }
+
+    var nativeParams = {};
+    if (pageId || activePageId) {
+      nativeParams.pageId = pageId || activePageId;
+    }
+    var nativeOutput = await invokeNativeLmTool(nativeRead, nativeParams);
+    if (!nativeOutput || !nativeOutput.trim()) {
+      throw new Error('VS Code browser read returned no page content; verify that the tab is shared with the agent.');
+    }
+
+    var parsedId = extractPageId(nativeOutput);
+    if (!parsedId) {
+      throw new Error('VS Code did not return a page ID for the shared browser page.');
+    }
+    activePageId = parsedId;
+    currentUrl = extractSummaryField(nativeOutput, 'URL') || currentUrl;
+    currentPageTitle = extractSummaryField(nativeOutput, 'Page Title') || currentPageTitle || 'Integrated Browser';
+    isPageLoaded = true;
+
+    return {
+      title: currentPageTitle,
+      url: currentUrl || 'about:blank',
+      pageId: activePageId,
+      elements: [],
+      bodyText: nativeOutput,
+      backend: 'vscodeLm',
+      consoleLogs: recentConsoleLogs.slice(-20)
+    };
   }
 
   // PRIORITY 2: Check active editor tab title in VS Code
@@ -466,6 +623,9 @@ export async function readPageContent(pageId, includeConsole, maxElements) {
 export async function click(selector, options) {
   if (!selector) throw new Error('selector is required');
   options = options || {};
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.click(selector, options);
+  }
   var nativeClick = resolveNativeLmTool('clickElement');
   if (nativeClick) {
     try {
@@ -503,6 +663,9 @@ export async function typeText(selector, text, options) {
   if (typeof options === 'boolean') {
     options = { clearFirst: options };
   }
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.typeText(selector, text, options);
+  }
   var nativeType = resolveNativeLmTool('typeInPage');
   if (nativeType) {
     try {
@@ -534,6 +697,9 @@ export async function typeText(selector, text, options) {
 export async function hover(selector, options) {
   if (!selector) throw new Error('selector is required');
   options = options || {};
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.hover(selector, options);
+  }
   var nativeHover = resolveNativeLmTool('hoverElement');
   if (nativeHover) {
     try {
@@ -558,8 +724,11 @@ export async function hover(selector, options) {
   throw createNativeToolUnavailableError('hoverElement');
 }
 
-export async function drag(sourceSelector, targetSelector, pageId) {
+export async function drag(sourceSelector, targetSelector, pageId, options) {
   if (!sourceSelector || !targetSelector) throw new Error('sourceSelector and targetSelector are required');
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.drag(sourceSelector, targetSelector, pageId);
+  }
   var nativeDrag = resolveNativeLmTool('dragElement');
   if (nativeDrag) {
     try {
@@ -580,7 +749,10 @@ export async function drag(sourceSelector, targetSelector, pageId) {
   throw createNativeToolUnavailableError('dragElement');
 }
 
-export async function handleDialogAction(action, promptText, pageId) {
+export async function handleDialogAction(action, promptText, pageId, options) {
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.handleDialogAction(action, promptText, pageId);
+  }
   var nativeDialog = resolveNativeLmTool('handleDialog');
   if (nativeDialog) {
     try {
@@ -601,8 +773,11 @@ export async function handleDialogAction(action, promptText, pageId) {
   throw createNativeToolUnavailableError('handleDialog');
 }
 
-export async function evaluateCode(code, pageId) {
+export async function evaluateCode(code, pageId, sessionId, options) {
   if (!code) throw new Error('code is required');
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.evaluateCode(code, pageId, sessionId);
+  }
   var nativeEval = resolveNativeLmTool('runPlaywrightCode');
   if (nativeEval) {
     try {
@@ -622,7 +797,10 @@ export async function evaluateCode(code, pageId) {
   throw createNativeToolUnavailableError('runPlaywrightCode');
 }
 
-export async function captureScreenshot(fullPage, pageId) {
+export async function captureScreenshot(fullPage, pageId, sessionId, options) {
+  if (!shouldUseVscodeLmBackend(options)) {
+    return await cdpBrowserManager.captureScreenshot(fullPage, pageId, sessionId);
+  }
   var nativeShot = resolveNativeLmTool('screenshotPage');
   if (nativeShot) {
     try {

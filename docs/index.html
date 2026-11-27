@@ -3243,26 +3243,26 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
       <section id="vscode-integrated-browser">
         <h2 class="section-heading">🌐 VS Code Integrated Browser &amp; "Sharing with Agent"</h2>
         <p>
-          CodeRun features deep, native integration with Visual Studio Code's <strong>Integrated Browser</strong> (Simple Browser) and the VS Code <strong>Language Model Tools</strong> runtime. Rather than relying exclusively on headless browser scraping, CodeRun allows the agent to visually share, inspect, and interact with the exact web tabs open directly inside your editor.
+          CodeRun defaults to VS Code's native browser tools through <code>coderun.browserBackend = vscodeLm</code>. Browser actions run against an integrated-browser page, not a separate CDP preview. VS Code still requires you to explicitly share an existing tab before CodeRun can access that tab.
         </p>
 
         <div class="card-grid">
           <div class="feature-card">
             <div class="card-title">🤝 "Sharing with Agent" Live Binding</div>
             <div class="card-text">
-              Open any webpage or authenticated portal inside VS Code. The browser tab displays the green pill <code>Sharing with Agent</code>. CodeRun automatically captures and binds to <code>activePageId</code> via <code>ensureActivePageId({ forceNew: false })</code> without opening redundant blank tabs.
+              To share a tab you opened yourself, select <strong>Share with Agent</strong> in the browser toolbar and confirm VS Code's prompt. CodeRun then accesses that shared page. Global tool auto-approval does not bypass this page-access consent.
             </div>
           </div>
           <div class="feature-card">
             <div class="card-title">🔐 Zero Session &amp; Cookie Loss</div>
             <div class="card-text">
-              Log in to university portals (e.g. KL University ERP), internal corporate dashboards, cloud consoles, OAuth SSO sessions, or local dev servers. Because CodeRun operates on the live authenticated webview, all cookies, session storage, and CSRF tokens are 100% preserved.
+              A tab you explicitly share retains its existing page state and authentication. Pages opened by the agent use an isolated session and do not inherit cookies or storage from your other browser tabs.
             </div>
           </div>
           <div class="feature-card">
             <div class="card-title">🛡️ Copilot-Style In-Chat Approvals</div>
             <div class="card-text">
-              Sensitive browser operations (navigating, clicking, typing, running Playwright scripts) are prompted directly inside the chat stream with interactive <code>[Allow Once]</code>, <code>[Always Allow]</code>, and <code>[Deny]</code> action cards. Intrusive OS and workbench modal dialogs are completely suppressed.
+              CodeRun's dangerous browser actions continue to use its tool-permission checks. Sharing an existing VS Code tab remains a separate, explicit VS Code confirmation.
             </div>
           </div>
           <div class="feature-card">
@@ -3275,7 +3275,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
 
         <h3 style="margin-top: 32px; margin-bottom: 12px; font-size: 19px; color: var(--text-primary);">The 10 Integrated Browser Tools Suite</h3>
         <p>
-          CodeRun exposes 10 specialized tools registered directly through the VS Code Language Model Tools API with alias mappings for all leading LLM providers:
+          CodeRun exposes ten browser tools through its agent tool registry and routes browser actions to VS Code's native browser tools when <code>vscodeLm</code> is selected:
         </p>
 
         <div class="table-wrap">
@@ -3292,8 +3292,8 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               <tr>
                 <td><code>open_browser_page</code><br><small style="color: var(--text-muted);">(openBrowserPage)</small></td>
                 <td><code>url</code>, <code>forceNew</code></td>
-                <td>Safe</td>
-                <td>Opens a URL in VS Code's integrated browser. When <code>forceNew: false</code> (default), seamlessly binds to an existing open tab.</td>
+                <td>⚠️ Dangerous</td>
+                <td>Opens a URL in VS Code's integrated browser. Omitting the URL reads the active shared tab. Reusing an existing user tab may require the user to confirm sharing.</td>
               </tr>
               <tr>
                 <td><code>read_page</code><br><small style="color: var(--text-muted);">(readPage)</small></td>
@@ -3357,6 +3357,12 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
         <p>
           CodeRun provides both browser architectures side-by-side to accommodate every workflow:
         </p>
+        <p>
+          The integrated browser is the default (<code>coderun.browserBackend = vscodeLm</code>). Set it to <code>cdp</code> only to use a separate CodeRun Chromium session; its optional VS Code preview is not the page being automated.
+        </p>
+        <p>
+          CodeRun enables <code>workbench.browser.enableChatTools</code> when unset, but does not change VS Code's global approval policy. <code>chat.tools.global.autoApprove</code> applies to ordinary tool confirmations across all workspaces; VS Code still requires explicit consent to share a user-owned browser tab.
+        </p>
 
         <div class="table-wrap">
           <table>
@@ -3370,7 +3376,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
             <tbody>
               <tr>
                 <td><strong>Authenticated Portal Sharing</strong><br><small>(e.g. ERPs, Intranets, Student Portals)</small></td>
-                <td><span class="pill-badge green">✅ Recommended</span> User logs in visually; agent reuses active tab with cookies intact.</td>
+                <td><span class="pill-badge green">✅ Recommended</span> User logs in visually, selects <strong>Share with Agent</strong>, and confirms before the agent reuses the active tab.</td>
                 <td><span class="pill-badge">⚠️ Isolated</span> Separate session requiring credentials or cookies to be passed.</td>
               </tr>
               <tr>
@@ -3385,7 +3391,7 @@ var saved = await mediaManager.saveMediaFromDataOrUrl(null, sessionId, vidResult
               </tr>
               <tr>
                 <td><strong>Permission Handling</strong></td>
-                <td>In-Chat Interactive Cards (OS popups suppressed)</td>
+                <td>CodeRun tool checks; VS Code's explicit Share with Agent approval remains required.</td>
                 <td>In-Chat Interactive Cards</td>
               </tr>
             </tbody>

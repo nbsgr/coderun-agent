@@ -205,6 +205,20 @@
           "type": "string",
           "default": "",
           "description": "Optional path to predownloaded Nemotron 3.5 ASR model assets. Defaults to the VS Code model cache."
+        },
+        "coderun.browserBackend": {
+          "type": "string",
+          "default": "vscodeLm",
+          "enum": [
+            "vscodeLm",
+            "cdp"
+          ],
+          "description": "Browser automation backend. 'vscodeLm' uses VS Code's integrated browser tools and shared tabs; 'cdp' uses a separate CodeRun Chromium session."
+        },
+        "coderun.browserHeadless": {
+          "type": "boolean",
+          "default": true,
+          "description": "CDP-only: run CodeRun's separate Chromium session headlessly. Disabling headless does not connect it to the VS Code integrated browser."
         }
       }
     }

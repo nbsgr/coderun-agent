@@ -11,7 +11,7 @@ export function getVscodeBrowserToolDefinitions() {
     {
       name: 'openBrowserPage',
       category: 'browser',
-      dangerous: false,
+      dangerous: true,
       readOnly: false,
       description: 'Open a URL in the VS Code integrated browser, or connect to an existing tab shared with the agent ("Sharing with Agent"). Returns the page ID, title, and initial DOM summary.',
       parameters: {

@@ -1,6 +1,6 @@
 [
   {
-    "id": "run_1795753644627_qyovz8",
+    "id": "run_1795756203255_12petl",
     "sessionId": "sess_suite_59",
     "agentId": "root",
     "name": "Root Architect",
@@ -10,8 +10,8 @@
     "depth": 0,
     "role": "architect",
     "agentType": "root",
-    "startedAt": 1795753644627,
-    "completedAt": 1795753644627,
+    "startedAt": 1795756203255,
+    "completedAt": 1795756203255,
     "durationMs": 0,
     "status": "completed",
     "provider": "ollama",
@@ -47,7 +47,7 @@
         },
         "toolCalls": [
           {
-            "id": "tool_1795753644627",
+            "id": "tool_1795756203255",
             "toolName": "list_directory",
             "command": "",
             "input": {
@@ -58,7 +58,7 @@
             "durationMs": 18,
             "checkpointId": null,
             "filePath": "",
-            "timestamp": 1795753644627
+            "timestamp": 1795756203255
           }
         ]
       }

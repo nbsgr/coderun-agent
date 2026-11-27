@@ -65,13 +65,19 @@ export async function* openBrowserPage(args, context) {
   var url = args && args.url ? String(args.url).trim() : '';
   var forceNew = args && args.forceNew ? Boolean(args.forceNew) : false;
 
-  yield { type: 'action', action: 'Connecting to VS Code integrated browser: ' + (url || 'Active shared tab') };
+  yield { type: 'action', action: 'Connecting to browser page: ' + (url || 'Active shared tab') };
 
   try {
     var result = await browserManager.openPage(url, forceNew);
-    var summaryText = 'Connected to VS Code integrated browser successfully.\nURL: ' + result.url + '\nTitle: ' + result.title;
+    var backendLabel = result.backend === 'cdp' ? 'separate CodeRun Chromium session' : 'VS Code integrated browser';
+    var summaryText = 'Connected to ' + backendLabel + '.\nURL: ' + result.url + '\nTitle: ' + result.title;
     if (result.pageId) {
       summaryText += '\nPage ID: ' + result.pageId;
+    }
+    if (result.previewOpened === true) {
+      summaryText += '\nVS Code Browser Tab: Opened as a separate preview (' + (result.previewCommand || 'workbench.action.browser.open') + '); automation remains in the CDP session.';
+    } else if (result.previewOpened === false) {
+      summaryText += '\nVS Code Browser Tab: Not opened yet (open or navigate to an http/https/file URL to view it inside VS Code)';
     }
     if (result.summary) {
       summaryText += '\n\nPage Summary:\n' + result.summary;
@@ -96,16 +102,22 @@ export async function* navigatePage(args, context) {
     return;
   }
 
-  yield { type: 'action', action: 'Navigating integrated browser to: ' + url };
+  yield { type: 'action', action: 'Navigating browser page to: ' + url };
 
   try {
     var result = await browserManager.navigate(url, {
       pageId: args && args.pageId,
       type: args && args.type
     });
+    var navMsg = 'Navigated ' + (result.backend === 'cdp' ? 'the separate CDP browser session' : 'the VS Code integrated browser') + ' to ' + result.url;
+    if (result.backend === 'cdp' && result.previewOpened === true) {
+      navMsg += ' (VS Code opened a separate preview via ' + (result.previewCommand || 'workbench.action.browser.open') + ')';
+    } else if (result.backend === 'cdp' && result.previewOpened === false) {
+      navMsg += ' (VS Code preview unavailable)';
+    }
     yield {
       type: 'result',
-      result: 'Navigated to ' + result.url
+      result: navMsg
     };
   } catch (err) {
     yield { type: 'error', error: 'Failed to navigate page: ' + err.message };
@@ -121,11 +133,14 @@ export async function* readPage(args, context) {
   var includeConsole = args && args.includeConsole !== undefined ? Boolean(args.includeConsole) : true;
   var maxElements = args && args.maxElements ? Number(args.maxElements) : 50;
 
-  yield { type: 'action', action: 'Reading integrated browser page DOM and live state...' };
+  yield { type: 'action', action: 'Reading browser page DOM and live state...' };
 
   try {
     var data = await browserManager.readPageContent(pageId, includeConsole, maxElements);
     var summary = 'Page Title: ' + data.title + '\nURL: ' + data.url + '\n';
+    if (data.backend) {
+      summary += 'Backend: ' + (data.backend === 'cdp' ? 'separate CDP browser session' : 'VS Code integrated browser') + '\n';
+    }
     if (data.pageId) {
       summary += 'Page ID: ' + data.pageId + '\n';
     }
@@ -165,10 +180,11 @@ export async function* screenshotPage(args, context) {
   var fullPage = args && args.fullPage ? Boolean(args.fullPage) : false;
   var pageId = args && args.pageId ? String(args.pageId).trim() : null;
 
-  yield { type: 'action', action: 'Capturing screenshot of integrated browser...' };
+  yield { type: 'action', action: 'Capturing screenshot of browser page...' };
 
   try {
-    var shot = await browserManager.captureScreenshot(fullPage, pageId);
+    var sessionId = (context && context.sessionId) ? context.sessionId : 'browser';
+    var shot = await browserManager.captureScreenshot(fullPage, pageId, sessionId);
     yield {
       type: 'result',
       result: 'Screenshot captured successfully.\nFile: ' + shot.filePath + '\nMarkdown: ![Browser Screenshot](' + shot.filePath + ')',
@@ -331,7 +347,8 @@ export async function* runPlaywrightCode(args, context) {
   yield { type: 'action', action: 'Executing Playwright automation snippet...' };
 
   try {
-    var result = await browserManager.evaluateCode(code, args && args.pageId);
+    var sessionId = (context && context.sessionId) ? context.sessionId : 'browser';
+    var result = await browserManager.evaluateCode(code, args && args.pageId, sessionId);
     yield {
       type: 'result',
       result: typeof result.evalResult === 'string' ? result.evalResult : JSON.stringify(result.evalResult, null, 2)

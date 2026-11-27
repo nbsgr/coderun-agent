@@ -32,7 +32,9 @@ export function getConfig() {
     organization: cfg.get('organization', null),
     project: cfg.get('project', null),
     enableTools: cfg.get('enableTools', true),
-    apiType: cfg.get('apiType', 'openai')
+    apiType: cfg.get('apiType', 'openai'),
+    browserBackend: cfg.get('browserBackend', 'vscodeLm'),
+    browserHeadless: cfg.get('browserHeadless', true)
   };
   return _cached;
 }

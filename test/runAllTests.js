@@ -3665,10 +3665,11 @@ assert.ok(toolRegistry.get('openBrowserPage'), 'openBrowserPage exists');
 assert.ok(toolRegistry.get('readPage'), 'readPage exists');
 assert.ok(toolRegistry.get('screenshotPage'), 'screenshotPage exists');
 
-// Graceful degraded state when no active browser page is open
-var emptyRead = await vscodeBrowserMgr.readPageContent(false, 10);
-assert.ok(emptyRead && emptyRead.elements, 'readPageContent must return safe empty elements when no page open');
-assert.strictEqual(emptyRead.url, 'about:blank', 'Default url must be about:blank');
+// Native mode must not pretend an empty or inaccessible shared page was read successfully
+async function readWithoutNativeBrowserTool89() {
+  await vscodeBrowserMgr.readPageContent(false, 10);
+}
+await assert.rejects(readWithoutNativeBrowserTool89, /VS Code integrated browser tool "readPage" is unavailable/);
 
 console.log('✓ Vector 89 Passed: VS Code integrated browser tools contract, schemas, alias mapping & Puppeteer coexistence verified.');
 
@@ -3947,6 +3948,263 @@ assert.ok(chatCss90.indexOf('.cr-question-banner') !== -1 && chatCss90.indexOf('
 
 console.log('✓ Vector 90 Passed: Question timeout lifecycle, abort cleanup, diff timer cleanup, msgList tool_call safety & banner dismissal verified.');
 
+// --- TEST 91: Single-Layer Browser Permissions, CDP Backend Routing & First-Install Settings Setup ---
+console.log('\n--- TEST 91: Single-Layer Browser Permissions, CDP Backend Routing & First-Install Settings Setup ---');
+
+import * as cdpBrowserMgr91 from '../src/extension/manager/cdpBrowserManager.js';
+import { ensureBrowserSettingsOnInstall } from '../src/extension/manager/browserSettingsSetup.js';
+import * as vscode91 from 'vscode';
+
+// 1. Layer 1 permission gating: mutating/navigation/open browser tools require Layer 1 approval, read-only tools do not
+var layer1Required = ['openBrowserPage', 'navigatePage', 'clickElement', 'typeInPage', 'dragElement', 'handleDialog', 'runPlaywrightCode'];
+for (var l1i = 0; l1i < layer1Required.length; l1i++) {
+  var bTool = layer1Required[l1i];
+  assert.strictEqual(approvalSystem.requiresApproval(bTool, {}, { confirmDangerous: true }), true, bTool + ' requires Layer 1 approval when confirmDangerous is true');
+  assert.strictEqual(approvalSystem.requiresApproval(bTool, {}, { confirmDangerous: false }), false, bTool + ' skips Layer 1 approval when confirmDangerous is false');
+}
+var layer1ReadOnly = ['readPage', 'screenshotPage', 'hoverElement'];
+for (var l1r = 0; l1r < layer1ReadOnly.length; l1r++) {
+  assert.strictEqual(approvalSystem.requiresApproval(layer1ReadOnly[l1r], {}, { confirmDangerous: true }), false, layer1ReadOnly[l1r] + ' is exempt from Layer 1 prompt');
+}
+
+// 2. CDP backend helpers & no hardcoded external URLs
+assert.strictEqual(cdpBrowserMgr91.isAllowedBrowserUrl('file:///D:/c-ruuuuu/demo/browser-demo.html'), true, 'file:// URLs must be allowed by CDP manager');
+assert.strictEqual(cdpBrowserMgr91.isAllowedBrowserUrl('http://localhost:3000'), true, 'http:// URLs must be allowed');
+assert.strictEqual(cdpBrowserMgr91.isAllowedBrowserUrl('https://example.com'), true, 'https:// URLs must be allowed');
+assert.strictEqual(cdpBrowserMgr91.isAllowedBrowserUrl('about:blank'), true, 'about:blank must be allowed');
+assert.strictEqual(cdpBrowserMgr91.isAllowedBrowserUrl('javascript:alert(1)'), false, 'javascript: URLs must be rejected');
+assert.ok(cdpBrowserMgr91.buildElementResolutionExpression('#submit', 'elem_2').indexOf('data-coderun-ref') !== -1, 'Element resolver supports data-coderun-ref');
+assert.strictEqual(typeof vscodeBrowserMgr.dispose, 'function', 'vscodeBrowserToolsManager exposes dispose()');
+
+var browserMgrSrc91 = fs.readFileSync(path.join(process.cwd(), 'src', 'extension', 'manager', 'vscodeBrowserToolsManager.js'), 'utf-8');
+assert.strictEqual(browserMgrSrc91.indexOf('newerp.kluniversity.in'), -1, 'Hardcoded university URL must be removed from vscodeBrowserToolsManager.js');
+
+// 3. Native VS Code browser tools are the default and must not silently degrade to HTTP/CDP
+var nativeCalls91 = [];
+var originalLmTools91 = vscode91.lm.tools;
+var originalInvokeLmTool91 = vscode91.lm.invokeTool;
+var originalBrowserCommand91 = vscode91.commands.executeCommand;
+var browserCommandCalls91 = [];
+function recordBrowserCommand91(name, argument) {
+  browserCommandCalls91.push({ name: name, argument: argument });
+  return Promise.resolve();
+}
+vscode91.commands.executeCommand = recordBrowserCommand91;
+vscode91.lm.tools = [
+  { name: 'open_browser_page' },
+  { name: 'read_page' },
+  { name: 'navigate_page' },
+  { name: 'click_element' }
+];
+async function invokeBrowserTool91(name, options) {
+  nativeCalls91.push({ name: name, options: options });
+  if (name === 'open_browser_page') {
+    return 'Page Title: Browser Tool Demo\nURL: http://localhost:8899/\nPage ID: native-demo-91';
+  }
+  if (name === 'read_page') {
+    return 'Page Title: Browser Tool Demo\nURL: http://localhost:8899/\nPage ID: native-demo-91\nClicks: 0';
+  }
+  if (name === 'navigate_page') {
+    return 'Navigated to requested URL.';
+  }
+  if (name === 'click_element') {
+    return 'Clicked the requested element.';
+  }
+  throw new Error('Unexpected mocked browser tool: ' + name);
+}
+vscode91.lm.invokeTool = invokeBrowserTool91;
+
+await vscodeBrowserMgr.dispose();
+var nativePage91 = await vscodeBrowserMgr.openPage('http://localhost:8899/', false);
+assert.strictEqual(nativePage91.backend, 'vscodeLm', 'Default backend is the integrated VS Code browser');
+assert.strictEqual(nativePage91.pageId, 'native-demo-91', 'Native open resolves the shared page ID');
+assert.strictEqual(nativeCalls91[0].name, 'open_browser_page', 'Default backend invokes VS Code integrated browser tools');
+assert.strictEqual(nativeCalls91[0].options.input.url, 'http://localhost:8899/', 'Native open receives the requested URL');
+assert.strictEqual(browserCommandCalls91.length, 0, 'Native backend must not open a separate preview tab');
+
+var nativeRead91 = await vscodeBrowserMgr.readPageContent(null, true, 10);
+assert.strictEqual(nativeRead91.backend, 'vscodeLm', 'Page reads report the integrated VS Code backend');
+assert.ok(nativeRead91.bodyText.includes('Clicks: 0'), 'Native read returns the live page content');
+assert.strictEqual(nativeCalls91[1].name, 'read_page', 'Read uses the VS Code browser tool');
+
+await vscodeBrowserMgr.dispose();
+nativeCalls91.length = 0;
+var nativeNavigation91 = await vscodeBrowserMgr.navigate('http://localhost:8899/', { type: 'url' });
+assert.strictEqual(nativeNavigation91.backend, 'vscodeLm', 'Navigation reports the native VS Code backend');
+assert.strictEqual(nativeCalls91.length, 1, 'Navigation must not make a separate open-browser request first');
+assert.strictEqual(nativeCalls91[0].name, 'navigate_page', 'Navigation uses the VS Code browser tool directly');
+assert.strictEqual(nativeCalls91[0].options.input.pageId, undefined, 'VS Code resolves its active browser page when no page ID is known');
+assert.strictEqual(browserCommandCalls91.length, 0, 'Native navigation must not create a separate preview tab');
+
+await vscodeBrowserMgr.click('#click-me');
+assert.strictEqual(nativeCalls91[1].name, 'read_page', 'Click resolves the active shared tab when necessary');
+assert.strictEqual(nativeCalls91[2].name, 'click_element', 'Click uses the VS Code browser tool');
+
+await vscodeBrowserMgr.dispose();
+nativeCalls91.length = 0;
+var sharedTab91 = await vscodeBrowserMgr.openPage('', false);
+assert.strictEqual(nativeCalls91[0].name, 'read_page', 'Opening without a URL reads the already shared tab');
+assert.deepStrictEqual(nativeCalls91[0].options.input, {}, 'Connecting to the shared tab does not open about:blank');
+assert.strictEqual(sharedTab91.pageId, 'native-demo-91', 'Existing shared-tab page ID is retained');
+assert.strictEqual(browserCommandCalls91.length, 0, 'Shared-tab access must not create another browser tab');
+
+await vscodeBrowserMgr.dispose();
+vscode91.lm.tools = [];
+async function openWithoutNativeBrowserTool91() {
+  await vscodeBrowserMgr.openPage('http://localhost:8899/', false);
+}
+await assert.rejects(openWithoutNativeBrowserTool91, /VS Code integrated browser tool "openBrowserPage" is unavailable/);
+
+vscode91.lm.tools = [{ name: 'read_page' }];
+async function failNativeRead91() {
+  throw new Error('Tab has not been shared');
+}
+vscode91.lm.invokeTool = failNativeRead91;
+async function readUnsharedNativeTab91() {
+  await vscodeBrowserMgr.readPageContent(false, 10);
+}
+await assert.rejects(readUnsharedNativeTab91, /Tab has not been shared/);
+
+await vscodeBrowserMgr.dispose();
+vscode91.lm.tools = originalLmTools91;
+vscode91.lm.invokeTool = originalInvokeLmTool91;
+vscode91.commands.executeCommand = originalBrowserCommand91;
+
+// 4. First-install VS Code settings initializer preserves existing user values & only adds missing browser keys
+function createMockVscodeSettingsEnv(initialGlobalValues) {
+  var store = Object.assign({}, initialGlobalValues || {});
+  var updateCalls = [];
+  var globalStateMap = {};
+  var mockVs = {
+    ConfigurationTarget: { Global: 1 },
+    workspace: {
+      getConfiguration: function getCfg(section) {
+        return {
+          inspect: function inspectKey(key) {
+            var fullKey = section + '.' + key;
+            return { globalValue: store[fullKey] };
+          },
+          get: function getKey(key, def) {
+            var fullKey = section + '.' + key;
+            return store[fullKey] !== undefined ? store[fullKey] : def;
+          },
+          update: async function updateKey(key, val, target) {
+            var fullKey = section + '.' + key;
+            updateCalls.push({ key: fullKey, val: val, target: target });
+            store[fullKey] = val;
+          }
+        };
+      }
+    }
+  };
+  var mockCtx = {
+    globalState: {
+      get: function gsGet(k) { return globalStateMap[k]; },
+      update: async function gsUpdate(k, v) { globalStateMap[k] = v; }
+    }
+  };
+  return { store: store, updateCalls: updateCalls, mockVs: mockVs, mockCtx: mockCtx };
+}
+
+// 4a. Fresh install enables browser tools without changing global tool approvals
+var env91a = createMockVscodeSettingsEnv({});
+var setupRes91a = await ensureBrowserSettingsOnInstall(env91a.mockCtx, { vscodeApi: env91a.mockVs });
+assert.strictEqual(setupRes91a.skipped, false, 'Fresh install setup runs');
+assert.strictEqual(setupRes91a.enableChatToolsUpdated, true, 'Enables workbench.browser.enableChatTools when unset');
+assert.strictEqual(env91a.store['workbench.browser.enableChatTools'], true, 'enableChatTools stored as true');
+assert.strictEqual(env91a.store['chat.tools.global.autoApprove'], undefined, 'Browser setup does not change global tool approval settings');
+
+// 4b. Second activation skips once globalState flag is set
+var setupRes91b = await ensureBrowserSettingsOnInstall(env91a.mockCtx, { vscodeApi: env91a.mockVs });
+assert.strictEqual(setupRes91b.skipped, true, 'Subsequent activations skip once initialized');
+
+// 4c. Existing user browser setting and global approval preference are preserved
+var env91c = createMockVscodeSettingsEnv({
+  'workbench.browser.enableChatTools': true,
+  'chat.tools.global.autoApprove': false
+});
+var setupRes91c = await ensureBrowserSettingsOnInstall(env91c.mockCtx, { vscodeApi: env91c.mockVs });
+assert.strictEqual(setupRes91c.enableChatToolsUpdated, false, 'Already set enableChatTools is not rewritten');
+assert.strictEqual(env91c.store['chat.tools.global.autoApprove'], false, 'Global auto-approval preference is not overwritten');
+
+// 4d. Explicit boolean false/true on autoApprove or enableChatTools is never overwritten
+var env91d = createMockVscodeSettingsEnv({
+  'workbench.browser.enableChatTools': false,
+  'chat.tools.global.autoApprove': false
+});
+var setupRes91d = await ensureBrowserSettingsOnInstall(env91d.mockCtx, { vscodeApi: env91d.mockVs });
+assert.strictEqual(setupRes91d.enableChatToolsUpdated, false, 'Explicit false enableChatTools is respected');
+assert.strictEqual(env91d.store['chat.tools.global.autoApprove'], false, 'Boolean autoApprove remains false');
+
+// 4e. Restricted host update error is handled without throwing
+var env91e = createMockVscodeSettingsEnv({});
+env91e.mockVs.workspace.getConfiguration = function restrictedCfg() {
+  return {
+    inspect: function inspectRestricted() { return { globalValue: undefined }; },
+    update: async function failUpdate() { throw new Error('Setting restricted by policy'); }
+  };
+};
+var setupRes91e = await ensureBrowserSettingsOnInstall(env91e.mockCtx, { vscodeApi: env91e.mockVs });
+assert.strictEqual(setupRes91e.errors.length, 1, 'Restricted browser setting update error is captured safely without throwing');
+
+// 5. VS Code Integrated Browser tab preview helper (opens visible VS Code tab without Layer 2 LM modals)
+var origExecCmd91 = vscode91.commands.executeCommand;
+var origTabGroups91 = vscode91.window.tabGroups.all;
+var previewCalls91 = [];
+var failPrimaryPreview91 = false;
+
+vscode91.commands.executeCommand = async function mockExecCmd91(cmd, arg) {
+  previewCalls91.push({ cmd: cmd, arg: arg });
+  if (failPrimaryPreview91 && cmd === 'workbench.action.browser.open') {
+    throw new Error('Integrated browser command unavailable');
+  }
+  return undefined;
+};
+
+await vscodeBrowserMgr.dispose();
+
+// 5a. Skips about:blank and empty/disallowed schemes
+var blankPreview91 = await vscodeBrowserMgr.openVscodeBrowserPreview('about:blank');
+assert.strictEqual(blankPreview91.previewOpened, false, 'about:blank does not open VS Code preview tab');
+assert.strictEqual(blankPreview91.skipped, true, 'about:blank preview is marked skipped');
+assert.strictEqual(previewCalls91.length, 0, 'No VS Code command dispatched for about:blank');
+
+// 5b. Opens http://localhost URL via workbench.action.browser.open
+var demoUrl91 = 'http://localhost:8899/browser-demo.html';
+var httpPreview91 = await vscodeBrowserMgr.openVscodeBrowserPreview(demoUrl91);
+assert.strictEqual(httpPreview91.previewOpened, true, 'http URL opens VS Code integrated browser preview');
+assert.strictEqual(httpPreview91.command, 'workbench.action.browser.open', 'Uses workbench.action.browser.open when available');
+assert.strictEqual(previewCalls91.length, 1, 'Single preview command executed');
+assert.strictEqual(previewCalls91[0].cmd, 'workbench.action.browser.open', 'Command ID matches');
+assert.strictEqual(previewCalls91[0].arg, demoUrl91, 'Target URL forwarded to workbench.action.browser.open');
+
+// 5c. Reuses active VS Code browser tab when same URL is requested without force
+vscode91.window.tabGroups.all = [{ tabs: [{ label: 'Integrated Browser', isActive: true }] }];
+var reusePreview91 = await vscodeBrowserMgr.openVscodeBrowserPreview(demoUrl91);
+assert.strictEqual(reusePreview91.previewOpened, true, 'Reuse returns previewOpened=true');
+assert.strictEqual(reusePreview91.reused, true, 'Duplicate open for identical URL + open tab is skipped');
+assert.strictEqual(previewCalls91.length, 1, 'No duplicate executeCommand call on reuse');
+
+// 5d. Falls back to simpleBrowser.show when workbench.action.browser.open fails on older VS Code
+failPrimaryPreview91 = true;
+var fallbackUrl91 = 'http://localhost:8899/other-page.html';
+var fallbackPreview91 = await vscodeBrowserMgr.openVscodeBrowserPreview(fallbackUrl91);
+assert.strictEqual(fallbackPreview91.previewOpened, true, 'Fallback simpleBrowser.show succeeds for http URL');
+assert.strictEqual(fallbackPreview91.command, 'simpleBrowser.show', 'Fallback command is simpleBrowser.show');
+assert.strictEqual(previewCalls91[previewCalls91.length - 1].cmd, 'simpleBrowser.show', 'Dispatched simpleBrowser.show fallback');
+
+// 5e. Falls back to vscode.open for file:// URLs when workbench.action.browser.open fails
+var fileUrl91 = 'file:///D:/c-ruuuuu/demo/browser-demo.html';
+var filePreview91 = await vscodeBrowserMgr.openVscodeBrowserPreview(fileUrl91);
+assert.strictEqual(filePreview91.previewOpened, true, 'Fallback vscode.open succeeds for file:// URL');
+assert.strictEqual(filePreview91.command, 'vscode.open', 'Fallback command is vscode.open for local HTML file');
+
+await vscodeBrowserMgr.dispose();
+vscode91.commands.executeCommand = origExecCmd91;
+vscode91.window.tabGroups.all = origTabGroups91;
+
+console.log('✓ Vector 91 Passed: Browser permissions, native VS Code routing, CDP preview helper & first-install settings setup verified.');
+
 // Teardown
 try {
   terminalManager.dispose();
@@ -3959,7 +4217,7 @@ try {
 } catch (_) {}
 
 console.log('\n================================================================');
-console.log('=== ALL 90 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
+console.log('=== ALL 91 ADVERSARIAL TEST GROUPS PASSED CLEANLY ===');
 console.log('================================================================\n');
 
 process.exit(0);

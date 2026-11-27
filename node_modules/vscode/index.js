@@ -134,6 +134,22 @@ export var languages = {
   getDiagnostics: getDiagnostics
 };
 
+function cancelToken() {}
+
+export function CancellationTokenSource() {
+  this.token = {};
+  this.cancel = cancelToken;
+}
+
+async function invokeMockLmTool() {
+  throw new Error('No mocked VS Code Language Model tool handler is configured.');
+}
+
+export var lm = {
+  tools: [],
+  invokeTool: invokeMockLmTool
+};
+
 export var DiagnosticSeverity = { Error: 0, Warning: 1, Information: 2, Hint: 3 };
 export var StatusBarAlignment = { Left: 1, Right: 2 };
 export var ViewColumn = { One: 1, Two: 2, Three: 3 };
@@ -147,6 +163,8 @@ var vscodeMock = {
   window: window,
   workspace: workspace,
   languages: languages,
+  lm: lm,
+  CancellationTokenSource: CancellationTokenSource,
   DiagnosticSeverity: DiagnosticSeverity,
   StatusBarAlignment: StatusBarAlignment,
   ViewColumn: ViewColumn,
